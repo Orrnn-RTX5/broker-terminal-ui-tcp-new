@@ -20,8 +20,39 @@ import (
 
 const OTASchemaV1 = "RTX5-TCP-OTA-V1"
 
+const (
+	OTAChannelAlpha      = "alpha"
+	OTAChannelBeta       = "beta"
+	OTAChannelProduction = "production"
+)
+
+// NormalizeOTAChannel normalizes an OTA channel identifier into "alpha", "beta", or "production".
+func NormalizeOTAChannel(ch string) string {
+	switch strings.ToLower(strings.TrimSpace(ch)) {
+	case OTAChannelAlpha:
+		return OTAChannelAlpha
+	case OTAChannelBeta, "prerelease", "pre-release":
+		return OTAChannelBeta
+	default:
+		return OTAChannelProduction
+	}
+}
+
+// ManifestFilenameForChannel returns the manifest filename on disk for the normalized channel.
+func ManifestFilenameForChannel(ch string) string {
+	switch NormalizeOTAChannel(ch) {
+	case OTAChannelAlpha:
+		return "manifest-alpha.json"
+	case OTAChannelBeta:
+		return "manifest-beta.json"
+	default:
+		return "manifest.json"
+	}
+}
+
 // OTAAppArtifact describes an Ed25519-signed UI bundle (.zip) and Windows binary (.exe)
-// for a specific RTX5 desktop application ("superadmin", "admin", "manager", "terminal").
+// for a specific RTX5 desktop application ("superadmin", "admin", "manager", "terminal")
+// or Linux server package ("broker-linux", "web-terminal-linux").
 type OTAAppArtifact struct {
 	AppKey         string `json:"app_key"`
 	AppName        string `json:"app_name"`
@@ -41,6 +72,7 @@ type OTAAppArtifact struct {
 // OTAManifest is the Super-Admin Ed25519-signed OTA release manifest distributed strictly over Binary TCP.
 type OTAManifest struct {
 	Schema      string                     `json:"schema"`
+	Channel     string                     `json:"channel,omitempty"`
 	ReleaseID   string                     `json:"release_id"`
 	PublishedAt int64                      `json:"published_at"`
 	Apps        map[string]*OTAAppArtifact `json:"apps"`
@@ -291,7 +323,105 @@ func IsSafeOTAFilename(name string) bool {
 		return false
 	}
 	lower := strings.ToLower(trimmed)
-	return strings.HasSuffix(lower, ".zip") || strings.HasSuffix(lower, ".exe") || lower == "manifest.json"
+	switch lower {
+	case "manifest.json", "manifest-alpha.json", "manifest-beta.json", "manifest-production.json",
+		"alpha.yml", "beta.yml", "latest.yml":
+		return true
+	}
+	return strings.HasSuffix(lower, ".zip") ||
+		strings.HasSuffix(lower, ".exe") ||
+		strings.HasSuffix(lower, ".deb") ||
+		strings.HasSuffix(lower, ".tar.gz") ||
+		strings.HasSuffix(lower, ".sql")
+}
+
+func writeFileAtomic(dstPath string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+		return err
+	}
+	tmp := dstPath + ".tmp"
+	_ = os.Remove(tmp)
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dstPath)
+}
+
+// PromoteOTAChannel promotes a verified OTA manifest from fromChannel to toChannel,
+// updates m.Channel and m.PublishedAt, re-signs with masterPrivHex if provided,
+// and writes atomically to ManifestFilenameForChannel(toChannel) (plus manifest-production.json when promoting to production).
+func PromoteOTAChannel(otaDir, fromChannel, toChannel, masterPrivHex, masterPubHex string) (*OTAManifest, error) {
+	fromCh := NormalizeOTAChannel(fromChannel)
+	toCh := NormalizeOTAChannel(toChannel)
+
+	srcCandidates := []string{filepath.Join(otaDir, ManifestFilenameForChannel(fromCh))}
+	if fromCh == OTAChannelProduction {
+		srcCandidates = append(srcCandidates, filepath.Join(otaDir, "manifest-production.json"))
+	} else {
+		srcCandidates = append(srcCandidates, filepath.Join(otaDir, "manifest.json"))
+	}
+
+	var raw []byte
+	var readErr error
+	for _, p := range srcCandidates {
+		raw, readErr = os.ReadFile(p)
+		if readErr == nil {
+			break
+		}
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("ota: read source channel %s manifest: %w", fromCh, readErr)
+	}
+
+	var m OTAManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("ota: parse source channel %s manifest: %w", fromCh, err)
+	}
+	if strings.TrimSpace(masterPubHex) != "" {
+		if err := VerifyOTAManifest(&m, masterPubHex); err != nil {
+			return nil, fmt.Errorf("ota: verify source channel %s manifest: %w", fromCh, err)
+		}
+	}
+
+	m.Channel = toCh
+
+	if strings.TrimSpace(masterPrivHex) != "" {
+		if toCh == OTAChannelProduction && m.Apps != nil {
+			if prodRaw, err := os.ReadFile(filepath.Join(otaDir, "manifest.json")); err == nil {
+				var existingProd OTAManifest
+				if json.Unmarshal(prodRaw, &existingProd) == nil && existingProd.Apps != nil {
+					for _, bkKey := range []string{"broker-linux", "web-terminal-linux"} {
+						if _, has := m.Apps[bkKey]; !has && existingProd.Apps[bkKey] != nil {
+							cp := *existingProd.Apps[bkKey]
+							m.Apps[bkKey] = &cp
+						}
+					}
+				}
+			}
+		}
+		m.PublishedAt = time.Now().UTC().Unix()
+		if err := SignOTAManifest(&m, masterPrivHex); err != nil {
+			return nil, fmt.Errorf("ota: sign promoted %s manifest: %w", toCh, err)
+		}
+		if strings.TrimSpace(masterPubHex) != "" {
+			if err := VerifyOTAManifest(&m, masterPubHex); err != nil {
+				return nil, fmt.Errorf("ota: verify promoted %s manifest: %w", toCh, err)
+			}
+		}
+	}
+
+	outBytes, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	dstPrimary := filepath.Join(otaDir, ManifestFilenameForChannel(toCh))
+	if err := writeFileAtomic(dstPrimary, outBytes); err != nil {
+		return nil, err
+	}
+	if toCh == OTAChannelProduction {
+		_ = writeFileAtomic(filepath.Join(otaDir, "manifest-production.json"), outBytes)
+	}
+	return &m, nil
 }
 
 // OTAUpstreamPuller fetches an OTA path (e.g. "/ota/manifest" or "/ota/files/terminal-ui.zip")
@@ -303,10 +433,31 @@ type OTAUpstreamPuller func(otaPath string) ([]byte, int, error)
 // and caches signed releases from the Super Admin (:9100) Binary TCP Hub.
 func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstreamPuller) http.Handler {
 	var cacheMu sync.Mutex
-	var lastUpstreamCheck time.Time
+	lastUpstreamCheck := make(map[string]time.Time)
 
-	loadVerifiedLocalManifest := func() (*OTAManifest, []byte, error) {
-		raw, err := os.ReadFile(filepath.Join(otaDir, "manifest.json"))
+	loadVerifiedLocalManifestForChannel := func(channel string) (*OTAManifest, []byte, error) {
+		ch := NormalizeOTAChannel(channel)
+		var candidates []string
+		if ch == OTAChannelProduction {
+			candidates = []string{
+				filepath.Join(otaDir, "manifest.json"),
+				filepath.Join(otaDir, "manifest-production.json"),
+			}
+		} else {
+			candidates = []string{
+				filepath.Join(otaDir, ManifestFilenameForChannel(ch)),
+				filepath.Join(otaDir, "manifest.json"),
+				filepath.Join(otaDir, "manifest-production.json"),
+			}
+		}
+		var raw []byte
+		var err error
+		for _, p := range candidates {
+			raw, err = os.ReadFile(p)
+			if err == nil {
+				break
+			}
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -322,21 +473,24 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 		return &m, raw, nil
 	}
 
-	refreshManifestIfNeeded := func() (*OTAManifest, []byte, error) {
+	refreshManifestIfNeeded := func(channel string) (*OTAManifest, []byte, error) {
+		ch := NormalizeOTAChannel(channel)
 		cacheMu.Lock()
 		defer cacheMu.Unlock()
 
-		if upstreamPull != nil && time.Since(lastUpstreamCheck) > 8*time.Second {
-			lastUpstreamCheck = time.Now()
-			if raw, status, err := upstreamPull("/ota/manifest"); err == nil && status == http.StatusOK && len(raw) > 0 {
+		if upstreamPull != nil && time.Since(lastUpstreamCheck[ch]) > 8*time.Second {
+			lastUpstreamCheck[ch] = time.Now()
+			pullPath := "/ota/manifest?channel=" + ch
+			if raw, status, err := upstreamPull(pullPath); err == nil && status == http.StatusOK && len(raw) > 0 {
 				var m OTAManifest
 				if json.Unmarshal(raw, &m) == nil && (masterPubHex == "" || VerifyOTAManifest(&m, masterPubHex) == nil) {
 					_ = os.MkdirAll(otaDir, 0755)
-					localM, localRaw, localErr := loadVerifiedLocalManifest()
-					if localErr != nil || localM.ReleaseID != m.ReleaseID || localM.PublishedAt != m.PublishedAt {
-						tmp := filepath.Join(otaDir, "manifest.json.tmp")
-						if os.WriteFile(tmp, raw, 0644) == nil {
-							_ = os.Rename(tmp, filepath.Join(otaDir, "manifest.json"))
+					localM, localRaw, localErr := loadVerifiedLocalManifestForChannel(ch)
+					if localErr != nil || localM.ReleaseID != m.ReleaseID || localM.PublishedAt != m.PublishedAt || localM.Channel != m.Channel {
+						dstFile := filepath.Join(otaDir, ManifestFilenameForChannel(ch))
+						_ = writeFileAtomic(dstFile, raw)
+						if ch == OTAChannelProduction {
+							_ = writeFileAtomic(filepath.Join(otaDir, "manifest-production.json"), raw)
 						}
 						return &m, raw, nil
 					}
@@ -344,7 +498,27 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 				}
 			}
 		}
-		return loadVerifiedLocalManifest()
+		return loadVerifiedLocalManifestForChannel(ch)
+	}
+
+	findArtifactInManifests := func(name string, manifests ...*OTAManifest) (string, int64) {
+		for _, m := range manifests {
+			if m == nil {
+				continue
+			}
+			for _, app := range m.Apps {
+				if app == nil {
+					continue
+				}
+				if strings.EqualFold(app.UIZipFile, name) && app.UISHA256 != "" {
+					return app.UISHA256, app.UISize
+				}
+				if strings.EqualFold(app.ExeFile, name) && app.ExeSHA256 != "" {
+					return app.ExeSHA256, app.ExeSize
+				}
+			}
+		}
+		return "", 0
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -353,8 +527,19 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 			return
 		}
 		path := r.URL.Path
-		if path == "/ota/manifest" || path == "/ota/manifest.json" {
-			_, raw, err := refreshManifestIfNeeded()
+		switch path {
+		case "/ota/manifest", "/ota/manifest.json", "/ota/manifest-alpha.json", "/ota/manifest-beta.json", "/ota/manifest-production.json":
+			ch := OTAChannelProduction
+			if q := strings.TrimSpace(r.URL.Query().Get("channel")); q != "" {
+				ch = NormalizeOTAChannel(q)
+			} else if path == "/ota/manifest-alpha.json" {
+				ch = OTAChannelAlpha
+			} else if path == "/ota/manifest-beta.json" {
+				ch = OTAChannelBeta
+			} else if path == "/ota/manifest-production.json" {
+				ch = OTAChannelProduction
+			}
+			_, raw, err := refreshManifestIfNeeded(ch)
 			if err != nil {
 				http.Error(w, "OTA manifest unavailable: "+err.Error(), http.StatusNotFound)
 				return
@@ -372,30 +557,49 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 				http.Error(w, "invalid OTA artifact name", http.StatusBadRequest)
 				return
 			}
-			manifest, _, err := refreshManifestIfNeeded()
-			if err != nil {
+			lowerName := strings.ToLower(strings.TrimSpace(name))
+			if lowerName == "manifest.json" || lowerName == "manifest-alpha.json" || lowerName == "manifest-beta.json" || lowerName == "manifest-production.json" {
+				ch := OTAChannelProduction
+				if lowerName == "manifest-alpha.json" {
+					ch = OTAChannelAlpha
+				} else if lowerName == "manifest-beta.json" {
+					ch = OTAChannelBeta
+				}
+				_, raw, err := refreshManifestIfNeeded(ch)
+				if err != nil {
+					http.Error(w, "OTA manifest unavailable: "+err.Error(), http.StatusNotFound)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+				return
+			}
+
+			prodM, _, prodErr := refreshManifestIfNeeded(OTAChannelProduction)
+			alphaM, _, alphaErr := loadVerifiedLocalManifestForChannel(OTAChannelAlpha)
+			betaM, _, betaErr := loadVerifiedLocalManifestForChannel(OTAChannelBeta)
+			if prodErr != nil && alphaErr != nil && betaErr != nil {
 				http.Error(w, "OTA manifest unavailable", http.StatusNotFound)
 				return
 			}
 
-			var expectedSHA string
-			var expectedSize int64
-			for _, app := range manifest.Apps {
-				if app == nil {
-					continue
-				}
-				if strings.EqualFold(app.UIZipFile, name) {
-					expectedSHA = app.UISHA256
-					expectedSize = app.UISize
-					break
-				}
-				if strings.EqualFold(app.ExeFile, name) {
-					expectedSHA = app.ExeSHA256
-					expectedSize = app.ExeSize
-					break
-				}
+			expectedSHA, expectedSize := findArtifactInManifests(name, prodM, alphaM, betaM)
+			if expectedSHA == "" && upstreamPull != nil {
+				alphaM, _, _ = refreshManifestIfNeeded(OTAChannelAlpha)
+				betaM, _, _ = refreshManifestIfNeeded(OTAChannelBeta)
+				expectedSHA, expectedSize = findArtifactInManifests(name, prodM, alphaM, betaM)
 			}
 			if expectedSHA == "" {
+				if lowerName == "alpha.yml" || lowerName == "beta.yml" || lowerName == "latest.yml" {
+					ymlPath := filepath.Join(otaDir, name)
+					if _, err := os.Stat(ymlPath); err == nil {
+						w.Header().Set("Cache-Control", "no-store")
+						http.ServeFile(w, r, ymlPath)
+						return
+					}
+				}
 				http.Error(w, "artifact not listed in verified OTA manifest", http.StatusNotFound)
 				return
 			}
@@ -410,7 +614,6 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 
 			if !localValid && upstreamPull != nil {
 				cacheMu.Lock()
-				// Re-check after lock
 				if gotSHA, gotSize, err := ComputeFileSHA256(localPath); err == nil &&
 					strings.EqualFold(gotSHA, expectedSHA) && (expectedSize <= 0 || gotSize == expectedSize) {
 					localValid = true
@@ -418,9 +621,7 @@ func NewOTAHTTPHandler(otaDir string, masterPubHex string, upstreamPull OTAUpstr
 					raw, status, pullErr := upstreamPull("/ota/files/" + name)
 					if pullErr == nil && status == http.StatusOK {
 						if VerifyOTAFileBytes(raw, expectedSHA, expectedSize) == nil {
-							_ = os.MkdirAll(otaDir, 0755)
-							tmp := localPath + ".tmp"
-							if os.WriteFile(tmp, raw, 0644) == nil && os.Rename(tmp, localPath) == nil {
+							if writeFileAtomic(localPath, raw) == nil {
 								localValid = true
 							}
 						}
