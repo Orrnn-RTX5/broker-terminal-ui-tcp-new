@@ -1,0 +1,263 @@
+import type { MarketStatus } from '../types/api';
+import { translateUi } from '../hooks/useUiTranslation';
+import i18n from '../i18n';
+
+export type KnownMarketStatus = MarketStatus['status'];
+export type NormalizedMarketStatusValue = KnownMarketStatus | 'unknown';
+
+export interface MarketStatusFormatOptions {
+  locale?: string;
+  timeZone?: string;
+}
+
+export interface NormalizeMarketStatusOptions extends MarketStatusFormatOptions {
+  symbol?: string;
+}
+
+export interface NormalizedMarketStatus {
+  symbol?: string;
+  status: NormalizedMarketStatusValue;
+  isOpen: boolean;
+  isTradeBlocked: boolean;
+  label: string;
+  sessionOpenTimeMs?: number;
+  sessionCloseTimeMs?: number;
+  serverTimeMs?: number;
+  sessionOpenText?: string;
+  sessionCloseText?: string;
+  scheduleText?: string;
+}
+
+const MARKET_STATUS_LABELS: Record<KnownMarketStatus, string> = {
+  open: 'Market Open',
+  closed: 'Market Closed',
+  pre_market: 'Pre-market',
+  after_hours: 'After hours',
+};
+
+const KNOWN_MARKET_STATUSES = new Set<KnownMarketStatus>([
+  'open',
+  'closed',
+  'pre_market',
+  'after_hours',
+]);
+
+const ALWAYS_OPEN_CRYPTO_ASSETS = new Set([
+  '1000XBONK',
+  '1000XFLOKI',
+  '1000XPEPE',
+  '1000XSHIB',
+  'AAVE',
+  'ADA',
+  'APT',
+  'ARB',
+  'ATOM',
+  'AVAX',
+  'BCH',
+  'BNB',
+  'BONK',
+  'BTC',
+  'DASH',
+  'DOGE',
+  'DOT',
+  'EOS',
+  'ETC',
+  'ETH',
+  'FET',
+  'FIL',
+  'FLOKI',
+  'ICP',
+  'INJ',
+  'LINK',
+  'LTC',
+  'MATIC',
+  'NEAR',
+  'NEO',
+  'OP',
+  'PEPE',
+  'POL',
+  'RENDER',
+  'SEI',
+  'SHIB',
+  'SOL',
+  'SUI',
+  'TIA',
+  'TON',
+  'TRX',
+  'UNI',
+  'WIF',
+  'XLM',
+  'XMR',
+  'XRP',
+  'ZEC',
+]);
+
+const normalizeSymbol = (symbol: unknown): string | undefined => {
+  const normalized = String(symbol ?? '').trim().toUpperCase();
+  return normalized || undefined;
+};
+
+const normalizeCompactSymbol = (symbol: unknown): string => (
+  String(symbol ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+);
+
+export const isLikelyAlwaysOpenCryptoSymbol = (symbol: unknown): boolean => {
+  const compact = normalizeCompactSymbol(symbol);
+  if (!compact) return false;
+
+  return Array.from(ALWAYS_OPEN_CRYPTO_ASSETS).some(asset => (
+    compact.startsWith(asset)
+    || compact.endsWith(asset)
+  ));
+};
+
+export const isKnownMarketStatus = (status: unknown): status is KnownMarketStatus => (
+  typeof status === 'string' && KNOWN_MARKET_STATUSES.has(status as KnownMarketStatus)
+);
+
+export const parseMarketSessionTimestampMs = (value: unknown): number | null => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+};
+
+export const formatMarketSessionTimestamp = (
+  value: unknown,
+  options: MarketStatusFormatOptions = {},
+): string | undefined => {
+  const timestampMs = parseMarketSessionTimestampMs(value);
+  if (timestampMs === null) return undefined;
+
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  const formatter = new Intl.DateTimeFormat(options.locale || undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes): string | undefined =>
+    parts.find(part => part.type === type)?.value;
+
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+  if (!month || !day || !hour || !minute) return formatter.format(date);
+  return `${month} ${day}, ${hour}:${minute}`;
+};
+
+const parseMarketTradeFlag = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === 1) return value === 1;
+  return undefined;
+};
+
+export const normalizeMarketStatus = (
+  status: MarketStatus | null | undefined,
+  options: NormalizeMarketStatusOptions = {},
+): NormalizedMarketStatus => {
+  const symbol = normalizeSymbol(status?.symbol) ?? normalizeSymbol(options.symbol);
+  const reportedStatus = status?.status;
+  const hasReportedStatus = typeof reportedStatus === 'string' && reportedStatus.trim().length > 0;
+  const scheduleUnavailable = /\bschedule\s+(?:is\s+)?unavailable\b/i.test(status?.message ?? '');
+  const tradeOpen = parseMarketTradeFlag(status?.trade_open);
+  const quoteOpen = parseMarketTradeFlag(status?.quote_open);
+  const tradeFlagOpen = tradeOpen ?? quoteOpen;
+  const normalizedStatus: NormalizedMarketStatusValue = isKnownMarketStatus(reportedStatus)
+    ? reportedStatus
+    : scheduleUnavailable
+      ? 'unknown'
+    : !hasReportedStatus && tradeFlagOpen !== undefined
+      ? (tradeFlagOpen ? 'open' : 'closed')
+    : !hasReportedStatus && isLikelyAlwaysOpenCryptoSymbol(symbol)
+      ? 'open'
+    : 'unknown';
+
+  // MT5 behavior: only block trading when the session is EXPLICITLY closed,
+  // pre-market, or after-hours. Never disable BUY/SELL while schedule metadata
+  // is loading or unconfigured ('unknown'); server-side execution remains authoritative.
+  const isExplicitlyClosed = normalizedStatus === 'closed'
+    || normalizedStatus === 'pre_market'
+    || normalizedStatus === 'after_hours';
+  const isOpen = !isExplicitlyClosed;
+
+  const sessionOpenTimeMs = parseMarketSessionTimestampMs(status?.session_open) ?? undefined;
+  const sessionCloseTimeMs = parseMarketSessionTimestampMs(status?.session_close) ?? undefined;
+  const serverTimeMs = parseMarketSessionTimestampMs(status?.server_time) ?? undefined;
+  const sessionOpenText = formatMarketSessionTimestamp(sessionOpenTimeMs, options);
+  const sessionCloseText = formatMarketSessionTimestamp(sessionCloseTimeMs, options);
+  const scheduleText = normalizedStatus === 'open'
+    ? sessionCloseText ? `Closes ${sessionCloseText}` : undefined
+    : isExplicitlyClosed && sessionOpenText ? `Opens ${sessionOpenText}` : undefined;
+
+  return {
+    symbol,
+    status: normalizedStatus,
+    isOpen,
+    isTradeBlocked: isExplicitlyClosed,
+    label: normalizedStatus === 'unknown'
+      ? 'Market Open'
+      : MARKET_STATUS_LABELS[normalizedStatus],
+    sessionOpenTimeMs,
+    sessionCloseTimeMs,
+    serverTimeMs,
+    sessionOpenText,
+    sessionCloseText,
+    scheduleText,
+  };
+};
+
+export const createUnavailableMarketStatus = (symbol?: string): NormalizedMarketStatus => (
+  normalizeMarketStatus(null, { symbol })
+);
+
+export const formatMarketStatusSchedule = (
+  marketStatus: Pick<NormalizedMarketStatus, 'isOpen' | 'sessionOpenTimeMs' | 'sessionCloseTimeMs'>,
+): string | undefined => {
+  const sessionTime = formatMarketSessionTimestamp(
+    marketStatus.isOpen ? marketStatus.sessionCloseTimeMs : marketStatus.sessionOpenTimeMs,
+    { locale: i18n.resolvedLanguage || i18n.language },
+  );
+  if (!sessionTime) return undefined;
+  return translateUi(marketStatus.isOpen ? 'Closes {{value0}}' : 'Opens {{value0}}', { value0: sessionTime });
+};
+
+export const shouldBlockSymbolTrading = (
+  marketStatus: Pick<NormalizedMarketStatus, 'isTradeBlocked' | 'symbol'>,
+  fallbackSymbol?: string,
+): boolean => {
+  const resolvedSymbol = normalizeSymbol(marketStatus.symbol) ?? normalizeSymbol(fallbackSymbol);
+  if (isLikelyAlwaysOpenCryptoSymbol(resolvedSymbol)) return false;
+  return Boolean(marketStatus.isTradeBlocked);
+};
+
+export const getMarketStatusTradeBlockMessage = (
+  marketStatus: Pick<NormalizedMarketStatus, 'status' | 'label' | 'symbol' | 'isTradeBlocked'>,
+  fallbackSymbol?: string,
+): string => {
+  if (!shouldBlockSymbolTrading(marketStatus, fallbackSymbol)) return '';
+
+  const symbol = normalizeSymbol(marketStatus.symbol) ?? normalizeSymbol(fallbackSymbol);
+  if (marketStatus.status === 'closed') {
+    return symbol
+      ? translateUi('Market is closed for {{value0}}.', { value0: symbol })
+      : translateUi('Market is closed.');
+  }
+  if (marketStatus.status === 'pre_market') {
+    return symbol
+      ? translateUi('{{value0}} is in pre-market. Trading is currently disabled.', { value0: symbol })
+      : translateUi('Market is in pre-market. Trading is currently disabled.');
+  }
+  if (marketStatus.status === 'after_hours') {
+    return symbol
+      ? translateUi('{{value0}} is after hours. Trading is currently disabled.', { value0: symbol })
+      : translateUi('Market is after hours. Trading is currently disabled.');
+  }
+  return '';
+};
+

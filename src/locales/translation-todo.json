@@ -1,0 +1,33 @@
+{
+  "_comment": "White-label neutral keys (ds-16) allowed to be MISSING in non-en catalogs. A missing key renders the English value at runtime via fallbackLng 'en' (src/i18n.ts) — English is never presented as a translation. catalogs.test.ts reads this file: listed keys skip the missing-key assertion (placeholder integrity still enforced when present). Every listed key MUST exist non-empty in en/ui.json. Human tracker: NEEDS_TRANSLATION.md.",
+  "allowMissing": [
+    "brokerWebsite",
+    "Terminal login",
+    "Download desktop installer {{value0}}",
+    "Download the latest desktop installer",
+    "Fill policy is not supported by the execution venue and is not sent",
+    "Reconnecting to server…",
+    "Position {{ticket}} already closed ({{reason}}) at {{price}}",
+    "Position {{ticket}} already closed ({{reason}})",
+    "Position {{ticket}} already closed at {{price}}",
+    "Position {{ticket}} already closed",
+    "Position {{ticket}} is no longer open",
+    "closed manually",
+    "stop out",
+    "close by",
+    "close all",
+    "by the broker",
+    "Position {{ticket}} is not in the current positions list; refreshing",
+    "Account busy — previous orders are still processing. Please retry.",
+    "Limit Price:",
+    "Expiration mode",
+    "Expiration date picker",
+    "Blue and Black",
+    "Gray and Black",
+    "White and Black",
+    "Green and Black",
+    "Yellow and Black",
+    "Pending Order",
+    "Pending Order (F9)"
+  ]
+}

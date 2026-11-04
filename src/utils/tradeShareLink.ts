@@ -1,0 +1,164 @@
+import { normalizeExactBrokerSymbol } from './exactBrokerSymbol';
+
+export const TRADE_SHARE_HASH_PARAM = 'share';
+
+export interface SharedChartTrade {
+  version: 1;
+  ticket: number;
+  symbol: string;
+  timeframe: string;
+  side: 'BUY' | 'SELL';
+  volume: number;
+  entryPrice: number;
+  entryTime: number;
+  sl: number;
+  tp: number;
+}
+
+const toBase64Url = (text: string): string => {
+  const base64 = btoa(unescape(encodeURIComponent(text)));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+};
+
+const fromBase64Url = (encoded: string): string | null => {
+  try {
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const raw = atob(padded);
+    return decodeURIComponent(escape(raw));
+  } catch {
+    return null;
+  }
+};
+
+const toFinite = (value: unknown, fallback = 0): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+export const encodeTradeShare = (trade: SharedChartTrade): string => toBase64Url(JSON.stringify({
+  v: 1,
+  k: trade.ticket,
+  s: trade.symbol,
+  f: trade.timeframe,
+  d: trade.side,
+  q: trade.volume,
+  e: trade.entryPrice,
+  t: trade.entryTime,
+  l: trade.sl,
+  p: trade.tp,
+}));
+
+export const decodeTradeShare = (encoded: string): SharedChartTrade | null => {
+  const json = fromBase64Url(String(encoded ?? '').trim());
+  if (!json) return null;
+  try {
+    const raw = JSON.parse(json) as Record<string, unknown>;
+    if (Number(raw.v) !== 1) return null;
+    const symbol = normalizeExactBrokerSymbol(raw.s);
+    const timeframe = String(raw.f ?? '').trim().toUpperCase();
+    const side = String(raw.d ?? '').toUpperCase();
+    const ticket = toFinite(raw.k);
+    const volume = toFinite(raw.q);
+    const entryPrice = toFinite(raw.e);
+    if (!symbol || (side !== 'BUY' && side !== 'SELL')) return null;
+    if (!(volume > 0) || !(entryPrice > 0)) return null;
+    return {
+      version: 1,
+      ticket: ticket > 0 ? Math.floor(ticket) : 0,
+      symbol,
+      timeframe,
+      side,
+      volume,
+      entryPrice,
+      entryTime: Math.max(0, Math.floor(toFinite(raw.t))),
+      sl: Math.max(0, toFinite(raw.l)),
+      tp: Math.max(0, toFinite(raw.p)),
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * In pure Binary TCP desktop mode (loopback bridge), formats a clean shareable
+ * trade summary string instead of a dead http://127.0.0.1:18403/#share=... URL.
+ */
+export const buildTradeShareUrl = (
+  trade: SharedChartTrade,
+  baseHref?: string,
+): string => {
+  const href = String(baseHref ?? (typeof window !== 'undefined' ? window.location.href : '')).trim();
+  let isLoopback = false;
+  try {
+    const parsed = new URL(href);
+    const host = parsed.hostname.toLowerCase();
+    isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host.endsWith('.localhost');
+  } catch {
+    isLoopback = !href;
+  }
+
+  if (isLoopback && !baseHref) {
+    const parts = [
+      `RTX5 Trade${trade.ticket > 0 ? ` #${trade.ticket}` : ''}: ${trade.side} ${trade.volume} ${trade.symbol} @ ${trade.entryPrice}`,
+    ];
+    if (trade.timeframe) parts.push(`TF: ${trade.timeframe}`);
+    if (trade.sl > 0) parts.push(`SL: ${trade.sl}`);
+    if (trade.tp > 0) parts.push(`TP: ${trade.tp}`);
+    return parts.join(' | ');
+  }
+
+  const withoutHash = href.split('#')[0] || '';
+  return `${withoutHash}#${TRADE_SHARE_HASH_PARAM}=${encodeTradeShare(trade)}`;
+};
+
+export const parseTradeShareFromHref = (href: string): SharedChartTrade | null => {
+  const hashIndex = String(href ?? '').indexOf('#');
+  if (hashIndex < 0) return null;
+  const hash = String(href).slice(hashIndex + 1);
+  const match = new RegExp(`(?:^|[&;])${TRADE_SHARE_HASH_PARAM}=([A-Za-z0-9_-]+)`).exec(hash);
+  if (!match) return null;
+  return decodeTradeShare(match[1]);
+};
+
+let cachedSharedTrade: SharedChartTrade | null | undefined;
+
+export const getSharedChartTrade = (): SharedChartTrade | null => {
+  if (cachedSharedTrade === undefined) {
+    cachedSharedTrade = typeof window === 'undefined'
+      ? null
+      : parseTradeShareFromHref(window.location.href);
+  }
+  return cachedSharedTrade;
+};
+
+export const resetSharedChartTradeCache = (): void => {
+  cachedSharedTrade = undefined;
+};
+
+export const copyTextToClipboard = async (text: string): Promise<boolean> => {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to legacy path.
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  let textarea: HTMLTextAreaElement | null = null;
+  try {
+    textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+    document.body.appendChild(textarea);
+    textarea.select();
+    return typeof document.execCommand === 'function' && document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea?.remove();
+  }
+};
+

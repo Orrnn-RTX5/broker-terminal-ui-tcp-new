@@ -1,0 +1,267 @@
+/* Static material finishes for terminal chrome. Dark surfaces retain their
+   existing sheen; light surfaces use opaque, matte shared palette tokens. */
+:root {
+  --rtx-panel-sheen: linear-gradient(180deg, rgb(255 255 255 / 2.8%), rgb(255 255 255 / 0.8%) 72px, transparent 180px);
+  --rtx-control-sheen: linear-gradient(180deg, rgb(255 255 255 / 4%), transparent);
+  --rtx-finish-edge: rgb(255 255 255 / 7%);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light,
+.theme-light {
+  --rtx-panel-sheen: none;
+  --rtx-control-sheen: none;
+  --rtx-finish-edge: transparent;
+}
+
+/* Match the skin selectors so their opaque background shorthands do not
+   erase this finish when panels and portaled dialogs mount independently. */
+html,
+html.rtx-advanced-view.rtx-skin-untitled-light,
+html.rtx-desktop-shell-active {
+  :is(
+    .rtx-market-watch,
+    .rtx-market-watch__grid,
+    .navigator-panel__body,
+    .rtx-bottom-dock__content,
+    .rtx-bottom-dock__content > [aria-hidden] > div,
+    .rtx-bottom-dock__content .virtualized-list,
+    .rtx-trade-scroll,
+    .rtx-history-tab,
+    .rtx-exposure-tab,
+    .rtx-history-downloader,
+    .rtx-history-download-panel,
+    .rtx-calendar-tab,
+    .rtx-articles-tab,
+    .rtx-codebase-tab,
+    .rtx-experts-tab,
+    .last-symbol-card,
+    .rtx-login-dialog,
+    .rtx-order-dialog,
+    .rtx-dom-dialog,
+    .rtx-modify-dialog,
+    .rtx-shortcut-dialog,
+    .rtx-oad-shell,
+    .rtx-cp-shell,
+    .rtx-cp-content,
+    .rtx-confirm-dialog,
+    .rtx-confirm-dialog__content,
+    .rtx-options-dialog,
+    .rtx-chart-template-dialog,
+    .rtx-symbols-dialog,
+    [role='dialog']:not([class*='backdrop']):not(.inset-0)
+  ) {
+    background-image: var(--rtx-panel-sheen) !important;
+    background-repeat: no-repeat !important;
+  }
+
+  :is(
+    .dock-panel__header,
+    .dock-tabs,
+    [data-dock-tab-bar],
+    .rtx-market-watch__search,
+    .rtx-market-watch__column-heading,
+    .rtx-market-watch__footer,
+    .rtx-bottom-dock__tabs,
+    .rtx-trade-footer,
+    .rtx-exposure-account-bar,
+    .rtx-status-bar,
+    .rtx-history-downloader__header,
+    .rtx-history-symbols__toolbar,
+    .rtx-history-tasks__header,
+    .rtx-journal-toolbar,
+    .last-symbol-header,
+    .rtx-order-dialog__header,
+    .rtx-cp-header,
+    .rtx-cp-footer,
+    .rtx-confirm-dialog__header,
+    .rtx-confirm-dialog__footer
+  ),
+  .rtx-app-shell th:not(.tv-lightweight-charts *) {
+    background-image: var(--rtx-chrome-sheen) !important;
+    box-shadow: inset 0 1px 0 var(--rtx-finish-edge) !important;
+  }
+
+  :is(
+    .rtx-application-menu,
+    .rtx-menu-surface,
+    .rtx-file-menu,
+    .web-drawing-tools-menu,
+    .web-drawing-tools-tooltip,
+    .web-drawing-selection-toolbar,
+    .rtx-chart-text-input-popover,
+    .rtx-desktop-quick-menu,
+    .rtx-drawing-operations__menu
+  ) {
+    background-image: var(--rtx-chrome-sheen) !important;
+  }
+
+  .web-drawing-tools-rail {
+    background-image: var(--rtx-panel-sheen) !important;
+    box-shadow: inset 1px 0 0 var(--rtx-finish-edge);
+  }
+
+  /* Inline desktop tools share the command row's surface. The sidebar's
+     vertical highlight otherwise looks like a divider after the timeframes. */
+  .rtx-desktop-inline-drawings .web-drawing-tools-rail[data-orientation='horizontal'] {
+    background: transparent !important;
+    border: 0;
+    box-shadow: none;
+  }
+
+  :is(.rtx-cp-btn, .rtx-history-seg-btn, .rtx-journal-control, .last-symbol-icon-button):not(:disabled) {
+    background-image: var(--rtx-control-sheen) !important;
+  }
+
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea):not(:focus):not(:disabled):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 5%), inset 0 1px 0 var(--rtx-finish-edge) !important;
+  }
+}
+
+/* Keep the late-loading material layer aligned with the shared light palette.
+   Opaque surfaces keep text contrast independent of the
+   moving chart underneath menus and dialogs. No filters on fixed ancestors. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light {
+  --rtx-glass-chrome: var(--rtx-light-panel-subtle);
+  --rtx-glass-floating: var(--rtx-light-elevated);
+  --rtx-glass-sheen: none;
+  --rtx-glass-floating-sheen: none;
+  --rtx-glass-border: var(--rtx-light-line-border, #64748b);
+  --rtx-glass-edge: transparent;
+  --rtx-glass-chrome-shadow: none;
+  --rtx-glass-floating-shadow: 0 8px 28px rgb(30 41 59 / 14%), 0 2px 6px rgb(30 41 59 / 6%);
+  --rtx-glass-filter: none;
+
+  /* Shared chrome separates controls from the lighter data surfaces. */
+  :is(
+    .rtx-top-chrome,
+    .rtx-main-toolbar,
+    .dock-panel__header:not(.rtx-bottom-dock__header),
+    .dock-tabs,
+    .rtx-market-watch__column-heading,
+    .rtx-bottom-dock__tabs,
+    .rtx-trade-footer,
+    .rtx-exposure-account-bar,
+    .rtx-status-bar,
+    .rtx-history-downloader__header,
+    .rtx-history-symbols__toolbar,
+    .rtx-journal-toolbar,
+    .last-symbol-header
+  ) {
+    background-color: var(--rtx-glass-chrome) !important;
+    background-image: var(--rtx-glass-sheen) !important;
+    border-color: var(--rtx-glass-border) !important;
+    box-shadow: var(--rtx-glass-chrome-shadow) !important;
+  }
+
+  :is(.rtx-top-chrome, .rtx-main-toolbar, .rtx-bottom-dock__tabs, .rtx-status-bar, .rtx-journal-toolbar) {
+    background-color: #f8fafc !important;
+  }
+
+  :is(.dock-panel__header--inactive:not(.rtx-bottom-dock__header)) {
+    background-color: var(--rtx-light-panel-subtle) !important;
+  }
+
+  .web-drawing-tools-rail:not([data-orientation='horizontal']) {
+    background-color: var(--rtx-light-panel-subtle) !important;
+    background-image: none !important;
+    border-color: var(--rtx-glass-border) !important;
+    box-shadow: none !important;
+  }
+
+  /* Style actual floating boxes, never full-screen role=dialog backdrops.
+     [class] also matches the specificity of the earlier role-dialog finish. */
+  :is(
+    .rtx-application-menu,
+    .rtx-menu-surface,
+    .rtx-file-menu,
+    .rtx-market-watch__dropdown,
+    .rtx-connection-dropdown,
+    .web-drawing-tools-menu,
+    .web-drawing-tools-tooltip,
+    .web-drawing-selection-toolbar,
+    .rtx-chart-text-input-popover,
+    .rtx-desktop-quick-menu,
+    .rtx-drawing-operations__menu,
+    .rtx-login-dialog,
+    .rtx-order-dialog,
+    .rtx-dom-dialog,
+    .rtx-modify-dialog,
+    .rtx-shortcut-dialog,
+    .rtx-oad-shell,
+    .rtx-cp-shell,
+    .rtx-confirm-dialog,
+    .rtx-options-dialog,
+    .rtx-chart-template-dialog,
+    .rtx-symbols-dialog
+  )[class] {
+    background-color: var(--rtx-glass-floating) !important;
+    background-image: var(--rtx-glass-floating-sheen) !important;
+    background-clip: padding-box;
+    border-color: var(--rtx-glass-border) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--rtx-glass-floating-shadow) !important;
+    -webkit-backdrop-filter: var(--rtx-glass-filter) !important;
+    backdrop-filter: var(--rtx-glass-filter) !important;
+  }
+
+  [role='menu']:has(> :is(.rtx-menu-surface, .rtx-file-menu)) {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* File-menu submenus can portal viewport-positioned fixed panels.
+     Keep both possible ancestors free of filters. */
+  .rtx-file-menu[class],
+  .rtx-application-menu:has(.rtx-file-menu) {
+    background-color: var(--rtx-light-elevated) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Let dialog content inherit the opaque outer surface without extra layers. */
+  .rtx-order-dialog[class] .rtx-order-dialog__content .rtx-order-dialog__form,
+  .rtx-cp-shell .rtx-cp-content,
+  .rtx-options-dialog > .overflow-y-auto,
+  .rtx-confirm-dialog__content {
+    background: transparent !important;
+  }
+
+  .rtx-order-dialog[class] .rtx-order-dialog__header,
+  :is(.rtx-cp-header, .rtx-cp-footer, .rtx-confirm-dialog__header, .rtx-confirm-dialog__footer) {
+    background-color: var(--rtx-glass-chrome) !important;
+    background-image: var(--rtx-glass-sheen) !important;
+    border-color: var(--rtx-glass-border) !important;
+    box-shadow: var(--rtx-glass-chrome-shadow) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active), print {
+  html:root.rtx-advanced-view.rtx-skin-untitled-light {
+    --rtx-glass-chrome: var(--rtx-light-panel-subtle);
+    --rtx-glass-floating: var(--rtx-light-elevated);
+    --rtx-glass-sheen: none;
+    --rtx-glass-floating-sheen: none;
+    --rtx-glass-border: var(--rtx-light-line-border, #64748b);
+    --rtx-glass-edge: transparent;
+    --rtx-glass-chrome-shadow: none;
+    --rtx-glass-floating-shadow: none;
+    --rtx-glass-filter: none;
+
+    .web-drawing-tools-rail:not([data-orientation='horizontal']) {
+      background-image: none !important;
+      box-shadow: none !important;
+    }
+  }
+}
+
+@media (prefers-contrast: more), (forced-colors: active), print {
+  html,
+  html.rtx-advanced-view.rtx-skin-untitled-light,
+  html.rtx-desktop-shell-active {
+    --rtx-panel-sheen: none;
+    --rtx-control-sheen: none;
+    --rtx-chrome-sheen: none;
+    --rtx-finish-edge: transparent;
+  }
+}

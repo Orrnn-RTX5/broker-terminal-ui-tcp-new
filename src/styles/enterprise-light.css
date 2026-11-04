@@ -1,0 +1,2621 @@
+/*
+ * RTX5 shared web and desktop light palette.
+ *
+ * Near-white data surfaces, distinct gray chrome, and dark operational text
+ * separate content from controls. Blue marks selection and primary actions;
+ * execution and financial colors keep their own semantic roles.
+ * It intentionally loads after legacy-light-overrides.css so older dark
+ * utility classes and legacy purple overrides cannot leak into light mode.
+ */
+
+html.rtx-advanced-view.rtx-skin-untitled-light {
+  --rtx-light-canvas: #e8edf3;
+  --rtx-light-panel: #f8fafc;
+  --rtx-light-panel-subtle: #f1f4f8;
+  --rtx-light-panel-muted: #f1f4f8;
+  --rtx-light-panel-header: #e2e8f0;
+  --rtx-light-elevated: #ffffff;
+  --rtx-light-chart: #fafbfc;
+  --rtx-light-field: #ffffff;
+  --rtx-light-hover: #e8eef6;
+  --rtx-light-pressed: #d6e3f3;
+  --rtx-light-selected: #dce9fa;
+  --rtx-light-selected-strong: #dce9fa;
+  --rtx-light-dock-selected: #c9ddf7;
+  --rtx-light-border: #c5ced9;
+  --rtx-light-border-strong: #9eacbd;
+  --rtx-light-control-border: #697b91;
+  --rtx-light-control-border-hover: #52667f;
+  --rtx-light-row-border: #dde4ed;
+  --rtx-light-line-border: #64748b;
+  --rtx-light-text: #182230;
+  --rtx-light-text-secondary: #334155;
+  --rtx-light-text-muted: #475569;
+  --rtx-light-text-disabled: #68788d;
+  --rtx-light-icon-opacity: 1;
+  --rtx-light-price: #172b45;
+  --rtx-light-chart-high: #06634e;
+  --rtx-light-quote-up: #1746bc;
+  --rtx-light-quote-down: #a51f26;
+  --rtx-light-accent: #2457a7;
+  --rtx-light-accent-strong: #1e4788;
+  --rtx-light-accent-pressed: #173768;
+  --rtx-light-accent-soft: #dce9fa;
+  --rtx-light-accent-border: #2457a7;
+  --rtx-light-focus-ring: rgba(36, 87, 167, 0.18);
+  --rtx-light-buy: #2563eb;
+  --rtx-light-buy-hover: #1d4ed8;
+  --rtx-light-buy-pressed: #1e40af;
+  --rtx-light-sell: #dc2626;
+  --rtx-light-sell-hover: #b91c1c;
+  --rtx-light-sell-pressed: #991b1b;
+  /* Use the same face as the terminal's command bar and tables. Mixing Jakarta,
+     Segoe and monospace made identical sizes and weights look unrelated. */
+  --font-sans: "Segoe UI", Tahoma, Arial, sans-serif;
+  --rtx-light-control-line-height: calc(var(--rtx-advanced-dense-font-size, 14px) + 6px);
+  --rtx-chrome-sheen: none;
+  --rtx-chrome-edge: transparent;
+
+  --background: var(--rtx-light-canvas);
+  --foreground: var(--rtx-light-text);
+  --muted: var(--rtx-light-panel-subtle);
+  --muted-foreground: var(--rtx-light-text-muted);
+  --border: var(--rtx-light-border);
+  --input: var(--rtx-light-field);
+  --ring: var(--rtx-light-accent);
+  --primary: var(--rtx-light-accent);
+  --primary-foreground: #ffffff;
+  --bg-primary: var(--rtx-light-canvas);
+  --bg-secondary: var(--rtx-light-panel);
+  --bg-tertiary: var(--rtx-light-panel-subtle);
+  --bg-quaternary: var(--rtx-light-hover);
+  --bg-elevated: var(--rtx-light-elevated);
+  --text-primary: var(--rtx-light-text);
+  --text-secondary: var(--rtx-light-text-secondary);
+  --text-tertiary: var(--rtx-light-text-muted);
+  --text-quaternary: var(--rtx-light-text-disabled);
+  --text-inverse: #ffffff;
+  --border-primary: var(--rtx-light-border);
+  --border-secondary: var(--rtx-light-border-strong);
+  --border-tertiary: var(--rtx-light-control-border);
+  --color-primary: var(--rtx-light-accent);
+  --color-primary-dim: rgba(36, 87, 167, 0.14);
+  --color-primary-dimmer: rgba(36, 87, 167, 0.07);
+  --color-info: var(--rtx-light-accent);
+  --color-info-dim: rgba(36, 87, 167, 0.12);
+  --color-profit: #1746bc;
+  --color-quote-up: var(--rtx-light-quote-up);
+  --color-profit-dim: rgba(23, 70, 188, 0.16);
+  --color-profit-dimmer: rgba(23, 70, 188, 0.08);
+  --color-loss: #a51f26;
+  --color-loss-dim: rgba(165, 31, 38, 0.16);
+  --color-loss-dimmer: rgba(165, 31, 38, 0.08);
+  --color-warning: #78350f;
+  --color-warning-dim: #fffbeb;
+  --status-connected: var(--color-profit);
+  --status-disconnected: var(--color-loss);
+  --shadow-sm: 0 1px 2px rgba(32, 36, 42, 0.04);
+  --shadow-md: 0 2px 6px rgba(32, 36, 42, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --shadow-xl: 0 12px 28px rgba(32, 36, 42, 0.12);
+
+  --ctx-bg: var(--rtx-light-elevated);
+  --ctx-border: var(--rtx-light-border-strong);
+  --ctx-hover: var(--rtx-light-hover);
+  --ctx-active-bg: var(--rtx-light-accent);
+  --ctx-active-fg: #ffffff;
+  --ctx-item-active-bg: var(--rtx-light-accent-soft);
+  --ctx-item-active-fg: var(--rtx-light-accent-strong);
+  --ctx-text: var(--rtx-light-text);
+  --ctx-muted: var(--rtx-light-text-muted);
+  --ctx-header: var(--rtx-light-text-secondary);
+  --ctx-blue: var(--rtx-light-accent);
+  --ctx-icon: var(--rtx-light-text-muted);
+  --ctx-shadow: var(--shadow-lg);
+
+  color-scheme: light;
+  background: var(--rtx-light-canvas);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light body,
+html.rtx-advanced-view.rtx-skin-untitled-light #root {
+  background: var(--rtx-light-canvas) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+/* Font sizes and weights come from the same component rules and shared S / M / L
+   preferences as dark mode. This layer owns light colors, material and spacing. */
+
+html.rtx-advanced-view.rtx-skin-untitled-light * {
+  scrollbar-color: var(--rtx-light-border-strong) var(--rtx-light-panel-subtle);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light *::-webkit-scrollbar-track {
+  background: var(--rtx-light-panel-subtle);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light *::-webkit-scrollbar-thumb {
+  background: var(--rtx-light-border-strong);
+  border-color: var(--rtx-light-panel-subtle);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light *::-webkit-scrollbar-thumb:hover {
+  background: var(--rtx-light-control-border);
+}
+
+/* Shell, chrome, and dock geometry stay flat and quiet. */
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.text-zinc-400, .text-zinc-500,
+  .text-zinc-600, .text-gray-400, .text-gray-500, .text-gray-600) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.bg-\[\#0d0d0d\], .bg-\[\#0d0d11\], .bg-\[\#0d0f18\],
+  .bg-\[\#0f0f12\], .bg-\[\#131316\], .bg-\[\#191a1e\],
+  .bg-\[\#252525\], .bg-zinc-900, .bg-gray-900, .bg-gray-950) {
+  background-color: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.bg-\[\#1a1a1a\], .bg-\[\#1e1e22\], .bg-\[\#222226\],
+  .bg-\[\#2a2a2a\], .bg-zinc-800, .bg-gray-800, .bg-zinc-700, .bg-gray-700) {
+  background-color: var(--rtx-light-panel-subtle) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-app-shell, .trading-terminal) {
+  background: var(--rtx-light-panel) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-dock-workspace,
+  .dock-container,
+  .dock-container--split,
+  .rtx-empty-chart-area) {
+  background: var(--rtx-light-canvas) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(
+  .rtx-dock-workspace,
+  .rtx-market-watch,
+  .navigator-panel,
+  .rtx-bottom-dock,
+  .rtx-chart-panel,
+  .rtx-status-bar,
+  [data-dock-panel]
+) {
+  --rtx-light-panel: #ffffff;
+  --rtx-light-panel-header: #f1f4f8;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-panel-shell,
+  .dock-container--tabs,
+  .dock-panel,
+  .rtx-chart-panel,
+  .rtx-chart-panel__canvas,
+  .rtx-chart-wrapper) {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(
+  .rtx-panel-shell,
+  .rtx-chart-panel,
+  [data-dock-container-kind='tabs'],
+  [data-dock-panel]:not([data-dock-floating-panel='true']) :is(.rtx-market-watch, .navigator-panel, .rtx-bottom-dock)
+) {
+  border: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light [data-dock-panel] > div:first-child {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light [data-dock-panel]:not([data-dock-floating-panel='true']) > div:first-child {
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light [data-dock-container-direction='horizontal'] > [data-dock-child]:last-child [data-dock-panel]:not([data-dock-floating-panel='true']) > div:first-child {
+  border-right: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light [data-dock-container-direction='vertical'] > [data-dock-child]:last-child > [data-dock-panel]:not([data-dock-floating-panel='true']) > div:first-child {
+  border-bottom: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel {
+  border-radius: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel--active {
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.dock-panel__header,
+  .dock-panel__header--active,
+  .dock-panel__header--inactive,
+  .dock-tabs,
+  [data-dock-tab-bar]) {
+  background: var(--rtx-light-panel-header) !important;
+  background-image: none !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__header:not(.rtx-bottom-dock__header) {
+  height: 26px !important;
+  min-height: 26px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title,
+html.rtx-advanced-view.rtx-skin-untitled-light.rtx-advanced-density-compact .dock-panel__title {
+  color: var(--rtx-light-text) !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__header--inactive {
+  background: var(--rtx-light-panel-subtle) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-resize-handle {
+  background: var(--rtx-light-line-border, #64748b) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-resize-handle:is(:hover, .dock-resize-handle--dragging) {
+  background: var(--rtx-light-accent-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-top-chrome, .rtx-main-toolbar) {
+  background: #f8fafc !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  box-shadow: none !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-top-chrome {
+  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-main-toolbar {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  background-image: var(--rtx-chrome-sheen) !important;
+  box-shadow: inset 0 1px 0 var(--rtx-chrome-edge) !important;
+}
+
+/* Drawing controls and chart tabs belong to the same chrome hierarchy. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.web-drawing-tools-rail, .web-drawing-tools-menu) {
+  --web-drawing-accent: var(--rtx-light-accent);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail {
+  background: var(--rtx-light-panel-subtle);
+  color: var(--rtx-light-text-secondary);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button {
+  color: var(--rtx-light-text);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true'] {
+  background: transparent !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button:is(:hover, :focus-visible) {
+  background: transparent !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true']::before {
+  background: var(--rtx-light-accent-soft);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-tab {
+  background: transparent !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-tab:hover {
+  background: var(--rtx-light-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-tab--active {
+  background: var(--rtx-light-panel) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title [role="tab"] {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title [role="tab"][aria-selected="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title [data-chart-tab-active="true"]:not(:hover) {
+  background: var(--rtx-light-selected) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title .rtx-chart-symbol-tab__close {
+  border-right-color: var(--rtx-light-line-border, #64748b) !important;
+}
+
+/* Neutral hover distinguishes pointer feedback from blue selection. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action, .rtx-toolbar-icon-button) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action--primary {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-text) !important;
+}
+
+/* Legacy dark-toolbar rules color the icon separately from its label. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action .rtx-toolbar-action__icon {
+  color: inherit !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action--primary .rtx-toolbar-action__icon {
+  color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action,
+  .rtx-toolbar-icon-button,
+  .rtx-advanced-grid-button,
+  .rtx-period-separator-toggle,
+  .rtx-trade-history-overlay-button):is(:hover, :focus-visible) {
+  background: var(--rtx-light-hover) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action[aria-pressed="true"],
+  .rtx-toolbar-icon-button[aria-pressed="true"],
+  .rtx-toolbar-icon-button[aria-checked="true"],
+  .rtx-trade-history-overlay-button[aria-expanded="true"],
+  .rtx-advanced-grid-button[aria-expanded="true"]) {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: var(--rtx-light-accent-border) !important;
+  color: var(--rtx-light-accent-strong) !important;
+  box-shadow: inset 0 -2px 0 var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[role="radio"][aria-checked="true"] {
+  border-radius: 3px;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[aria-pressed="true"],
+html.rtx-desktop-shell-active .rtx-toolbar-icon-button[aria-pressed="true"],
+.rtx-toolbar-icon-button[aria-pressed="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-period-separator-toggle[aria-pressed="true"],
+html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed="true"],
+.rtx-period-separator-toggle[aria-pressed="true"] {
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option:is(:hover, :focus-visible) {
+  background: var(--rtx-light-hover) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option[aria-checked="true"] {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: var(--rtx-light-accent-border) !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-symbol-badge {
+  background: var(--rtx-light-panel-subtle) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-muted) !important;
+}
+
+/* Menus and popovers remain opaque with a single restrained elevation. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-application-menu,
+  .rtx-menu-surface,
+  .rtx-market-watch__dropdown,
+  .rtx-connection-dropdown,
+  .web-drawing-tools-menu,
+  .floating-panel,
+  [role="menu"],
+  [role="listbox"]):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-lg) !important;
+  backdrop-filter: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-overlay-menu {
+  --rtx-history-overlay-focus: #005a9e;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-overlay-menu__reset:not(:disabled):is(:hover, :focus-visible) {
+  border-color: var(--rtx-history-overlay-accent) !important;
+  background: color-mix(in srgb, var(--rtx-history-overlay-accent) 8%, var(--rtx-light-elevated)) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-overlay-menu__reset:not(:disabled):active {
+  border-color: var(--rtx-history-overlay-accent-pressed) !important;
+  background: color-mix(in srgb, var(--rtx-history-overlay-accent-pressed) 13%, var(--rtx-light-elevated)) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-application-menu__root-item,
+  .rtx-menu-row,
+  [role="menuitem"],
+  [role="option"]):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  color: var(--rtx-light-text) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu :is(.rtx-application-menu__root-item:not(:disabled):not(.is-disabled),
+  .rtx-menu-row:not(.is-disabled),
+  .rtx-file-menu button.text-\[14px\]:not(:disabled)) {
+  color: var(--rtx-light-text) !important;
+}
+
+/* The desktop menu bar and its portaled submenus sit outside
+   .rtx-application-menu, so they need the same contrast restoration. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-desktop-menu-bar :is(.rtx-application-menu-trigger,
+  .rtx-menu-row:not(.is-disabled),
+  .rtx-file-menu button.text-\[14px\]:not(:disabled)),
+html.rtx-advanced-view.rtx-skin-untitled-light [data-rtx-desktop-submenu='true'] :is(.rtx-menu-row:not(.is-disabled),
+  .rtx-file-menu button.text-\[14px\]:not(:disabled)) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-application-menu__root-item:not(:disabled):not(.is-disabled):hover,
+  .rtx-application-menu__root-item:not(:disabled):not(.is-disabled):focus-visible,
+  .rtx-application-menu__root-item.is-active,
+  .rtx-menu-row:not(.is-disabled):hover,
+  .rtx-menu-row:not(.is-disabled):focus-visible,
+  .rtx-menu-row.is-open,
+  [role="menuitem"]:not(:disabled):not([aria-disabled="true"]):hover,
+  [role="menuitem"]:not(:disabled):not([aria-disabled="true"]).is-active,
+  [role="menuitem"]:not(:disabled):not([aria-disabled="true"])[aria-expanded="true"],
+  [role="option"]:not(:disabled):not([aria-disabled="true"]):hover):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-application-menu__root-item,
+  .rtx-menu-row, [role="menuitem"], [role="option"]):is(:disabled, [aria-disabled="true"], .is-disabled):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  color: var(--rtx-light-text-disabled) !important;
+  background: transparent !important;
+  opacity: 1 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-context-menu :is(
+  .rtx-context-menu__item[aria-disabled="true"],
+  .rtx-context-menu__item[aria-disabled="true"] .rtx-context-menu__glyph,
+  .rtx-context-menu__item[aria-disabled="true"] .rtx-context-menu__shortcut,
+  .rtx-context-menu__item[aria-disabled="true"] .rtx-context-menu__chevron
+) {
+  color: #94a3b8 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-context-menu .rtx-context-menu__divider {
+  background: #e2e8f0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-context-menu--multicolumn .rtx-context-menu__item[data-checked="true"]:not(.is-active):not(:hover) {
+  background: rgba(37, 99, 235, 0.06) !important;
+  color: #1d4ed8 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-file-menu button.rtx-file-menu__logout[role="menuitem"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-file-menu button.rtx-file-menu__logout[role="menuitem"]:is(:hover, :focus-visible) {
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-file-menu button.rtx-file-menu__profile[aria-pressed='true'] {
+  background: var(--rtx-light-selected) !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-desktop-quick-menu .rtx-desktop-quick-menu__item--danger[role="menuitem"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-desktop-quick-menu .rtx-desktop-quick-menu__item--danger[role="menuitem"]:is(:hover, :focus-visible) {
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is([role="menu"], [role="listbox"]) [aria-selected="true"]:not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-application-menu__divider, .rtx-menu-divider) {
+  background: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu__brand {
+  border-bottom-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu__brand-title {
+  color: var(--rtx-light-text) !important;
+}
+
+/* Market Watch, Navigator, tables, and Toolbox share one scan-friendly rhythm. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch,
+  .rtx-market-watch__search,
+  .rtx-market-watch__table,
+  .rtx-market-watch__footer,
+  .navigator-panel,
+  .navigator-panel__body,
+  .rtx-bottom-dock,
+  .rtx-bottom-dock__content) {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch__header,
+  .rtx-market-watch__symbols-panel,
+  .navigator-panel__header,
+  .rtx-bottom-dock__tabs) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs {
+  background: #f8fafc !important;
+  border-top: 1px solid var(--rtx-light-line-border, #64748b) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-panel {
+  --navigator-tree-line: var(--rtx-light-control-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row {
+  border-radius: 2px !important;
+  transition: background-color 120ms ease, color 120ms ease !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row:not([data-account-active="false"]):not([aria-disabled="true"]) .navigator-tree-item__label {
+  color: var(--rtx-light-text) !important;
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row[data-account-active="false"] .navigator-tree-item__label {
+  color: var(--navigator-account-inactive-text, #64748b) !important;
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row[data-account-active="false"]:hover .navigator-tree-item__label {
+  color: var(--navigator-account-inactive-hover-text, #334155) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.navigator-tree-item__chevron, .navigator-tree-item__icon) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.mw-row, .navigator-tree-item__row:not([aria-disabled="true"])):hover {
+  background: var(--rtx-light-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row[aria-disabled="true"] :is(.navigator-tree-item__label,
+  .navigator-tree-item__icon, .navigator-tree-item__lock) {
+  color: var(--rtx-light-text-disabled) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch :is(.mw-row, tr)[aria-selected="true"] {
+  background: var(--rtx-light-selected) !important;
+  box-shadow: inset 2px 0 0 var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch :is(.mw-row, tr)[aria-selected="true"]>* {
+  background: transparent !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light table:not(.tv-lightweight-charts *) {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(thead, th):not(.tv-lightweight-charts *) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  text-transform: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(td, tr):not(.tv-lightweight-charts *) {
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+/* Bottom-dock tables from Trade to Historical Data use clear horizontal separators without vertical cell edges. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead th, tbody td:not(.rtx-journal-spacer-cell)),
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table :is(thead th, tbody td),
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td),
+html.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td),
+html.rtx-desktop-shell-active .rtx-trade-table :is(thead th, tbody td) {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead, thead tr, thead th) {
+  border-top: 0 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-bottom-dock__header {
+  height: 28px !important;
+  min-height: 28px !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-trade-tab > div:first-child {
+  background: #f8fafc !important;
+  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  min-height: 28px !important;
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+  padding-right: 28px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-history-toolbar, .rtx-journal-toolbar, .history-downloader__header) {
+  padding-right: 28px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table thead th,
+html.rtx-skin-untitled-light .rtx-trade-table thead th {
+  white-space: nowrap !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock tbody tr,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock tbody tr:nth-child(even) {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock tbody tr:hover,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock tbody tr:hover>* {
+  background: var(--rtx-light-hover) !important;
+}
+
+/* History and Journal filters share the neutral chrome instead of inheriting legacy white
+   utility surfaces or dark active-button fills. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-history-toolbar, .rtx-journal-toolbar) {
+  background: #f8fafc !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar :is(.rtx-history-time-btn, .rtx-history-refresh-btn, .rtx-history-toolbar__meta, .rtx-history-toolbar__meta > span) {
+  background: transparent !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar :is(.rtx-history-time-btn, .rtx-history-refresh-btn):not(:disabled):hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar .rtx-history-time-btn[aria-pressed="true"] {
+  background: var(--rtx-light-selected) !important;
+  color: var(--rtx-light-accent-strong) !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-status-label {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar :is(.rtx-history-time-btn, .rtx-history-refresh-btn):not(:disabled):active {
+  background: var(--rtx-light-pressed) !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-text) !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
+  background: var(--rtx-light-elevated) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+/* Keep locked tabs readable while distinguishing them from available actions. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab-actions {
+  border-left: 0 !important;
+  background: transparent !important;
+  padding-left: 0 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs :is(.rtx-dock-tab-scroller, .rtx-dock-tab-actions) .rtx-dock-tab:disabled {
+  color: var(--rtx-light-text-muted) !important;
+  opacity: 1 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:focus-visible {
+  outline: 2px solid var(--rtx-light-accent);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-dock-tab-indicator {
+  background: var(--rtx-light-accent) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-trade-tab {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-empty-state {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+/* The account summary is one quiet strip, not a row of floating cards. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer {
+  background: var(--rtx-light-panel-header) !important;
+  border-top-color: var(--rtx-light-line-border, #64748b) !important;
+  box-shadow: none !important;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-trade-footer-status,
+  .rtx-trade-footer-metric,
+  .rtx-trade-footer-floating) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer-actions {
+  border-left-color: var(--rtx-light-line-border, #64748b) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer button {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer button:hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+/* Cover the full Exposure viewport, including unused space below its rows. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-account-bar {
+  display: none;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab .bg-\[\#2a2d34\],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab .bg-\[\#0d0e12\] {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab .text-\[\#f6f7fb\] {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-status-bar {
+  background: #f8fafc !important;
+  border-color: var(--rtx-light-line-border, #64748b) !important;
+  color: var(--rtx-light-text-muted) !important;
+  box-shadow: none !important;
+}
+
+/* Market Watch search sits in a rounded field above the full-width explorer. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search {
+  background: var(--rtx-light-panel) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar {
+  margin: 4px 6px;
+  background: var(--rtx-light-elevated) !important;
+  border: 1px solid var(--rtx-light-border) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%) !important;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar {
+  margin: 7px 8px;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:hover {
+  border-color: var(--rtx-light-border-strong) !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar .mw-input,
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar .mw-input:is(:hover, :focus, :focus-visible) {
+  background: transparent !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar .mw-input::placeholder {
+  color: var(--rtx-light-text-muted) !important;
+  opacity: 1;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar > svg {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:focus-within {
+  border-color: var(--rtx-light-buy, #2563eb) !important;
+  box-shadow: 0 1px 4px rgb(37 99 235 / 12%) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:focus-within > svg {
+  color: var(--rtx-light-buy, #2563eb) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__close {
+  color: var(--rtx-light-text-muted) !important;
+  border-radius: 5px !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__close:hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__symbol-explorer {
+  border-top: 1px solid var(--rtx-light-row-border) !important;
+}
+
+/* Functional outlines stay distinct from quiet structural panel borders. */
+html.rtx-advanced-view.rtx-skin-untitled-light :where(input:not(.mw-input):not(.rtx-toolbar-search__input), select, textarea):not(:where(.rtx-desktop-shell .rtx-login-overlay *)),
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog, .rtx-dom-dialog, .rtx-modify-dialog, .rtx-cp-shell,
+  .rtx-options-dialog, .rtx-symbols-dialog, .rtx-chart-template-dialog) :is(input, select, textarea) {
+  background: var(--rtx-light-field) !important;
+  border-color: var(--rtx-light-control-border) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(input:not(.mw-input):not(.rtx-toolbar-search__input), select, textarea):not(:where(.rtx-desktop-shell .rtx-login-overlay *))::placeholder {
+  color: var(--rtx-light-text-muted) !important;
+  opacity: 1 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog, .rtx-dom-dialog, .rtx-modify-dialog, .rtx-cp-shell,
+  .rtx-options-dialog, .rtx-symbols-dialog, .rtx-chart-template-dialog) :is(input, select, textarea):hover {
+  border-color: var(--rtx-light-control-border-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light input:is([type="checkbox"], [type="radio"]):not(:where(.rtx-desktop-shell .rtx-login-overlay *)) {
+  accent-color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(input:not(.mw-input):not(.rtx-toolbar-search__input), select, textarea):not(:where(.rtx-desktop-shell .rtx-login-overlay *)):focus,
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog,
+  .rtx-order-dialog,
+  .rtx-dom-dialog,
+  .rtx-modify-dialog,
+  .rtx-shortcut-dialog,
+  .rtx-oad-shell,
+  .rtx-cp-shell,
+  .rtx-options-dialog,
+  .rtx-symbols-dialog,
+  .rtx-chart-template-dialog) :is(input, select, textarea):focus {
+  border-color: var(--rtx-light-accent) !important;
+  box-shadow: 0 0 0 3px var(--rtx-light-focus-ring) !important;
+  outline: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog,
+  .rtx-order-dialog,
+  .rtx-dom-dialog,
+  .rtx-modify-dialog,
+  .rtx-shortcut-dialog,
+  .rtx-oad-shell,
+  .rtx-cp-shell,
+  .rtx-chart-text-input-popover) {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog button[type="submit"],
+  .rtx-cp-btn-primary,
+  .rtx-oad-btn-next,
+  .rtx-shortcut-dialog .bg-blue-600) {
+  background: var(--rtx-light-accent) !important;
+  border-color: var(--rtx-light-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-cp-tab-active,
+  .rtx-oad-item-selected,
+  .rtx-journal-time-btn.bg-zinc-600,
+  .rtx-journal-time-btn[aria-pressed="true"]) {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: var(--rtx-light-accent-border) !important;
+  color: var(--rtx-light-accent-strong) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-btn-primary:hover,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oad-btn-next:hover {
+  background: var(--rtx-light-accent-strong) !important;
+  border-color: var(--rtx-light-accent-strong) !important;
+  color: #ffffff !important;
+}
+
+/* Confirmation dialog was previously half dark and half white in light mode. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog-backdrop {
+  background: rgba(32, 36, 42, 0.28) !important;
+  backdrop-filter: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-confirm-dialog__header,
+  .rtx-confirm-dialog__footer) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__content {
+  background: var(--rtx-light-elevated) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__cancel {
+  background: var(--rtx-light-panel) !important;
+  border: 1px solid var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm {
+  background: var(--rtx-light-accent) !important;
+  border-color: var(--rtx-light-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm:hover {
+  background: var(--rtx-light-accent-strong) !important;
+  border-color: var(--rtx-light-accent-strong) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm--danger {
+  background: var(--rtx-light-sell) !important;
+  border-color: var(--rtx-light-sell) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm--danger:hover {
+  background: var(--rtx-light-sell-hover) !important;
+  border-color: var(--rtx-light-sell-hover) !important;
+  color: #ffffff !important;
+}
+
+/* Large settings and symbol surfaces use stable hooks instead of dark-class guesses. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-options-dialog-backdrop,
+  .rtx-chart-template-dialog-backdrop) {
+  background: rgba(32, 36, 42, 0.28) !important;
+  backdrop-filter: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-options-dialog,
+  .rtx-chart-template-dialog,
+  .rtx-symbols-dialog, .rtx-bug-report-dialog) {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-options-dialog :is(.bg-\[\#252528\],
+  .bg-\[\#131316\]),
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-template-dialog :is(.bg-\[\#252526\],
+  .bg-\[\#131316\],
+  .bg-black\/20) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-options-dialog .flex-1.bg-\[\#252528\],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-options-dialog .overflow-y-auto.bg-\[\#252528\] {
+  background: var(--rtx-light-elevated) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-options-dialog button.bg-zinc-700 {
+  background: var(--rtx-light-accent) !important;
+  border-color: var(--rtx-light-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-template-dialog .bg-blue-600 {
+  background: var(--rtx-light-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-symbols-dialog :is(.bg-\[\#0d0f18\],
+  .bg-\[\#131620\],
+  .bg-\[\#161922\],
+  .bg-\[\#1a1d27\],
+  .bg-\[\#2a2e45\]) {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-symbols-dialog :is(.bg-\[\#1e2235\],
+  .bg-\[\#222640\]) {
+  background: var(--rtx-light-accent-soft) !important;
+  border-color: var(--rtx-light-accent-border) !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-symbols-dialog :is(.border-\[\#2a2e45\],
+  .border-\[\#3a3e52\]) {
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-symbols-dialog :is(input, select) {
+  color-scheme: light !important;
+}
+
+/* Trade authentication follows the same restrained surfaces as the terminal. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-backdrop {
+  background: rgba(32, 36, 42, 0.28) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog {
+  --auth-surface: var(--rtx-light-elevated);
+  --auth-subtle: var(--rtx-light-panel-subtle);
+  --auth-control: var(--rtx-light-field);
+  --auth-hover: var(--rtx-light-hover);
+  --auth-border: var(--rtx-light-border-strong);
+  --auth-border-strong: var(--rtx-light-control-border-hover);
+  --auth-text: var(--rtx-light-text);
+  --auth-muted: var(--rtx-light-text-secondary);
+  --auth-primary: var(--rtx-light-accent);
+  --auth-primary-hover: var(--rtx-light-accent-strong);
+  --auth-primary-pressed: var(--rtx-light-accent-pressed);
+  --auth-primary-soft: var(--rtx-light-accent-soft);
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  border-radius: 10px !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog::before {
+  display: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-dialog__header,
+  .rtx-auth-dialog__footer) {
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog__title {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog__subtitle {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog__close {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog__close:hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog__close:active {
+  background: var(--rtx-light-pressed) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-order-card,
+  .rtx-auth-broker) {
+  background: var(--rtx-light-panel-subtle) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-order-symbol,
+  .rtx-auth-broker__value) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-order-volume,
+  .rtx-auth-order-dot) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-broker__label {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note-icon {
+  color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note-text {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--buy {
+  background: rgba(4, 120, 87, 0.1) !important;
+  box-shadow: inset 0 0 0 1px rgba(4, 120, 87, 0.35) !important;
+  color: var(--color-profit) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--sell {
+  background: rgba(185, 28, 28, 0.1) !important;
+  box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.35) !important;
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--action {
+  background: var(--rtx-light-panel-header) !important;
+  box-shadow: inset 0 0 0 1px var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-button[data-variant='primary'] {
+  background: var(--rtx-light-accent) !important;
+  border-color: var(--rtx-light-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary {
+  background: var(--rtx-light-panel-subtle) !important;
+  border-color: color-mix(in srgb, var(--rtx-light-accent) 36%, var(--rtx-light-border-strong)) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary .rtx-auth-action__icon {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-accent) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-button[data-variant='primary']:hover:not(:disabled) {
+  background: var(--rtx-light-accent-strong) !important;
+  border-color: var(--rtx-light-accent-strong) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary:hover:not(:disabled) {
+  background: var(--rtx-light-hover) !important;
+  border-color: color-mix(in srgb, var(--rtx-light-accent) 56%, var(--rtx-light-border-strong)) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-button[data-variant='primary']:active:not(:disabled) {
+  background: var(--rtx-light-accent-pressed) !important;
+  border-color: var(--rtx-light-accent-pressed) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary:active:not(:disabled) {
+  background: var(--rtx-light-pressed) !important;
+  border-color: color-mix(in srgb, var(--rtx-light-accent) 46%, var(--rtx-light-border-strong)) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary .rtx-auth-action__description {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary .rtx-auth-action__cta {
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-action--secondary,
+  .rtx-auth-button[data-variant='ghost']) {
+  background: transparent !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-action--secondary,
+  .rtx-auth-button[data-variant='ghost']):hover:not(:disabled) {
+  background: var(--rtx-light-hover) !important;
+  border-color: var(--rtx-light-control-border-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-action--secondary,
+  .rtx-auth-button[data-variant='ghost']):active:not(:disabled) {
+  background: var(--rtx-light-pressed) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--secondary .rtx-auth-action__icon {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--secondary .rtx-auth-action__label {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--secondary :is(.rtx-auth-action__description,
+  .rtx-auth-action__cta) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field__label {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field input {
+  background: var(--rtx-light-field) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field input::placeholder {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field input:hover:not(:focus) {
+  border-color: var(--rtx-light-control-border-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field input:focus {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-accent) !important;
+  box-shadow: 0 0 0 3px var(--rtx-light-focus-ring) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field__hint {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-alert {
+  background: rgba(185, 28, 28, 0.08) !important;
+  border-color: rgba(185, 28, 28, 0.3) !important;
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-button:disabled {
+  background: var(--rtx-light-panel-subtle) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog :is(button, input):focus-visible {
+  outline-color: var(--rtx-light-accent) !important;
+}
+
+/* Data Window receives stable hooks so its inline dark fallback cannot leak. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-data-window {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  border-radius: 2px !important;
+  box-shadow: var(--shadow-lg) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-data-window__titlebar,
+  .rtx-data-window__symbol) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-data-window__body {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-data-window__row {
+  border-color: var(--rtx-light-row-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-data-window__title,
+  .rtx-data-window__symbol-label,
+  .rtx-data-window__value) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-data-window__label,
+  .rtx-data-window__close) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+/* Translate legacy inline drawing-menu colors without changing drawing state. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is([style*="background: #1a1f2e"],
+  [style*="background: rgb(26, 31, 46)"]) {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is([style*="background: #252b3b"],
+  [style*="background: rgb(37, 43, 59)"]) {
+  background: var(--rtx-light-hover) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is([style*="color: #c8ccd4"],
+  [style*="color: rgb(200, 204, 212)"]) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is([style*="color: #4b5563"],
+  [style*="color: rgb(75, 85, 99)"]) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+/* The chart stays light during its loading phase and its HUD avoids color pills. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-wrapper>div[class*="bg-[#0a0a0f]"] {
+  background: var(--rtx-light-chart) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-wrapper>div[class*="bg-[#0a0a0f]"] div[class*="bg-white/40"] {
+  background: #cbd5df !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-wrapper>div[class*="bg-[#0a0a0f]"] div[class*="text-white/90"] {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-wrapper>div[class*="bg-[#0a0a0f]"] div[class*="animate-spin"] {
+  border-color: #d2d6dc !important;
+  border-top-color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span>span {
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span:first-child,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>.rtx-chart-hud__symbol {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span:not(:first-child):not(.rtx-chart-hud__symbol) {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.price-up,
+  .pl-pos,
+  .text-profit,
+  .text-emerald-300,
+  .text-emerald-400,
+  .text-green-400,
+  .text-green-500,
+  .rtx-market-watch__price--up,
+  .rtx-market-watch__daily--up) {
+  color: var(--color-profit) !important;
+  text-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.price-down,
+  .pl-neg,
+  .text-loss,
+  .text-red-300,
+  .text-red-400,
+  .text-red-500,
+  .text-rose-400,
+  .rtx-market-watch__price--down,
+  .rtx-market-watch__daily--down) {
+  color: var(--color-loss) !important;
+  text-shadow: none !important;
+}
+
+/* Final utility remap catches light dialogs rendered through portals. */
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.text-blue-300,
+  .text-blue-400,
+  .text-blue-500,
+  .text-blue-600,
+  .text-purple-500) {
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.bg-blue-500\/15,
+  .bg-blue-500\/10,
+  .bg-purple-500,
+  .bg-blue-600) {
+  background: var(--rtx-light-accent-soft) !important;
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :where(.border-blue-500\/20, .border-blue-500\/30) {
+  border-color: var(--rtx-light-accent-border) !important;
+}
+
+/* Legacy dialog and table rules have their own specificity. Keep these roles
+   consistent when fields are portalled or financial rows are selected. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-chart-panel__canvas, .rtx-chart-wrapper) {
+  background: var(--rtx-light-chart) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell :is(.rtx-cp-header, .rtx-cp-footer) {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell :is(.rtx-cp-content, .rtx-cp-legend) {
+  background: var(--rtx-light-elevated) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell .rtx-cp-preview-text {
+  background: var(--rtx-light-elevated) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell :is(.rtx-cp-label, .rtx-cp-checkbox-label, .rtx-cp-radio-label, .rtx-cp-color-text, .rtx-cp-legend) {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell :is(.rtx-cp-btn:not(.rtx-cp-btn-primary), .rtx-cp-color-picker) {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-control-border) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer .rtx-trade-metric-label {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer :is(.text-zinc-100, .text-zinc-300) {
+  color: var(--rtx-light-price) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-profit-value--positive,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-trade-row td.text-\[\#22c55e\],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-trade-footer .text-\[\#22c55e\] {
+  color: var(--color-profit) !important;
+  text-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-profit-value--negative,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-trade-row td.text-\[\#ff2d2d\],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-trade-row td.text-\[\#ff2d2d\] span,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-trade-footer .text-\[\#ff2d2d\] {
+  color: var(--color-loss) !important;
+  text-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-side-cell--buy,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-side-cell--buy span,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-trade-row td.text-\[\#45bff7\],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-trade-row td.text-\[\#45bff7\] span {
+  color: var(--rtx-light-quote-up) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-side-cell--sell,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row td.rtx-trade-side-cell--sell span {
+  color: var(--color-loss) !important;
+}
+
+/* Light chrome retains its font face and spacing; size and weight are shared. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button svg,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button svg [stroke-width] {
+  stroke-width: 1.35 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+  stroke-width: 1 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button:not([aria-pressed="true"]):not([aria-checked="true"]):not(:hover):not(:focus-visible) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-symbol-badge {
+  line-height: 1 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch__column-heading,
+  .rtx-bottom-dock thead th,
+  .rtx-trade-table__head th,
+  .rtx-journal-table thead th,
+  .rtx-calendar-tab__head th,
+  .rtx-articles-tab__head th,
+  .rtx-codebase-tab__head th,
+  .rtx-experts-tab__head th) {
+  line-height: 18px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch__price,
+  .rtx-market-watch__spread,
+  .rtx-market-watch__daily,
+  .rtx-trade-table tbody tr.rtx-trade-row td,
+  .rtx-history-row td,
+  .rtx-journal-table tbody td,
+  .rtx-calendar-tab tbody td,
+  .rtx-articles-tab tbody td,
+  .rtx-codebase-tab tbody td,
+  .rtx-experts-tab tbody td,
+  .rtx-trade-footer,
+  .rtx-trade-footer-metric,
+  .rtx-trade-footer-floating) {
+  font-variant-numeric: tabular-nums;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud {
+  background: var(--rtx-light-panel, #ffffff) !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu :is(.rtx-application-menu__root-item,
+  .rtx-menu-row,
+  .rtx-file-menu button.text-\[14px\]) {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+  line-height: var(--rtx-light-control-line-height) !important;
+}
+
+/* Desktop menu labels take the same type role. Line height is left to theme.css
+   so the fixed-height Electron menu row keeps its metrics. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-desktop-menu-bar,
+  [data-rtx-desktop-submenu='true']) :is(.rtx-application-menu-trigger,
+  .rtx-menu-row,
+  .rtx-file-menu button.text-\[14px\]) {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu .rtx-menu-row__shortcut {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+  line-height: 18px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-desktop-menu-bar,
+  [data-rtx-desktop-submenu='true']) .rtx-menu-row__shortcut {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif !important;
+  line-height: 18px !important;
+}
+
+/* Open positions share the panel surface and the same selection as Market Watch. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(odd),
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(even) {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):hover,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):hover>* {
+  background: var(--rtx-light-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row.rtx-trade-row--selected,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row[aria-selected="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row.rtx-trade-row--selected>*,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row[aria-selected="true"]>* {
+  background: var(--rtx-light-selected) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-action-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-close-button {
+  background: var(--rtx-light-panel-muted) !important;
+  border: 1px solid var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-action-button svg {
+  width: 16px !important;
+  height: 16px !important;
+  stroke-width: 1.15 !important;
+  shape-rendering: geometricPrecision;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:hover .rtx-trade-action-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:hover .rtx-trade-close-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row.rtx-trade-row--selected .rtx-trade-action-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row.rtx-trade-row--selected .rtx-trade-close-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row[aria-selected="true"] .rtx-trade-action-button,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row[aria-selected="true"] .rtx-trade-close-button {
+  background: #ffffff !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-action-button:not(:disabled):hover {
+  background: var(--rtx-light-selected-strong) !important;
+  border-color: var(--rtx-light-accent) !important;
+  color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-close-button:not(:disabled):hover {
+  background: var(--color-loss) !important;
+  border-color: var(--color-loss) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-action-button:focus-visible,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-close-button:focus-visible {
+  outline: 2px solid var(--rtx-light-accent) !important;
+  outline-offset: 1px;
+}
+
+/* Pending Orders bulk-action toolbar & row action buttons in Light theme */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="true"] {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: var(--rtx-light-accent-strong, #1e4788) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="false"] {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: var(--rtx-light-text-secondary, #334155) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="false"]:hover {
+  background: var(--rtx-light-hover, #e8eef6) !important;
+  color: var(--rtx-light-text, #182230) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--buy,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--sell {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--buy:not(:disabled):hover {
+  background: #eff6ff !important;
+  border-color: #3b82f6 !important;
+  color: #1d4ed8 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--sell:not(:disabled):hover {
+  background: #fef2f2 !important;
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-sep {
+  background: #cbd5e1 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--all {
+  background: #fef2f2 !important;
+  border: 1px solid #fca5a5 !important;
+  color: #b91c1c !important;
+  box-shadow: 0 1px 2px rgba(185, 28, 28, 0.05) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--all:not(:disabled):hover {
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn:disabled {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+  opacity: 0.65 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--modify {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--modify:not(:disabled):hover {
+  background: var(--rtx-light-selected, #dce9fa) !important;
+  border-color: var(--rtx-light-accent, #2457a7) !important;
+  color: var(--rtx-light-accent, #2457a7) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel {
+  background: #fef2f2 !important;
+  border: 1px solid #fecaca !important;
+  color: #b91c1c !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel:not(:disabled):hover {
+  background: var(--color-loss, #a51f26) !important;
+  border-color: var(--color-loss, #a51f26) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__save:not(:disabled):hover {
+  background: #007d3b !important;
+  border-color: #007d3b !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__secondary:not(:disabled):hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__close:not(:disabled):hover {
+  background: #f1f5f9 !important;
+  border-color: transparent !important;
+  color: #0f172a !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-period-dialog [role="alert"] {
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-period-dialog .rtx-history-period-apply {
+  background: var(--rtx-light-accent) !important;
+  color: #fff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-period-dialog .rtx-history-period-apply:hover {
+  background: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-period-dialog :is(button, input):focus-visible {
+  outline: 2px solid var(--rtx-light-accent);
+  outline-offset: 2px;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbox-tab {
+  background: var(--rtx-light-panel) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbox-tab button:not(:disabled):hover {
+  background: var(--rtx-light-hover) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbox-tab button:not(:disabled) .rtx-toolbox-command-label {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbox-tab button:focus-visible {
+  outline: 2px solid var(--rtx-light-accent);
+  outline-offset: -2px;
+}
+
+/* Market Watch follows MetaTrader semantics: blue for an uptick, red for a downtick. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__symbol {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch__price--bid,
+  .rtx-market-watch__price--ask) {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__price {
+  color: var(--rtx-light-price) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__price--bid:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty) {
+  color: var(--rtx-light-quote-down) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__price--ask:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty) {
+  color: var(--rtx-light-quote-up) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__price--up {
+  color: var(--rtx-light-quote-up) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__price--down {
+  color: var(--rtx-light-quote-down) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__daily--up {
+  color: var(--color-profit) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__daily--down {
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__direction--up {
+  color: var(--rtx-light-quote-up) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__direction--down {
+  color: var(--rtx-light-quote-down) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__symbol-description {
+  color: var(--rtx-light-text-muted) !important;
+  line-height: 1.4 !important;
+}
+
+/* Portalled dialogs retain light spacing while using shared font sizes/weights. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog,
+  .rtx-order-dialog,
+  .rtx-dom-dialog,
+  .rtx-modify-dialog,
+  .rtx-shortcut-dialog,
+  .rtx-oad-shell,
+  .rtx-cp-shell,
+  .rtx-options-dialog,
+  .rtx-chart-template-dialog,
+  .rtx-symbols-dialog,
+  .rtx-confirm-dialog) {
+
+  & :is(.text-xs, .text-2xs, .text-\[9px\], .text-\[10px\], .text-\[11px\], .text-\[12px\]) {
+    line-height: 1.5 !important;
+    letter-spacing: 0 !important;
+  }
+
+  & :is(input, select, textarea, .rtx-order-dialog__control) {
+    line-height: 1.5 !important;
+    letter-spacing: 0 !important;
+  }
+
+  & :is(label, .rtx-order-dialog__label, .rtx-cp-label) {
+    line-height: 1.5 !important;
+    letter-spacing: 0 !important;
+  }
+
+  & :is(.rtx-cp-radio-label, .rtx-cp-checkbox-label) {
+    line-height: var(--rtx-light-control-line-height) !important;
+  }
+
+  & :is(button.text-sm, button.text-base, button.text-\[14px\], button.text-\[13px\],
+    .rtx-order-dialog__action, .rtx-confirm-dialog__cancel, .rtx-confirm-dialog__confirm) {
+    letter-spacing: 0 !important;
+  }
+
+  & :is(h2, h3) {
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+
+  & h2,
+  & h2[class] {
+    line-height: 1.4 !important;
+  }
+
+  & h3,
+  & h3[class] {
+    line-height: 1.4 !important;
+  }
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-order-dialog .rtx-order-dialog__title,
+  .rtx-cp-shell .rtx-cp-title,
+  .rtx-modify-dialog > div:first-child > span,
+  .rtx-options-dialog > div:first-child > span,
+  .rtx-login-dialog > div:first-child > span,
+  .rtx-confirm-dialog__header > span) {
+  line-height: 1.4 !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-order-dialog__chart-meta,
+  .rtx-order-dialog__chart-quote,
+  .rtx-order-dialog__margin,
+  .rtx-order-dialog__message,
+  .rtx-order-dialog__spread,
+  .rtx-data-window__label,
+  .rtx-data-window__symbol-label) {
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-data-window__title,
+  .last-symbol-brand strong,
+  .last-symbol-section-heading,
+  .last-symbol-settings__heading,
+  .rtx-history-downloader__identity h2,
+  .rtx-history-section-heading h3,
+  .rtx-history-tasks__header h3) {
+  line-height: 1.4 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Supporting copy in the trading and data panels previously fell to 9–11px. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.last-symbol-status,
+  .last-symbol-side,
+  .last-symbol-unit,
+  .last-symbol-history,
+  .last-symbol-protection-summary,
+  .last-symbol-notice,
+  .last-symbol-alert,
+  .last-symbol-account-summary dt,
+  .last-symbol-settings__heading small,
+  .last-symbol-setting-row small,
+  .last-symbol-field,
+  .rtx-history-downloader__identity p,
+  .rtx-history-downloader__metrics dt,
+  .rtx-history-section-heading > span,
+  .rtx-history-tasks__header > div > span,
+  .rtx-history-task-count,
+  .rtx-history-duration-badge,
+  .rtx-history-symbol-label,
+  .rtx-history-symbol-row__meta,
+  .rtx-history-symbol-row__topline > span,
+  .rtx-history-field-label,
+  .rtx-history-task__identity > span,
+  .rtx-history-task__progress-label,
+  .rtx-history-empty) {
+  line-height: 1.5 !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-data-window__value,
+  .last-symbol-stepper input,
+  .last-symbol-presets button,
+  .last-symbol-account-summary dd,
+  .last-symbol-close-button__value,
+  .rtx-history-downloader__metrics dd,
+  .rtx-history-downloader input,
+  .rtx-history-downloader select,
+  .rtx-history-coverage-date,
+  .rtx-history-coverage-recorded) {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.last-symbol-setting-row strong,
+  .last-symbol-close-button__label,
+  .rtx-history-symbol-row__topline strong,
+  .rtx-history-task__identity strong,
+  .rtx-history-symbol-select,
+  .rtx-history-primary-button) {
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-history-downloader__metrics dd,
+  .rtx-history-coverage-date) {
+  color: var(--rtx-light-text) !important;
+}
+
+/* Light surface spacing is independent of the shared font sizes and weights. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-app-shell {
+  line-height: 1.5;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock thead th :is(button, span) {
+  line-height: inherit !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-trade-footer-metric,
+  .rtx-trade-footer-floating) {
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-trade-metric-label,
+  .rtx-exposure-account-label,
+  .rtx-trade-footer-currency,
+  .rtx-status-bar,
+  .rtx-status-bar .rtx-status-bar__metric) {
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__title [role="tab"] {
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu :is(.web-drawing-tools-menu__item,
+  .web-drawing-tools-menu__label,
+  .web-drawing-tools-menu__toggle-row,
+  .drawing-emoji-picker__tabs button) {
+  line-height: var(--rtx-light-control-line-height) !important;
+}
+
+/* Drawing flyouts use the launcher's text contrast; generic light buttons
+   otherwise dim menuitemradio labels as if they were secondary controls. */
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu :is(
+  .web-drawing-tools-menu__item,
+  .web-drawing-tools-menu__toggle-row,
+  .drawing-emoji-picker__tabs button
+) {
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu :is(
+  .web-drawing-tools-menu__item[data-selected='true'],
+  .drawing-emoji-picker__tabs button[aria-selected='true']
+) {
+  color: var(--rtx-light-accent-strong) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu .web-drawing-tools-menu__item--danger {
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu .web-drawing-tools-menu__item:disabled {
+  color: var(--rtx-light-text-disabled) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-menu .web-drawing-tools-menu__heading {
+  height: auto;
+  min-height: 30px;
+  line-height: 1.5 !important;
+  letter-spacing: 0.02em;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.web-drawing-tools-menu .web-drawing-tools-menu__item kbd,
+  .web-drawing-tools-tooltip) {
+  line-height: 1.5 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button .rtx-oct-price,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-volume-control input {
+  font-variant-numeric: tabular-nums;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button .rtx-oct-side-label {
+  letter-spacing: 0 !important;
+}
+
+/* Financial UI uses the UI face with aligned numerals. Code and user-created
+   chart annotations retain their own font choices. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch .rtx-market-watch__price,
+  .rtx-market-watch .price-display,
+  .rtx-bottom-dock .price-display,
+  .rtx-bottom-dock .font-mono,
+  .rtx-data-window .rtx-data-window__value,
+  .rtx-data-window .rtx-data-window__symbol-label,
+  .rtx-status-bar .font-mono,
+  .rtx-order-dialog .rtx-order-dialog__chart-symbol,
+  .rtx-order-dialog .rtx-order-dialog__chart-quotes,
+  .rtx-order-dialog .rtx-order-dialog__volume-input,
+  .rtx-order-dialog .rtx-order-dialog__margin,
+  .rtx-order-dialog .rtx-order-dialog__price,
+  .rtx-dom-dialog .font-mono,
+  .rtx-dom-dialog input,
+  .rtx-cp-shell input,
+  .rtx-cp-shell .rtx-cp-preview-text,
+  .rtx-cp-shell .font-serif,
+  .rtx-history-downloader__metrics dd,
+  .rtx-history-downloader input,
+  .rtx-history-duration-badge,
+  .rtx-history-coverage-date,
+  .rtx-chart-hud,
+  .rtx-chart-price-badge,
+  .rtx-trade-marker__price-tooltip):not(code, pre, pre *) {
+  font-family: var(--font-sans) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Preserve the light row spacing around shared formatted prices and values. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch__table tbody td,
+  .rtx-bottom-dock tbody td:not([colspan]),
+  .rtx-market-watch__symbol,
+  .rtx-market-watch__price,
+  .rtx-market-watch__daily) {
+  line-height: var(--rtx-light-control-line-height) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-market-watch .price-display,
+  .rtx-market-watch .price-small,
+  .rtx-market-watch .price-big,
+  .rtx-market-watch .price-pip,
+  .rtx-bottom-dock tbody td:not([colspan]) span,
+  .rtx-bottom-dock .price-display,
+  .rtx-bottom-dock .price-small,
+  .rtx-bottom-dock .price-big,
+  .rtx-bottom-dock .price-pip) {
+  line-height: inherit !important;
+}
+
+/* Every small toolbar has the same control role as the main command bar. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-journal-toolbar .rtx-journal-control,
+  .rtx-history-toolbar .rtx-history-time-btn,
+  .rtx-history-toolbar .rtx-history-refresh-btn,
+  .rtx-history-toolbar .rtx-history-toolbar__meta > span,
+  .rtx-history-time-btn,
+  .rtx-cp-shell .rtx-cp-tab,
+  .rtx-cp-shell .rtx-cp-btn,
+  .rtx-cp-shell .rtx-cp-color-text,
+  .rtx-history-downloader .rtx-history-clear-btn,
+  .rtx-history-downloader .rtx-history-seg-btn,
+  .rtx-market-watch .mw-input) {
+  line-height: var(--rtx-light-control-line-height) !important;
+  letter-spacing: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-trade-empty-state,
+  .rtx-bottom-dock td[colspan]:not(:empty),
+  .rtx-journal-toolbar__label,
+  .rtx-order-dialog__price-label) {
+  font-style: normal !important;
+  line-height: 18px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__price {
+  line-height: 1.4 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-marker__price-tooltip,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-marker__tooltip-details>span {
+  line-height: 18px !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-marker__tooltip-header {
+  letter-spacing: 0 !important;
+}
+
+/* Keyboard focus stays distinct from the softer pointer hover and selection. */
+html.rtx-advanced-view.rtx-skin-untitled-light :is(button, [role="menuitem"], [role="radio"], [role="tab"]):focus-visible {
+  outline: 2px solid var(--rtx-light-accent) !important;
+  outline-offset: -2px;
+}
+
+/* A solid action needs its focus ring outside the fill to remain visible. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog button[type="submit"],
+  .rtx-cp-btn-primary,
+  .rtx-oad-btn-next,
+  .rtx-confirm-dialog__confirm,
+  .rtx-order-dialog__action,
+  .rtx-save-picture-button-primary,
+  .rtx-market-watch-save-set__primary,
+  .rtx-export-sheet__button--primary,
+  .rtx-print-preview__primary,
+  .rtx-auth-button[data-variant='primary'],
+  .rtx-bulk-close-dialog__btn-confirm,
+  .rtx-options-dialog button.bg-zinc-700,
+  .rtx-chart-template-dialog .bg-blue-600):focus-visible {
+  outline: 2px solid var(--rtx-light-accent) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--rtx-light-elevated) !important;
+}
+
+/* Keep proportional fixed column layout in Light mode so Symbol, Bid, Ask, and
+   Daily Change remain balanced without crushing numeric columns. */
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__grid :is(th, td) {
+  white-space: nowrap;
+}
+
+/* Keep the light execution controls' spacing; the component owns their type. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button .rtx-oct-price {
+  line-height: 1.3 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button .rtx-oct-side-label {
+  line-height: 1.3 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch [role="alert"] {
+  line-height: 1.4 !important;
+  color: var(--color-loss) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-sl-value {
+  color: #b42318 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-tp-value {
+  color: #027a48 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Secondary dialogs share the dim surface and legible primary actions. */
+html:root.rtx-skin-untitled-light .rtx-symbol-specification-dialog {
+  background: var(--rtx-light-panel) !important;
+}
+
+html:root.rtx-skin-untitled-light .rtx-export-sheet .rtx-export-sheet__button--primary {
+  color: #ffffff !important;
+  background: var(--rtx-light-accent) !important;
+  border-color: var(--rtx-light-accent) !important;
+}
+
+html:root.rtx-skin-untitled-light .rtx-export-sheet .rtx-export-sheet__button--primary:hover {
+  background: var(--rtx-light-accent-strong) !important;
+  border-color: var(--rtx-light-accent-strong) !important;
+}
+
+/* Depth of Market is also a light-theme surface. Older structural overrides
+   left white panes and dark-theme quote colors inside this floating panel. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-dom-dialog .rtx-depth-of-market {
+  background: var(--rtx-light-panel) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-titlebar, .rtx-depth-of-market__columns, .rtx-dom-spread, .rtx-dom-params-bar
+) {
+  background: var(--rtx-light-panel-header) !important;
+  color: var(--rtx-light-text-secondary) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-depth-of-market__heading {
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-description, .rtx-depth-of-market__columns div,
+  .rtx-dom-spread__label, .rtx-dom-stepper__label, .rtx-dom-drag-hint
+) {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-spread__badge {
+  color: var(--rtx-light-text) !important;
+  background: #ffffff !important;
+  border-color: var(--rtx-light-border-strong, #cbd5e1) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-row-border, #e2e8f0) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level--best-ask {
+  background: rgba(220, 38, 38, 0.06) !important;
+  box-shadow: inset 3px 0 0 var(--rtx-light-sell, #dc2626);
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level--best-bid {
+  background: rgba(37, 99, 235, 0.06) !important;
+  box-shadow: inset 3px 0 0 var(--rtx-light-buy, #2563eb);
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level:hover {
+  background: var(--rtx-light-hover) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-price--ask, .rtx-dom-price--ask span
+) {
+  color: var(--rtx-light-sell, #dc2626) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-price--bid, .rtx-dom-price--bid span
+) {
+  color: var(--rtx-light-buy, #2563eb) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--sell {
+  color: var(--rtx-light-sell, #dc2626) !important;
+  background: rgba(220, 38, 38, 0.08) !important;
+  border-color: rgba(220, 38, 38, 0.24) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--sell:hover {
+  color: #ffffff !important;
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--buy {
+  color: var(--rtx-light-buy, #2563eb) !important;
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--buy:hover {
+  color: #ffffff !important;
+  background: var(--rtx-light-buy, #2563eb) !important;
+  border-color: var(--rtx-light-buy, #2563eb) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-stepper, .rtx-dom-stepper__input
+) {
+  background: var(--rtx-light-field, #ffffff) !important;
+  border-color: var(--rtx-light-control-border, #697b91) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-stepper__btn {
+  background: var(--rtx-light-panel-subtle, #f8fafc) !important;
+  border-color: var(--rtx-light-border, #cbd5e1) !important;
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-icon-btn, .rtx-dom-toolbar-btn
+) {
+  color: var(--rtx-light-text-secondary) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-icon-btn:hover, .rtx-dom-toolbar-btn:hover,
+  .rtx-dom-stepper__btn:hover, .rtx-dom-toolbar-btn.is-active
+) {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-toolbar-btn.is-active {
+  background: var(--rtx-light-selected, #dce9fa) !important;
+  border-color: var(--rtx-light-accent-border, #2457a7) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--sell {
+  background: var(--rtx-light-sell, #dc2626) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--sell:hover {
+  background: var(--rtx-light-sell-hover, #b91c1c) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--sell:active {
+  background: var(--rtx-light-sell-pressed, #991b1b) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--buy {
+  background: var(--rtx-light-buy, #2563eb) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--buy:hover {
+  background: var(--rtx-light-buy-hover, #1d4ed8) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--buy:active {
+  background: var(--rtx-light-buy-pressed, #1e40af) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--flat:hover {
+  background: var(--rtx-light-hover) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-exec-btn--sell, .rtx-dom-exec-btn--buy,
+  .rtx-dom-exec-btn--sell span, .rtx-dom-exec-btn--buy span
+) {
+  color: #ffffff !important;
+  opacity: 1;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-exec-btn--flat {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
+  .rtx-dom-exec-btn--flat, .rtx-dom-exec-btn--flat span
+) {
+  color: var(--rtx-light-text) !important;
+  opacity: 1;
+}
+
+/* Account Panel, Alert Card, and Placeholder Tab enterprise light surfaces */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-account-panel,
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-placeholder-tab {
+  background: var(--rtx-light-panel) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-account-panel__header {
+  background: var(--rtx-light-panel-header) !important;
+  border-color: var(--rtx-light-border) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-account-panel__card {
+  background: var(--rtx-light-panel-subtle) !important;
+  border-color: var(--rtx-light-border) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-alert-card,
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-alerts-badge > div {
+  background: var(--rtx-light-elevated) !important;
+  border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* History toolbar single-line alignment (Today ... Custom Period + summary + refresh on one row) */
+.rtx-history-toolbar {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+
+.rtx-history-toolbar__periods {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rtx-history-toolbar__periods::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.rtx-history-toolbar :is(.rtx-history-time-btn, .rtx-history-refresh-btn) {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 0 5px !important;
+  line-height: 20px !important;
+  flex-shrink: 0 !important;
+}
+
+.rtx-history-toolbar .rtx-history-refresh-btn svg {
+  display: block !important;
+  flex-shrink: 0 !important;
+}
+
+.rtx-history-toolbar__meta {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  gap: 6px !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+.rtx-history-toolbar__meta > span {
+  align-items: center !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 0 2px !important;
+  line-height: 20px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Professional right-click context menu scrollbar & surface */
+:is(.rtx-chart-context-menu, .rtx-context-menu) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+  scroll-behavior: smooth;
+}
+
+:is(.rtx-chart-context-menu, .rtx-context-menu)::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+:is(.rtx-chart-context-menu, .rtx-context-menu)::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+:is(.rtx-chart-context-menu, .rtx-context-menu)::-webkit-scrollbar-track {
+  background: transparent !important;
+  margin: 4px 0;
+}
+
+:is(.rtx-chart-context-menu, .rtx-context-menu)::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.38) !important;
+  border-radius: 999px !important;
+}
+
+:is(.rtx-chart-context-menu, .rtx-context-menu)::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.65) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-chart-context-menu, .rtx-context-menu) {
+  border-radius: 6px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  html.rtx-advanced-view.rtx-skin-untitled-light *,
+  html.rtx-advanced-view.rtx-skin-untitled-light *::before,
+  html.rtx-advanced-view.rtx-skin-untitled-light *::after {
+    scroll-behavior: auto !important;
+  }
+}
+

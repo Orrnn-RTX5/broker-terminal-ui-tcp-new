@@ -1,0 +1,198 @@
+import React, { useRef, useMemo } from 'react';
+import { useBulkCloseConfirmStore } from '../../store/useBulkCloseConfirmStore';
+import { useAppStore, type Position } from '../../store/useAppStore';
+import { useUiTranslation } from '../../hooks/useUiTranslation';
+import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { resolveAccountCurrencyDigits } from '../../utils/accountCurrency';
+import { readBackendPositionProfit, resolveTradeProfit } from '../BottomDock.trade';
+
+const EMPTY_STORE_POSITIONS: Position[] = [];
+
+export function BulkCloseConfirmDialog() {
+    const tr = useUiTranslation();
+    const {
+        isOpen,
+        type,
+        symbol,
+        positions,
+        combinedPnL,
+        onConfirm,
+        onCancel,
+    } = useBulkCloseConfirmStore();
+    const accountCurrencyDigits = resolveAccountCurrencyDigits(useAppStore(state => state.account));
+    const storePositions = useAppStore(state => (isOpen ? state.positions : EMPTY_STORE_POSITIONS));
+
+    const cancelBtnRef = useRef<HTMLButtonElement>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useDialogFocusScope({ isOpen, dialogRef, onClose: onCancel, initialFocusRef: cancelBtnRef });
+
+    const { livePositions, liveCombinedPnL } = useMemo(() => {
+        if (!isOpen || storePositions.length === 0 || positions.length === 0) {
+            return { livePositions: positions, liveCombinedPnL: combinedPnL };
+        }
+
+        const liveById = new Map<number, Position>();
+        for (const rawPosition of storePositions) {
+            const ticketId = Number(
+                rawPosition.id
+                ?? (rawPosition as Position & { ticket?: unknown; position_id?: unknown }).ticket
+                ?? (rawPosition as Position & { ticket?: unknown; position_id?: unknown }).position_id,
+            );
+            if (Number.isFinite(ticketId) && ticketId > 0) {
+                liveById.set(ticketId, rawPosition);
+            }
+        }
+
+        let hasLiveMatch = false;
+        const nextPositions = positions.map((pos) => {
+            const livePos = liveById.get(pos.id);
+            if (!livePos) return pos;
+            hasLiveMatch = true;
+            const resolvedProfit = resolveTradeProfit(livePos).value ?? readBackendPositionProfit(livePos);
+            const liveVolume = Number(livePos.volume ?? livePos.quantity);
+            const liveOpenPrice = Number(livePos.openPrice ?? livePos.price_open ?? livePos.open_price);
+            return {
+                ...pos,
+                volume: Number.isFinite(liveVolume) && liveVolume > 0 ? liveVolume : pos.volume,
+                openPrice: Number.isFinite(liveOpenPrice) && liveOpenPrice > 0 ? liveOpenPrice : pos.openPrice,
+                pnl: resolvedProfit !== null && Number.isFinite(resolvedProfit) ? resolvedProfit : pos.pnl,
+            };
+        });
+
+        if (!hasLiveMatch) {
+            return { livePositions: positions, liveCombinedPnL: combinedPnL };
+        }
+
+        const nextCombinedPnL = nextPositions.reduce((total, pos) => total + pos.pnl, 0);
+        return { livePositions: nextPositions, liveCombinedPnL: nextCombinedPnL };
+    }, [isOpen, positions, combinedPnL, storePositions]);
+
+    // Sort positions by P&L descending
+    const sortedPositions = useMemo(() =>
+        [...livePositions].sort((a, b) => b.pnl - a.pnl),
+        [livePositions],
+    );
+
+    const profitableCount = livePositions.filter(p => p.pnl > 0).length;
+    const losingCount = livePositions.filter(p => p.pnl < 0).length;
+    const breakEvenCount = livePositions.filter(p => p.pnl === 0).length;
+
+    if (!isOpen) return null;
+
+    const modeLabel = type === 'ALL'
+        ? tr('Close All Positions')
+        : type === 'WINNERS'
+            ? tr('Close In-Profit Positions')
+            : tr('Close In-Loss Positions');
+
+    const pnlSign = liveCombinedPnL >= 0 ? '+' : '';
+    const pnlFormatted = `${pnlSign}${liveCombinedPnL.toFixed(accountCurrencyDigits)}`;
+    const pnlTone = liveCombinedPnL >= 0 ? 'profit' : 'loss';
+
+    return (
+        <div
+            className="rtx-bulk-close-backdrop"
+            onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+            onContextMenuCapture={(e) => { e.stopPropagation(); e.preventDefault(); }}
+            onContextMenu={(e) => e.stopPropagation()}
+        >
+            <div ref={dialogRef} tabIndex={-1} className="rtx-bulk-close-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-close-title">
+
+                {/* ─── Header ─── */}
+                <div className="rtx-bulk-close-dialog__header">
+                    <div className="rtx-bulk-close-dialog__header-left">
+                        <span id="bulk-close-title" className="rtx-bulk-close-dialog__title">{modeLabel}</span>
+                        {symbol && (
+                            <span className="rtx-bulk-close-dialog__symbol-badge">{symbol}</span>
+                        )}
+                    </div>
+                    <button type="button" onClick={onCancel} className="rtx-bulk-close-dialog__close-btn" aria-label={tr('Close dialog')}>
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                    </button>
+                </div>
+
+                {/* ─── Summary Stats ─── */}
+                <div className="rtx-bulk-close-dialog__stats">
+                    <div className="rtx-bulk-close-dialog__stat">
+                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Positions')}</span>
+                        <span className="rtx-bulk-close-dialog__stat-value">{livePositions.length}</span>
+                    </div>
+                    <div className="rtx-bulk-close-dialog__stat-divider" />
+                    <div className="rtx-bulk-close-dialog__stat">
+                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Combined P&L')}</span>
+                        <span className={`rtx-bulk-close-dialog__stat-value rtx-bulk-close-dialog__stat-value--${pnlTone}`}>
+                            {pnlFormatted}
+                        </span>
+                    </div>
+                    <div className="rtx-bulk-close-dialog__stat-divider" />
+                    <div className="rtx-bulk-close-dialog__stat">
+                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Breakdown')}</span>
+                        <span className="rtx-bulk-close-dialog__stat-value rtx-bulk-close-dialog__breakdown">
+                            <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--profit">{profitableCount} ↑</span>
+                            <span className="rtx-bulk-close-dialog__breakdown-sep">·</span>
+                            <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--loss">{losingCount} ↓</span>
+                            {breakEvenCount > 0 && (
+                                <>
+                                    <span className="rtx-bulk-close-dialog__breakdown-sep">·</span>
+                                    <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--neutral">{breakEvenCount} ―</span>
+                                </>
+                            )}
+                        </span>
+                    </div>
+                </div>
+
+                {/* ─── Position Preview Table ─── */}
+                <div className="rtx-bulk-close-dialog__table-wrapper">
+                    <table className="rtx-bulk-close-dialog__table">
+                        <thead>
+                            <tr>
+                                <th>{tr('Ticket')}</th>
+                                <th>{tr('Symbol')}</th>
+                                <th>{tr('Direction')}</th>
+                                <th className="rtx-bulk-close-dialog__th-right">{tr('Volume')}</th>
+                                <th className="rtx-bulk-close-dialog__th-right">{tr('Open Price')}</th>
+                                <th className="rtx-bulk-close-dialog__th-right">{tr('P&L')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedPositions.map((pos) => {
+                                const rowPnlTone = pos.pnl > 0 ? 'profit' : pos.pnl < 0 ? 'loss' : 'neutral';
+                                const rowPnlSign = pos.pnl > 0 ? '+' : '';
+                                return (
+                                    <tr key={pos.id} className="rtx-bulk-close-dialog__row">
+                                        <td className="rtx-bulk-close-dialog__cell-ticket">#{pos.id}</td>
+                                        <td className="rtx-bulk-close-dialog__cell-symbol">{pos.symbol}</td>
+                                        <td>
+                                            <span className={`rtx-bulk-close-dialog__direction rtx-bulk-close-dialog__direction--${pos.side.toLowerCase()}`}>
+                                                {pos.side}
+                                            </span>
+                                        </td>
+                                        <td className="rtx-bulk-close-dialog__cell-right">{pos.volume.toFixed(2)}</td>
+                                        <td className="rtx-bulk-close-dialog__cell-right">{pos.openPrice.toFixed(pos.openPrice >= 100 ? 2 : 5)}</td>
+                                        <td className={`rtx-bulk-close-dialog__cell-right rtx-bulk-close-dialog__cell-pnl rtx-bulk-close-dialog__cell-pnl--${rowPnlTone}`}>
+                                            {rowPnlSign}{pos.pnl.toFixed(accountCurrencyDigits)}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* ─── Footer ─── */}
+                <div className="rtx-bulk-close-dialog__footer">
+                    <button ref={cancelBtnRef} type="button" onClick={onCancel} className="rtx-bulk-close-dialog__btn-cancel">
+                        {tr('Cancel')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        className="rtx-bulk-close-dialog__btn-confirm"
+                    >
+                        {tr('Close')} {livePositions.length} {tr('Positions')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -1,0 +1,290 @@
+/* Shared type roles for both terminal themes, including portalled dialogs.
+   Role variables inherit into nested text (for example price digits), so a
+   heading keeps its emphasis without making the rest of its panel bold.
+   Functional text shares one face; code, branding and user-authored drawings
+   retain their own typography. */
+html:root {
+  --rtx-ui-font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  --rtx-ui-font-size: 14px;
+  --rtx-ui-line-height: calc(var(--rtx-ui-font-size) + 6px);
+  --rtx-font-weight-body: 400;
+  --rtx-font-weight-control: 400;
+  --rtx-font-weight-heading: 500;
+  --rtx-section-font-size: calc(var(--rtx-ui-font-size) + 2px);
+  --rtx-dialog-font-size: calc(var(--rtx-ui-font-size) + 6px);
+  --rtx-page-font-size: calc(var(--rtx-ui-font-size) + 10px);
+  --rtx-advanced-primary-font-size: var(--rtx-ui-font-size);
+  --rtx-advanced-dense-font-size: var(--rtx-ui-font-size);
+  --rtx-advanced-header-font-size: var(--rtx-ui-font-size);
+}
+
+html:root.rtx-advanced-font-small { --rtx-ui-font-size: 13px; }
+html:root.rtx-advanced-font-large { --rtx-ui-font-size: 15px; }
+
+/* One renderer for ordinary UI text. Component roles below supply the size,
+   weight and leading; existing inline micro-sizes no longer defeat the user's
+   font preference. Entry screens have their own responsive reading hierarchy. */
+/* Important declarations in this named layer bridge legacy inline/utility
+   sizes; semantic variables below remain the single source of role values. */
+@media screen {
+  @layer rtx-typography {
+    html:root body,
+    html:root body :is(
+      div, span, p, a, button, input, select, option, optgroup, textarea, label,
+      legend, fieldset, th, td, caption, li, dt, dd, h1, h2, h3, h4, h5, h6,
+      strong, b, em, small, time, output, summary, kbd, pre, code
+    ):not(:where(
+      svg *, .chart-drawing-overlay, .chart-drawing-overlay *,
+      .rtx-login-overlay, .rtx-login-overlay *,
+      .login-page-container, .login-page-container *,
+      .rtx-bootstrap-loader, .rtx-bootstrap-loader *,
+      .rtx-terminal-loading, .rtx-terminal-loading *,
+      .rtx-journal-spacer-row, .rtx-journal-spacer-row *,
+      .rtx-order-dialog__spinner-button, .rtx-order-dialog__close,
+      .navigator-tree-item__icon, .navigator-tree-item__chevron
+    )) {
+      font-family: var(--rtx-type-family, var(--rtx-ui-font-family)) !important;
+      font-size: var(--rtx-type-size, var(--rtx-ui-font-size)) !important;
+      font-weight: var(--rtx-type-weight, var(--rtx-font-weight-body)) !important;
+    }
+  }
+}
+
+html:root body {
+  line-height: var(--rtx-ui-line-height);
+  letter-spacing: normal;
+}
+
+/* Legacy font utility classes must not restart weight inside peer labels or
+   financial cells. Only a semantic role or explicit emphasis changes it. */
+html:root :where(strong, b) {
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+}
+
+html:root :where(pre, code, kbd, .rtx-journal-table tbody) {
+  --rtx-type-family: var(--font-mono);
+}
+
+html:root :where(button, label, legend, summary, [role='button'], [role='menuitem']) {
+  --rtx-type-weight: var(--rtx-font-weight-control);
+}
+
+/* Sort buttons inside a table heading use the same weight as plain headings. */
+html:root :where(th, [role='columnheader'], th button, [role='columnheader'] button) {
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+}
+
+html:root :where(input, select, option, optgroup, textarea) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+html:root :where(h1, h2, h3, h4, h5, h6, .rtx-dialog-title, .rtx-section-title):not(:where(
+  .rtx-login-overlay *, .login-page-container *, .rtx-bootstrap-loader *,
+  .rtx-terminal-loading *, .chart-drawing-overlay *
+)) {
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+  line-height: calc(var(--rtx-type-size, var(--rtx-ui-font-size)) + 8px) !important;
+  letter-spacing: normal;
+}
+
+html:root :where(h1) { --rtx-type-size: var(--rtx-page-font-size); }
+html:root :where(h2, .rtx-dialog-title) { --rtx-type-size: var(--rtx-dialog-font-size); }
+html:root :where(h3, .rtx-section-title) { --rtx-type-size: var(--rtx-section-font-size); }
+html:root :where(h4, h5, h6) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  line-height: var(--rtx-ui-line-height) !important;
+}
+
+html:root :where(.rtx-reading-text) {
+  --rtx-type-size: var(--rtx-section-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-body);
+  line-height: 1.5;
+}
+
+/* Repeated financial data and navigation stay regular. Column headings and
+   selected states provide emphasis without bolding every changing number. */
+html:root :is(
+  .rtx-market-watch__symbol, .rtx-market-watch__price, .rtx-market-watch__daily,
+  .rtx-market-watch__spread, .navigator-tree-item__label,
+  .rtx-bottom-dock tbody td, .rtx-trade-row td, .rtx-history-row td, .rtx-journal-table tbody td,
+  .rtx-status-bar, .rtx-chart-hud, .rtx-dock-tab, .rtx-depth-of-market__row
+) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+html:root :is(
+  .rtx-market-watch__column-heading, .rtx-trade-table__head th,
+  .rtx-depth-of-market__columns
+) {
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+}
+
+/* Uppercase journal headings retain their hierarchy with regular weight. */
+html:root .rtx-journal-table thead th {
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+/* Toolbox categories and command rows use the same regular reading weight.
+   Nested command labels and shortcut hints inherit the button's role. */
+html:root .rtx-toolbox-tab :is(h3, button) {
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+/* Historical Data keeps regular controls and quiet supporting text in both
+   themes. Explicit roles also respect the shared font-size preference. */
+html:root body .rtx-history-downloader :is(button, input, select, label, strong) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: 400;
+}
+
+html:root body .rtx-history-downloader :is(
+  .rtx-history-downloader__identity h2, .rtx-history-tasks__header h3,
+  .rtx-history-empty strong, .rtx-history-task__identity strong
+) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: 500;
+}
+
+html:root body .rtx-history-downloader .rtx-history-downloader__identity h2 {
+  --rtx-type-size: calc(var(--rtx-ui-font-size) + 1px);
+}
+
+html:root body .rtx-history-downloader :is(
+  .rtx-history-downloader__identity p, .rtx-history-downloader__metrics dt,
+  .rtx-history-symbol-label, .rtx-history-field-label,
+  .rtx-history-seg-btn, .rtx-history-clear-btn, .rtx-history-duration-badge,
+  .rtx-history-coverage-banner, .rtx-history-coverage-banner span,
+  .rtx-history-coverage-banner strong, .rtx-history-tasks__header span,
+  .rtx-history-empty > span:last-child, .rtx-history-task__identity span,
+  .rtx-history-task__progress-label, .rtx-history-task__detail
+) {
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 1px));
+  --rtx-type-weight: 400;
+}
+
+html:root :is(
+  .rtx-order-dialog__label,
+  .rtx-trade-metric-value, .rtx-menu-row, .rtx-application-menu__root-item,
+  .rtx-toolbar-action, [role='tab']
+) {
+  --rtx-type-weight: var(--rtx-font-weight-control);
+}
+
+/* File/Accounts and Profiles use custom buttons, so give them the same regular
+   reading role as the launcher instead of the heavier light-theme control role.
+   Nested labels, account details and shortcuts follow the chosen UI text size. */
+html:root :is(.rtx-application-menu, .rtx-file-menu),
+html:root .rtx-file-menu button,
+html:root .rtx-menu-row__shortcut {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+html:root :is(
+  .dock-panel__title, .navigator-panel__header, .rtx-market-watch__title,
+  .rtx-depth-of-market__heading, .rtx-data-window__title,
+  .rtx-dock-tab.active-tab, [role='tab'][aria-selected='true']
+) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+}
+
+html:root :is(.navigator-tree-item[aria-selected='true'], .navigator-tree-item--selected) .navigator-tree-item__label {
+  --rtx-type-weight: var(--rtx-font-weight-control);
+}
+
+html:root :is(.rtx-order-dialog__title, .rtx-order-dialog__price) {
+  --rtx-type-size: var(--rtx-dialog-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+  line-height: 1.4 !important;
+}
+
+html:root :is(.rtx-order-dialog__chart-symbol, .rtx-oct-price, .rtx-chart-hud__symbol, .rtx-chart-price-badge, .rtx-order-dialog__message--error, [role='alert']) {
+  --rtx-type-weight: var(--rtx-font-weight-control);
+}
+
+html:root body :is(
+  .rtx-market-watch__symbol, .rtx-market-watch__price, .rtx-market-watch__daily,
+  .rtx-market-watch__column-heading, .navigator-tree-item__label,
+  .rtx-trade-table th, .rtx-trade-table td, .rtx-trade-table__head th,
+  .rtx-history-row td, .rtx-journal-table th, .rtx-journal-table td,
+  .rtx-menu-row, .rtx-order-dialog__label, .rtx-order-dialog__control,
+  .rtx-order-dialog__margin, .rtx-order-dialog__chart-meta,
+  .rtx-order-dialog__chart-quotes, .rtx-chart-hud, .rtx-chart-hud span
+):not(.rtx-journal-spacer-cell) {
+  line-height: var(--rtx-ui-line-height) !important;
+}
+
+/* Trade columns use the same compact size as the terminal tabs. */
+html:root body .rtx-trade-table :is(th, td) {
+  --rtx-type-size: calc(var(--rtx-ui-font-size) - 2px);
+}
+
+/* Commands use medium weight; timeframe strip stays regular across all states. */
+html:root .rtx-main-toolbar :is(
+  .rtx-toolbar-action, .rtx-toolbar-icon-button,
+  .rtx-toolbar-symbol-badge
+) {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: 500;
+}
+
+html:root .rtx-main-toolbar .rtx-timeframe-option,
+html:root .rtx-timeframe-option,
+html:root .rtx-timeframe-option[aria-checked='true'] {
+  --rtx-type-size: var(--rtx-ui-font-size);
+  --rtx-type-weight: var(--rtx-font-weight-body);
+}
+
+/* Text fits the chrome at every supported font preference. */
+html:root .dock-panel__title {
+  line-height: var(--rtx-ui-line-height) !important;
+}
+
+html:root .rtx-bottom-dock__tabs .rtx-dock-tab {
+  --rtx-type-size: calc(var(--rtx-ui-font-size) - 2px);
+  line-height: var(--rtx-ui-line-height) !important;
+  white-space: nowrap;
+}
+
+html:root :is(
+  .rtx-cp-title, .rtx-confirm-dialog__header > span,
+  .rtx-modify-dialog > div:first-child > span,
+  .last-symbol-section-heading, .last-symbol-settings__heading,
+  .rtx-desktop-quick-menu__heading
+) {
+  --rtx-type-weight: var(--rtx-font-weight-heading);
+}
+
+/* Let tab names and bulk actions shrink and scroll at narrow widths. */
+html:root .rtx-bottom-dock__tabs {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The close icon lives in the top header, outside tab/action overflow. */
+html:root .rtx-bottom-dock__tab-content {
+  min-width: 0;
+}
+
+html:root .rtx-dock-tab-scroller {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+html:root .rtx-dock-tab-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+html:root .rtx-order-dialog__header { min-height: 44px; }
+html:root .rtx-order-dialog__content { overflow-y: auto; }
+html:root .rtx-order-dialog__chart-header { min-height: 66px; flex-wrap: wrap; }
+html:root .rtx-order-dialog__control,
+html:root .rtx-order-dialog__volume-control { min-height: 32px; }
+
+html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }

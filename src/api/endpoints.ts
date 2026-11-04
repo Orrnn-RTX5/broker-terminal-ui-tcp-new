@@ -1,0 +1,819 @@
+import { apiClient } from './client';
+import { loadSharedAuthenticatedInstruments } from '../services/authenticatedInstruments';
+import { normalizeBrokerAuthLoginPayload } from './authLoginPayload';
+import { API_V2_BASE_URL, isLocalViteDevServer, normalizeBrokerServerUrl } from '../config/api';
+import { isDesktopBackendTarget } from '../config/backendTarget.js';
+import { getRefreshToken } from '../services/brokerSession';
+import { debugDebug, debugLog, redactUrlForDebugLog } from '../utils/debugLogging';
+import { normalizeCandleApiQueryParams } from '../utils/candleApi';
+import { resolveSpecDigits } from '../utils/symbolUtils';
+import { createTradeOrderUuid, isTradeOrderUuidV4 } from './tradeSocket';
+import { tradingV2Api, type ClosePositionRequestOptions } from './trade';
+import type { AccountClassificationFields } from '../types/api';
+
+const resolveV2BaseUrl = (baseUrl?: string): string => {
+  if (!baseUrl) return API_V2_BASE_URL;
+  const trimmed = normalizeBrokerServerUrl(baseUrl).replace(/\/$/, '');
+  return trimmed.endsWith('/api/v2') ? trimmed : `${trimmed}/api/v2`;
+};
+
+const resolveStoredLogin = (): number | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  const raw = localStorage.getItem('rtx_saved_username') || localStorage.getItem('rtx_last_login');
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const getApiRootBaseUrl = (): string => API_V2_BASE_URL.replace(/\/api\/v2\/?$/, '');
+
+const SYMBOL_ENDPOINTS = ['/api/v2/instruments', '/api/v1/market/symbols', '/api/v1/market/symbol-list'];
+
+const resolveSymbolEndpoint = (endpoint: string): { endpoint: string; baseUrl: string } =>
+  endpoint.startsWith('/api/v2')
+    ? { endpoint: endpoint.replace(/^\/api\/v2(?=\/|$)/, '') || '/', baseUrl: API_V2_BASE_URL }
+    : { endpoint, baseUrl: getApiRootBaseUrl() };
+
+type InstrumentRow = Record<string, unknown> & {
+  symbol?: string | number;
+  name?: string | number;
+  id?: string | number;
+  description?: string;
+  category?: string;
+  digits?: number;
+  tick_size?: number;
+  contract_size?: number;
+  margin_rate?: number;
+  enabled?: boolean;
+  trading_enabled?: boolean;
+  tradingEnabled?: boolean;
+  bid?: number;
+  ask?: number;
+};
+
+type TransactionRow = {
+  id?: string | number;
+  type?: string;
+  amount?: string | number;
+  currency?: string;
+  comment?: string;
+  time?: string | number;
+};
+
+type EquityPointRow = {
+  time?: string | number;
+  equity?: string | number;
+};
+
+type TradingPositionsResponse = Position[] | { positions?: Position[]; count?: number };
+type TradingOrdersResponse = Order[] | { orders?: Order[]; count?: number };
+export type OrderCommandResponse = Record<string, unknown>;
+type TickRow = Record<string, unknown>;
+
+const extractInstrumentRows = (payload: unknown): InstrumentRow[] => {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+
+  const record = payload as Record<string, unknown>;
+  if (Array.isArray(record.symbols)) return record.symbols as InstrumentRow[];
+  if (Array.isArray(record.instruments)) return record.instruments as InstrumentRow[];
+  if (Array.isArray(record.data)) return record.data as InstrumentRow[];
+  if (Array.isArray(record.result)) return record.result as InstrumentRow[];
+  return [];
+};
+
+const requireLogin = (login: unknown, context: string): number => {
+  const parsed = typeof login === 'number' ? login : Number.parseInt(String(login ?? ''), 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  throw new Error(`Missing account login for ${context}`);
+};
+
+const requireTicket = (ticket: unknown, context: string): number => {
+  const parsed = typeof ticket === 'number' ? ticket : Number.parseInt(String(ticket ?? ''), 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  throw new Error(`Missing ticket for ${context}`);
+};
+
+const normalizeSide = (side: string): 'buy' | 'sell' => side.toLowerCase() === 'sell' ? 'sell' : 'buy';
+
+const normalizeOrderPayload = (order: CreateOrderRequest): CreateOrderRequest & { login: number; side: 'buy' | 'sell'; volume: number } => {
+  const login = requireLogin(order.login ?? order.account_login, '/api/v2/orders');
+  const volume = order.volume ?? order.quantity;
+  if (!volume || volume <= 0) {
+    throw new Error('Missing order volume for /api/v2/orders');
+  }
+
+  const rest = { ...order };
+  const suppliedClientOrderId = String(order.client_order_id ?? '').trim();
+  if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
+    throw new Error('client_order_id must be a UUID v4');
+  }
+  delete rest.account_login;
+  delete rest.quantity;
+  delete rest.sl;
+  delete rest.tp;
+  delete rest.type;
+
+  return {
+    ...rest,
+    login,
+    client_order_id: suppliedClientOrderId || createTradeOrderUuid(),
+    side: normalizeSide(order.side),
+    volume,
+    price_sl: order.price_sl ?? order.sl,
+    price_tp: order.price_tp ?? order.tp,
+  };
+};
+
+/**
+ * Normalize a pending-order expiration to whole epoch SECONDS for the gateway.
+ * Accepts epoch seconds, epoch milliseconds, or numeric strings (global — no
+ * broker/account/symbol-specific handling). Empty, non-numeric, non-positive,
+ * or NaN input yields `undefined` so the field is omitted from the wire
+ * payload — never 0 or NaN (fail-closed: the gateway would read those as real
+ * expirations).
+ */
+export const normalizePendingExpiryToEpochSeconds = (value: unknown): number | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const text = typeof value === 'string' ? value.trim() : value;
+  if (text === '') return undefined;
+  const numeric = typeof text === 'number' ? text : Number(text);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  // Millisecond-epoch input (e.g. Date.now()) normalizes to seconds; values
+  // below 1e12 are already epoch seconds (1e12 s is the year 33658).
+  const seconds = numeric >= 1e12 ? Math.floor(numeric / 1000) : Math.floor(numeric);
+  return seconds > 0 ? seconds : undefined;
+};
+
+const normalizePendingOrderPayload = (order: PendingOrderRequest): PendingOrderRequest & { account_login: number; side: 'buy' | 'sell'; sl?: number; tp?: number; expiry?: number } => {
+  const login = requireLogin(order.login ?? order.account_login, '/api/v2/orders/pending');
+  // The gateway requires an idempotency key for every order command (CLIENT_ORDER_ID_REQUIRED).
+  const suppliedClientOrderId = String(order.client_order_id ?? '').trim();
+  if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
+    throw new Error('client_order_id must be a UUID v4');
+  }
+  const pendingType = String(order.type || '').trim().toLowerCase();
+  if (pendingType.endsWith('_stop_limit')) {
+    // Backend wire name is `price_limit` (gateway placePendingOrderWireRequest).
+    const stopLimitPrice = Number(order.price_limit);
+    if (!Number.isFinite(stopLimitPrice) || stopLimitPrice <= 0) {
+      throw new Error('Stop limit price must be a positive number for stop limit orders');
+    }
+  }
+  const rest = { ...order };
+  delete rest.login;
+  delete rest.account_login;
+  delete rest.price_sl;
+  delete rest.price_tp;
+  delete rest.sl;
+  delete rest.tp;
+  delete rest.expiration;
+  delete rest.expiry;
+
+  const expiry = normalizePendingExpiryToEpochSeconds(order.expiry ?? order.expiration);
+
+  return {
+    ...rest,
+    account_login: login,
+    client_order_id: suppliedClientOrderId || createTradeOrderUuid(),
+    side: normalizeSide(order.side),
+    type: pendingType as PendingOrderRequest['type'],
+    sl: order.sl ?? order.price_sl,
+    tp: order.tp ?? order.price_tp,
+    ...(expiry !== undefined ? { expiry } : {}),
+  };
+};
+
+const normalizePendingProtectionPatch = (value: number | null | undefined): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const normalizeModifyPendingOrderPayload = (data: ModifyPendingOrderRequest): ModifyPendingOrderRequest & { account_login?: number; sl?: number | null; tp?: number | null; expiry?: number | null; client_order_id: string } => {
+  const {
+    login,
+    account_login,
+    price_sl,
+    price_tp,
+    sl,
+    tp,
+    expiration,
+    expiry,
+    comment: _comment,
+    state_version: _stateVersion,
+    trailing_stop: _trailingStop,
+    trailing_step: _trailingStep,
+    client_order_id: supplied,
+    ...rest
+  } = data;
+  void _comment;
+  void _stateVersion;
+  const clientOrderId = String(supplied ?? '').trim();
+  if (clientOrderId && !isTradeOrderUuidV4(clientOrderId)) throw new Error('client_order_id must be a UUID v4');
+  // No fill_policy wire field exists on the gateway decoder: strip it even if
+  // a caller passes one (defense in depth; the UI never sends it on modify).
+  const { fill_policy: _droppedFillPolicy, ...cleanRest } = rest as Record<string, unknown>;
+  void _droppedFillPolicy;
+  // Same epoch-seconds normalization as PLACE: a ms value would decode as a
+  // far-future seconds value (the backend does no ms→s conversion).
+  const clearExpiry = expiry === null || expiration === null || data.time_in_force === 'GTC';
+  const modifyExpiry = clearExpiry ? null : normalizePendingExpiryToEpochSeconds(expiry ?? expiration);
+  const resolvedLogin = login ?? account_login ?? resolveStoredLogin();
+  const normalizedSl = normalizePendingProtectionPatch(sl ?? price_sl);
+  const normalizedTp = normalizePendingProtectionPatch(tp ?? price_tp);
+  return {
+    ...cleanRest,
+    ...(typeof resolvedLogin === 'number' && Number.isFinite(resolvedLogin) && resolvedLogin > 0 ? { account_login: resolvedLogin } : {}),
+    client_order_id: clientOrderId || createTradeOrderUuid(),
+    ...(normalizedSl !== undefined ? { sl: normalizedSl } : {}),
+    ...(normalizedTp !== undefined ? { tp: normalizedTp } : {}),
+    ...(clearExpiry ? { time_in_force: 'GTC', expiry: null } : modifyExpiry !== undefined ? { expiry: modifyExpiry } : {}),
+  };
+};
+
+// ====================
+// Types
+// ====================
+
+export interface LoginCredentials {
+  username?: string;
+  email?: string;
+  login?: number;
+  password: string;
+  broker_id?: string;
+  server?: string;
+}
+
+export interface LoginResponse extends AccountClassificationFields {
+  account?: AccountClassificationFields;
+  token?: string;
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: string;
+  user?: User;
+  user_id?: string;
+  username?: string;
+  role?: string;
+  account_login?: number;
+  broker_id?: string;
+  broker_name?: string;
+  broker_server?: string;
+  backend_url?: string;
+  market_api_url?: string;
+  server_url?: string;
+  ws_url?: string;
+  feed_url?: string;
+  feed_ws_url?: string;
+  feed_status_url?: string;
+}
+
+export interface User extends AccountClassificationFields {
+  account?: AccountClassificationFields;
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+}
+
+export interface AccountSummary extends AccountClassificationFields {
+  id?: string;
+  name?: string;
+  balance: number;
+  equity: number;
+  margin?: number;
+  margin_free?: number;
+  margin_level?: number;
+  margin_used?: number;
+  margin_available?: number;
+  unrealized_pl?: number;
+  realized_pl?: number;
+  open_positions?: number;
+  pending_orders?: number;
+  currency: string;
+  /** Canonical account-currency display scale from the gateway (0..18). */
+  currency_digits?: number;
+  leverage: number;
+  last_updated?: string;
+}
+
+export interface Transaction {
+  id: string;
+  type: 'deposit' | 'withdrawal' | 'trade' | 'fee' | 'commission';
+  amount: number;
+  currency: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface EquityHistoryPoint {
+  timestamp: string;
+  equity: number;
+}
+
+export interface Position {
+  id?: string;
+  ticket?: number;
+  account_login?: number;
+  symbol: string;
+  side: 'buy' | 'sell' | 'long' | 'short';
+  quantity?: number;
+  volume?: number;
+  open_price?: number;
+  current_price?: number;
+  price_open?: number;
+  price_current?: number;
+  price_sl?: number | null;
+  price_tp?: number | null;
+  sl?: number;
+  tp?: number;
+  swap?: number;
+  commission?: number;
+  profit?: number;
+  unrealized_pl?: number;
+  opened_at?: string;
+  time_create?: number;
+}
+
+export interface Order {
+  id?: string;
+  ticket?: number;
+  account_login?: number;
+  symbol: string;
+  type: string;
+  side: 'buy' | 'sell';
+  quantity?: number;
+  volume?: number;
+  price: number;
+  price_limit?: number | null;
+  price_sl?: number | null;
+  price_tp?: number | null;
+  status: 'pending' | 'filled' | 'cancelled' | 'rejected' | 'active' | 'triggered' | 'expired';
+  created_at?: string;
+  time_create?: number;
+  mt5_order_id?: number;
+  mt5_deal_id?: number;
+}
+
+export interface CreateOrderRequest {
+  login?: number;
+  account_login?: number;
+  client_order_id?: string;
+  symbol: string;
+  type?: 'market';
+  side: 'buy' | 'sell' | 'BUY' | 'SELL';
+  quantity?: number;
+  volume?: number;
+  price?: number;
+  price_sl?: number;
+  price_tp?: number;
+  sl?: number;
+  tp?: number;
+  comment?: string;
+  trailing_stop?: number;
+  trailing_step?: number;
+  magic?: number;
+}
+
+export interface PendingOrderRequest {
+  login?: number;
+  account_login?: number;
+  symbol: string;
+  side: 'buy' | 'sell' | 'BUY' | 'SELL';
+  volume: number;
+  type: 'buy_limit' | 'sell_limit' | 'buy_stop' | 'sell_stop' | 'buy_stop_limit' | 'sell_stop_limit' | 'BUY_LIMIT' | 'SELL_LIMIT' | 'BUY_STOP' | 'SELL_STOP' | 'BUY_STOP_LIMIT' | 'SELL_STOP_LIMIT';
+  price: number;
+  /**
+   * Limit (execution) price for `*_stop_limit` orders. The `price` field
+   * carries the stop (trigger) price. Required for stop-limit types.
+   * Backend wire name is `price_limit` (sent verbatim).
+   */
+  price_limit?: number;
+  price_sl?: number;
+  price_tp?: number;
+  sl?: number;
+  tp?: number;
+  expiration?: number;
+  expiry?: number;
+  comment?: string;
+  // NOTE: there is deliberately NO fill_policy wire field. The gateway REST
+  // place decoder has no fill-policy concept (IOC/FOK are explicitly refused
+  // in decodePendingRESTTimeInForce); sending one would be silently dropped,
+  // so the UI must not send it. Kept out of the modify path the same way.
+  trailing_stop?: number;
+  trailing_step?: number;
+  magic?: number;
+  client_order_id?: string;
+}
+
+export interface ModifyPositionRequest {
+  price_sl?: number;
+  price_tp?: number;
+  comment?: string;
+  trailing_stop?: number;
+  trailing_step?: number;
+}
+
+export interface ModifyPendingOrderRequest extends ModifyPositionRequest {
+  login?: number;
+  account_login?: number;
+  client_order_id?: string;
+  price?: number;
+  price_limit?: number;
+  time_in_force?: 'GTC' | 'DAY' | 'GTD';
+  expiration?: number | null;
+  expiry?: number | null;
+  state_version?: number;
+  sl?: number | null;
+  tp?: number | null;
+}
+
+export interface CreateAccountRequest {
+  name: string;
+  email?: string;
+  phone?: string;
+  country?: string;
+  city?: string;
+  group: string;
+  leverage: number;
+}
+
+export interface CreateAccountResponse {
+  success: boolean;
+  message: string;
+  account?: {
+    login: number;
+    master_password: string;
+    investor_password: string;
+    group: string;
+    server: string;
+    created_at: string;
+  };
+}
+
+export interface Symbol {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  /** Broker precision; null when the broker published none (render raw). */
+  digits: number | null;
+  /** Broker tick size (else one point from broker digits); null when neither is published. */
+  tickSize: number | null;
+  contractSize: number;
+  marginRate: number;
+  tradingEnabled: boolean;
+  bid?: number;
+  ask?: number;
+}
+
+export interface Quote {
+  symbol: string;
+  bid: number;
+  ask: number;
+  spread: number;
+  timestamp: string;
+}
+
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: 'info' | 'warning' | 'success' | 'error';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface EconomicEvent {
+  id: string;
+  timestamp: string;
+  currency: string;
+  impact: 'low' | 'medium' | 'high';
+  name: string;
+  actual?: string;
+  forecast?: string;
+  previous?: string;
+}
+
+// ====================
+// Auth Endpoints
+// ====================
+
+type LoginPayload = {
+  username?: string;
+  login?: number;
+  password: string;
+  broker_id?: string;
+};
+
+const normalizeLoginCredentials = (credentials: LoginCredentials): LoginPayload =>
+  normalizeBrokerAuthLoginPayload(credentials);
+
+export const authApi = {
+  login: (credentials: LoginCredentials, options?: { baseUrl?: string }) =>
+    apiClient.post<LoginResponse>('/auth/login', normalizeLoginCredentials(credentials), {
+      baseUrl: resolveV2BaseUrl(options?.baseUrl),
+      skipDynamicUrl: Boolean(options?.baseUrl) && !isLocalViteDevServer(),
+    }),
+
+  logout: () =>
+    apiClient.post<void>('/auth/logout', {}, { baseUrl: API_V2_BASE_URL }),
+
+  refresh: (refresh_token: string) => {
+    if (!isDesktopBackendTarget() && (!refresh_token || refresh_token !== getRefreshToken())) {
+      return Promise.reject(new Error('Refresh token does not belong to the active deployment broker session.'));
+    }
+    return apiClient.post<LoginResponse>('/auth/refresh', { refresh_token }, { baseUrl: API_V2_BASE_URL });
+  },
+};
+
+// ====================
+// Account Endpoints
+// ====================
+
+export const accountApi = {
+  getSummary: async (login?: number) => {
+    try {
+      const resolvedLogin = requireLogin(login ?? resolveStoredLogin(), '/api/v2/account/{login}');
+
+      const res = await apiClient.get<AccountSummary>(`/account/${resolvedLogin}`, {
+        baseUrl: API_V2_BASE_URL,
+      });
+      debugDebug('[DEBUG REST ACCOUNT PAYLOAD]', {
+        id: res.id ? '[present]' : undefined,
+        currency: res.currency,
+        leverage: res.leverage,
+        open_positions: res.open_positions,
+        pending_orders: res.pending_orders,
+      });
+      return res;
+    } catch (e) {
+      // Gateway may be down — suppress console noise
+      const error = e as { status?: unknown; message?: unknown };
+      debugDebug('[accountApi] getSummary unavailable:', error.status || error.message);
+      throw e;
+    }
+  },
+
+  getMetrics: async (login?: number) => {
+    try {
+      const resolvedLogin = requireLogin(login ?? resolveStoredLogin(), '/api/v2/account/{login}/metrics');
+      return await apiClient.get<AccountSummary>(`/account/${resolvedLogin}/metrics`, {
+        baseUrl: API_V2_BASE_URL,
+      });
+    } catch (e) {
+      const error = e as { status?: unknown; message?: unknown };
+      debugDebug('[accountApi] getMetrics unavailable:', error.status || error.message);
+      throw e;
+    }
+  },
+
+  getTransactions: async (params?: { type?: string; limit?: number; offset?: number; login?: number }) => {
+    const login = requireLogin(params?.login ?? resolveStoredLogin(), '/api/v2/accounts/{login}/history');
+    const rows = await apiClient.get<TransactionRow[]>(`/accounts/${login}/history`, {
+      baseUrl: API_V2_BASE_URL,
+      params: { limit: params?.limit, offset: params?.offset },
+    });
+
+    return rows
+      .filter((row) => !params?.type || row.type === params.type)
+      .map((row) => ({
+        id: String(row.id),
+        type: row.type,
+        amount: Number(row.amount),
+        currency: row.currency || 'USD',
+        description: row.comment,
+        createdAt: row.time ? new Date(Number(row.time) * 1000).toISOString() : '',
+      })) as Transaction[];
+  },
+
+  getEquityHistory: async (params?: { period?: '1d' | '7d' | '30d' | '90d' | '1y'; interval?: string; login?: number; from?: number; to?: number }) => {
+    const login = requireLogin(params?.login ?? resolveStoredLogin(), '/api/v2/account/{login}/equity');
+    const points = await apiClient.get<EquityPointRow[]>(`/account/${login}/equity`, {
+      baseUrl: API_V2_BASE_URL,
+      params: { from: params?.from, to: params?.to },
+    });
+
+    return points.map((point) => ({
+      timestamp: point.time ? new Date(Number(point.time) * 1000).toISOString() : '',
+      equity: Number(point.equity),
+    })) as EquityHistoryPoint[];
+  },
+};
+
+
+
+export const tradingApi = {
+  getPositions: (login?: number, params?: { limit?: number; offset?: number }): Promise<TradingPositionsResponse> => {
+    const resolvedLogin = requireLogin(login, '/api/v2/positions/{login}');
+    const baseUrl = API_V2_BASE_URL;
+    const endpoint = `/positions/${resolvedLogin}`;
+    const url = `${baseUrl}${endpoint}`;
+    debugLog("Calling Toolbox -> Trade API:", redactUrlForDebugLog(url));
+    return apiClient.get<Position[]>(endpoint, {
+      baseUrl,
+      // No default limit: a truncated list would read as closed positions.
+      params: {
+        ...(params?.limit !== undefined ? { limit: params.limit } : {}),
+        offset: params?.offset ?? 0,
+      },
+      headers: {
+        accept: 'application/json',
+      },
+    });
+  },
+
+  getOrders: (login?: number, params?: { limit?: number }): Promise<TradingOrdersResponse> =>
+    apiClient.get<Order[]>(`/orders/${requireLogin(login, '/api/v2/orders/{login}')}`, {
+      baseUrl: API_V2_BASE_URL,
+      params,
+    }),
+
+  getPendingOrders: (login: number): Promise<TradingOrdersResponse> =>
+    apiClient.get<Order[]>(`/orders/pending/${requireLogin(login, '/api/v2/orders/pending/{login}')}`, { baseUrl: API_V2_BASE_URL }),
+
+  placeOrder: (order: CreateOrderRequest): Promise<Position | OrderCommandResponse> =>
+    apiClient.post<Position | OrderCommandResponse>('/orders', normalizeOrderPayload(order), { baseUrl: API_V2_BASE_URL }),
+
+  getOrderCommand: (
+    clientOrderId: string,
+    options?: { account_login?: number | string; accountLogin?: number | string },
+  ): Promise<OrderCommandResponse> =>
+    tradingV2Api.getOrderCommand(clientOrderId, { baseUrl: API_V2_BASE_URL, ...options }),
+
+  placePendingOrder: (order: PendingOrderRequest): Promise<Order> =>
+    apiClient.post<Order>('/orders/pending', normalizePendingOrderPayload(order), { baseUrl: API_V2_BASE_URL }),
+
+  cancelOrder: (orderId: string | number, clientOrderId?: string): Promise<{ message?: string }> => {
+    const supplied = String(clientOrderId ?? '').trim();
+    if (supplied && !isTradeOrderUuidV4(supplied)) throw new Error('client_order_id must be a UUID v4');
+    const idempotencyKey = supplied || createTradeOrderUuid();
+    const resolvedLogin = resolveStoredLogin();
+    const hasLogin = typeof resolvedLogin === 'number' && Number.isFinite(resolvedLogin) && resolvedLogin > 0;
+    const isTestEnv = import.meta.env?.MODE === 'test' || Boolean((import.meta as { env?: { VITEST?: unknown } }).env?.VITEST);
+    return apiClient.delete<{ message?: string }>(
+      `/orders/pending/${requireTicket(orderId, '/api/v2/orders/pending/{ticket}')}`,
+      {
+        baseUrl: API_V2_BASE_URL,
+        ...(hasLogin ? { params: { account_login: resolvedLogin } } : {}),
+        ...(isTestEnv ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
+      },
+      {
+        client_order_id: idempotencyKey,
+        ...(hasLogin ? { account_login: resolvedLogin } : {}),
+      },
+    );
+  },
+
+  modifyPendingOrder: (orderId: string | number, data: ModifyPendingOrderRequest): Promise<Order> =>
+    apiClient.put<Order>(
+      `/orders/pending/${requireTicket(orderId, '/api/v2/orders/pending/{ticket}')}`,
+      normalizeModifyPendingOrderPayload(data),
+      { baseUrl: API_V2_BASE_URL }
+    ),
+
+  closePosition: (
+    positionId: string | number,
+    options?: ClosePositionRequestOptions | number,
+  ): Promise<void> =>
+    tradingV2Api.closePosition(
+      positionId,
+      typeof options === 'number'
+        ? { baseUrl: API_V2_BASE_URL, volume: options }
+        : { baseUrl: API_V2_BASE_URL, ...options },
+    ).then(() => undefined),
+
+  modifyPosition: (positionId: string | number, data: ModifyPositionRequest): Promise<Position> =>
+    apiClient.put<Position>(`/positions/${requireTicket(positionId, '/api/v2/positions/{id}')}`, data, { baseUrl: API_V2_BASE_URL }),
+
+};
+
+// ====================
+// Market Endpoints
+// ====================
+
+export const marketApi = {
+  getSymbols: async () => {
+    let lastError: unknown = null;
+    let instruments: InstrumentRow[] = [];
+
+    for (const endpoint of SYMBOL_ENDPOINTS) {
+      try {
+        const request = resolveSymbolEndpoint(endpoint);
+        const response = request.endpoint === '/instruments'
+          ? await loadSharedAuthenticatedInstruments({ baseUrl: request.baseUrl })
+          : await apiClient.get<unknown>(request.endpoint, { baseUrl: request.baseUrl });
+        instruments = extractInstrumentRows(response);
+        if (instruments.length > 0) break;
+        lastError = new Error(`No symbols returned by ${endpoint}`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (instruments.length === 0 && lastError) {
+      throw lastError;
+    }
+
+    return instruments.map((instrument) => {
+      const symbol = String(instrument.symbol ?? instrument.name ?? instrument.id ?? '').trim();
+      // TERM-DIGITS-WL: broker spec only; never a 5-digit default (and a real
+      // 0-digit instrument stays 0).
+      const digits = resolveSpecDigits(instrument.digits);
+      const publishedTickSize = Number(instrument.tick_size);
+
+      return {
+        id: symbol,
+        name: symbol,
+        description: instrument.description || symbol,
+        category: instrument.category || 'Forex',
+        digits,
+        tickSize: Number.isFinite(publishedTickSize) && publishedTickSize > 0
+          ? publishedTickSize
+          : digits !== null ? Math.pow(10, -digits) : null,
+        contractSize: instrument.contract_size,
+        marginRate: instrument.margin_rate ?? 0.01,
+        tradingEnabled: Boolean(instrument.enabled ?? instrument.trading_enabled ?? instrument.tradingEnabled ?? true),
+        bid: instrument.bid,
+        ask: instrument.ask,
+      };
+    }) as unknown as Symbol[];
+  },
+
+  getQuote: (symbol: string) =>
+    apiClient.get<Quote>(`/quotes/${encodeURIComponent(symbol)}`, { baseUrl: API_V2_BASE_URL }),
+
+  getCandles: (symbol: string, params?: { timeframe?: string; count?: number; from?: number; to?: number }) =>
+    apiClient.get<{ candles: Candle[] } | Candle[]>(`/candles/${encodeURIComponent(symbol)}`, {
+      baseUrl: API_V2_BASE_URL,
+      params: normalizeCandleApiQueryParams({
+        timeframe: params?.timeframe,
+        count: params?.count,
+        from: params?.from,
+        to: params?.to,
+      }),
+    }),
+
+  getOHLC: async (symbol: string, timeframe: string = 'M1', count: number = 100) => {
+    const response = await apiClient.get<{ candles: Candle[] } | Candle[]>(
+      `/candles/${encodeURIComponent(symbol)}`,
+      {
+        baseUrl: API_V2_BASE_URL,
+        params: normalizeCandleApiQueryParams({ timeframe, count }),
+      }
+    );
+    return Array.isArray(response) ? response : (response.candles || []);
+  },
+
+  getTicks: (symbol: string) =>
+    apiClient.get<TickRow[]>(`/ticks/${encodeURIComponent(symbol)}`, {
+      baseUrl: API_V2_BASE_URL,
+      params: { limit: 100 },
+    }),
+};
+
+// ====================
+// Notifications Endpoints
+// ====================
+
+export const notificationsApi = {
+  getNotifications: (params?: { unreadOnly?: boolean; limit?: number; offset?: number }) =>
+    apiClient.get<{ notifications: Notification[]; total: number; unreadCount: number }>('/notifications', {
+      headers: params ? { 'X-Query-Params': JSON.stringify(params) } : undefined,
+    }),
+
+  markAsRead: (notificationId: string) =>
+    apiClient.patch<void>(`/notifications/${notificationId}/read`, {}),
+
+  markAllAsRead: () =>
+    apiClient.post<void>('/notifications/read-all', {}),
+
+  deleteNotification: (notificationId: string) =>
+    apiClient.delete<void>(`/notifications/${notificationId}`),
+};
+
+// ====================
+// Economic Calendar Endpoints
+// ====================
+
+export const economicCalendarApi = {
+  getEvents: (params?: { from?: string; to?: string; currencies?: string[]; impact?: string[] }) =>
+    apiClient.get<{ events: EconomicEvent[]; total: number }>('/economic-calendar/events', {
+      headers: params ? { 'X-Query-Params': JSON.stringify(params) } : undefined,
+    }),
+
+  getEventsForToday: () =>
+    apiClient.get<{ events: EconomicEvent[]; total: number }>('/economic-calendar/events/today'),
+
+  getEventsForWeek: () =>
+    apiClient.get<{ events: EconomicEvent[]; total: number }>('/economic-calendar/events/week'),
+};

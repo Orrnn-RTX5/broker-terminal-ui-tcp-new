@@ -1,0 +1,1090 @@
+import { useUiTranslation } from '../hooks/useUiTranslation';
+/**
+ * MT5-Style Chart Right-Click Context Menu
+ * Full-featured, themed to match project dark theme
+ */
+
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom';
+import type { ChartType, Timeframe } from '../types/chart';
+import type { IndicatorConfig } from '../services/indicatorManager';
+import { commandBus } from '../services/commandBus';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useTemplates, useTemplateStore } from '../store/useTemplateStore';
+import type { ChartTemplate } from '../store/useTemplateStore';
+import type { ChartGridLineStyle, ChartGridType } from '../store/useChartSettingsStore';
+import {
+    CandlestickChart, BarChart2, LineChart, AreaChart, ZoomIn, ZoomOut,
+    Grid3X3, RefreshCw, Camera, Settings, ChevronRight,
+    Activity, AlignJustify, Volume2, Layers,
+    Trash2, FileText, TrendingUp,
+    ArrowUpDown, Type, Shapes, MoveHorizontal, MoveVertical,
+    Eye, EyeOff, Image as ImageIcon,
+} from 'lucide-react';
+
+export interface ChartPendingOrderDraft {
+    symbol: string;
+    orderType: 'Buy Limit' | 'Sell Limit' | 'Buy Stop' | 'Sell Stop';
+    side: 'BUY' | 'SELL';
+    price?: number;
+}
+
+// Fail-closed: any unreadable setting disables instant send and opens the
+// order dialog instead (SUI-T9 confirmation contract: one-click OFF ⇒
+// prefilled dialog, never an instant order).
+const isOneClickTradingEnabledFailClosed = (): boolean => {
+    try {
+        const trade = useSettingsStore.getState()?.trade as { oneClickTrading?: unknown } | undefined;
+        return trade?.oneClickTrading === true;
+    } catch {
+        return false;
+    }
+};
+
+// One-click OFF routes market entries to the order dialog via the openNewOrder
+// event (handled by useTerminalCommandEvents → openOrderPanelForSymbol).
+const openChartMarketDialog = (side: 'BUY' | 'SELL', symbol: string): void => {
+    window.dispatchEvent(new CustomEvent('openNewOrder', { detail: { symbol, side } }));
+};
+
+const resolveChartClickPrice = (clickPrice: number | null | undefined): number | undefined => (
+    typeof clickPrice === 'number' && Number.isFinite(clickPrice) && clickPrice > 0 ? clickPrice : undefined
+);
+
+interface ChartContextMenuProps {
+    visible: boolean;
+    x: number;
+    y: number;
+    symbol: string;
+    clickPrice?: number | null;
+    targetContextId: string;
+    currentChartType: ChartType;
+    currentTimeframe: Timeframe;
+    oneClickTrading?: boolean;
+    showGrid?: boolean;
+    gridType?: ChartGridType;
+    gridLineStyle?: ChartGridLineStyle;
+    showVolumes?: boolean;
+    autoScroll?: boolean;
+    chartShift?: boolean;
+    showTradeLevels?: boolean;
+    showTradeHistory?: boolean;
+    showTradeHistoryLine?: boolean;
+    showOHLC?: boolean;
+    showBackgroundLogo?: boolean;
+    onChangeChartType: (type: ChartType) => void;
+    onChangeTimeframe: (tf: Timeframe) => void;
+    onToggleOneClickTrading: () => void;
+    onToggleGrid: () => void;
+    onChangeGridType?: (type: ChartGridType) => void;
+    onChangeGridLineStyle?: (style: ChartGridLineStyle) => void;
+    onToggleVolumes: () => void;
+    onToggleAutoScroll: () => void;
+    onToggleChartShift: () => void;
+    onToggleTradeLevels?: () => void;
+    onToggleTradeHistory?: () => void;
+    onToggleTradeHistoryLine?: () => void;
+    onToggleOHLC?: () => void;
+    onToggleBackgroundLogo?: () => void;
+    onOpenBackgroundImage?: () => void;
+    onOpenProperties: () => void;
+    onSaveAsPicture: () => void;
+    onPrintChart: () => void;
+    onRefresh: () => void;
+    onZoomIn: () => void;
+    onZoomOut: () => void;
+    onAddIndicator: (indicator: {
+        name: string;
+        indicatorType: string;
+        params: Record<string, any>;
+    }) => void;
+    onDeleteIndicators: () => void;
+    onOpenNewOrder: (draft?: ChartPendingOrderDraft) => void;
+    onOpenDOM: () => void;
+    onOpenTemplateDialog: (mode: 'save' | 'load') => void;
+    onClose: () => void;
+    onLoadTemplate?: (template: ChartTemplate) => void;
+    currentIndicators?: IndicatorConfig[];
+    currentDrawingTools?: any[];
+}
+
+// ─── CSS variables injected once ─────────────────────────────────────────────
+const MENU_FONT = 'var(--font-sans)';
+const C_BG = 'var(--ctx-bg, rgba(19, 19, 22, 0.85))';
+const C_BORDER = 'var(--ctx-border, rgba(255, 255, 255, 0.08))';
+const C_HOVER = 'var(--ctx-hover, rgba(255, 255, 255, 0.06))';
+const C_ACTIVE_BG = 'var(--ctx-active-bg, rgb(59, 130, 246))';
+const C_ACTIVE_FG = 'var(--ctx-active-fg, #ffffff)';
+const C_ITEM_ACTIVE_BG = 'var(--ctx-item-active-bg, rgba(59, 130, 246, 0.15))';
+const C_ITEM_ACTIVE_FG = 'var(--ctx-item-active-fg, #60a5fa)';
+const C_TEXT = 'var(--ctx-text, #e4e4e7)';
+const C_HEADER = 'var(--ctx-header, #a1a1aa)';
+const C_DISABLED = 'var(--ctx-disabled, rgba(161, 161, 170, 0.3))';
+const MENU_VIEWPORT_MARGIN = 8;
+const MENU_MIN_WIDTH = 250;
+const MENU_ESTIMATED_HEIGHT = 460;
+const MENU_MIN_MAX_HEIGHT = 180;
+
+interface MenuBounds {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+}
+
+const resolveChartMenuBounds = (targetContextId?: string): MenuBounds => {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    if (typeof document !== 'undefined' && targetContextId) {
+        const chartEl = Array.from(document.querySelectorAll<HTMLElement>('[data-chart-context-id]'))
+            .find((el) => el.getAttribute('data-chart-context-id') === targetContextId);
+        const rect = chartEl?.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+            return {
+                left: Math.max(0, rect.left),
+                top: Math.max(0, rect.top),
+                right: Math.min(vw, rect.right),
+                bottom: Math.min(vh, rect.bottom),
+            };
+        }
+    }
+    return {
+        left: 0,
+        top: 0,
+        right: vw,
+        bottom: vh,
+    };
+};
+
+interface MenuLayout {
+    left: number;
+    top: number;
+    maxHeight: number;
+    scrollable: boolean;
+    anchorX: number;
+    anchorY: number;
+}
+
+const clampChartContextMenuLayout = (
+    anchorX: number,
+    anchorY: number,
+    menuWidth: number,
+    menuHeight: number,
+    targetContextId?: string,
+): MenuLayout => {
+    const bounds = resolveChartMenuBounds(targetContextId);
+    const boundsHeight = Math.max(0, bounds.bottom - bounds.top);
+    const maxHeight = Math.max(
+        Math.min(MENU_MIN_MAX_HEIGHT, Math.max(96, boundsHeight - MENU_VIEWPORT_MARGIN * 2)),
+        boundsHeight - MENU_VIEWPORT_MARGIN * 2,
+    );
+    const visibleHeight = Math.min(Math.max(menuHeight, 0), maxHeight);
+    const effectiveWidth = Math.max(menuWidth, MENU_MIN_WIDTH);
+    const left = Math.max(
+        bounds.left + MENU_VIEWPORT_MARGIN,
+        Math.min(anchorX, bounds.right - effectiveWidth - MENU_VIEWPORT_MARGIN),
+    );
+    const top = Math.max(
+        bounds.top + MENU_VIEWPORT_MARGIN,
+        Math.min(anchorY, bounds.bottom - visibleHeight - MENU_VIEWPORT_MARGIN),
+    );
+
+    return {
+        left,
+        top,
+        maxHeight,
+        scrollable: menuHeight > maxHeight,
+        anchorX,
+        anchorY,
+    };
+};
+
+// ─── Keyboard shortcut label ──────────────────────────────────────────────────
+const Shortcut = ({ keys }: { keys: string }) => (
+    <span style={{
+        marginLeft: 'auto',
+        paddingLeft: 20,
+        fontSize: 12,
+        fontWeight: 400,
+        fontFamily: MENU_FONT,
+        letterSpacing: '0.03em',
+        color: C_HEADER,
+        flexShrink: 0,
+        opacity: 0.85,
+    }}>
+        {keys}
+    </span>
+);
+
+// ─── Separator ────────────────────────────────────────────────────────────────
+const MenuSeparator = () => (
+    <div style={{ height: 1, background: C_BORDER, margin: '2px 0' }} />
+);
+
+// ─── Single menu item ─────────────────────────────────────────────────────────
+interface MenuItemProps {
+    icon?: React.ReactNode;
+    label: string;
+    shortcut?: string;
+    onClick?: () => void;
+    hasSubmenu?: boolean;
+    active?: boolean;
+    checked?: boolean;
+    radio?: boolean;
+    disabled?: boolean;
+    highlight?: boolean; // red highlight like "Sell Limit"
+}
+
+const MenuItem = React.forwardRef<HTMLDivElement, MenuItemProps>((
+    { icon, label, shortcut, onClick, hasSubmenu, active, checked, radio, disabled }
+    , ref) => {
+    const tr = useUiTranslation();
+    const bg = active ? C_ITEM_ACTIVE_BG : 'transparent';
+    const fg = disabled ? C_DISABLED : active ? C_ITEM_ACTIVE_FG : C_TEXT;
+
+    return (
+        <div
+            ref={ref}
+            role={checked === undefined ? 'menuitem' : radio ? 'menuitemradio' : 'menuitemcheckbox'}
+            aria-checked={checked}
+            aria-label={tr(label)}
+            aria-disabled={disabled || undefined}
+            tabIndex={disabled ? -1 : 0}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '2px 12px 2px 10px',
+                minHeight: 26,
+                fontSize: 12.5,
+                lineHeight: '18px',
+                fontFamily: MENU_FONT,
+                fontWeight: 400,
+                letterSpacing: '0.01em',
+                color: fg,
+                background: bg,
+                cursor: disabled ? 'default' : 'pointer',
+                userSelect: 'none',
+                pointerEvents: disabled ? 'none' : undefined,
+                transition: 'all 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}
+            onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.background = C_HOVER; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = active ? C_ITEM_ACTIVE_BG : 'transparent'; }}
+            onClick={e => { e.stopPropagation(); if (!disabled && onClick) onClick(); }}
+            onKeyDown={e => {
+                if (disabled || (e.key !== 'Enter' && e.key !== ' ')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                onClick?.();
+            }}
+        >
+            {/* Icon / Checkmark column — fixed 18px */}
+            <span style={{ width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1 }}>
+                {checked !== undefined && !icon ? (
+                    checked ? (
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={C_ITEM_ACTIVE_FG} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="2 6.5 4.5 9 10 3" />
+                        </svg>
+                    ) : null
+                ) : icon ? icon : null}
+            </span>
+
+            <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{tr(label)}</span>
+
+            {shortcut && <Shortcut keys={shortcut} />}
+            {hasSubmenu && (
+                <ChevronRight size={13} style={{ color: C_HEADER, flexShrink: 0, marginLeft: shortcut ? 6 : 'auto', opacity: 0.85 }} />
+            )}
+        </div>
+    );
+});
+MenuItem.displayName = 'MenuItem';
+
+const SubmenuAncestry = React.createContext<readonly string[]>([]);
+
+const ChartMenuTargetContext = React.createContext<string | undefined>(undefined);
+
+const Submenu = ({ children, label, icon, disabled }: {
+    children: React.ReactNode;
+    label: string;
+    icon?: React.ReactNode;
+    disabled?: boolean;
+}) => {
+    const tr = useUiTranslation();
+    const ancestorIds = React.useContext(SubmenuAncestry);
+    const targetContextId = React.useContext(ChartMenuTargetContext);
+    const submenuId = React.useId();
+    const branchIds = [...ancestorIds, submenuId];
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    const submenuRef = useRef<HTMLDivElement>(null);
+    const focusOnOpenRef = useRef(false);
+    const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({ left: 0, top: 0 });
+
+    const calcPosition = useCallback(() => {
+        if (!ref.current) return;
+        const rect = ref.current.getBoundingClientRect();
+        const bounds = resolveChartMenuBounds(targetContextId);
+        const submenuRect = submenuRef.current?.getBoundingClientRect();
+        const submenuWidth = Math.max(200, submenuRect?.width || 0);
+        const maxHeight = Math.max(0, (bounds.bottom - bounds.top) - MENU_VIEWPORT_MARGIN * 2);
+        const submenuHeight = Math.min(submenuRef.current?.scrollHeight || submenuRect?.height || 320, maxHeight);
+        const left = Math.max(bounds.left + MENU_VIEWPORT_MARGIN, Math.min(
+            rect.right + submenuWidth > bounds.right - MENU_VIEWPORT_MARGIN ? rect.left - submenuWidth : rect.right,
+            bounds.right - submenuWidth - MENU_VIEWPORT_MARGIN,
+        ));
+        const top = Math.max(bounds.top + MENU_VIEWPORT_MARGIN, Math.min(rect.top, bounds.bottom - submenuHeight - MENU_VIEWPORT_MARGIN));
+
+        setSubmenuStyle({ left, top, maxHeight });
+    }, [targetContextId]);
+
+    useLayoutEffect(() => {
+        if (!open) return;
+        calcPosition();
+        if (focusOnOpenRef.current) {
+            submenuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')?.focus();
+            focusOnOpenRef.current = false;
+        }
+    }, [open, calcPosition]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleParentScroll = (event: Event) => {
+            if (event.target instanceof Element && !submenuRef.current?.contains(event.target)) setOpen(false);
+        };
+        window.addEventListener('scroll', handleParentScroll, true);
+        return () => window.removeEventListener('scroll', handleParentScroll, true);
+    }, [open]);
+
+    const isOwnedSubmenuTarget = (target: EventTarget | null): boolean => (
+        target instanceof Element
+        && (target.closest('[data-chart-submenu-ancestors]')?.getAttribute('data-chart-submenu-ancestors')?.split(' ').includes(submenuId) ?? false)
+    );
+
+    return (
+        <div
+            ref={ref}
+            style={{ position: 'relative' }}
+            onMouseEnter={() => { if (!disabled) { calcPosition(); setOpen(true); } }}
+            onMouseLeave={e => {
+                const relatedTarget = e.nativeEvent.relatedTarget ?? e.relatedTarget;
+                if (isOwnedSubmenuTarget(relatedTarget)) return;
+                setOpen(false);
+            }}
+        >
+            <div
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-disabled={disabled || undefined}
+                tabIndex={disabled ? -1 : 0}
+                onClick={e => {
+                    e.stopPropagation();
+                    if (!disabled) { calcPosition(); setOpen(true); }
+                }}
+                onKeyDown={e => {
+                    if (disabled || !['Enter', ' ', 'ArrowRight'].includes(e.key)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    calcPosition();
+                    focusOnOpenRef.current = true;
+                    if (open) {
+                        submenuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')?.focus();
+                        focusOnOpenRef.current = false;
+                    }
+                    setOpen(true);
+                }}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '2px 12px 2px 10px', minHeight: 26,
+                    fontSize: 12.5, lineHeight: '18px',
+                    fontFamily: MENU_FONT, fontWeight: 400, letterSpacing: '0.01em',
+                    color: disabled ? C_DISABLED : open ? C_ACTIVE_FG : C_TEXT,
+                    background: open ? C_ACTIVE_BG : 'transparent',
+                    cursor: disabled ? 'default' : 'pointer',
+                    userSelect: 'none',
+                    pointerEvents: disabled ? 'none' : undefined,
+                    transition: 'all 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+            >
+                <span style={{ width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {icon}
+                </span>
+                <span style={{ flex: 1, whiteSpace: 'nowrap' }}>{tr(label)}</span>
+                <ChevronRight size={13} style={{ color: open ? C_ACTIVE_FG : C_HEADER, flexShrink: 0, opacity: 0.85 }} />
+            </div>
+
+            {open && ReactDOM.createPortal(
+                <div
+                    ref={submenuRef}
+                    className="rtx-chart-context-menu"
+                    role="menu"
+                    aria-label={tr(label)}
+                    data-chart-submenu-ancestors={branchIds.join(' ')}
+                    onMouseLeave={e => {
+                        const relatedTarget = e.nativeEvent.relatedTarget ?? e.relatedTarget;
+                        if (isOwnedSubmenuTarget(relatedTarget) || (relatedTarget instanceof Node && ref.current?.contains(relatedTarget))) return;
+                        setOpen(false);
+                    }}
+                    style={{
+                        position: 'fixed',
+                        zIndex: 10002,
+                        padding: '4px 0',
+                        minWidth: 200,
+                        background: C_BG,
+                        backdropFilter: 'blur(16px) saturate(180%)',
+                        border: `1px solid ${C_BORDER}`,
+                        borderRadius: 8,
+                        boxShadow: 'var(--ctx-shadow, 0 12px 40px rgba(0,0,0,0.6))',
+                        overflowY: 'auto',
+                        ...submenuStyle,
+                    }}
+                >
+                    <SubmenuAncestry.Provider value={branchIds}>{children}</SubmenuAncestry.Provider>
+                </div>,
+                document.body,
+            )}
+        </div>
+    );
+};
+
+// ─── Main Context Menu ────────────────────────────────────────────────────────
+export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
+    visible,
+    x,
+    y,
+    symbol,
+    clickPrice,
+    targetContextId,
+    currentChartType,
+    currentTimeframe,
+    oneClickTrading = false,
+    showGrid = true,
+    gridType = 'square',
+    gridLineStyle = 'dashed',
+    showVolumes = true,
+    autoScroll = false,
+    chartShift = false,
+    showTradeLevels = true,
+    showTradeHistory = true,
+    showTradeHistoryLine = true,
+    showOHLC = true,
+    showBackgroundLogo = true,
+    onChangeChartType,
+    onChangeTimeframe,
+    onToggleOneClickTrading,
+    onToggleGrid,
+    onChangeGridType,
+    onChangeGridLineStyle,
+    onToggleVolumes,
+    onToggleAutoScroll,
+    onToggleChartShift,
+    onToggleTradeLevels,
+    onToggleTradeHistory,
+    onToggleTradeHistoryLine,
+    onToggleOHLC,
+    onToggleBackgroundLogo,
+    onOpenBackgroundImage,
+    onOpenProperties,
+    onSaveAsPicture,
+    onRefresh,
+    onZoomIn,
+    onZoomOut,
+    onAddIndicator,
+    onDeleteIndicators,
+    onOpenNewOrder,
+    onOpenDOM,
+    onOpenTemplateDialog,
+    onClose,
+    onLoadTemplate,
+    currentIndicators = [],
+}) => {
+    const tr = useUiTranslation();
+    const templates = useTemplates();
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [menuLayout, setMenuLayout] = useState<MenuLayout | null>(null);
+    const fallbackLayout = clampChartContextMenuLayout(x, y, MENU_MIN_WIDTH, MENU_ESTIMATED_HEIGHT, targetContextId);
+    const activeLayout = menuLayout?.anchorX === x && menuLayout?.anchorY === y
+        ? menuLayout
+        : fallbackLayout;
+
+    // Measure the rendered menu so bottom-edge opens clamp against the real height.
+    useLayoutEffect(() => {
+        if (!visible || !menuRef.current) return;
+
+        const rect = menuRef.current.getBoundingClientRect();
+        const nextLayout = clampChartContextMenuLayout(
+            x,
+            y,
+            rect.width || MENU_MIN_WIDTH,
+            menuRef.current.scrollHeight || rect.height || MENU_ESTIMATED_HEIGHT,
+            targetContextId,
+        );
+
+        setMenuLayout(prev => (
+            prev
+                && prev.left === nextLayout.left
+                && prev.top === nextLayout.top
+                && prev.maxHeight === nextLayout.maxHeight
+                && prev.scrollable === nextLayout.scrollable
+                && prev.anchorX === nextLayout.anchorX
+                && prev.anchorY === nextLayout.anchorY
+                ? prev
+                : nextLayout
+        ));
+    });
+
+    // ── Close on Escape ──
+    useEffect(() => {
+        if (!visible) return;
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [visible, onClose]);
+
+    // ── Close on wheel (native window listener) ──
+    // IMPORTANT: Must be a native window listener — NOT a React synthetic event on a child element.
+    // The chart's wheel handler calls e.stopPropagation() at the window capture level, which
+    // prevents the event from reaching any DOM elements below (body/backdrop). But since
+    // stopPropagation() does NOT affect OTHER listeners on the SAME element (window),
+    // this listener fires regardless — chart scrolls AND the menu closes.
+    useEffect(() => {
+        if (!visible) return;
+        const handler = (event: WheelEvent) => {
+            if (event.target instanceof Element && event.target.closest('.rtx-chart-context-menu')) return;
+            onClose();
+        };
+        window.addEventListener('wheel', handler, { passive: true, capture: false });
+        return () => window.removeEventListener('wheel', handler, { capture: false } as EventListenerOptions);
+    }, [visible, onClose]);
+
+    if (!visible) return null;
+
+    const timeframes: Timeframe[] = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'];
+
+    const indicators = [
+        { name: 'Moving Average (SMA)', type: 'sma', params: { period: 20 } },
+        { name: 'Exponential MA (EMA)', type: 'ema', params: { period: 12 } },
+        { name: 'Bollinger Bands', type: 'bb', params: { period: 20, stdDev: 2 } },
+        { name: 'RSI', type: 'rsi', params: { period: 14 } },
+        { name: 'MACD', type: 'macd', params: { fast: 12, slow: 26, signal: 9 } },
+    ];
+
+    const drawingTools = [
+        { name: 'Trend Line', tool: 'trendline', icon: <MoveHorizontal size={12} /> },
+        { name: 'Horizontal Line', tool: 'hline', icon: <MoveHorizontal size={12} /> },
+        { name: 'Vertical Line', tool: 'vline', icon: <MoveVertical size={12} /> },
+        { name: 'Fibonacci Retracement', tool: 'fibonacci', icon: <Activity size={12} /> },
+        { name: 'Equidistant Channel', tool: 'channel', icon: <AlignJustify size={12} /> },
+        { name: 'Text / Annotation', tool: 'text', icon: <Type size={12} /> },
+        { name: 'Rectangle', tool: 'rectangle', icon: <Shapes size={12} /> },
+    ];
+
+    // Close the menu first and run the action only after the browser has painted
+    // the closed state. Actions such as switching chart type rebuild the chart
+    // series synchronously; running them in the same render as the close kept the
+    // menu frozen on screen until that work finished, which felt like click lag.
+    const closeThen = (action: () => void) => {
+        onClose();
+        requestAnimationFrame(() => { setTimeout(action, 0); });
+    };
+
+    const handleAddIndicator = (indicator: typeof indicators[number]) => {
+        closeThen(() => onAddIndicator({
+            name: indicator.name,
+            indicatorType: indicator.type,
+            params: indicator.params,
+        }));
+    };
+
+    const handleSelectDrawingTool = (tool: any) => {
+        closeThen(() => commandBus.dispatch({ type: 'SELECT_TOOL', payload: { tool, targetContextId } }));
+    };
+
+    const handleOpenSaveTemplate = () => {
+        closeThen(() => onOpenTemplateDialog('save'));
+    };
+
+    const handleOpenLoadTemplate = () => {
+        closeThen(() => onOpenTemplateDialog('load'));
+    };
+
+    const handleTemplateLoad = (template: ChartTemplate) => {
+        if (onLoadTemplate) onLoadTemplate(template);
+    };
+
+    const { deleteTemplate } = useTemplateStore.getState();
+
+    const handleTemplateDelete = (id: string, name: string) => {
+        if (confirm(`Delete template "${name}"?`)) {
+            deleteTemplate(id);
+        }
+    };
+
+    const menuContent = (
+        <div
+            className="rtx-chart-context-menu"
+            ref={menuRef}
+            role="menu"
+            aria-label={tr('Chart context menu')}
+            style={{
+                position: 'fixed',
+                zIndex: 10000,
+                top: activeLayout.top,
+                left: activeLayout.left,
+                minWidth: MENU_MIN_WIDTH,
+                maxHeight: activeLayout.maxHeight,
+                padding: '4px 0',
+                background: C_BG,
+                backdropFilter: 'blur(16px) saturate(180%)',
+                border: `1px solid ${C_BORDER}`,
+                borderRadius: 6,
+                boxShadow: 'var(--ctx-shadow, 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08))',
+                fontFamily: MENU_FONT,
+                boxSizing: 'border-box',
+                overflowX: 'hidden',
+                overflowY: activeLayout.scrollable ? 'auto' : 'visible',
+                overscrollBehavior: 'contain',
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+        >
+            {/* ── Header: symbol name ── */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '4px 12px 4px 10px',
+                minHeight: 26,
+                fontSize: 11.5,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: C_HEADER,
+                borderBottom: `1px solid ${C_BORDER}`,
+                marginBottom: 2,
+            }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ctx-active-bg, #3b82f6)', boxShadow: '0 0 8px var(--ctx-active-bg, rgba(59,130,246,0.6))' }} />
+                {symbol}
+            </div>
+
+            {/* ── Pending Order (highlighted) ── */}
+            <MenuItem
+                icon={<FileText size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-red, #ff4d4f)' }} />}
+                label={tr("Pending Order")}
+                shortcut="F9"
+                highlight={false}
+                onClick={() => closeThen(() => { onOpenNewOrder(); })}
+            />
+
+            {/* ── Trading submenu ── */}
+            <Submenu
+                label={tr("Trading")}
+                icon={<TrendingUp size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />}
+            >
+                <MenuItem label={tr("Buy Market")} onClick={() => closeThen(() => {
+                    if (isOneClickTradingEnabledFailClosed()) {
+                        window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'BUY', symbol } }));
+                        return;
+                    }
+                    openChartMarketDialog('BUY', symbol);
+                })} />
+                <MenuItem label={tr("Sell Market")} onClick={() => closeThen(() => {
+                    if (isOneClickTradingEnabledFailClosed()) {
+                        window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'SELL', symbol } }));
+                        return;
+                    }
+                    openChartMarketDialog('SELL', symbol);
+                })} />
+                <MenuSeparator />
+                <MenuItem label={tr("Buy Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Limit', side: 'BUY', price: resolveChartClickPrice(clickPrice) }); })} />
+                <MenuItem label={tr("Sell Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Limit', side: 'SELL', price: resolveChartClickPrice(clickPrice) }); })} />
+                <MenuItem label={tr("Buy Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Stop', side: 'BUY', price: resolveChartClickPrice(clickPrice) }); })} />
+                <MenuItem label={tr("Sell Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Stop', side: 'SELL', price: resolveChartClickPrice(clickPrice) }); })} />
+            </Submenu>
+
+            <MenuSeparator />
+
+            {/* ── Depth of Market ── */}
+            <MenuItem
+                icon={<ArrowUpDown size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Depth Of Market")}
+                shortcut="Alt+B"
+                onClick={() => closeThen(() => { onOpenDOM(); })}
+            />
+
+            {/* ── One Click Trading ── */}
+            <MenuItem
+                icon={<Activity size={13} strokeWidth={1.5} style={{ color: oneClickTrading ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("One Click Trading")}
+                shortcut="Alt+T"
+                checked={oneClickTrading}
+                onClick={() => closeThen(() => { onToggleOneClickTrading(); })}
+            />
+
+            <MenuItem
+                icon={showTradeLevels
+                    ? <Eye size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />
+                    : <EyeOff size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={showTradeLevels ? tr("Hide Trade Levels") : tr("Show Trade Levels")}
+                checked={showTradeLevels}
+                disabled={!onToggleTradeLevels}
+                onClick={() => closeThen(() => { onToggleTradeLevels?.(); })}
+            />
+
+            <MenuItem
+                icon={showTradeHistoryLine
+                    ? <Eye size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />
+                    : <EyeOff size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={showTradeHistoryLine ? tr("Hide Entry / Close Line") : tr("Show Entry / Close Line")}
+                checked={showTradeHistoryLine}
+                disabled={!onToggleTradeHistoryLine}
+                onClick={() => closeThen(() => { onToggleTradeHistoryLine?.(); })}
+            />
+
+            <MenuItem
+                icon={showTradeHistory
+                    ? <Eye size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />
+                    : <EyeOff size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={showTradeHistory ? tr("Hide Entry / Close Arrows") : tr("Show Entry / Close Arrows")}
+                checked={showTradeHistory}
+                disabled={!onToggleTradeHistory}
+                onClick={() => closeThen(() => { onToggleTradeHistory?.(); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Indicator List ── */}
+            <Submenu
+                label={tr("Indicator List")}
+                icon={<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--ctx-icon, #8a8a9a)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1.5" y="2" width="13" height="12" rx="1" /><polyline points="3 11 5 7.5 7.5 9.5 10 5.5 13 7" strokeWidth="1.3" /></svg>}
+            >
+                {indicators.map((ind) => (
+                    <MenuItem
+                        key={ind.type}
+                        label={ind.name}
+                        onClick={() => handleAddIndicator(ind)}
+                    />
+                ))}
+            </Submenu>
+
+            {/* ── Drawing Tools (Object List) ── */}
+            <Submenu
+                label={tr("Object List")}
+                icon={<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--ctx-icon, #8a8a9a)" strokeWidth="1.5" strokeLinecap="round"><line x1="2.5" y1="13.5" x2="13.5" y2="2.5" /><circle cx="2.5" cy="13.5" r="1.5" fill="currentColor" stroke="none" /><circle cx="13.5" cy="2.5" r="1.5" fill="currentColor" stroke="none" /></svg>}
+            >
+                {drawingTools.map((tool) => (
+                    <MenuItem
+                        key={tool.tool}
+                        icon={tool.icon}
+                        label={tr(tool.name)}
+                        onClick={() => handleSelectDrawingTool(tool.tool)}
+                    />
+                ))}
+            </Submenu>
+
+            <MenuSeparator />
+
+            {/* ── Chart Types ── */}
+            <MenuItem
+                icon={<BarChart2 size={13} strokeWidth={1.5} style={{ color: currentChartType === 'bar' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Bar Chart")}
+                shortcut="Alt+1"
+                checked={currentChartType === 'bar'}
+                active={currentChartType === 'bar'}
+                onClick={() => closeThen(() => { onChangeChartType('bar'); })}
+            />
+            <MenuItem
+                icon={<CandlestickChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'candlestick' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Candlesticks")}
+                shortcut="Alt+2"
+                checked={currentChartType === 'candlestick'}
+                active={currentChartType === 'candlestick'}
+                onClick={() => closeThen(() => { onChangeChartType('candlestick'); })}
+            />
+            <MenuItem
+                icon={<LineChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'line' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Line Chart")}
+                shortcut="Alt+3"
+                checked={currentChartType === 'line'}
+                active={currentChartType === 'line'}
+                onClick={() => closeThen(() => { onChangeChartType('line'); })}
+            />
+            <MenuItem
+                icon={<AreaChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'area' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Area Chart")}
+                checked={currentChartType === 'area'}
+                active={currentChartType === 'area'}
+                onClick={() => closeThen(() => { onChangeChartType('area'); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Timeframes ── */}
+            <Submenu
+                label={tr("Timeframes")}
+                icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ctx-icon, #8a8a9a)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
+            >
+                {timeframes.map((tf) => (
+                    <MenuItem
+                        key={tf}
+                        label={tf}
+                        active={currentTimeframe === tf}
+                        checked={currentTimeframe === tf}
+                        onClick={() => closeThen(() => { onChangeTimeframe(tf); })}
+                    />
+                ))}
+            </Submenu>
+
+            {/* ── Templates ── */}
+            <Submenu
+                label={tr("Templates")}
+                icon={<Layers size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+            >
+                <MenuItem
+                    icon={
+                        <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M19 12l-7 7-7-7" /></svg>
+                        </div>
+                    }
+                    label={tr("Save Template...")}
+                    onClick={handleOpenSaveTemplate}
+                />
+                <MenuItem
+                    icon={
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                    }
+                    label={tr("Load Template...")}
+                    onClick={handleOpenLoadTemplate}
+                />
+                <Submenu
+                    label={tr("Remove Template")}
+                    disabled={templates.filter(t => !t.isDefault).length === 0}
+                >
+                    {templates.filter(t => !t.isDefault).map(tpl => (
+                        <MenuItem
+                            key={tpl.id}
+                            label={tpl.name}
+                            onClick={() => handleTemplateDelete(tpl.id, tpl.name)}
+                        />
+                    ))}
+                </Submenu>
+
+                {templates.length > 0 && (
+                    <>
+                        <MenuSeparator />
+                        {templates.map((tpl) => (
+                            <MenuItem
+                                key={tpl.id}
+                                label={tpl.name}
+                                onClick={() => closeThen(() => { handleTemplateLoad(tpl); })}
+                            />
+                        ))}
+                    </>
+                )}
+            </Submenu>
+
+            {/* ── Refresh ── */}
+            <MenuItem
+                icon={<RefreshCw size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Refresh")}
+                onClick={() => closeThen(() => { onRefresh(); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Grid ── */}
+            <MenuItem
+                icon={<Grid3X3 size={13} strokeWidth={1.5} style={{ color: showGrid ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Grid")}
+                shortcut="Ctrl+G"
+                checked={showGrid}
+                onClick={() => closeThen(() => { onToggleGrid(); })}
+            />
+
+            {onChangeGridType && (
+                <MenuItem
+                    label={tr('Fine grid')}
+                    radio
+                    checked={gridType === 'mt5' && showGrid}
+                    active={gridType === 'mt5' && showGrid}
+                    onClick={() => closeThen(() => onChangeGridType('mt5'))}
+                />
+            )}
+
+            {onChangeGridType && (
+                <Submenu label={tr('Grid type')} icon={<Grid3X3 size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}>
+                    <MenuItem
+                        label={tr('Square')}
+                        radio
+                        checked={gridType === 'square'}
+                        active={gridType === 'square'}
+                        onClick={() => closeThen(() => onChangeGridType('square'))}
+                    />
+                    <MenuItem
+                        label={tr('Price/time aligned')}
+                        radio
+                        checked={gridType === 'scale'}
+                        active={gridType === 'scale'}
+                        onClick={() => closeThen(() => onChangeGridType('scale'))}
+                    />
+                    <MenuItem
+                        label={tr('Fine grid')}
+                        radio
+                        checked={gridType === 'mt5'}
+                        active={gridType === 'mt5'}
+                        onClick={() => closeThen(() => onChangeGridType('mt5'))}
+                    />
+                </Submenu>
+            )}
+
+            {onChangeGridLineStyle && (
+                <Submenu label={tr('Grid line style')} icon={<AlignJustify size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}>
+                    <MenuItem
+                        label={tr('Dashed')}
+                        radio
+                        checked={gridLineStyle === 'dashed'}
+                        active={gridLineStyle === 'dashed'}
+                        onClick={() => closeThen(() => onChangeGridLineStyle('dashed'))}
+                    />
+                    <MenuItem
+                        label={tr('Solid')}
+                        radio
+                        checked={gridLineStyle === 'solid'}
+                        active={gridLineStyle === 'solid'}
+                        onClick={() => closeThen(() => onChangeGridLineStyle('solid'))}
+                    />
+                </Submenu>
+            )}
+
+            {/* ── Auto Scroll ── */}
+            <MenuItem
+                icon={<RefreshCw size={13} strokeWidth={1.5} style={{ color: autoScroll ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Auto Scroll")}
+                checked={autoScroll}
+                onClick={() => closeThen(() => { onToggleAutoScroll(); })}
+            />
+
+            {/* ── Chart Shift ── */}
+            <MenuItem
+                icon={<AlignJustify size={13} strokeWidth={1.5} style={{ color: chartShift ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Chart Shift")}
+                checked={chartShift}
+                onClick={() => closeThen(() => { onToggleChartShift(); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Volumes ── */}
+            <MenuItem
+                icon={<Volume2 size={13} strokeWidth={1.5} style={{ color: showVolumes ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Volumes")}
+                shortcut="Ctrl+K"
+                checked={showVolumes}
+                onClick={() => closeThen(() => { onToggleVolumes(); })}
+            />
+
+            {/* ── Show OHLC ── */}
+            <MenuItem
+                icon={<Activity size={13} strokeWidth={1.5} style={{ color: showOHLC ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Show OHLC")}
+                shortcut="Alt+Shift+L"
+                checked={showOHLC}
+                onClick={() => closeThen(() => { onToggleOHLC?.(); })}
+            />
+
+            {/* ── Background Logo ── */}
+            <MenuItem
+                icon={showBackgroundLogo
+                    ? <Eye size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />
+                    : <EyeOff size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={showBackgroundLogo ? tr("Hide Background Logo") : tr("Show Background Logo")}
+                checked={showBackgroundLogo}
+                onClick={() => closeThen(() => { onToggleBackgroundLogo?.(); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Zoom ── */}
+            <MenuItem
+                icon={<ZoomIn size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Zoom In")}
+                shortcut="+"
+                onClick={() => closeThen(() => { onZoomIn(); })}
+            />
+            <MenuItem
+                icon={<ZoomOut size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Zoom Out")}
+                shortcut="-"
+                onClick={() => closeThen(() => { onZoomOut(); })}
+            />
+
+            {/* ── Delete Indicators Window ── */}
+            <MenuItem
+                icon={<Trash2 size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Delete Indicators Window")}
+                disabled={currentIndicators.length === 0}
+                onClick={() => closeThen(() => { onDeleteIndicators(); })}
+            />
+
+            <MenuSeparator />
+
+            {/* ── Background image (cTrader modal dialog) ── */}
+            <MenuItem
+                icon={<ImageIcon size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Background image")}
+                onClick={() => closeThen(() => {
+                    if (onOpenBackgroundImage) {
+                        onOpenBackgroundImage();
+                    } else {
+                        onToggleBackgroundLogo?.();
+                    }
+                })}
+            />
+
+            {/* ── Save as Picture ── */}
+            <MenuItem
+                icon={<Camera size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Save as Picture")}
+                onClick={() => closeThen(() => { onSaveAsPicture(); })}
+            />
+
+            {/* ── Properties ── */}
+            <MenuItem
+                icon={<Settings size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Properties")}
+                shortcut="F8"
+                onClick={() => closeThen(() => { onOpenProperties(); })}
+            />
+        </div>
+    );
+
+    return (
+        <>
+            {ReactDOM.createPortal(
+                <>
+                    {/* Full-screen transparent backdrop — closes on click or scroll outside menu */}
+                    <div
+                        style={{
+                            position: 'fixed', inset: 0,
+                            zIndex: 9999,
+                            background: 'transparent',
+                        }}
+                        onMouseDown={onClose}
+                        onWheel={() => {
+                            // Close the menu so the chart can scroll uninterrupted
+                            onClose();
+                            // Allow the wheel event to propagate to the chart's window handler
+                        }}
+                        onContextMenu={(e) => e.preventDefault()}
+                    />
+                    { (
+                        <ChartMenuTargetContext.Provider value={targetContextId}>
+                            {menuContent}
+                        </ChartMenuTargetContext.Provider>
+                    ) }
+                </>,
+                document.body
+            )}
+        </>
+    );
+};

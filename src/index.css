@@ -1,0 +1,1298 @@
+@import "tailwindcss" source(".");
+@import "./styles/theme.css";
+@import "./styles/legacy-light-overrides.css";
+@import "./styles/enterprise-light.css";
+@import "./styles/last-symbol-panel.css";
+@import "./styles/history-downloader.css";
+@import "./styles/calendar-tab.css";
+@import "./styles/research-tabs.css";
+@import "./styles/bulk-close-dialog.css";
+@import "./styles/action-feedback-toast.css";
+
+/* Scan the app only. Saved builds and diagnostics under artifacts/ can grow
+   to hundreds of MB and must not become CSS inputs on every cold start. */
+@source "../index.html";
+
+/* Financial sign colors survive table selection and summary skin overrides. */
+html:root .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row:is(.rtx-trade-row, .rtx-trade-row--selected) td.text-profit,
+html:root .rtx-bottom-dock .rtx-trade-footer .text-profit,
+html:root .rtx-bottom-dock .rtx-history-table .rtx-history-summary-row .text-profit {
+  color: var(--color-profit) !important;
+  text-shadow: none !important;
+}
+
+html:root .rtx-bottom-dock .rtx-history-table .rtx-history-tp-value.text-profit,
+html:root .rtx-bottom-dock .rtx-trade-table tr.rtx-trade-row .rtx-trade-tp-value.text-profit {
+  color: var(--color-quote-up) !important;
+  text-shadow: none !important;
+}
+
+html:root .rtx-bottom-dock .rtx-history-table .rtx-history-tp-value.text-profit {
+  background-color: var(--color-profit-dimmer) !important;
+}
+
+html:root .rtx-bottom-dock .rtx-trade-table tr.rtx-trade-row .rtx-trade-tp-value.text-zinc-100 {
+  color: var(--text-primary) !important;
+}
+
+html:root .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row:is(.rtx-trade-row, .rtx-trade-row--selected) td.text-loss,
+html:root .rtx-bottom-dock .rtx-trade-footer .text-loss,
+html:root .rtx-bottom-dock .rtx-history-table .rtx-history-summary-row .text-loss {
+  color: var(--color-loss) !important;
+  text-shadow: none !important;
+}
+
+/* RTX Terminal — Global Base Styles */
+html, body, #root {
+  background: #020617 radial-gradient(ellipse 80% 80% at 50% -20%, rgba(30, 58, 138, 0.4), rgba(2, 6, 23, 1));
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.1);
+}
+
+button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* While a theme switch is in flight, disable every transition so text and
+   backgrounds flip in the same paint. Without this, main-thread-bound
+   background/color transitions stall at their old-theme value while
+   non-transitioned properties flip instantly, leaving unreadable frames
+   (dark rows with dark text, white-on-white values). The class is added and
+   removed by suppressThemeTransitions (src/utils/themeTransitionSuppression.ts). */
+html.rtx-theme-transition-suppress *,
+html.rtx-theme-transition-suppress *::before,
+html.rtx-theme-transition-suppress *::after {
+  transition: none !important;
+}
+button:active {
+  transform: scale(0.96);
+}
+
+/* --- PREMIUM GLASSMORPHISM OVERRIDES --- */
+.rtx-dock-workspace {
+  background: transparent !important;
+}
+
+.rtx-panel-shell, .rtx-chart-panel {
+  background: rgba(15, 23, 42, 0.5) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.05), 0 8px 32px 0 rgba(0,0,0,0.3) !important;
+}
+
+html:not(.rtx-skin-untitled-light) :is(.rtx-bottom-dock, .rtx-bottom-dock__content) {
+  background: var(--bg-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: var(--border-primary) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  text-shadow: none;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+.rtx-chart-panel {
+  border-radius: 0 !important;
+  /* The chart has its own opaque canvas; keep its overlay text unfiltered. */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* A restrained blue edge identifies the chart receiving window commands. */
+.rtx-chart-window-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  border: 1px solid rgba(59, 130, 246, 0.65);
+  box-shadow: inset 0 0 5px rgba(59, 130, 246, 0.16);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.rtx-chart-window-focus[data-selected="true"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rtx-chart-window-focus {
+    transition: none;
+  }
+}
+
+.rtx-panel-shell:has(.rtx-bottom-dock),
+.rtx-bottom-dock,
+.rtx-bottom-dock__tabs,
+.rtx-bottom-dock__tabs .rtx-dock-tab,
+.rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
+  border-radius: 0 !important;
+}
+
+.rtx-bottom-dock__tabs {
+  background: var(--bg-tertiary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 0 !important;
+  container-type: inline-size;
+  container-name: rtx-dock-tabs;
+}
+
+.bg-\[\#131316\], .bg-\[\#0e0e12\], .bg-\[\#191a1e\], .bg-\[\#0f0f12\] {
+  background-color: transparent !important;
+}
+
+html:not(.rtx-skin-untitled-light) :is(.rtx-bottom-dock, .rtx-bottom-dock__content, .rtx-trade-tab, .rtx-trade-scroll, .navigator-panel).bg-\[\#131316\],
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock :is(.bg-\[\#131316\], .bg-\[\#0e0e12\], .bg-\[\#0f0f12\]),
+html:not(.rtx-skin-untitled-light) .navigator-panel :is(.bg-\[\#131316\], .bg-\[\#0e0e12\], .bg-\[\#0f0f12\], .bg-\[\#191a1e\]) {
+  background-color: var(--bg-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer.bg-\[\#191a1e\],
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock .bg-\[\#191a1e\] {
+  background-color: var(--bg-tertiary) !important;
+}
+
+/* Prevent transparency on dropdown menus, submenus, dialogs, and popups in dark mode */
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]) :is(.bg-\[\#131316\], .bg-\[\#0e0e12\], .bg-\[\#191a1e\], .bg-\[\#0f0f12\], .bg-\[\#252528\], .bg-\[\#18181b\], .bg-\[\#0f1117\]),
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#131316\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#0e0e12\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#191a1e\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#0f0f12\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#252528\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#18181b\],
+html:not(.rtx-advanced-view) :is(.fixed, .absolute, .submenu, [class*="context-menu"], [class*="ContextMenu"], [class*="menu"], [class*="Menu"], [class*="dropdown"], [class*="Dropdown"], [class*="popover"], [class*="Popover"]).bg-\[\#0f1117\] {
+  background-color: #131316 !important;
+}
+
+table thead th {
+  background: rgba(2, 6, 23, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Journal headers share the terminal's neutral section surface. */
+html:not(.rtx-skin-untitled-light) .rtx-journal-table__head,
+html:not(.rtx-skin-untitled-light) .rtx-journal-table__head th {
+  background-color: var(--bg-tertiary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-journal-table__head th {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+table tbody tr {
+  background: transparent !important;
+  transition: background 0.2s;
+}
+
+table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.rtx-dock-tab:active {
+  transform: none;
+}
+
+html:not(.rtx-skin-untitled-light):not(.theme-light) tr.rtx-trade-row.rtx-trade-row--selected,
+html:not(.rtx-skin-untitled-light):not(.theme-light) tr.rtx-trade-row.rtx-trade-row--selected:hover {
+  background: #0b63ce !important;
+}
+
+html:not(.rtx-skin-untitled-light):not(.theme-light) tr.rtx-trade-row.rtx-trade-row--selected td {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+html:not(.rtx-skin-untitled-light):not(.theme-light) tr.rtx-trade-row.rtx-trade-row--selected td span {
+  color: #ffffff !important;
+}
+
+html:not(.rtx-skin-untitled-light):not(.theme-light) tr.rtx-trade-row.rtx-trade-row--selected button {
+  color: #ffffff !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-tab {
+  background: var(--bg-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-scroll {
+  background: var(--bg-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  color: var(--text-primary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table__head {
+  background: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
+  text-shadow: none;
+}
+
+html .rtx-trade-table thead th,
+html .rtx-trade-table__head th{
+  font-size: 12px;
+  font-weight: var(--font-weight-normal);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table thead th,
+html:not(.rtx-skin-untitled-light) .rtx-trade-table__head th {
+  height: 30px;
+  background: var(--bg-tertiary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  letter-spacing: normal;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody {
+  background: var(--bg-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row {
+  background: var(--bg-secondary) !important;
+  box-shadow: none;
+  border-top: none !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:nth-child(even) {
+  background: var(--bg-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):hover {
+  background: var(--bg-quaternary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) tr.rtx-trade-row.rtx-trade-row--selected,
+html:not(.rtx-skin-untitled-light) tr.rtx-trade-row.rtx-trade-row--selected:hover {
+  background:
+    linear-gradient(90deg, rgba(37, 99, 235, 0.72), rgba(14, 116, 144, 0.36) 42%, rgba(15, 23, 42, 0.25)) !important;
+  box-shadow:
+    inset 3px 0 0 #60a5fa,
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    inset 0 -1px 0 rgba(59, 130, 246, 0.3) !important;
+}
+
+html .rtx-trade-table tbody tr.rtx-trade-row td{
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row td {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
+  line-height: 19.5px;
+  text-shadow: none;
+}
+
+/* Bottom-dock tables and rows from Trade to Historical Data use horizontal
+   row dividers without vertical column borders in both themes. */
+html .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead th, tbody td:not(.rtx-journal-spacer-cell)),
+html .rtx-history-table[data-grid='true'] :is(thead th, tbody td),
+html .rtx-history-table[data-grid='false'] :is(thead th, tbody td) {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead th, tbody td:not(.rtx-journal-spacer-cell)),
+html.rtx-skin-untitled-light .rtx-history-table[data-grid='true'] :is(thead th, tbody td),
+html.rtx-skin-untitled-light .rtx-history-table[data-grid='false'] :is(thead th, tbody td) {
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--rtx-light-line-border, #404040) !important;
+}
+
+html .rtx-bottom-dock :is(.rtx-history-spacer-row td, .rtx-journal-spacer-row td) {
+  border: 0 !important;
+}
+
+html .rtx-toolbox-tab .rtx-toolbox-row {
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
+  border-radius: 0 !important;
+}
+
+html.rtx-skin-untitled-light .rtx-toolbox-tab .rtx-toolbox-row {
+  border-bottom-color: var(--rtx-light-line-border, #404040) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-history-period-dialog {
+  background: var(--rtx-light-panel, #ffffff) !important;
+  border-color: var(--rtx-light-border-strong, #d1d5db) !important;
+  color: var(--rtx-light-text, #20242c) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-history-period-input {
+  background: var(--rtx-light-canvas, #f7f8fa) !important;
+  border-color: var(--rtx-light-border-strong, #d1d5db) !important;
+  color: var(--rtx-light-text, #20242c) !important;
+  color-scheme: light;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected) {
+  color: var(--text-primary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected) td.text-\[\#aeb5c3\],
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected) td.text-\[\#8d95a3\],
+html:not(.rtx-skin-untitled-light) .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected) td.text-\[\#d8dde8\] {
+  color: var(--text-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-action-button,
+html:not(.rtx-skin-untitled-light) .rtx-trade-close-button {
+  opacity: 1;
+  border-radius: 3px !important;
+  color: #ffffff !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-row:hover .rtx-trade-action-button,
+html:not(.rtx-skin-untitled-light) .rtx-trade-row:hover .rtx-trade-close-button {
+  opacity: 1;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer {
+  background: var(--bg-tertiary) !important;
+  border-top-color: var(--border-primary) !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer > div,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-inner {
+  min-height: 26px;
+  gap: 0 !important;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-metrics {
+  gap: 16px !important;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Profit and close are the final two table columns, so no footer padding or
+   sibling gap may be inserted between their matching fixed-width cells. */
+.rtx-trade-footer > .rtx-trade-footer-inner {
+  gap: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-status,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-metric,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-floating {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-status {
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-metric {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: auto;
+  gap: 4px;
+  padding: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-floating {
+  min-width: 0;
+  padding: 0;
+  justify-content: center;
+  text-align: center;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-currency {
+  color: inherit;
+  margin-left: 4px;
+}
+
+/* Keep the amount exactly centered beneath Profit, then place the account
+   currency immediately after it without letting the currency shift its center. */
+.rtx-trade-footer-floating--profit {
+  column-gap: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.rtx-trade-footer-floating--profit > :not(.rtx-trade-footer-currency) {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.rtx-trade-footer-currency {
+  display: inline-block;
+  margin-left: 4px;
+  position: static;
+}
+
+.rtx-trade-footer-floating--profit > .rtx-trade-footer-currency {
+  grid-column: 3;
+  justify-self: start;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-actions {
+  border-left: 1px solid var(--border-secondary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .rtx-trade-metric-label,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .text-zinc-500,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .text-zinc-400,
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .text-zinc-300 {
+  color: var(--text-primary) !important;
+}
+
+html .rtx-trade-footer .rtx-trade-metric-label{
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .rtx-trade-metric-label {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer .rtx-trade-metric-label::after {
+  content: ':';
+  margin-right: 4px;
+}
+
+.rtx-exposure-account-bar {
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-primary);
+  box-shadow: none;
+  color: var(--text-primary);
+  display: flex;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+  gap: 16px;
+  height: 30px;
+  overflow-x: auto;
+  padding: 0 12px;
+}
+
+.rtx-exposure-account-metric {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rtx-exposure-account-label {
+  color: inherit;
+}
+
+.rtx-exposure-account-value {
+  font-variant-numeric: tabular-nums;
+}
+
+
+
+html:not(.rtx-skin-untitled-light) .rtx-exposure-account-bar {
+  background: var(--bg-tertiary) !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-exposure-account-label,
+html:not(.rtx-skin-untitled-light) .rtx-exposure-account-value {
+  color: var(--text-primary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-action {
+  min-width: 68px;
+  height: 20px;
+  border-radius: 3px !important;
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1;
+  box-shadow: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-action:hover:not(:disabled) {
+  background: var(--bg-quaternary) !important;
+  border-color: var(--border-tertiary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-action--danger {
+  border-color: rgba(248, 113, 113, 0.5) !important;
+  color: #fecaca !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-trade-footer-action--danger:hover:not(:disabled) {
+  background: rgba(127, 29, 29, 0.44) !important;
+  border-color: rgba(248, 113, 113, 0.75) !important;
+}
+
+/* Remove the obsolete toolbar security/ping indicators if a stale runtime keeps them mounted. */
+.flex.items-center.gap-\[2px\] > svg.text-emerald-500.mx-1,
+.flex.items-center.gap-\[2px\] > svg.text-emerald-500.mx-1 + div.w-\[40px\] {
+  display: none !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: var(--bg-tertiary) !important;
+  border-top-color: var(--border-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-dock-tab-scroller {
+  display: flex !important;
+  flex: 0 1 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  height: 30px !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-dock-tab-scroller::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-dock-tab-actions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  height: 30px !important;
+  margin-left: 0 !important;
+  background: transparent !important;
+  border: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 30px !important;
+  line-height: 30px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab:hover {
+  color: #ffffff !important;
+  background: var(--bg-quaternary) !important;
+}
+
+html .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab{
+  font-weight: 600;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%) !important;
+  border-top-color: #0284c7 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Bulk close actions share the adjacent tabs' geometry and theme styles. */
+.rtx-bottom-dock__tabs .rtx-bulk-close__label {
+  color: inherit;
+}
+
+html:root .rtx-bottom-dock__tabs .rtx-dock-tab-actions .rtx-dock-tab.rtx-bulk-close:disabled {
+  color: var(--text-secondary) !important;
+  background: transparent !important;
+  opacity: 0.55;
+}
+
+html .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-bulk-close:focus-visible {
+  outline: 1px solid #0284c7;
+  outline-offset: -2px;
+}
+
+html:root .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-dock-tab--locked:disabled,
+html:root .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-dock-tab--locked:disabled:hover,
+html:root .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-dock-tab--locked:disabled:focus-visible {
+  color: var(--text-secondary) !important;
+  background: transparent !important;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+/* Continue the light-theme separators across the two tab groups. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab-scroller .rtx-dock-tab:last-child:not(.active-tab)::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 1px;
+  background: var(--rtx-light-line-border, #404040);
+  pointer-events: none;
+}
+
+/* Tighten every tab equally while keeping the close action labels visible. */
+@container rtx-dock-tabs (max-width: 1550px) {
+  html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
+@container rtx-dock-tabs (max-width: 1350px) {
+  html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+}
+
+/* Market Watch "Grid" toggles visible table grid lines. */
+.rtx-market-watch__grid--lines thead th,
+.rtx-market-watch__grid--lines tbody td {
+  border: 1px solid var(--border-tertiary);
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__search,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__table,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__grid {
+  background: var(--bg-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__footer {
+  background: var(--bg-tertiary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  color: var(--text-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch thead th,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__column-heading {
+  background: var(--bg-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--text-primary) !important;
+  border: none !important;
+  box-shadow: none !important;
+  text-shadow: none;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch tbody tr,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch tbody td,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__row {
+  background: var(--bg-secondary) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__grid--lines thead th,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__grid--lines tbody td {
+  border: 1px solid var(--mw-desktop-grid, var(--border-tertiary)) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch tbody tr:hover,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch tbody tr:hover td,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .mw-row:hover,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__row--selected,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__row--selected td {
+  background: var(--bg-quaternary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch .rtx-market-watch__row--selected {
+  box-shadow: inset 2px 0 0 #60a5fa !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__symbol,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__spread:not(.rtx-market-watch__spread--empty),
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__footer-action,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__footer-count,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__empty-text {
+  color: var(--text-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__close {
+  color: var(--text-secondary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__close:hover {
+  color: var(--text-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--bid:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty),
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--bid:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty) :is(.price-display, .price-big, .price-small) {
+  color: var(--rtx-quote-down, #ff5858) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--ask:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty),
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--ask:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty) :is(.price-display, .price-big, .price-small) {
+  color: var(--rtx-quote-up, #4597ff) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--up,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--up :is(.price-display, .price-big, .price-small),
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__daily--up {
+  color: var(--rtx-quote-up, #4597ff) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--down,
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__price--down :is(.price-display, .price-big, .price-small),
+html:not(.rtx-skin-untitled-light) .rtx-market-watch__daily--down {
+  color: var(--rtx-quote-down, #ff5858) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .bg-\[\#131316\]:has(.navigator-panel),
+html:not(.rtx-skin-untitled-light) .bg-\[\#131316\]:has(.rtx-market-watch),
+html:not(.rtx-skin-untitled-light) .navigator-panel,
+html:not(.rtx-skin-untitled-light) .navigator-panel__body {
+  background: var(--bg-secondary) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-panel {
+  --navigator-tree-line: var(--border-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row:hover {
+  background: var(--bg-quaternary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row:not([data-account-active="false"]):not([aria-disabled="true"]) .navigator-tree-item__label {
+  color: var(--text-primary) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row[data-account-active="false"] .navigator-tree-item__label {
+  color: var(--navigator-account-inactive-text, #71717a) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row[data-account-active="false"]:hover .navigator-tree-item__label {
+  color: var(--navigator-account-inactive-hover-text, #a1a1aa) !important;
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__chevron,
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__icon {
+  color: var(--text-secondary);
+}
+
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row:hover .navigator-tree-item__chevron,
+html:not(.rtx-skin-untitled-light) .navigator-tree-item__row:hover .navigator-tree-item__icon {
+  color: var(--text-primary);
+}
+
+/* Locked Navigator placeholders must not suggest that they are interactive. */
+html .navigator-panel .navigator-tree-item__row.navigator-tree-item__row--disabled:hover {
+  background: transparent !important;
+}
+
+/* Global ultra-premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+/* --------------------------------------- */
+
+/* Trading Terminal Custom Styles */
+.trading-terminal {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Price flash animation classes */
+.price-up {
+  color: var(--color-profit);
+  text-shadow: 0 0 8px var(--color-profit-dimmer);
+}
+
+.price-down {
+  color: var(--color-loss);
+  text-shadow: 0 0 8px var(--color-loss-dimmer);
+}
+
+/* Smooth panel transitions */
+.panel-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.panel-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+/* Floating panel shadow */
+.floating-panel {
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(8px);
+}
+
+/* Professional input styling */
+input[type="number"],
+input[inputmode="numeric"],
+input[inputmode="decimal"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Chart container optimization */
+.chart-container {
+  contain: layout style paint;
+  will-change: transform;
+}
+
+/* Virtualized list optimization */
+.virtualized-list {
+  contain: strict;
+  overflow-anchor: none;
+}
+
+/* Journal toolbar: compact desktop geometry without pill-shaped focus rings. */
+.rtx-journal-toolbar:not(.rtx-journal-toolbar--expanded) .rtx-journal-advanced-control {
+  display: none !important;
+}
+
+.rtx-journal-toolbar .rtx-journal-periods {
+  order: -1;
+}
+
+.rtx-journal-toolbar .rtx-journal-primary-action {
+  order: -1;
+}
+
+html .rtx-journal-toolbar .rtx-journal-control {
+  border-radius: 2px !important;
+  font-size: max(13px, var(--rtx-advanced-primary-font-size, 13px)) !important;
+  line-height: 1;
+}
+
+.rtx-journal-toolbar button.rtx-journal-control:active {
+  transform: none;
+}
+
+html .rtx-journal-toolbar .rtx-journal-control:focus,
+html .rtx-journal-toolbar .rtx-journal-control:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  border-color: #60a5fa !important;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.5) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-journal-toolbar .rtx-journal-control:focus,
+html.rtx-skin-untitled-light .rtx-journal-toolbar .rtx-journal-control:focus-visible {
+  border-color: #7f56d9 !important;
+  box-shadow: inset 0 0 0 1px rgba(127, 86, 217, 0.38) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-journal-toolbar .rtx-journal-auto[aria-pressed="true"] {
+  background: #f4ebff !important;
+  border-color: #d6bbfb !important;
+  color: #6941c6 !important;
+}
+
+/* No-select for draggable elements */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+/* Focus ring for accessibility */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Custom number increment buttons */
+.number-input-controls {
+  display: flex;
+  flex-direction: column;
+}
+
+.number-input-controls button {
+  padding: 0;
+  height: 12px;
+  line-height: 1;
+  font-size: 8px;
+}
+
+/* Grid layout utilities */
+.grid-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.grid-auto-fill {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+/* Custom Scrollbar Styles */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 100, 100, 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 100, 100, 0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 100, 100, 0.5);
+}
+
+/* Chart Drawing & Annotation Styles */
+.chart-drawing-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+/* Force arrow cursor when in cursor/select mode.
+   lightweight-charts hardcodes cursor:crosshair on its canvas — this overrides it. */
+[data-trend-drawing-active="true"] .rtx-trade-level-hit-area,
+[data-trend-drawing-active="true"] .rtx-trade-level-badge,
+[data-trend-drawing-active="true"] .rtx-trade-level-badge *,
+[data-trend-drawing-active="true"] .rtx-trade-marker-hover-target,
+[data-trend-drawing-active="true"] .rtx-trade-marker-hover-target * {
+  pointer-events: none !important;
+}
+
+[data-cursor="select"] canvas,
+[data-cursor="demonstration"] canvas {
+  cursor: default !important;
+}
+
+[data-cursor="cross"] canvas,
+[data-cursor="cross"] .chart-drawing-overlay :is(path, line, rect, circle, ellipse, polygon, polyline) {
+  cursor: crosshair !important;
+}
+
+.rtx-chart-wrapper {
+  --rtx-dot-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3' fill='%2364748b' stroke='%23f8fafc' stroke-width='1.5'/%3E%3C/svg%3E") 8 8, crosshair;
+  --rtx-eraser-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23f8fafc' stroke='%23111827' stroke-width='1.2' d='M14.7 3.4a1.6 1.6 0 0 1 2.2 0l3.7 3.7a1.6 1.6 0 0 1 0 2.2L9.8 20.1H5.2l-.3-4.6L14.7 3.4z'/%3E%3Cpath stroke='%23111827' stroke-width='1.2' d='M5 20.2h8.2'/%3E%3C/svg%3E") 4 20, cell;
+  --rtx-magic-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23f8fafc' stroke='%23111827' stroke-width='1' d='M5 19.2 14.2 10l1.6 1.6L6.6 20.8c-.4.4-1.1.4-1.5 0l-.1-.1c-.4-.4-.4-1.1 0-1.5z'/%3E%3Cpath fill='%23f5d76e' stroke='%23111827' stroke-width='0.6' d='M16.2 2.4 17.4 5.6 20.6 6.8 17.4 8 16.2 11.2 15 8 11.8 6.8 15 5.6z'/%3E%3C/svg%3E") 16 6, auto;
+}
+
+[data-cursor="dot"] canvas,
+[data-cursor="dot"] .chart-drawing-overlay :is(path, line, rect, circle, ellipse, polygon, polyline) {
+  cursor: var(--rtx-dot-cursor) !important;
+}
+
+[data-cursor="eraser"] canvas,
+[data-cursor="eraser"] .chart-drawing-overlay :is(path, line, rect, circle, ellipse, polygon, polyline) {
+  cursor: var(--rtx-eraser-cursor) !important;
+}
+
+[data-cursor="magic"] canvas,
+[data-cursor="magic"] .chart-drawing-overlay :is(path, line, rect, circle, ellipse, polygon, polyline) {
+  cursor: var(--rtx-magic-cursor) !important;
+}
+
+.rtx-chart-crosshair-center[data-marker='dot'] > div {
+  opacity: 0;
+}
+
+.rtx-chart-crosshair-center[data-marker='dot']::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.rtx-demonstration-layer,
+.rtx-magic-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.rtx-magic-layer {
+  z-index: 32;
+}
+
+.rtx-magic-spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 999px;
+  pointer-events: none;
+  animation: rtx-magic-burst 680ms ease-out forwards;
+}
+
+.rtx-magic-spark[data-shape='star'] {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+@keyframes rtx-magic-burst {
+  to {
+    transform: translate(var(--rtx-magic-dx), var(--rtx-magic-dy)) scale(0.25);
+    opacity: 0;
+  }
+}
+
+.rtx-area-hover {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+  display: none;
+}
+
+.rtx-area-hover[data-visible='true'] {
+  display: block;
+}
+
+.rtx-area-hover__line {
+  position: absolute;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.9);
+}
+
+.rtx-area-hover__dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+.rtx-area-hover__card {
+  position: absolute;
+  min-width: 92px;
+  padding: 6px 8px 5px;
+  border-radius: 6px;
+  background: rgba(42, 46, 57, 0.94);
+  color: #d1d4dc;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  text-align: center;
+  font-family: var(--font-sans, "Segoe UI", sans-serif);
+}
+
+.rtx-area-hover__price {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-area-hover__date,
+.rtx-area-hover__time {
+  color: #b2b5be;
+  font-size: 11px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-values-tooltip {
+  position: absolute;
+  z-index: 40;
+  min-width: 168px;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-secondary, rgb(255 255 255 / 12%));
+  border-radius: 6px;
+  background: var(--bg-elevated, #1e222d);
+  color: var(--text-primary, #d1d4dc);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  pointer-events: none;
+  font: 500 12px/1.35 var(--font-sans, "Segoe UI", sans-serif);
+}
+
+.rtx-values-tooltip__title {
+  font-weight: 600;
+}
+
+.rtx-values-tooltip__subtitle {
+  margin-bottom: 4px;
+  color: var(--text-tertiary, #787b86);
+  font-size: 11px;
+}
+
+.rtx-values-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rtx-values-tooltip__label {
+  color: var(--text-tertiary, #787b86);
+}
+
+.rtx-values-tooltip__value[data-tone='up'] {
+  color: var(--color-buy, #26a69a);
+}
+
+.rtx-values-tooltip__value[data-tone='down'] {
+  color: var(--color-sell, #ef5350);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-values-tooltip__value[data-tone='up'] {
+  color: var(--rtx-light-quote-up);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-values-tooltip__value[data-tone='down'] {
+  color: var(--rtx-light-quote-down);
+}
+
+.chart-drawing {
+  pointer-events: auto !important;
+  z-index: 20;
+  transition: opacity 0.2s ease;
+}
+
+.chart-drawing:hover {
+  filter: brightness(1.3);
+  opacity: 0.9;
+  cursor: pointer;
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+}
+
+.drawing-node {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-color: #ffffff;
+  border: 2px solid #8a8a8f;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  pointer-events: auto;
+  cursor: move;
+  box-shadow: var(--shadow-sm);
+}
+
+.drawing-node:hover {
+  background-color: #6b7280;
+  border-color: #ffffff;
+  scale: 1.2;
+}
+
+.chart-drawing-text {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Broker credential fields are masked locally instead of using
+   type="password", so the browser password manager never classifies the
+   account key as a web credential — no save prompts and no post-login
+   "password found in a data breach" popup. Supported in all Chromium
+   builds (including the desktop shell) and Firefox 132+. */
+.rtx-secret-input {
+  -webkit-text-security: disc;
+}

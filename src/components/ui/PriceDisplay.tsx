@@ -1,0 +1,103 @@
+/**
+ * PriceDisplay — MT5-style price formatting
+ * Shows last 2 decimal digits in a larger/bolder font,
+ * matching standard MT5 terminal style.
+ */
+import React from 'react';
+import { resolveSpecDigits } from '../../utils/symbolUtils';
+
+
+
+interface PriceDisplayProps {
+    /** The numeric price value */
+    price: number;
+    /** Symbol label (display context only; never used for digit detection) */
+    symbol: string;
+    /** Optional explicit digits override */
+    digits?: number;
+    /** Optional className applied to the wrapper span */
+    className?: string;
+    /** Size of the large last-2-digit text. 'sm' for table rows, 'lg' for panels */
+    size?: 'sm' | 'lg';
+}
+
+/**
+ * Renders a price with the last 2 decimal digits in a larger, bolder font.
+ * 
+ * Example (EURUSD 1.33601):
+ *   small: "1.336"  big: "01"
+ * 
+ * Example (BTCUSD 67895.43):
+ *   small: "67895."  big: "43"
+ */
+// Symbol prop retained for call-site compatibility; precision comes only
+// from the explicit digits override (never the symbol name).
+export const PriceDisplay: React.FC<PriceDisplayProps> = ({
+    price,
+    digits: explicitDigits,
+    className = '',
+    size = 'sm',
+}) => {
+    if (!Number.isFinite(price) || price === 0) {
+        return <span className={className}>-</span>;
+    }
+
+    // Spec digits only (explicit override); unknown precision renders raw.
+    const d = resolveSpecDigits(explicitDigits);
+    if (d === null) {
+        return <span className={`price-display ${className} whitespace-nowrap`}>{String(price)}</span>;
+    }
+    const full = price.toFixed(d);
+
+    let smallPart: string;
+    let bigPart: string;
+
+    if (d <= 1) {
+        // No split possible for 0-1 decimals
+        return <span className={className}>{full}</span>;
+    }
+
+    if (d === 2) {
+        // e.g. "67895.43" → small="67895." big="43"
+        const dotIdx = full.indexOf('.');
+        smallPart = full.slice(0, dotIdx + 1);
+        bigPart = full.slice(dotIdx + 1);
+    } else {
+        // e.g. "1.33601" → small="1.336" big="01"
+        const dotIdx = full.indexOf('.');
+        const decPart = full.slice(dotIdx + 1);
+        smallPart = full.slice(0, dotIdx + 1) + decPart.slice(0, -2);
+        bigPart = decPart.slice(-2);
+    }
+
+    return (
+        <span className={`price-display ${className} whitespace-nowrap`} data-size={size}>
+            <span className="price-small">{smallPart}</span>
+            <span className="price-big">{bigPart}</span>
+        </span>
+    );
+};
+
+/**
+ * Plain string formatter that returns "small|big" for non-React contexts.
+ * Mostly you should use the <PriceDisplay> component instead.
+ */
+export function formatPriceParts(price: number, symbol: string, explicitDigits?: number): { small: string; big: string } {
+    // Spec digits only (explicit override); unknown precision renders raw.
+    // The symbol parameter is retained for call-site compatibility and ignored.
+    void symbol;
+    const d = resolveSpecDigits(explicitDigits);
+    if (!Number.isFinite(price) || price === 0) return { small: '-', big: '' };
+    if (d === null) return { small: String(price), big: '' };
+    const full = price.toFixed(d);
+    if (d <= 1) return { small: full, big: '' };
+    if (d === 2) {
+        const dotIdx = full.indexOf('.');
+        return { small: full.slice(0, dotIdx + 1), big: full.slice(dotIdx + 1) };
+    }
+    const dotIdx = full.indexOf('.');
+    const decPart = full.slice(dotIdx + 1);
+    return { small: full.slice(0, dotIdx + 1) + decPart.slice(0, -2), big: decPart.slice(-2) };
+}
+
+export default PriceDisplay;

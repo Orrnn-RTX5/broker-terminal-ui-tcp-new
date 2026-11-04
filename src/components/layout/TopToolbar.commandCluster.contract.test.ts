@@ -1,0 +1,142 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const readSource = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8').replace(/\r\n/g, '\n');
+
+const toolbarSource = readSource('src/components/layout/TopToolbar.tsx');
+const themeCss = readSource('src/styles/theme.css');
+const advancedCss = readSource('src/styles/legacy-light-overrides.css');
+const enterpriseCss = readSource('src/styles/enterprise-light.css');
+const iconRegistrySource = readSource('src/components/ui/iconRegistry.ts');
+const iconComponentSource = readSource('src/components/ui/Icon.tsx');
+const timeframePickerSource = readSource('src/components/layout/TimeframePicker.tsx');
+
+const markedCluster = toolbarSource.slice(
+  toolbarSource.indexOf('{/* New Order & Last Symbol */}'),
+  toolbarSource.indexOf('{/* Group 8: Horizontal MT-style timeframe strip */}'),
+);
+
+describe('TopToolbar primary command cluster', () => {
+  it('uses dedicated outline command icons and a text-only New Order action', () => {
+    for (const icon of [
+      'bar-chart',
+      'candlestick',
+      'line-chart',
+      'area-chart',
+      'zoom-in',
+      'zoom-out',
+      'grid',
+      'refresh',
+      'auto-scroll',
+      'chart-shift',
+      'indicator-list',
+      'camera',
+      'period-separator',
+      'sliders-horizontal',
+    ]) {
+      expect(markedCluster).toMatch(new RegExp(`(?:icon|name)="${icon}"`));
+    }
+
+    expect(markedCluster).not.toMatch(/<(?:FileText|TrendingUp|BarChart2|CandlestickChart|LineChart|AreaChart|ZoomIn|ZoomOut|LayoutPanelTop|RefreshCw)\b/);
+    expect(markedCluster).not.toContain('<Icon name="new-order"');
+    expect(markedCluster).toContain('<span className="rtx-toolbar-action__label">Pending Order</span>');
+    expect(markedCluster).not.toContain('<Icon name="activity" size={20} />');
+    expect(markedCluster).toContain('label={tr("Chart capture and overlays")}');
+    expect(markedCluster).toContain('className="rtx-period-separator-toggle"');
+    expect(markedCluster).toContain('className="rtx-trade-history-overlay-button"');
+    expect(markedCluster).not.toMatch(/<(?:Camera|GitCommitHorizontal|SlidersHorizontal)\b/);
+    expect(toolbarSource).toContain('<ChartCommandIcon name={icon} />');
+    expect(themeCss).toMatch(/\.rtx-toolbar-action__icon \{[\s\S]*flex: 0 0 20px;[\s\S]*height: 20px;[\s\S]*width: 20px;/);
+  });
+
+  it('keeps the two labeled actions dense, reactive, and accessible', () => {
+    expect(markedCluster).toContain('text-[13px] font-normal');
+    expect(markedCluster).toContain('aria-label={tr("Pending Order (F9)")}');
+    expect(markedCluster).toContain("new CustomEvent('openNewOrder', {");
+    expect(markedCluster).toContain('detail: { symbol }');
+    expect(markedCluster).toContain('aria-pressed={lastSymbolPanelVisible}');
+    expect(toolbarSource).toContain('useLastSymbolStore((state) => state.lastSymbol)');
+    expect(toolbarSource).toContain('useLastSymbolStore((state) => state.panelVisible)');
+    expect(markedCluster).not.toContain('useLastSymbolStore.getState()');
+  });
+
+  it('exposes chart types as a named radio group', () => {
+    expect(markedCluster).toContain('label={tr("Chart type")} role="radiogroup"');
+    expect(markedCluster.match(/selectionRole="radio"/g)).toHaveLength(4);
+    expect(toolbarSource).toContain("aria-checked={selectionRole === 'radio' ? active : undefined}");
+  });
+
+  it('uses restrained tokenized states in dark, light, and desktop chrome', () => {
+    expect(themeCss).toMatch(/\.rtx-toolbar-action,[\s\S]*\.rtx-toolbar-icon-button \{[\s\S]*height: 32px;[\s\S]*transition: background-color 140ms ease/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent;[^}]*border-color: transparent;[^}]*border-radius: 0;/);
+    expect(advancedCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent !important;[^}]*border-color: transparent !important;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-icon-button\[role='radio'\]\[aria-checked='true'\] \{[^}]*background: rgb\(59 130 246 \/ 0\.15\);[^}]*border-color: rgb\(59 130 246 \/ 0\.5\);[^}]*box-shadow: none;/);
+    expect(themeCss).toMatch(/html\.rtx-desktop-shell-active \.rtx-desktop-command-row \.rtx-toolbar-icon-button:is\(\[role='radio'\]\[aria-checked='true'\], \[aria-pressed='true'\]\) \{[^}]*background: rgb\(59 130 246 \/ 0\.15\);[^}]*border-color: rgb\(59 130 246 \/ 0\.5\);[^}]*box-shadow: none;/);
+    expect(themeCss).not.toMatch(/\.rtx-desktop-command-row \.rtx-toolbar-icon-button:is\(\[role='radio'\], \.rtx-period-separator-toggle\) \{[^}]*background: transparent !important;/);
+    expect(advancedCss).toMatch(/\.rtx-toolbar-icon-button\[role="radio"\]\[aria-checked="true"\] \{[^}]*box-shadow: none !important;/);
+    expect(advancedCss).toMatch(/\.rtx-toolbar-icon-button\[aria-pressed="true"\] \{[^}]*box-shadow: none !important;/);
+    expect(enterpriseCss).toMatch(/\.rtx-toolbar-icon-button\[role="radio"\]\[aria-checked="true"\] \{[^}]*box-shadow: none !important;/);
+    expect(enterpriseCss).toMatch(/\.rtx-toolbar-icon-button\[aria-pressed="true"\][\s\S]*?\{[^}]*box-shadow: none !important;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-icon-button\[aria-pressed='true'\][\s\S]*?\{[^}]*box-shadow: none !important;/);
+    expect(themeCss).toContain('background: var(--rtx-light-panel-header, var(--bg-secondary));');
+    expect(markedCluster).not.toContain('shadow-[0_0_8px');
+  });
+
+  it('matches timeframe foreground clarity without thickening the glyphs', () => {
+    expect(timeframePickerSource).toContain('text-zinc-200');
+    expect(themeCss).toContain('color: var(--text-primary);');
+    expect(themeCss).toContain('color: var(--color-zinc-100, #f4f4f5);');
+    expect(themeCss).toContain('color: var(--color-blue-300, #93c5fd);');
+    expect(iconComponentSource).toContain('strokeWidth={1.5}');
+    expect(themeCss).toMatch(/\.rtx-toolbar-icon-button svg,[\s\S]*stroke-width: 1\.25;/);
+    expect(advancedCss).toContain('color: #344054 !important;');
+  });
+
+  it('uses equal control widths and consistent spacing within and between groups', () => {
+    const chartCommandIconSource = readSource('src/components/layout/ChartCommandIcon.tsx');
+    expect(themeCss).toMatch(/\.rtx-toolbar-command-cluster \{[^}]*--rtx-toolbar-control-width: 36px;[^}]*--rtx-toolbar-item-gap: 10px;[^}]*--rtx-toolbar-group-gap: 10px;[^}]*gap: var\(--rtx-toolbar-group-gap\);/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-command-cluster > \.rtx-mt5-divider \{\s*display: none;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-group,\s*\.rtx-timeframe-strip \{[^}]*gap: var\(--rtx-toolbar-item-gap, 10px\);/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-group--trading \{[^}]*gap: var\(--rtx-toolbar-item-gap, 10px\);/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-command-cluster \.rtx-toolbar-action--last-symbol \{\s*gap: 8px;\s*padding-inline: 8px;/);
+    expect(markedCluster).toContain('className="rtx-toolbar-group--trading"');
+    expect(themeCss).toMatch(/\.rtx-toolbar-command-cluster \.rtx-toolbar-icon-button,\s*\.rtx-timeframe-strip \.rtx-timeframe-option \{[^}]*flex: 0 0 var\(--rtx-toolbar-control-width, 36px\);[^}]*min-width: var\(--rtx-toolbar-control-width, 36px\);[^}]*width: var\(--rtx-toolbar-control-width, 36px\);/);
+    expect(themeCss).toMatch(/\.rtx-timeframe-strip \.rtx-timeframe-option \{[^}]*flex: 0 0 auto;[^}]*width: auto;[^}]*padding-inline: 8px;/);
+    expect(themeCss).not.toMatch(/html\.rtx-desktop-shell-active \.rtx-toolbar-command-cluster \{[^}]*column-gap: var\(--rtx-toolbar-item-gap\);/);
+    expect(themeCss).toMatch(/@media \(max-width: 1280px\) \{\s*\.rtx-toolbar-command-cluster \{[^}]*--rtx-toolbar-item-gap: 8px;[^}]*--rtx-toolbar-group-gap: 8px;/);
+    expect(chartCommandIconSource).toContain("import { ReferenceToolbarGlyph } from '../ui/ReferenceToolbarGlyph';");
+    expect(chartCommandIconSource).toContain('strokeWidth="1"');
+    expect(toolbarSource).toContain('rtx-chart-toolbar-scroll');
+    expect(timeframePickerSource).not.toContain('min-w-[38px]');
+    expect(timeframePickerSource).not.toContain('px-2.5');
+  });
+
+  it('keeps screenshot, period separators, and trade-history overlays as three equal buttons before timeframes', () => {
+    const overlayGroup = markedCluster.slice(
+      markedCluster.indexOf('{/* Screenshot, period separators, and trade-history overlays — three equal command buttons */}'),
+    );
+
+    expect(overlayGroup.match(/<CommandIconButton/g)).toHaveLength(3);
+    expect(overlayGroup).toContain('icon="camera"');
+    expect(overlayGroup).toContain('icon="period-separator"');
+    expect(overlayGroup).toContain('icon="sliders-horizontal"');
+    expect(toolbarSource.indexOf('label={tr("Chart capture and overlays")}')).toBeGreaterThan(-1);
+    expect(toolbarSource.indexOf('label={tr("Chart capture and overlays")}')).toBeLessThan(
+      toolbarSource.indexOf('{/* Group 8: Horizontal MT-style timeframe strip */}'),
+    );
+    expect(toolbarSource.slice(
+      toolbarSource.indexOf('{/* Group 8: Horizontal MT-style timeframe strip */}'),
+    )).not.toContain('rtx-period-separator-toggle');
+  });
+
+  it('keeps the indicator glyph monochrome and themeable', () => {
+    const indicatorIcon = iconRegistrySource.slice(
+      iconRegistrySource.indexOf("'indicator-list':"),
+      iconRegistrySource.indexOf("'symbol-box':"),
+    );
+
+    expect(indicatorIcon).toContain("fill: 'currentColor'");
+    expect(indicatorIcon).not.toMatch(/#[0-9a-f]{6}/i);
+  });
+});
