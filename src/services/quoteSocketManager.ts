@@ -139,6 +139,12 @@ class QuoteSocketManager {
           && this.ws?.readyState === WebSocket.OPEN
           && this.wsUrl === buildBrokerWsFeedUri()
         ) {
+          if (reason !== 'token_rotation' && this.activeSymbols.size > 0) {
+            this.clearSubscriptionTimers(true);
+            this.subscribedSymbols.clear();
+            this.pendingSubscriptions.clear();
+            this.sendSubscribe([...this.activeSymbols]);
+          }
           return;
         }
         this.resetFeedFailure();

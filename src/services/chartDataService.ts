@@ -20,12 +20,17 @@ import {
 import {
   API_V2_BASE_URL,
   RTX5_API_URL,
+  RTX5_WS_URL,
   toLocalDevProxyUrl,
 } from '../config/api';
 import {
   buildBrokerApiV2,
   buildBrokerWsV2Uri,
   getAccessToken,
+  getCommittedBrokerAccountSessionScope,
+  getCommittedBrokerAccountSessionScopeKey,
+  onCommittedBrokerAccountSessionScopeChange,
+  onSessionChange,
 } from './brokerSession';
 import { binaryTcpMarketStream, fetchBinaryCandles } from './binaryTcpMarketStream';
 import { assertBrokerRequestAllowed } from '../api/brokerRequestGuard';
@@ -80,6 +85,16 @@ export interface CandleStreamSubscription {
   close: () => void;
 }
 
+interface SharedCandleStream {
+  scope: string;
+  consumers: Set<CandleStreamOptions>;
+  transport: CandleStreamSubscription | null;
+  ready: boolean;
+  readyRevision: number;
+  closed: boolean;
+  releaseScopeListeners: () => void;
+}
+
 export const CANDLE_STREAM_BASE_RECONNECT_DELAY_MS = 1_000;
 export const CANDLE_STREAM_OPEN_TIMEOUT_MS = 10_000;
 export const CANDLE_STREAM_SUBSCRIPTION_ACK_TIMEOUT_MS = 3_000;
@@ -94,6 +109,24 @@ const candleDeploymentIdentity = (): string => {
   const configuration = getRuntimeBrokerConfiguration();
   return JSON.stringify([configuration.valid, configuration.brokerId, configuration.apiHost, configuration.apiHostExt, configuration.wsHost]);
 };
+
+const resolveCandleStreamEndpoint = (): { url: string; token: string | null } => {
+  if (isDesktopBackendTarget()) return { url: 'desktop-binary-tcp', token: null };
+  const token = getAuthToken();
+  const brokerUrl = buildBrokerWsV2Uri(token);
+  const wsBase = brokerUrl || (isDesktopBackendTarget() ? RTX5_WS_URL.replace(/\/$/, '') : '');
+  const separator = wsBase.includes('?') ? '&' : '?';
+  return {
+    url: brokerUrl || (wsBase ? `${wsBase}${token ? `${separator}token=${encodeURIComponent(token)}` : ''}` : ''),
+    token,
+  };
+};
+
+const candleStreamScope = (): string => JSON.stringify([
+  candleDeploymentIdentity(),
+  getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()),
+  resolveCandleStreamEndpoint(),
+]);
 
 const normalizeTimeForApiTimeframe = (time: number, timeframe?: ApiTimeframe): number => {
   if (!time || !timeframe) return time;
@@ -322,6 +355,9 @@ const messageMatchesCandleSubscription = (
 };
 
 export class ChartDataService {
+  private readonly candleStreams = new Map<string, SharedCandleStream>();
+  private readonly candleStreamRefreshers = new Set<() => void>();
+
   normalizeTimeframe(timeframe: string): ApiTimeframe {
     return normalizeBackendCandleTimeframe(timeframe);
   }
@@ -476,6 +512,7 @@ export class ChartDataService {
   }
 
   preloadStartupHistory(): void {
+    if (!DEFAULT_CHART_SYMBOL) return;
     preloadAuthenticatedStartupHistory((signal) => this.fetchCandlesFromNetwork({
       symbol: DEFAULT_CHART_SYMBOL,
       timeframe: DEFAULT_CHART_TIMEFRAME,
@@ -624,7 +661,141 @@ export class ChartDataService {
     throw lastError ?? new Error('Failed to load candles');
   }
 
+  /**
+   * Full-reconnect entry point for chart/data candle streams.
+   * Reuses each live transport's existing refresh path; it adds no new
+   * socket layer and leaves scope/auth guards untouched (broker-agnostic).
+   */
+  refreshCandleStreams(): void {
+    if (isDesktopBackendTarget()) {
+      binaryTcpMarketStream.forceReconnect();
+    }
+    for (const refresh of Array.from(this.candleStreamRefreshers)) {
+      try {
+        refresh();
+      } catch {
+        // Keep sibling streams isolated; one failed refresh must not block the rest.
+      }
+    }
+  }
+
   subscribeCandles(options: CandleStreamOptions): CandleStreamSubscription {
+    const scope = candleStreamScope();
+    const symbol = normalizeSymbol(options.symbol);
+    const timeframe = this.normalizeTimeframe(options.timeframe);
+    const key = JSON.stringify([scope, symbol, timeframe]);
+    const consumer = { ...options };
+    const retire = (streamKey: string, stream: SharedCandleStream) => {
+      if (stream.closed) return;
+      stream.closed = true;
+      stream.ready = false;
+      stream.releaseScopeListeners();
+      stream.transport?.close();
+      stream.consumers.clear();
+      if (this.candleStreams.get(streamKey) === stream) this.candleStreams.delete(streamKey);
+    };
+    for (const [streamKey, stream] of this.candleStreams) {
+      if (stream.scope !== scope) retire(streamKey, stream);
+    }
+
+    let stream = this.candleStreams.get(key);
+    if (!stream) {
+      stream = {
+        scope,
+        consumers: new Set(),
+        transport: null,
+        ready: false,
+        readyRevision: 0,
+        closed: false,
+        releaseScopeListeners: () => undefined,
+      };
+      this.candleStreams.set(key, stream);
+      const ownedStream = stream;
+      const isCurrent = () => {
+        if (ownedStream.closed) return false;
+        if (candleStreamScope() === ownedStream.scope) return true;
+        retire(key, ownedStream);
+        return false;
+      };
+      const notify = (deliver: (listener: CandleStreamOptions) => void) => {
+        if (!isCurrent()) return;
+        for (const listener of [...ownedStream.consumers]) {
+          if (!ownedStream.consumers.has(listener) || !isCurrent()) continue;
+          try {
+            deliver(listener);
+          } catch (error) {
+            try {
+              listener.onError?.(error instanceof Error ? error : new Error('Candle listener failed'));
+            } catch {
+              // Keep sibling consumers isolated.
+            }
+          }
+        }
+      };
+      const releaseSession = onSessionChange(() => { isCurrent(); });
+      const releaseScope = onCommittedBrokerAccountSessionScopeChange(() => { isCurrent(); });
+      ownedStream.releaseScopeListeners = () => { releaseSession(); releaseScope(); };
+      ownedStream.consumers.add(consumer);
+      ownedStream.transport = this.createCandleStream(
+        {
+          symbol,
+          timeframe,
+          onConnected: () => {
+            ownedStream.ready = true;
+            ownedStream.readyRevision += 1;
+            notify((listener) => listener.onConnected?.());
+          },
+          onSnapshot: (candles) => notify((listener) => listener.onSnapshot?.(candles.map((candle) => ({ ...candle })))),
+          onCandle: (candle) => notify((listener) => listener.onCandle?.({ ...candle })),
+          onError: (error) => {
+            ownedStream.ready = false;
+            notify((listener) => listener.onError?.(error));
+          },
+        },
+        isCurrent,
+        () => { ownedStream.ready = false; },
+      );
+    } else {
+      stream.consumers.add(consumer);
+      const ownedStream = stream;
+      const readyRevision = ownedStream.readyRevision;
+      if (ownedStream.ready) {
+        void Promise.resolve().then(() => {
+          if (ownedStream.closed || !ownedStream.ready || ownedStream.readyRevision !== readyRevision || !ownedStream.consumers.has(consumer)) return;
+          if (candleStreamScope() !== ownedStream.scope) {
+            retire(key, ownedStream);
+            return;
+          }
+          try {
+            consumer.onConnected?.();
+          } catch (error) {
+            try {
+              consumer.onError?.(error instanceof Error ? error : new Error('Candle listener failed'));
+            } catch {
+              // Keep sibling consumers isolated.
+            }
+          }
+        });
+      }
+    }
+
+    const ownedStream = stream;
+    return {
+      close: () => {
+        if (!ownedStream.consumers.delete(consumer)) return;
+        if (ownedStream.consumers.size > 0) return;
+        void Promise.resolve().then(() => {
+          if (ownedStream.consumers.size === 0) retire(key, ownedStream);
+        });
+      },
+    };
+  }
+
+  private createCandleStream(
+    options: CandleStreamOptions,
+    isScopeCurrent: () => boolean,
+    onDisconnected: () => void,
+  ): CandleStreamSubscription {
     const apiTf = this.normalizeTimeframe(options.timeframe);
     const symbol = normalizeSymbol(options.symbol);
 
@@ -648,8 +819,12 @@ export class ChartDataService {
       });
 
       const unsubState = binaryTcpMarketStream.onStateChange((connected) => {
-        if (!binaryClosed && connected) {
-          options.onConnected?.();
+        if (!binaryClosed) {
+          if (connected) {
+            options.onConnected?.();
+          } else {
+            onDisconnected();
+          }
         }
       });
 
@@ -748,7 +923,7 @@ export class ChartDataService {
 
     const retireChangedDeployment = (): boolean => {
       if (switchToDesktopBinaryStream()) return true;
-      if (deploymentIdentity === candleDeploymentIdentity()) return false;
+      if (deploymentIdentity === candleDeploymentIdentity() && isScopeCurrent()) return false;
       closed = true;
       clearReconnectTimer(); clearOpenTimer(); clearSubscriptionAckTimer(); clearHeartbeat();
       stopPublicPollingFallback();
@@ -764,6 +939,7 @@ export class ChartDataService {
       if (retireChangedDeployment()) return false;
       if (!allowPublicPollingFallback || closed || publicPollingFallbackActive) return false;
 
+      onDisconnected();
       publicPollingFallbackActive = true;
       clearReconnectTimer(); clearOpenTimer(); clearSubscriptionAckTimer(); clearHeartbeat();
       reconnectPendingWhileSuspended = isRuntimeSuspended();
@@ -801,17 +977,12 @@ export class ChartDataService {
 
     const buildStreamUrl = (): { url: string; token: string | null } => {
       if (isDesktopBackendTarget()) return { url: '', token: null };
-      const token = getAuthToken();
-      const brokerUrl = buildBrokerWsV2Uri(token);
-      if (!brokerUrl) return { url: '', token: null };
-      return {
-        url: brokerUrl,
-        token,
-      };
+      return resolveCandleStreamEndpoint();
     };
 
     let connect = () => undefined;
     const scheduleReconnect = () => {
+      onDisconnected();
       if (closed || lateBinarySubscription !== null || publicPollingFallbackActive || reconnectTimer !== null) return;
       if (switchToDesktopBinaryStream()) return;
       if (isRuntimeSuspended()) {
@@ -837,7 +1008,7 @@ export class ChartDataService {
     const retireStaleSocket = (socket: WebSocket): boolean => {
       if (switchToDesktopBinaryStream()) return true;
       if (closed || ws !== socket || retireChangedDeployment()) return true;
-      if (socketToken === getAuthToken()) return false;
+      if (isDesktopBackendTarget() || socketToken === getAuthToken()) return false;
       clearOpenTimer(); clearSubscriptionAckTimer(); clearHeartbeat();
       ws = null;
       try { socket.close(1000, 'Broker session token changed'); } catch { /* ignore */ }
@@ -1005,10 +1176,69 @@ export class ChartDataService {
       }
     };
 
+    const refreshConnection = (reason: string) => {
+      if (closed) return;
+      onDisconnected();
+      clearReconnectTimer();
+      clearOpenTimer();
+      clearSubscriptionAckTimer();
+      clearHeartbeat();
+      stopPublicPollingFallback();
+      const socket = ws;
+      ws = null;
+      try { socket?.close(1000, reason); } catch { /* ignore */ }
+      reconnectPendingWhileSuspended = false;
+      connect();
+    };
+    const refreshCandleStream = (): void => {
+      refreshConnection('Manual connection refresh');
+    };
+    this.candleStreamRefreshers.add(refreshCandleStream);
+
+    const handleOnline = () => {
+      if (closed) return;
+      if (isDocumentHidden()) {
+        reconnectPendingWhileSuspended = true;
+        return;
+      }
+      refreshConnection('Network restored; refreshing candle stream');
+    };
+    const handleOffline = () => {
+      onDisconnected();
+      clearReconnectTimer();
+      clearOpenTimer();
+      clearSubscriptionAckTimer();
+      clearHeartbeat();
+      stopPublicPollingFallback();
+      reconnectPendingWhileSuspended = true;
+    };
+    const handleVisibilityChange = () => {
+      if (isDocumentHidden()) {
+        onDisconnected();
+        clearReconnectTimer();
+        clearOpenTimer();
+        clearSubscriptionAckTimer();
+        clearHeartbeat();
+        stopPublicPollingFallback();
+        reconnectPendingWhileSuspended = true;
+        return;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      if (reconnectPendingWhileSuspended || ws?.readyState === WebSocket.OPEN) {
+        refreshConnection('Foreground restored; refreshing candle stream');
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
     connect();
 
     return {
       close: () => {
+        this.candleStreamRefreshers.delete(refreshCandleStream);
         closed = true;
         lateBinarySubscription?.close();
         lateBinarySubscription = null;
@@ -1017,6 +1247,11 @@ export class ChartDataService {
         clearSubscriptionAckTimer();
         clearHeartbeat();
         stopPublicPollingFallback();
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }
         const socket = ws;
         ws = null;
         if (socket?.readyState === WebSocket.OPEN) {

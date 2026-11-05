@@ -236,7 +236,10 @@ const normalizeCommittedServerUrl = (value: unknown): string => {
 };
 
 const readCurrentBrokerId = (): string => normalizeCommittedScopeText(
-  getLocalStorageItem('broker_id') || getLocalStorageItem('rtx_broker_id') || '',
+  getLocalStorageItem('broker_id')
+  || getLocalStorageItem('rtx_broker_id')
+  || (!isDesktopBackendTarget() ? getRuntimeConfiguredBrokerId() : '')
+  || '',
 );
 
 export const createCommittedBrokerAccountSessionScope = (
@@ -261,6 +264,13 @@ export const getCommittedBrokerAccountSessionScope = (): CommittedBrokerAccountS
       // own storage, so this ownership snapshot is intentionally runtime-only.
       removeLocalStorageItem(COMMITTED_SESSION_SCOPE_STORAGE_KEY);
       legacyCommittedScopeStorageChecked = true;
+    }
+  }
+  if (!committedBrokerAccountSessionScope.authenticated && !committedBrokerAccountSessionScope.brokerId) {
+    const initial = createCommittedBrokerAccountSessionScope({ authenticated: false, accountId: null });
+    if (initial.brokerId || initial.serverUrl) {
+      committedBrokerAccountSessionScope = initial;
+      committedBrokerAccountSessionScopeKey = computeCommittedScopeKey(initial);
     }
   }
   return committedBrokerAccountSessionScope;

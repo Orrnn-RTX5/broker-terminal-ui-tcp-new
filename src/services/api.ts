@@ -3052,13 +3052,7 @@ export const configApi = {
       // Some deployments do not expose the v2 broker config yet.
       if (error instanceof ApiError && error.status === 404) {
         return {
-          brokerName: 'RTX',
-          priceFeedLP: 'YOFX',
-          executionMode: 'ABOOK',
-          defaultLeverage: 1000,
-          defaultBalance: 0,
-          marginMode: 'HEDGING',
-          maxTicksPerSymbol: 1000,
+          ...normalizeBrokerOperationalConfig(null),
         };
       }
       throw error;
