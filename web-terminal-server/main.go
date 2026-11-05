@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -34,6 +35,9 @@ var embeddedDist embed.FS
 //go:embed tcp_toolbar.js
 var tcpToolbarJS []byte
 
+//go:embed security_drawer.js
+var securityDrawerJS []byte
+
 type DiscoveredBroker struct {
 	BrokerID   string `json:"broker_id"`
 	BrokerName string `json:"broker_name"`
@@ -45,6 +49,8 @@ type DiscoveredBroker struct {
 type WebTerminalServer struct {
 	listenAddr   string
 	defaultPort  int
+	exeDir       string
+	masterPubHex string
 	distRoot     fs.FS
 	externalDist string
 
@@ -60,16 +66,35 @@ type WebTerminalServer struct {
 	cachedBrokersAt          time.Time
 	activeMux                *rtx5tcp.MuxSession
 	orderMux                 *rtx5tcp.MuxSession
+	superAdminMux            *rtx5tcp.MuxSession
+	managerMux               *rtx5tcp.MuxSession
+	adminMux                 *rtx5tcp.MuxSession
 	lastRTTMs                float64
 	avgRTTMs                 float64
 	dialMu                   sync.Mutex
 	orderDialMu              sync.Mutex
+	saDialMu                 sync.Mutex
+	managerDialMu            sync.Mutex
+	adminDialMu              sync.Mutex
 	dirRefreshMu             sync.Mutex
 	orderFastLaneUnsupported atomic.Bool
 	cachedOrderAuthToken     atomic.Value // fallback string
 
 	sessionMu     sync.RWMutex
 	sessionTokens map[string]string
+
+	otaMu               sync.RWMutex
+	otaSyncMu           sync.Mutex
+	otaChannel          string
+	embeddedTermTreeSHA string
+	latestOTAVersion    string
+	latestOTAReleaseID  string
+	lastOTACheckedUnix  int64
+	lastOTAError        string
+	appVersions         map[string]string
+	appTreeSHAs         map[string]string
+	appUISources        map[string]string
+	appReloadReady      map[string]bool
 }
 
 type tcpNoDelayListener struct {
@@ -96,11 +121,105 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
+func resolveWebAppKind(r *http.Request) string {
+	if r == nil {
+		return "terminal"
+	}
+	for _, explicit := range []string{
+		strings.ToLower(strings.TrimSpace(r.URL.Query().Get("__app"))),
+		strings.ToLower(strings.TrimSpace(r.Header.Get("X-RTX5-Web-App"))),
+	} {
+		if explicit == "" {
+			continue
+		}
+		if strings.Contains(explicit, "superadmin") {
+			return "superadmin"
+		}
+		if strings.Contains(explicit, "admin") {
+			return "admin"
+		}
+		if strings.Contains(explicit, "manager") {
+			return "manager"
+		}
+		if strings.Contains(explicit, "terminal") {
+			return "terminal"
+		}
+	}
+
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if idx := strings.IndexByte(host, ','); idx > 0 {
+		host = strings.TrimSpace(host[:idx])
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil && h != "" {
+		host = h
+	} else if idx := strings.IndexByte(host, ':'); idx > 0 {
+		host = host[:idx]
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+
+	if strings.Contains(host, "superadmin") {
+		return "superadmin"
+	}
+	if strings.Contains(host, "admin") {
+		return "admin"
+	}
+	if strings.Contains(host, "manager") {
+		return "manager"
+	}
+	return "terminal"
+}
+
+func appKindToStatusAppName(appKind string) string {
+	switch appKind {
+	case "superadmin":
+		return "superadmin"
+	case "admin":
+		return "broker-admin"
+	case "manager":
+		return "broker-manager"
+	default:
+		return "trader-terminal"
+	}
+}
+
+func loadAuthorityMasterPubHex(exeDir string) string {
+	candidates := []string{
+		filepath.Join(exeDir, "authority-pub.json"),
+		filepath.Join(exeDir, "..", "config", "authority-pub.json"),
+		filepath.Join(exeDir, "..", "..", "runtime-data", "secrets", "shared-authority.json"),
+		"/opt/rtx5-broker/config/authority-pub.json",
+		"/opt/rtx5-superadmin/runtime-data/secrets/shared-authority.json",
+	}
+	for _, ac := range candidates {
+		raw, err := os.ReadFile(ac)
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		var doc struct {
+			Ed25519MasterPubHex string `json:"ed25519_master_pub_hex"`
+			Ed25519PublicHex    string `json:"ed25519_public_hex"`
+		}
+		if json.Unmarshal(raw, &doc) == nil {
+			pubHex := strings.TrimSpace(doc.Ed25519MasterPubHex)
+			if pubHex == "" {
+				pubHex = strings.TrimSpace(doc.Ed25519PublicHex)
+			}
+			if pb, derr := hex.DecodeString(pubHex); derr == nil && len(pb) == ed25519.PublicKeySize {
+				return strings.ToLower(pubHex)
+			}
+		}
+	}
+	return ""
+}
+
 func main() {
 	listenFlag := flag.String("listen", envOrDefault("WEB_TERMINAL_LISTEN", "0.0.0.0:8443"), "HTTP/HTTPS & Binary WebSocket listen address")
 	targetFlag := flag.String("server", envOrDefault("BROKER_TCP_ADDR", "127.0.0.1:4443"), "Target Encrypted Binary TCP Server (IP:Port)")
 	gatewayRTOFlag := flag.String("gateway-rto", envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), "Direct 256-Shard RAM + Binary WAL Engine RTO\\x01 TCP address (:8190)")
-	saFlag := flag.String("superadmin", envOrDefault("SUPERADMIN_TCP_ADDR", "127.0.0.1:9100"), "Super Admin Encrypted Binary TCP Hub (:9100) for Broker Discovery")
+	saFlag := flag.String("superadmin", envOrDefault("SUPERADMIN_TCP_ADDR", "127.0.0.1:9100"), "Super Admin Encrypted Binary TCP Hub (:9100) for Broker Discovery & Multi-App Routing")
 	brokerIDFlag := flag.String("broker-id", envOrDefault("BROKER_ID", "fxtrust-tcp"), "Initial Broker ID")
 	brokerNameFlag := flag.String("broker-name", envOrDefault("BROKER_NAME", "FXTrust-TCP-Live"), "Initial Broker Name / Server label")
 	tlsCertFlag := flag.String("tls-cert", envOrDefault("WEB_TERMINAL_TLS_CERT", ""), "Optional TLS certificate PEM path for direct HTTPS/WSS (zero Cloudflare)")
@@ -177,6 +296,8 @@ func main() {
 	srv := &WebTerminalServer{
 		listenAddr:       *listenFlag,
 		defaultPort:      tcpAddr.Port,
+		exeDir:           exeDir,
+		masterPubHex:     loadAuthorityMasterPubHex(exeDir),
 		distRoot:         subFS,
 		externalDist:     extDist,
 		binHub:           newWebBinaryMarketHub(),
@@ -187,6 +308,7 @@ func main() {
 		activeBrokerName: strings.TrimSpace(*brokerNameFlag),
 		sessionTokens:    make(map[string]string),
 	}
+	srv.initHotUIOTAState()
 
 	// Start direct :8190 RTO\x01 push stream listener (0.0 ms tick/candle/position fanout when co-located with rtx5-gateway)
 	srv.binHub.startDirectGatewayPushLoop()
@@ -195,13 +317,45 @@ func main() {
 		go srv.refreshBrokerDirectory(true)
 	}
 	go srv.backgroundReconnectLoop()
+	go srv.runBackgroundHotUIOTALoop()
 
 	modeLabel := "HTTP + WS (Direct Zero-Cloudflare Binary TCP)"
 	if *tlsCertFlag != "" && *tlsKeyFlag != "" {
 		modeLabel = "HTTPS + WSS TLS 1.3 (Direct Zero-Cloudflare Binary TCP)"
 	}
-	log.Printf("[RTX5-Web-Terminal-TCP] Listening on %s (%s) ===> Fast-Lane Engine: %s | Access Tunnel: %s (Broker: %s / %s)",
-		*listenFlag, modeLabel, envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), srv.getTargetTCP(), srv.activeBrokerID, srv.activeBrokerName)
+	log.Printf("[RTX5-Web-Terminal-TCP] Listening on %s (%s) ===> Fast-Lane Engine: %s | Access Tunnel: %s | SuperAdmin Hub: %s (Broker: %s / %s)",
+		*listenFlag, modeLabel, envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), srv.getTargetTCP(), srv.superAdminTCP, srv.activeBrokerID, srv.activeBrokerName)
+
+	if *tlsCertFlag != "" && *tlsKeyFlag != "" && tcpAddr.Port == 443 {
+		go func() {
+			httpLn, herr := net.Listen("tcp", "0.0.0.0:80")
+			if herr != nil {
+				return
+			}
+			log.Printf("[RTX5-Web-Terminal-TCP] Listening on 0.0.0.0:80 (HTTP -> HTTPS :443 Redirect)")
+			redirectSrv := &http.Server{
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+					if host == "" {
+						host = strings.TrimSpace(r.Host)
+					}
+					if idx := strings.IndexByte(host, ','); idx > 0 {
+						host = strings.TrimSpace(host[:idx])
+					}
+					if h, _, serr := net.SplitHostPort(host); serr == nil && h != "" {
+						host = h
+					}
+					if host == "" {
+						host = "tcp-terminal.orrnn.com"
+					}
+					http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusMovedPermanently)
+				}),
+				ReadHeaderTimeout: 10 * time.Second,
+				IdleTimeout:       60 * time.Second,
+			}
+			_ = redirectSrv.Serve(tcpNoDelayListener{Listener: httpLn})
+		}()
+	}
 
 	httpSrv := &http.Server{
 		Handler:           http.HandlerFunc(srv.serveHTTP),
@@ -253,6 +407,11 @@ func (c *WebTerminalServer) resolveClientSessionKey(w http.ResponseWriter, r *ht
 func (c *WebTerminalServer) setSessionOrderToken(sessionKey, tok string) {
 	tok = strings.TrimSpace(tok)
 	if tok == "" {
+		if sessionKey != "" {
+			c.sessionMu.Lock()
+			delete(c.sessionTokens, sessionKey)
+			c.sessionMu.Unlock()
+		}
 		return
 	}
 	c.cachedOrderAuthToken.Store(tok)
@@ -281,11 +440,40 @@ func (c *WebTerminalServer) getSessionOrderToken(sessionKey string) string {
 	return ""
 }
 
-func (c *WebTerminalServer) getActiveDistFS() fs.FS {
-	if c.externalDist != "" {
-		return os.DirFS(c.externalDist)
+func (c *WebTerminalServer) getActiveDistFSForApp(appKind string) fs.FS {
+	if appKind == "" {
+		appKind = "terminal"
+	}
+	candidates := []string{
+		filepath.Join(c.exeDir, "..", "runtime-data", "ui-cache", appKind),
+		filepath.Join(c.exeDir, "ui-cache", appKind),
+		filepath.Join(c.exeDir, "..", "ui-dist", appKind),
+		filepath.Join(c.exeDir, "ui-dist", appKind),
+	}
+	for _, cand := range candidates {
+		if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+			return os.DirFS(cand)
+		}
+	}
+	if appKind != "terminal" {
+		_ = c.syncHotUIOTA()
+		for _, cand := range candidates {
+			if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+				return os.DirFS(cand)
+			}
+		}
+	}
+	if appKind == "terminal" {
+		if c.externalDist != "" {
+			return os.DirFS(c.externalDist)
+		}
+		return c.distRoot
 	}
 	return c.distRoot
+}
+
+func (c *WebTerminalServer) getActiveDistFS() fs.FS {
+	return c.getActiveDistFSForApp("terminal")
 }
 
 func (c *WebTerminalServer) getTargetTCP() string {
@@ -304,6 +492,37 @@ func (c *WebTerminalServer) isLocalGatewayTarget() bool {
 		return true
 	}
 	return false
+}
+
+func (c *WebTerminalServer) superAdminCandidates() []string {
+	c.mu.RLock()
+	sa := strings.TrimSpace(c.superAdminTCP)
+	c.mu.RUnlock()
+
+	var list []string
+	add := func(addr string) {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			return
+		}
+		for _, ex := range list {
+			if strings.EqualFold(ex, addr) {
+				return
+			}
+		}
+		list = append(list, addr)
+	}
+
+	if sa == "" || strings.EqualFold(sa, "185.126.217.108:9100") || strings.EqualFold(sa, "127.0.0.1:9100") || strings.EqualFold(sa, "localhost:9100") {
+		add("127.0.0.1:9100")
+		add(sa)
+		add("185.126.217.108:9100")
+	} else {
+		add(sa)
+		add("127.0.0.1:9100")
+		add("185.126.217.108:9100")
+	}
+	return list
 }
 
 func (c *WebTerminalServer) getOrDialSession() (*rtx5tcp.MuxSession, error) {
@@ -352,6 +571,164 @@ func (c *WebTerminalServer) getOrDialSession() (*rtx5tcp.MuxSession, error) {
 	}(newSess)
 
 	return newSess, nil
+}
+
+func (c *WebTerminalServer) getOrDialSessionForApp(appKind string) (*rtx5tcp.MuxSession, error) {
+	switch appKind {
+	case "superadmin":
+		c.mu.RLock()
+		sess := c.superAdminMux
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		c.saDialMu.Lock()
+		defer c.saDialMu.Unlock()
+
+		c.mu.RLock()
+		sess = c.superAdminMux
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		candidates := c.superAdminCandidates()
+		var lastErr error
+		for _, cand := range candidates {
+			timeout := 5 * time.Second
+			if strings.HasPrefix(cand, "127.0.0.1:") || strings.HasPrefix(cand, "localhost:") {
+				timeout = 1500 * time.Millisecond
+			}
+			tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleSuperAdminClient, timeout)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
+			c.mu.Lock()
+			c.superAdminMux = newSess
+			c.superAdminTCP = cand
+			c.mu.Unlock()
+
+			go func(s *rtx5tcp.MuxSession) {
+				_ = s.ServeLoop()
+				c.mu.Lock()
+				if c.superAdminMux == s {
+					c.superAdminMux = nil
+				}
+				c.mu.Unlock()
+			}(newSess)
+			return newSess, nil
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
+
+	case "manager":
+		c.mu.RLock()
+		sess := c.managerMux
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		c.managerDialMu.Lock()
+		defer c.managerDialMu.Unlock()
+
+		c.mu.RLock()
+		sess = c.managerMux
+		target := c.targetTCPAddr
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleBrokerManagerClient, 8*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		newSess := rtx5tcp.NewMuxSession(tc, false, nil, c.handleServerControlFrame)
+		c.mu.Lock()
+		c.managerMux = newSess
+		c.mu.Unlock()
+
+		go func(s *rtx5tcp.MuxSession) {
+			_ = s.ServeLoop()
+			c.mu.Lock()
+			if c.managerMux == s {
+				c.managerMux = nil
+			}
+			c.mu.Unlock()
+		}(newSess)
+		return newSess, nil
+
+	case "admin":
+		c.mu.RLock()
+		sess := c.adminMux
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		c.adminDialMu.Lock()
+		defer c.adminDialMu.Unlock()
+
+		c.mu.RLock()
+		sess = c.adminMux
+		target := c.targetTCPAddr
+		c.mu.RUnlock()
+		if sess != nil {
+			select {
+			case <-sess.Done():
+			default:
+				return sess, nil
+			}
+		}
+
+		tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleBrokerAdminClient, 8*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
+		c.mu.Lock()
+		c.adminMux = newSess
+		c.mu.Unlock()
+
+		go func(s *rtx5tcp.MuxSession) {
+			_ = s.ServeLoop()
+			c.mu.Lock()
+			if c.adminMux == s {
+				c.adminMux = nil
+			}
+			c.mu.Unlock()
+		}(newSess)
+		return newSess, nil
+
+	default:
+		return c.getOrDialSession()
+	}
 }
 
 func (c *WebTerminalServer) handleServerControlFrame(_ *rtx5tcp.MuxSession, frameType uint8, _ uint32, _ uint8, payload []byte) {
@@ -444,6 +821,21 @@ func (c *WebTerminalServer) backgroundReconnectLoop() {
 				}
 				c.mu.Unlock()
 			}
+		}
+
+		c.mu.RLock()
+		saSess := c.superAdminMux
+		mgrSess := c.managerMux
+		admSess := c.adminMux
+		c.mu.RUnlock()
+		if saSess != nil {
+			_, _ = saSess.MeasurePingRTT(1500 * time.Millisecond)
+		}
+		if mgrSess != nil {
+			_, _ = mgrSess.MeasurePingRTT(1500 * time.Millisecond)
+		}
+		if admSess != nil {
+			_, _ = admSess.MeasurePingRTT(1500 * time.Millisecond)
 		}
 
 		if firstBoot {
@@ -544,6 +936,10 @@ func (c *WebTerminalServer) switchBrokerTarget(brokerID, brokerName, tcpAddr str
 	c.activeMux = nil
 	oldOrder := c.orderMux
 	c.orderMux = nil
+	oldMgr := c.managerMux
+	c.managerMux = nil
+	oldAdm := c.adminMux
+	c.adminMux = nil
 	c.mu.Unlock()
 
 	if old != nil {
@@ -551,6 +947,12 @@ func (c *WebTerminalServer) switchBrokerTarget(brokerID, brokerName, tcpAddr str
 	}
 	if oldOrder != nil && oldOrder != old {
 		_ = oldOrder.Close()
+	}
+	if oldMgr != nil {
+		_ = oldMgr.Close()
+	}
+	if oldAdm != nil {
+		_ = oldAdm.Close()
 	}
 	dialDone := make(chan struct{})
 	go func() {
@@ -599,39 +1001,49 @@ func (c *WebTerminalServer) maybeRefreshBrokerDirectoryOnRequest() {
 }
 
 func (c *WebTerminalServer) querySuperAdminBrokerDirectory() ([]DiscoveredBroker, error) {
-	c.mu.RLock()
-	saAddr := c.superAdminTCP
-	c.mu.RUnlock()
-	if saAddr == "" {
+	candidates := c.superAdminCandidates()
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf("superadmin discovery address empty")
 	}
 
-	tc, err := rtx5tcp.DialTunnel(saAddr, rtx5tcp.RoleDiscoveryProbe, 1500*time.Millisecond)
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, cand := range candidates {
+		tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleDiscoveryProbe, 1500*time.Millisecond)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if err := tc.WriteMuxFrame(rtx5tcp.FrameBrokerDirectoryReq, 1, rtx5tcp.FlagFIN, []byte("{}")); err != nil {
+			_ = tc.Close()
+			lastErr = err
+			continue
+		}
+		ft, _, _, payload, err := tc.ReadMuxFrame()
+		_ = tc.Close()
+		if err != nil || ft != rtx5tcp.FrameBrokerDirectoryResp {
+			lastErr = fmt.Errorf("unexpected discovery frame %d: %v", ft, err)
+			continue
+		}
+		var list []DiscoveredBroker
+		if err := json.Unmarshal(payload, &list); err != nil {
+			lastErr = err
+			continue
+		}
+		if len(list) > 0 {
+			cp := make([]DiscoveredBroker, len(list))
+			copy(cp, list)
+			c.mu.Lock()
+			c.cachedBrokers = cp
+			c.cachedBrokersAt = time.Now()
+			c.superAdminTCP = cand
+			c.mu.Unlock()
+			return list, nil
+		}
 	}
-	defer tc.Close()
-
-	if err := tc.WriteMuxFrame(rtx5tcp.FrameBrokerDirectoryReq, 1, rtx5tcp.FlagFIN, []byte("{}")); err != nil {
-		return nil, err
+	if lastErr != nil {
+		return nil, lastErr
 	}
-	ft, _, _, payload, err := tc.ReadMuxFrame()
-	if err != nil || ft != rtx5tcp.FrameBrokerDirectoryResp {
-		return nil, fmt.Errorf("unexpected discovery frame %d: %v", ft, err)
-	}
-	var list []DiscoveredBroker
-	if err := json.Unmarshal(payload, &list); err != nil {
-		return nil, err
-	}
-	if len(list) > 0 {
-		cp := make([]DiscoveredBroker, len(list))
-		copy(cp, list)
-		c.mu.Lock()
-		c.cachedBrokers = cp
-		c.cachedBrokersAt = time.Now()
-		c.mu.Unlock()
-	}
-	return list, nil
+	return nil, fmt.Errorf("superadmin discovery unreachable")
 }
 
 func (c *WebTerminalServer) refreshBrokerDirectory(initial bool) {
@@ -658,9 +1070,6 @@ func (c *WebTerminalServer) refreshBrokerDirectory(initial bool) {
 	if !matched && (c.activeBrokerID == "" || c.activeBrokerID == "fxtrust-tcp") {
 		c.activeBrokerID = list[0].BrokerID
 		c.activeBrokerName = list[0].BrokerName
-		if list[0].TCPAddr != "" && (c.targetTCPAddr == "" || c.targetTCPAddr == "127.0.0.1:4443") {
-			// When running on the same VPS as the broker, keep 127.0.0.1:4443 for 0.0ms loopback; otherwise use advertised TCPAddr
-		}
 	}
 	c.mu.Unlock()
 }
@@ -702,6 +1111,9 @@ func (c *WebTerminalServer) requestOrigin(r *http.Request) (httpOrigin, wsOrigin
 	hostHeader := ""
 	if r != nil {
 		hostHeader = strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+		if idx := strings.IndexByte(hostHeader, ','); idx > 0 {
+			hostHeader = strings.TrimSpace(hostHeader[:idx])
+		}
 		if hostHeader == "" {
 			hostHeader = strings.TrimSpace(r.Host)
 		}
@@ -733,12 +1145,9 @@ func (c *WebTerminalServer) requestOrigin(r *http.Request) (httpOrigin, wsOrigin
 func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	_ = c.resolveClientSessionKey(w, r)
+	appKind := resolveWebAppKind(r)
 
 	switch p {
-	case "/health", "/readiness":
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "ok": true, "mode": "web-terminal-tcp"})
-		return
-
 	case "/__rtx5_binary_stream":
 		c.serveBinaryMarketStream(w, r)
 		return
@@ -761,29 +1170,44 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(tcpToolbarJS)
 		return
 
+	case "/tcp-security-drawer.js":
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(securityDrawerJS)
+		return
+
 	case "/api/tcp-client/status":
 		httpOrigin, wsOrigin, _, _ := c.requestOrigin(r)
 		c.mu.RLock()
-		sess := c.activeMux
 		target := c.targetTCPAddr
+		saTarget := c.superAdminTCP
 		bid := c.activeBrokerID
 		bnm := c.activeBrokerName
 		rttMs := c.lastRTTMs
 		avgRttMs := c.avgRTTMs
 		c.mu.RUnlock()
+
+		sess, _ := c.getOrDialSessionForApp(appKind)
+		if appKind == "superadmin" {
+			if saTarget != "" {
+				target = saTarget
+			} else {
+				target = "185.126.217.108:9100"
+			}
+		}
 		connected := false
 		if sess != nil {
 			select {
 			case <-sess.Done():
 			default:
 				connected = true
-				if rttMs <= 0 {
-					rttMs = sess.LastRTTMs()
+				if sessRtt := sess.LastRTTMs(); sessRtt > 0 {
+					rttMs = sessRtt
 				}
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"app":               "trader-terminal",
+			"app":               appKindToStatusAppName(appKind),
 			"mode":              "web-terminal-tcp",
 			"connected":         connected,
 			"magic":             "RTX\\x05 (0x52 0x54 0x58 0x05) + RTO\\x01 (:8190 Direct RAM)",
@@ -796,11 +1220,75 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			"rtt_ms":            rttMs,
 			"avg_rtt_ms":        avgRttMs,
 			"dll_verified":      true,
+			"ota":               c.getOTAStatusSnapshotForApp(appKind),
 		})
 		return
 
-	case "/api/tcp-client/ota-check", "/api/tcp-client/ota-ack-ui", "/api/tcp-client/ota-restart":
+	case "/api/tcp-client/ota-check":
+		err := c.syncHotUIOTA()
+		snap := c.getOTAStatusSnapshotForApp(appKind)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error(), "ota": snap})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ota": snap})
+		return
+
+	case "/api/tcp-client/ota-channel":
+		if r.Method == http.MethodPost {
+			var req struct {
+				Channel string `json:"channel"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			ch := c.setOTAChannel(req.Channel)
+			go func() {
+				_ = c.syncHotUIOTA()
+			}()
+			snap := c.getOTAStatusSnapshotForApp(appKind)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "channel": ch, "ota": snap})
+			return
+		}
+		snap := c.getOTAStatusSnapshotForApp(appKind)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "channel": c.getOTAChannel(), "ota": snap})
+		return
+
+	case "/api/tcp-client/ota-ack-ui":
+		c.ackUIReloadForApp(appKind)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ota": c.getOTAStatusSnapshotForApp(appKind)})
+		return
+
+	case "/api/tcp-client/ota-restart":
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+
+	case "/api/tcp-client/save-file":
+		var savedPaths []string
+		if r.Method == http.MethodPost && r.Body != nil {
+			var req struct {
+				Filename string `json:"filename"`
+				Content  string `json:"content"`
+			}
+			if json.NewDecoder(r.Body).Decode(&req) == nil && req.Content != "" {
+				fname := filepath.Base(strings.TrimSpace(req.Filename))
+				if fname == "" || fname == "." {
+					fname = "broker.lic"
+				}
+				licDir := filepath.Join(c.exeDir, "..", "runtime-data", "issued-licenses")
+				if os.MkdirAll(licDir, 0755) == nil {
+					dst := filepath.Join(licDir, fname)
+					if os.WriteFile(dst, []byte(req.Content), 0644) == nil {
+						savedPaths = append(savedPaths, dst)
+					}
+				}
+			}
+		}
+		if len(savedPaths) == 0 {
+			savedPaths = []string{"browser-download"}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":          true,
+			"saved_paths": savedPaths,
+		})
 		return
 
 	case "/api/tcp-client/brokers":
@@ -869,6 +1357,21 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if appKind == "superadmin" {
+		if p == "/runtime-config.js" {
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write([]byte("/* superadmin web-tcp */\n"))
+			return
+		}
+		if svc, rewritten, ok := classifySuperAdminRoute(r); ok {
+			c.proxyOverBinaryTCPForApp(w, r, "superadmin", svc, rewritten)
+			return
+		}
+		c.serveEmbeddedSPA(w, r)
+		return
+	}
+
 	if p == "/runtime-config.js" {
 		c.serveBrokerRuntimeConfigJS(w, r)
 		return
@@ -876,6 +1379,25 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
 		normP := strings.TrimPrefix(p, "/ext-api")
+		if normP == "/health" || normP == "/readiness" {
+			sess, err := c.getOrDialSessionForApp(appKind)
+			c.mu.RLock()
+			bid := c.activeBrokerID
+			bnm := c.activeBrokerName
+			tAddr := c.targetTCPAddr
+			c.mu.RUnlock()
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":        "ok",
+				"ok":            true,
+				"mode":          "web-terminal-tcp",
+				"app":           appKind,
+				"tcp_connected": err == nil && sess != nil,
+				"broker_id":     bid,
+				"broker_name":   bnm,
+				"target_tcp":    tAddr,
+			})
+			return
+		}
 		if normP == "/api/v2/broker/servers" || normP == "/api/v1/broker/servers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
 			c.serveBrokerDirectoryPayload(w, r, true)
@@ -892,8 +1414,8 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if svc, rewritten, ok := classifyTerminalRoute(r); ok {
-		c.proxyOverBinaryTCP(w, r, svc, rewritten)
+	if svc, rewritten, ok := classifyBrokerRoute(appKind, r); ok {
+		c.proxyOverBinaryTCPForApp(w, r, appKind, svc, rewritten)
 		return
 	}
 
@@ -961,6 +1483,7 @@ func (c *WebTerminalServer) serveBrokerRuntimeConfigJS(w http.ResponseWriter, r 
 }
 
 func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r *http.Request, asArray bool) {
+	appKind := resolveWebAppKind(r)
 	httpOrigin, wsOrigin, hostOnly, port := c.requestOrigin(r)
 	proto := "http"
 	if strings.HasPrefix(httpOrigin, "https://") {
@@ -971,6 +1494,11 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 	c.mu.RLock()
 	curTCP := c.targetTCPAddr
 	c.mu.RUnlock()
+
+	servicesDomain := hostOnly
+	if port > 0 && port != 80 && port != 443 {
+		servicesDomain = fmt.Sprintf("%s:%d", hostOnly, port)
+	}
 
 	items := make([]map[string]any, 0, len(list))
 	for _, b := range list {
@@ -985,33 +1513,48 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 			regionLabel = fmt.Sprintf("TCP %s", tcpAddr)
 		}
 		logoURL := httpOrigin + "/brand/terminal-icon.png"
+		switch appKind {
+		case "manager":
+			logoURL = httpOrigin + "/rtx5-logo.png"
+		case "admin":
+			logoURL = httpOrigin + "/admin-symbol.png"
+		}
 		items = append(items, map[string]any{
-			"id":                  b.BrokerID,
-			"broker_id":           b.BrokerID,
-			"broker_name":         b.BrokerName,
-			"name":                b.BrokerName,
-			"server":              b.BrokerName,
-			"server_name":         displayServer,
-			"display_server":      displayServer,
-			"server_display":      displayServer,
-			"display_server_name": displayServer,
-			"logo_url":            logoURL,
-			"server_ip":           hostOnly,
-			"server_port":         port,
-			"protocol":            proto,
-			"server_url":          httpOrigin,
-			"backend_url":         httpOrigin,
-			"market_api_url":      httpOrigin,
-			"API_HOST":            httpOrigin,
-			"API_HOST_EXT":        httpOrigin,
-			"ws_url":              wsOrigin + "/ws/v2",
-			"feed_url":            wsOrigin + "/ws/feed",
-			"feed_ws_url":         wsOrigin + "/ws/feed",
-			"region":              regionLabel,
-			"tcp_addr":            tcpAddr,
-			"status":              "active",
-			"active":              true,
-			"enabled":             true,
+			"id":                    b.BrokerID,
+			"broker_id":             b.BrokerID,
+			"broker_name":           b.BrokerName,
+			"name":                  b.BrokerName,
+			"server":                b.BrokerName,
+			"server_name":           displayServer,
+			"display_server":        displayServer,
+			"server_display":        displayServer,
+			"display_server_name":   displayServer,
+			"logo_url":              logoURL,
+			"server_ip":             hostOnly,
+			"server_port":           port,
+			"protocol":              proto,
+			"server_url":            httpOrigin,
+			"backend_url":           httpOrigin,
+			"market_api_url":        httpOrigin,
+			"API_HOST":              httpOrigin,
+			"API_HOST_EXT":          httpOrigin,
+			"ws_url":                wsOrigin + "/ws/v2",
+			"trade_ws_url":          wsOrigin + "/ws/v2",
+			"trade_wss_url":         wsOrigin + "/ws/v2",
+			"feed_url":              wsOrigin + "/ws/feed",
+			"feed_ws_url":           wsOrigin + "/ws/feed",
+			"feed_wss_url":          wsOrigin + "/ws/feed",
+			"feed_status_url":       httpOrigin + "/ws/feed/status",
+			"feed_status_https_url": httpOrigin + "/ws/feed/status",
+			"services_domain":       servicesDomain,
+			"config_version":        1,
+			"schema_version":        2,
+			"region":                regionLabel,
+			"tcp_addr":              tcpAddr,
+			"status":                "active",
+			"active":                true,
+			"enabled":               true,
+			"created_at":            1700000000,
 		})
 	}
 
@@ -1029,26 +1572,81 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 }
 
 func (c *WebTerminalServer) proxyOverBinaryTCP(w http.ResponseWriter, r *http.Request, targetService string, rewrittenPath string) {
-	sess, err := c.getOrDialSession()
-	if err != nil {
+	c.proxyOverBinaryTCPForApp(w, r, resolveWebAppKind(r), targetService, rewrittenPath)
+}
+
+func (c *WebTerminalServer) proxyOverBinaryTCPForApp(w http.ResponseWriter, r *http.Request, appKind string, targetService string, rewrittenPath string) {
+	sess, err := c.getOrDialSessionForApp(appKind)
+	if err != nil || sess == nil {
+		if r.URL.Path == "/health" || r.URL.Path == "/readiness" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":        "ok",
+				"ok":            true,
+				"mode":          "web-terminal-tcp",
+				"app":           appKind,
+				"tcp_connected": false,
+			})
+			return
+		}
+		targetLabel := c.getTargetTCP()
+		if appKind == "superadmin" {
+			c.mu.RLock()
+			targetLabel = c.superAdminTCP
+			c.mu.RUnlock()
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": fmt.Sprintf("Encrypted Binary TCP Server (%s) unreachable: %v", c.getTargetTCP(), err),
+			"error": fmt.Sprintf("Encrypted Binary TCP Server (%s) unreachable: %v", targetLabel, err),
 		})
 		return
 	}
 	clone := r.Clone(r.Context())
 	clone.URL.Path = rewrittenPath
 	clone.RequestURI = ""
+	localLoopbackOrigin := "http://127.0.0.1:18403"
+	switch appKind {
+	case "superadmin":
+		localLoopbackOrigin = "http://127.0.0.1:18400"
+	case "admin":
+		localLoopbackOrigin = "http://127.0.0.1:18401"
+	case "manager":
+		localLoopbackOrigin = "http://127.0.0.1:18402"
+	}
 	// Normalize Origin to loopback for internal backend services while mux_session echoes browser Origin
 	if orig := strings.TrimSpace(r.Header.Get("Origin")); orig != "" {
 		w.Header().Set("Access-Control-Allow-Origin", orig)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		clone.Header.Set("Origin", "http://127.0.0.1:18400")
+		clone.Header.Set("Origin", localLoopbackOrigin)
 	}
 	sess.ProxyHTTP(w, clone, targetService)
 }
 
-func classifyTerminalRoute(r *http.Request) (service string, rewrittenPath string, matched bool) {
+func classifySuperAdminRoute(r *http.Request) (service string, rewrittenPath string, matched bool) {
+	p := r.URL.Path
+	isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+	switch {
+	case strings.HasPrefix(p, "/api/tcp-security"):
+		return "tcp-security", p, true
+	case strings.HasPrefix(p, "/ota/"):
+		return "ota", p, true
+	case strings.HasPrefix(p, "/candle-api/"):
+		return "control-plane", strings.TrimPrefix(p, "/candle-api"), true
+	case p == "/candle-api":
+		return "control-plane", "/", true
+	case strings.HasPrefix(p, "/license/"):
+		return "license", p, true
+	case strings.HasPrefix(p, "/api/"),
+		strings.HasPrefix(p, "/uploads/"),
+		strings.HasPrefix(p, "/ws/"),
+		p == "/health",
+		p == "/readiness",
+		isWS:
+		return "control-plane", p, true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyBrokerRoute(appKind string, r *http.Request) (service string, rewrittenPath string, matched bool) {
 	p := r.URL.Path
 	isWS := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
@@ -1071,13 +1669,18 @@ func classifyTerminalRoute(r *http.Request) (service string, rewrittenPath strin
 		strings.HasPrefix(p, "/api/v2/admin/instruments/") {
 		return "manager", p, true
 	}
+	if (appKind == "admin" || appKind == "manager") && strings.HasPrefix(p, "/api/v2/auth/") {
+		return "manager", p, true
+	}
 
 	switch {
 	case strings.HasPrefix(p, "/ota/"):
 		return "ota", p, true
 	case strings.HasPrefix(p, "/api/v2/binary-candles/"),
 		strings.HasPrefix(p, "/api/v2/candles/"),
-		strings.HasPrefix(p, "/history/candles/"):
+		strings.HasPrefix(p, "/api/v2/market-data/candles/"),
+		strings.HasPrefix(p, "/history/candles/"),
+		p == "/api/v1/candles" || strings.HasPrefix(p, "/api/v1/candles/"):
 		return "binary-candles", p, true
 	case p == "/ws/feed" || p == "/ws/feed/status" || strings.HasPrefix(p, "/ws/feed/"):
 		return "bridge", p, true
@@ -1115,13 +1718,20 @@ func classifyTerminalRoute(r *http.Request) (service string, rewrittenPath strin
 	return "", "", false
 }
 
+func classifyTerminalRoute(r *http.Request) (service string, rewrittenPath string, matched bool) {
+	return classifyBrokerRoute(resolveWebAppKind(r), r)
+}
+
 func (c *WebTerminalServer) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *http.Request) {
-	activeFS := c.getActiveDistFS()
+	appKind := resolveWebAppKind(r)
+	activeFS := c.getActiveDistFSForApp(appKind)
 	candidates := []string{
 		"brand/terminal-icon.png",
 		"brand/rtx5-app-icon.png",
 		"titlebar-icon.png",
 		"rtx5-logo.png",
+		"admin-symbol.png",
+		"rtx5-logo-mark.png",
 		"favicon.png",
 	}
 	for _, cand := range candidates {
@@ -1145,7 +1755,7 @@ func (c *WebTerminalServer) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *ht
 func (c *WebTerminalServer) serveEmbeddedSPA(w http.ResponseWriter, r *http.Request) {
 	cleanPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 	if cleanPath == "" || cleanPath == "." {
-		c.serveIndexHTML(w)
+		c.serveIndexHTML(w, r)
 		return
 	}
 	if cleanPath == "brand/rtx5-app-icon.png" || cleanPath == "brand/terminal-icon.png" {
@@ -1153,7 +1763,8 @@ func (c *WebTerminalServer) serveEmbeddedSPA(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	activeFS := c.getActiveDistFS()
+	appKind := resolveWebAppKind(r)
+	activeFS := c.getActiveDistFSForApp(appKind)
 	f, err := activeFS.Open(cleanPath)
 	if err != nil {
 		ext := strings.ToLower(path.Ext(cleanPath))
@@ -1161,19 +1772,19 @@ func (c *WebTerminalServer) serveEmbeddedSPA(w http.ResponseWriter, r *http.Requ
 			http.NotFound(w, r)
 			return
 		}
-		c.serveIndexHTML(w)
+		c.serveIndexHTML(w, r)
 		return
 	}
 	defer f.Close()
 
 	st, err := f.Stat()
 	if err != nil || st.IsDir() {
-		c.serveIndexHTML(w)
+		c.serveIndexHTML(w, r)
 		return
 	}
 
 	if cleanPath == "index.html" {
-		c.serveIndexHTML(w)
+		c.serveIndexHTML(w, r)
 		return
 	}
 
@@ -1188,8 +1799,9 @@ func (c *WebTerminalServer) serveEmbeddedSPA(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write(data)
 }
 
-func (c *WebTerminalServer) serveIndexHTML(w http.ResponseWriter) {
-	activeFS := c.getActiveDistFS()
+func (c *WebTerminalServer) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
+	appKind := resolveWebAppKind(r)
+	activeFS := c.getActiveDistFSForApp(appKind)
 	f, err := activeFS.Open("index.html")
 	if err != nil {
 		http.Error(w, "Embedded UI index.html missing", http.StatusInternalServerError)
@@ -1202,7 +1814,12 @@ func (c *WebTerminalServer) serveIndexHTML(w http.ResponseWriter) {
 		return
 	}
 
-	injectTag := `<script src="/rtx5-tcp-toolbar.js"></script>`
+	var injectTag string
+	if appKind == "superadmin" {
+		injectTag = `<script src="/tcp-security-drawer.js"></script>`
+	} else {
+		injectTag = `<script src="/rtx5-tcp-toolbar.js"></script>`
+	}
 	if idx := bytes.LastIndex(bytes.ToLower(raw), []byte("</body>")); idx >= 0 {
 		patched := make([]byte, 0, len(raw)+len(injectTag)+2)
 		patched = append(patched, raw[:idx]...)

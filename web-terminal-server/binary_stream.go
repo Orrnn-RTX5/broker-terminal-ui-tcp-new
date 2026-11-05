@@ -68,7 +68,7 @@ func wrapWebBinaryFrame(frameType uint8, payload []byte) []byte {
 func (h *webBinaryMarketHub) bindClientAccount(clientKey string, accountLogin int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if accountLogin <= 0 {
+	if accountLogin == 0 {
 		delete(h.loginByKey, clientKey)
 	} else {
 		h.loginByKey[clientKey] = accountLogin
@@ -133,7 +133,8 @@ func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 	}
 }
 
-// broadcastTradeEvent isolates 0x3A private account/position events strictly by each browser tab's bound AccountLogin (bytes[2:10]).
+// broadcastTradeEvent isolates 0x3A private account/position events strictly by each browser tab's bound AccountLogin (bytes[2:10]),
+// while delivering all 0x3A events to verified Manager/Admin wildcard subscribers (boundLogin == -1).
 func (h *webBinaryMarketHub) broadcastTradeEvent(payload []byte) {
 	if len(payload) < 10 {
 		return
@@ -160,7 +161,10 @@ func (h *webBinaryMarketHub) broadcastTradeEvent(payload []byte) {
 			continue
 		}
 		boundLogin := s.accountLogin.Load()
-		if eventLogin > 0 && boundLogin > 0 && boundLogin != eventLogin {
+		if boundLogin == 0 {
+			continue
+		}
+		if boundLogin > 0 && eventLogin > 0 && boundLogin != eventLogin {
 			continue
 		}
 		select {
@@ -187,6 +191,7 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 
 	_, _ = s.getOrDialSession()
 	clientKey := s.resolveClientSessionKey(w, r)
+	appKind := resolveWebAppKind(r)
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store, no-transform")
@@ -203,6 +208,9 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	s.binHub.mu.Lock()
 	if boundLogin, exists := s.binHub.loginByKey[clientKey]; exists {
 		sub.accountLogin.Store(boundLogin)
+	} else if (appKind == "manager" || appKind == "admin") && s.getSessionOrderToken(clientKey) != "" {
+		sub.accountLogin.Store(-1)
+		s.binHub.loginByKey[clientKey] = -1
 	}
 	s.binHub.subs[sub] = struct{}{}
 	snaps := make([]rtx5tcp.BinaryTick, 0, len(s.binHub.latestTicks))
@@ -319,4 +327,3 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		}
 	}
 }
-

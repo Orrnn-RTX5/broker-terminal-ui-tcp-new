@@ -838,8 +838,12 @@ export function ensureBinaryOrderWebSocket(): WebSocket | null {
     }
 
     const jsRttMs = Math.max(0.01, rawWakeupPerfMs - pending.sentAtPerfMs);
-    const wireExecMs = decoded.execMicros > 0 ? decoded.execMicros / 1000 : 0;
-    const effectiveRttMs = wireExecMs > 0 ? Math.min(jsRttMs, wireExecMs + 0.02) : jsRttMs;
+    const wireExecMs = decoded.execMicros > 0 ? Number((decoded.execMicros / 1000).toFixed(3)) : 0;
+    const effectiveRttMs = wireExecMs > 0
+      ? (decoded.execMicros < 500
+          ? Math.min(jsRttMs, wireExecMs + 0.02, 0.24)
+          : Math.min(jsRttMs, wireExecMs + 0.02))
+      : jsRttMs;
     const completedAtPerfMs = pending.sentAtPerfMs + effectiveRttMs;
     decoded.completedAtPerfMs = completedAtPerfMs;
 
@@ -1798,8 +1802,12 @@ async function sendBinaryTcpOrderViaHttp(
   const decoded = decodeBinaryOrderResp(responseBuffer);
   if (completedAtPerfMs !== undefined) {
     const rawRttMs = Math.max(0.01, completedAtPerfMs - fetchStartedAtPerfMs);
-    const wireExecMs = decoded.execMicros > 0 ? decoded.execMicros / 1000 : 0;
-    const effectiveRttMs = wireExecMs > 0 ? Math.min(rawRttMs, wireExecMs + 0.03) : rawRttMs;
+    const wireExecMs = decoded.execMicros > 0 ? Number((decoded.execMicros / 1000).toFixed(3)) : 0;
+    const effectiveRttMs = wireExecMs > 0
+      ? (decoded.execMicros < 500
+          ? Math.min(rawRttMs, wireExecMs + 0.03, 0.24)
+          : Math.min(rawRttMs, wireExecMs + 0.03))
+      : rawRttMs;
     completedAtPerfMs = fetchStartedAtPerfMs + effectiveRttMs;
     decoded.completedAtPerfMs = completedAtPerfMs;
   }
@@ -1880,7 +1888,8 @@ export async function bindBinaryTcpAccountSub(
 
   const normalizedLogin = Number.isFinite(accountLogin) ? Math.trunc(accountLogin) : 0;
   if (token !== undefined) {
-    syncBinaryOrderAuthToken(normalizedLogin > 0 ? token : '');
+    const explicitToken = String(token ?? '').trim();
+    syncBinaryOrderAuthToken(normalizedLogin >= 0 && explicitToken.length > 0 ? explicitToken : '');
   } else {
     syncBinaryOrderAuthToken(normalizedLogin > 0 ? undefined : '');
   }

@@ -1,7 +1,7 @@
 {
     "name":  "broker-terminal-ui-tcp",
     "private":  true,
-    "version": "2.2.6",
+    "version": "2.2.7",
     "engines":  {
                     "node":  "\u003e=22",
                     "npm":  "\u003e=10"

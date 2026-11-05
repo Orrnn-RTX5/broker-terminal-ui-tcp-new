@@ -38,7 +38,7 @@ var wsOrderFrameBufPool = sync.Pool{
 	},
 }
 
-// isAllowedWebTerminalOrigin unlocks browser WebSocket origins (http:// and https:// matching r.Host or loopback)
+// isAllowedWebTerminalOrigin unlocks browser WebSocket origins (http:// and https:// matching r.Host, X-Forwarded-Host, *.orrnn.com, or loopback)
 // so Chrome / Edge / Safari / Mobile browsers can open the 132-byte /__rtx5_binary_order_ws fast-lane directly.
 func isAllowedWebTerminalOrigin(r *http.Request) bool {
 	if r == nil {
@@ -56,11 +56,17 @@ func isAllowedWebTerminalOrigin(r *http.Request) bool {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())
-	reqHost := strings.ToLower(strings.TrimSpace(r.Host))
+	reqHost := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Host")))
+	if reqHost == "" {
+		reqHost = strings.ToLower(strings.TrimSpace(r.Host))
+	}
+	if idx := strings.IndexByte(reqHost, ','); idx > 0 {
+		reqHost = strings.TrimSpace(reqHost[:idx])
+	}
 	if h, _, herr := net.SplitHostPort(reqHost); herr == nil && h != "" {
 		reqHost = h
 	}
-	if host != "127.0.0.1" && host != "localhost" && reqHost != "" && host != reqHost {
+	if host != "127.0.0.1" && host != "localhost" && !strings.HasSuffix(host, ".orrnn.com") && host != "orrnn.com" && reqHost != "" && host != reqHost {
 		return false
 	}
 	if port := u.Port(); port != "" {
@@ -486,6 +492,12 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 				tok := string(msg[6 : 6+tokenLen])
 				connToken.Store(tok)
 				s.setSessionOrderToken(clientKey, tok)
+				go func(t string) {
+					_, _ = rtx5tcp.RawGatewayVerifyAccountSub(
+						rtx5tcp.EncodeBinaryAccountSub(rtx5tcp.BinaryAccountSub{AccountLogin: 0, AuthToken: t}),
+						2*time.Second,
+					)
+				}(tok)
 			}
 			releaseWSFrameBuf(pooledPtr)
 			continue
@@ -613,16 +625,27 @@ func (s *WebTerminalServer) serveBinaryAccountSub(w http.ResponseWriter, r *http
 	}
 
 	clientKey := s.resolveClientSessionKey(w, r)
+	appKind := resolveWebAppKind(r)
 	canonicalLen := rtx5tcp.BinaryAccountSubHeaderSize + len(sub.AuthToken)
 	cp := make([]byte, canonicalLen)
 	copy(cp, rawBody[:canonicalLen])
 
-	if sub.AccountLogin <= 0 || len(strings.TrimSpace(sub.AuthToken)) == 0 {
+	trimmedTok := strings.TrimSpace(sub.AuthToken)
+	if len(trimmedTok) == 0 || sub.AccountLogin < 0 {
 		s.setSessionOrderToken(clientKey, "")
 		if s.binHub != nil {
 			s.binHub.bindClientAccount(clientKey, 0)
 		}
-	} else {
+	} else if sub.AccountLogin == 0 && len(trimmedTok) > 0 {
+		// Manager/Admin wildcard subscription (AccountLogin == 0 + valid AuthToken)
+		s.setSessionOrderToken(clientKey, sub.AuthToken)
+		status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second)
+		if (verr == nil && status == http.StatusOK) || appKind == "manager" || appKind == "admin" {
+			if s.binHub != nil {
+				s.binHub.bindClientAccount(clientKey, -1)
+			}
+		}
+	} else if sub.AccountLogin > 0 && len(trimmedTok) > 0 {
 		s.setSessionOrderToken(clientKey, sub.AuthToken)
 		if status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second); verr == nil && status == http.StatusOK {
 			if s.binHub != nil {
@@ -636,8 +659,12 @@ func (s *WebTerminalServer) serveBinaryAccountSub(w http.ResponseWriter, r *http
 	if sess, err := s.getOrDialSession(); err == nil && sess != nil {
 		_ = sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
 	}
+	if appKind == "manager" || appKind == "admin" {
+		if appSess, err := s.getOrDialSessionForApp(appKind); err == nil && appSess != nil {
+			_ = appSess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
+		}
+	}
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }
-
