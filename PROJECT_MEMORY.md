@@ -1,6 +1,6 @@
-# PROJECT_MEMORY.md — `Broker-Terminal-UI-TCP` (`v2.2.4`)
+# PROJECT_MEMORY.md â€” `Broker-Terminal-UI-TCP` (`v2.2.4`)
 
-> **🔒 STRICT CI/CD LOCK RULE**: **NEVER EDIT, CREATE, DELETE, OR CHANGE ANY GITHUB CI/CD WORKFLOW (`.github/workflows/*`) OR CI/CD CONFIGURATION WITHOUT EXPLICIT PERMISSION FROM THE USER/OWNER.**
+> **ðŸ”’ STRICT CI/CD LOCK RULE**: **NEVER EDIT, CREATE, DELETE, OR CHANGE ANY GITHUB CI/CD WORKFLOW (`.github/workflows/*`) OR CI/CD CONFIGURATION WITHOUT EXPLICIT PERMISSION FROM THE USER/OWNER.**
 
 This document serves as the authoritative architectural memory for developers and autonomous AI coding agents working inside `Broker-Terminal-UI-TCP`.
 
@@ -22,7 +22,7 @@ This document serves as the authoritative architectural memory for developers an
 ## 2. The 6-Repository `Orrnn-RTX5` Pure Binary TCP Ecosystem
 
 1. **`Super-Admin-Commands-TCP`**:
-   - Hosts `rtx5-superadmin-tcp` (`:9100`), the global `.srv` Broker Discovery Registry, Ed25519 License Generator (`broker.lic`), Binary OTA Distribution Hub (`0x34–0x37`), and `RTX5-SuperAdmin64.exe`.
+   - Hosts `rtx5-superadmin-tcp` (`:9100`), the global `.srv` Broker Discovery Registry, Ed25519 License Generator (`broker.lic`), Binary OTA Distribution Hub (`0x34â€“0x37`), and `RTX5-SuperAdmin64.exe`.
 2. **`Broker-Commands-TCP`**:
    - Hosts the Broker VPS backend (`rtx5-server-tcp` `:4443`, `rtx5-gateway` `:8080` & `RTO\x01` `:8190`, 256-Shard `RAMMT5Engine` + Binary `.WAL`, `rtx5-market-feed`, PostgreSQL 16 `pgx v5.9.0 SendBatch` persistence) and the Go native launcher suite (`desktop-clients/`).
 3. **`Broker-Admin-UI-TCP`**:
@@ -40,7 +40,7 @@ This document serves as the authoritative architectural memory for developers an
 
 ### Backend Stack
 - **Go 1.24**: Static Linux binaries (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -ldflags="-s -w"`) for VPS deployment; Windows 64-bit native desktop clients linked with `rtx5_guard.dll` (Win32 C DPAPI + multi-factor HWID + binary SHA-256 attestation).
-- **Execution & Persistence**: 256-Shard Lock-Free In-RAM MT5 Execution Engine (`RAMMT5Engine` + Binary `.WAL`) delivering `< 0.5 ms` (`18–350 µs`) order execution, backed by PostgreSQL 16 (`pgx v5.9.0 SendBatch` + Async WAL + idempotent `broker-schema-compat.sql`) and local-only (`127.0.0.1`) Redis/NATS buses.
+- **Execution & Persistence**: 256-Shard Lock-Free In-RAM MT5 Execution Engine (`RAMMT5Engine` + Binary `.WAL`) delivering `< 0.5 ms` (`18â€“350 Âµs`) order execution, backed by PostgreSQL 16 (`pgx v5.9.0 SendBatch` + Async WAL + idempotent `broker-schema-compat.sql`) and local-only (`127.0.0.1`) Redis/NATS buses.
 
 ### Frontend Stack (`Broker-Terminal-UI-TCP`)
 - **React 19 + TypeScript 5.9 + Vite 7 + Tailwind CSS v4 + Lightweight Charts 5.1 + Zustand 5** (`O(1)` reference checks + `requestAnimationFrame` coalescing).
@@ -73,7 +73,7 @@ This document serves as the authoritative architectural memory for developers an
   - `0x38 FrameBinaryOrderFastReq`: Fixed **128-byte** (132-byte with `ReqID` on `/__rtx5_binary_order_ws`) binary order struct for all 6 MT5 actions (`1=PlaceMarket`, `2=ClosePosition`, `3=ModifyPosition`, `4=PlacePending`, `5=ModifyPending`, `6=CancelPending`, plus `7=CloseBulk`).
   - `0x39 FrameBinaryOrderFastResp`: Fixed **136-byte** (140-byte on `/__rtx5_binary_order_ws`) binary execution response (`Status`, `OrderTicket`, `PositionTicket`, `DealTicket`, `FillPrice`, `ExecutedVol`, `RealizedPnL`, `ExecMicros`, `ErrorCode`, `Message`).
   - `0x3A FrameBinaryTradeEvent` & `0x3B FrameBinaryAccountSub`: Real-time private push stream for `Account`, `Positions`, `Orders`, `Deals`, and `Metrics`.
-  - `0x34–0x37 Binary OTA Frames`: Ed25519-signed manifest + SHA-256 chunked UI/binary OTA delivery.
+  - `0x34â€“0x37 Binary OTA Frames`: Ed25519-signed manifest + SHA-256 chunked UI/binary OTA delivery.
   - Internal `127.0.0.1:8190` (`RTO\x01` / `RTO\x02`): 32-socket persistent `TCP_NODELAY` raw binary order pool between `:4443` / `:8443` and `rtx5-gateway`.
 
 ---
@@ -90,3 +90,15 @@ This document serves as the authoritative architectural memory for developers an
 - **Staging & OTA Auto-Push Flow**:
   - `05-stage-and-build-uis.ps1` builds `Broker-Terminal-UI-TCP` with `VITE_APP_VERSION=2.2.4` and stages `dist/` into **both** `desktop-clients/cmd/rtx5-terminal-client/dist` and `web-terminal-tcp/server/dist`.
   - `publish-ota-release.ps1 -Channel all -Version "2.2.4"` signs `terminal-ui-dist.zip`, `RTX5-Terminal64.exe`, and `web-terminal-linux.zip` with the Master Ed25519 key and uploads them over `:9100` (`POST /api/tcp-security/ota/upload`), updating both Windows Desktop traders and `https://tcp-terminal.orrnn.com`.
+---
+
+## CRITICAL DESKTOP .EXE & PACKAGING ANTI-REGRESSION RULES (DO NOT REPEAT)
+
+1. **Canonical Desktop .EXE Build Directory is Strictly 2-TCP-Codebase\build\clients\**:
+   -  6-build-desktop-clients.ps1 compiles all 4 Windows 64-bit apps (RTX5-SuperAdmin64.exe, RTX5-Admin64.exe, RTX5-Manager64.exe, RTX5-Terminal64.exe) into **2-TCP-Codebase\build\clients\** using -ldflags="-s -w -H=windowsgui".
+   - **NEVER** use, create, or copy from uild\desktop-clients\ (an obsolete legacy folder that held old non-windowsgui console builds that opened a black cmd.exe window and external Microsoft Edge tabs).
+2. **Native Win32 WebView2 Window Only (clientcore/window_windows.go)**:
+   - All 4 Windows .exe apps launch inside an in-process **Native Win32 WebView2 Window** (unNativeWin32Window via github.com/jchv/go-webview2) with -H=windowsgui — **ZERO** black console windows, **ZERO** external Edge/Chrome browser tabs, and **ZERO** browser sync/extension popups.
+3. **Keep Package Folders Clean of .running_old / .old / Obsolete Binaries**:
+   - Never leave *.running_old, *.old, tx5-fix-receiver, or tx5-webterminal inside 3-EXE-Packages-To-Run-And-Share\.
+   - For web-terminal-linux.zip, the Linux Web Terminal source directory is strictly 2-TCP-Codebase\web-terminal-tcp\server (never desktop-clients\cmd\rtx5-web-terminal-server).
