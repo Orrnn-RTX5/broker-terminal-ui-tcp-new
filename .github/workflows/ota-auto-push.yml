@@ -1,0 +1,39 @@
+name: Pure Binary TCP OTA Auto-Push (:9100)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: rtx5-ota-push-Broker-Terminal-UI-TCP
+  cancel-in-progress: true
+
+jobs:
+  ota-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build UI Bundle & Auto-Push Signed OTA over :9100 Binary TCP
+        env:
+          CGO_ENABLED: '0'
+          RTX5_MASTER_PRIV_HEX: ${{ secrets.RTX5_MASTER_PRIV_HEX }}
+        run: |
+          VER=$(tr -d '\r\n ' < VERSION)
+          export VITE_APP_VERSION="$VER"
+          npm ci --no-audit --no-fund --legacy-peer-deps
+          npx vite build --mode desktop
+          cd scripts/ota-packager
+          go run . -ci-app terminal -ci-dist ../../dist -version "$VER" -push-tcp "185.126.217.108:9100"

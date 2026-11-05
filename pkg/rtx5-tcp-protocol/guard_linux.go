@@ -34,12 +34,19 @@ type NativeGuard struct {
 // LoadVerifiedNativeGuard verifies the signed guard image on disk against masterPub
 // and computes SHA-256 digests of both the running binary and guard file for Super Admin attestation.
 func LoadVerifiedNativeGuard(dllPath string, masterPub ed25519.PublicKey, expectedDLLSigHex string) (*NativeGuard, error) {
+	exePath, exeErr := os.Executable()
 	if dllPath == "" {
-		exePath, err := os.Executable()
-		if err != nil {
-			return nil, fmt.Errorf("resolve executable path: %w", err)
+		if exeErr != nil {
+			return nil, fmt.Errorf("resolve executable path: %w", exeErr)
 		}
-		dllPath = filepath.Join(filepath.Dir(exePath), "rtx5_guard.dll")
+		candidate := filepath.Join(filepath.Dir(exePath), "rtx5_guard.dll")
+		if _, serr := os.Stat(candidate); serr == nil {
+			dllPath = candidate
+		} else if expectedDLLSigHex == "" {
+			dllPath = exePath
+		} else {
+			dllPath = candidate
+		}
 	}
 	absDLL, err := filepath.Abs(dllPath)
 	if err != nil {
