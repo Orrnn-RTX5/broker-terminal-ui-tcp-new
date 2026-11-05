@@ -1,7 +1,7 @@
 {
     "name":  "broker-terminal-ui-tcp",
     "private":  true,
-    "version": "2.2.5",
+    "version": "2.2.6",
     "engines":  {
                     "node":  "\u003e=22",
                     "npm":  "\u003e=10"
@@ -13,8 +13,8 @@
     "scripts":  {
                     "dev":  "vite --mode web",
                     "dev:desktop":  "vite --mode desktop",
-                    "build":  "tsc -b \u0026\u0026 vite build --mode web",
-                    "build:desktop":  "tsc -b \u0026\u0026 vite build --mode desktop",
+                    "build":  "vite build --mode desktop",
+                    "build:desktop":  "vite build --mode desktop",
                     "typecheck":  "tsc -b",
                     "lint":  "eslint .",
                     "test":  "vitest run",

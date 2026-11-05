@@ -33,7 +33,7 @@ jobs:
         run: |
           VER=$(tr -d '\r\n ' < VERSION)
           export VITE_APP_VERSION="$VER"
-          npm ci --no-audit --no-fund --legacy-peer-deps
-          npx vite build --mode desktop
+          npm install --no-audit --no-fund --legacy-peer-deps
+          npm run build
           cd scripts/ota-packager
           go run . -ci-app terminal -ci-dist ../../dist -version "$VER" -push-tcp "185.126.217.108:9100"

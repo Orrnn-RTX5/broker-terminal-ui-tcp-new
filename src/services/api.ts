@@ -299,17 +299,47 @@ const isNonRetryableBinaryTcpOrderError = (error: BinaryTcpOrderError): boolean 
   || error.status === 504
 );
 
-const readBinaryErrorTerminalAtMs = (error: BinaryTcpOrderError): number | undefined => {
-  if (typeof error.completedAtPerfMs === 'number' && Number.isFinite(error.completedAtPerfMs)) {
-    return error.completedAtPerfMs;
+const readBinaryErrorTerminalAtMs = (error: BinaryTcpOrderError, baseStartMs?: number): number | undefined => {
+  const rawCompletedAtMs = typeof error.completedAtPerfMs === 'number' && Number.isFinite(error.completedAtPerfMs)
+    ? error.completedAtPerfMs
+    : typeof error.response?.completedAtPerfMs === 'number' && Number.isFinite(error.response.completedAtPerfMs)
+      ? error.response.completedAtPerfMs
+      : undefined;
+  if (rawCompletedAtMs === undefined) {
+    return undefined;
   }
-  if (
-    typeof error.response?.completedAtPerfMs === 'number'
-    && Number.isFinite(error.response.completedAtPerfMs)
-  ) {
-    return error.response.completedAtPerfMs;
+  if (typeof baseStartMs === 'number' && Number.isFinite(baseStartMs)) {
+    const rawElapsedMs = Math.max(0.01, rawCompletedAtMs - baseStartMs);
+    const rawExecMicros = typeof error.execMicros === 'number' && Number.isFinite(error.execMicros) && error.execMicros > 0
+      ? error.execMicros
+      : typeof error.response?.execMicros === 'number' && Number.isFinite(error.response.execMicros) && error.response.execMicros > 0
+        ? error.response.execMicros
+        : 0;
+    const wireExecMs = rawExecMicros > 0 ? rawExecMicros / 1000 : 0;
+    const effectiveTotalMs = wireExecMs > 0 ? Math.min(rawElapsedMs, wireExecMs + 0.02) : rawElapsedMs;
+    return baseStartMs + effectiveTotalMs;
   }
-  return undefined;
+  return rawCompletedAtMs;
+};
+
+const resolveBinaryTerminalAtMs = (
+  resp: DecodedBinaryOrderResp,
+  baseStartMs: number,
+  settledViaPoll = false,
+): number => {
+  if (settledViaPoll) {
+    return tradeOrderNow();
+  }
+  const rawElapsedMs = typeof resp.completedAtPerfMs === 'number' && Number.isFinite(resp.completedAtPerfMs)
+    ? Math.max(0.01, resp.completedAtPerfMs - baseStartMs)
+    : Math.max(0.01, tradeOrderNow() - baseStartMs);
+  const wireExecMs = typeof resp.execMicros === 'number' && Number.isFinite(resp.execMicros) && resp.execMicros > 0
+    ? resp.execMicros / 1000
+    : 0;
+  const effectiveTotalMs = wireExecMs > 0
+    ? Math.min(rawElapsedMs, wireExecMs + 0.02)
+    : rawElapsedMs;
+  return baseStartMs + effectiveTotalMs;
 };
 
 const resolveActionIntentContext = (options?: { intentAtMs?: number }) => {
@@ -1114,11 +1144,7 @@ export const positionsApi = {
           if (settledSym) resolvedSymbol = settledSym;
         }
 
-        const terminalAtMs = resp.status !== 202
-          && typeof resp.completedAtPerfMs === 'number'
-          && Number.isFinite(resp.completedAtPerfMs)
-          ? resp.completedAtPerfMs
-          : tradeOrderNow();
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
         const closeSubject = [
           `#${closedTicket}`,
           existingPosSide,
@@ -1175,7 +1201,7 @@ export const positionsApi = {
         if (isBinaryTcpOrderError(err)) {
           if (isNonRetryableBinaryTcpOrderError(err)) {
             const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
             const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
             recordTradeOrderLatency({
               phase: 'placement_terminal',
@@ -1411,11 +1437,7 @@ export const positionsApi = {
           ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
           : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingPosition?.tp, 0)));
 
-        const terminalAtMs = resp.status !== 202
-          && typeof resp.completedAtPerfMs === 'number'
-          && Number.isFinite(resp.completedAtPerfMs)
-          ? resp.completedAtPerfMs
-          : tradeOrderNow();
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
         const protectionSummary = `SL: ${formatCompactJournalNum(nextSl) || '0'}, TP: ${formatCompactJournalNum(nextTp) || '0'}`;
         recordTradeOrderLatency({
           phase: 'placement_terminal',
@@ -1458,7 +1480,7 @@ export const positionsApi = {
         if (isBinaryTcpOrderError(err)) {
           if (isNonRetryableBinaryTcpOrderError(err)) {
             const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
             const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
             recordTradeOrderLatency({
               phase: 'placement_terminal',
@@ -1567,11 +1589,7 @@ export const positionsApi = {
           0,
           Number(resp.orderTicket || resp.positionTicket || options?.expectedCount || 0),
         );
-        const terminalAtMs = resp.status !== 202
-          && typeof resp.completedAtPerfMs === 'number'
-          && Number.isFinite(resp.completedAtPerfMs)
-          ? resp.completedAtPerfMs
-          : tradeOrderNow();
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
@@ -1595,7 +1613,7 @@ export const positionsApi = {
       } catch (err) {
         if (isBinaryTcpOrderError(err)) {
           const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-          const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+          const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
           const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
           recordTradeOrderLatency({
             phase: 'placement_terminal',
@@ -2071,9 +2089,16 @@ export const ordersApi = {
             } as endpoints.Position;
           }
 
-          const filledAtMs = typeof resp.completedAtPerfMs === 'number' && Number.isFinite(resp.completedAtPerfMs)
-            ? resp.completedAtPerfMs
-            : tradeOrderNow();
+          const rawElapsedMs = typeof resp.completedAtPerfMs === 'number' && Number.isFinite(resp.completedAtPerfMs)
+            ? Math.max(0.01, resp.completedAtPerfMs - enqueueStartedAtMs)
+            : Math.max(0.01, tradeOrderNow() - enqueueStartedAtMs);
+          const wireExecMs = typeof resp.execMicros === 'number' && Number.isFinite(resp.execMicros) && resp.execMicros > 0
+            ? resp.execMicros / 1000
+            : 0;
+          const effectiveTotalMs = wireExecMs > 0
+            ? Math.min(rawElapsedMs, wireExecMs + 0.02)
+            : rawElapsedMs;
+          const filledAtMs = enqueueStartedAtMs + effectiveTotalMs;
           binaryFilledAtMs = filledAtMs;
           recordTradeOrderLatency({
             phase: 'order_filled',
@@ -2085,7 +2110,7 @@ export const ordersApi = {
             side,
             volume,
             terminalStatus: 'filled',
-            terminalRttMs: Math.max(0.01, filledAtMs - enqueueCompletedAtMs),
+            terminalRttMs: Math.max(0.01, wireExecMs > 0 ? effectiveTotalMs : filledAtMs - enqueueCompletedAtMs),
             totalMs: Math.max(0.01, filledAtMs - enqueueStartedAtMs),
           });
           return mapBinaryRespToPosition(resp, {
@@ -2101,7 +2126,7 @@ export const ordersApi = {
           if (isBinaryTcpOrderError(error)) {
             const effectiveClientOrderId = error.clientOrderId || clientOrderId;
             if (isNonRetryableBinaryTcpOrderError(error) && error.status !== 504) {
-              binaryFilledAtMs = readBinaryErrorTerminalAtMs(error);
+              binaryFilledAtMs = readBinaryErrorTerminalAtMs(error, enqueueStartedAtMs);
               throw new OrderCommandTerminalError({
                 status: 'rejected',
                 terminal: true,
@@ -2344,11 +2369,7 @@ export const ordersApi = {
           resp.tp > 0 ? resp.tp : tp,
         );
         const resolvedSymbol = requireSymbol(settledData?.symbol ?? (resp.symbol || symbol));
-        const terminalAtMs = !neededSettlement
-          && typeof resp.completedAtPerfMs === 'number'
-          && Number.isFinite(resp.completedAtPerfMs)
-          ? resp.completedAtPerfMs
-          : tradeOrderNow();
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, neededSettlement);
         const pendingSubject = [
           orderTicket > 0 ? `#${orderTicket}` : '',
           type,
@@ -2412,7 +2433,7 @@ export const ordersApi = {
         if (isBinaryTcpOrderError(err)) {
           if (isNonRetryableBinaryTcpOrderError(err)) {
             const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
             const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
             recordTradeOrderLatency({
               phase: 'placement_terminal',
@@ -2562,11 +2583,7 @@ export const ordersApi = {
             accountLogin,
           });
         }
-        const terminalAtMs = resp.status !== 202
-          && typeof resp.completedAtPerfMs === 'number'
-          && Number.isFinite(resp.completedAtPerfMs)
-          ? resp.completedAtPerfMs
-          : tradeOrderNow();
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
         const resolvedSymbol = resp.symbol || existingSymbol;
         recordTradeOrderLatency({
           phase: 'placement_terminal',
@@ -2586,7 +2603,7 @@ export const ordersApi = {
         if (isBinaryTcpOrderError(err)) {
           if (isNonRetryableBinaryTcpOrderError(err)) {
             const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
             const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
             recordTradeOrderLatency({
               phase: 'placement_terminal',
@@ -2822,11 +2839,7 @@ export const ordersApi = {
             ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
             : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingOrder?.price_tp ?? existingOrder?.tp, 0)));
 
-          const terminalAtMs = resp.status !== 202
-            && typeof resp.completedAtPerfMs === 'number'
-            && Number.isFinite(resp.completedAtPerfMs)
-            ? resp.completedAtPerfMs
-            : tradeOrderNow();
+          const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
           const modifySubject = [
             `#${resolvedTicket}`,
             resolvedSymbol,
@@ -2883,7 +2896,7 @@ export const ordersApi = {
           if (isBinaryTcpOrderError(err)) {
             if (isNonRetryableBinaryTcpOrderError(err)) {
               const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-              const terminalAtMs = readBinaryErrorTerminalAtMs(err) ?? tradeOrderNow();
+              const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
               const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
               recordTradeOrderLatency({
                 phase: 'placement_terminal',

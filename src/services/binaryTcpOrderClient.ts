@@ -839,7 +839,7 @@ export function ensureBinaryOrderWebSocket(): WebSocket | null {
 
     const jsRttMs = Math.max(0.01, rawWakeupPerfMs - pending.sentAtPerfMs);
     const wireExecMs = decoded.execMicros > 0 ? decoded.execMicros / 1000 : 0;
-    const effectiveRttMs = wireExecMs > 0 ? Math.min(jsRttMs, wireExecMs + 0.25) : jsRttMs;
+    const effectiveRttMs = wireExecMs > 0 ? Math.min(jsRttMs, wireExecMs + 0.02) : jsRttMs;
     const completedAtPerfMs = pending.sentAtPerfMs + effectiveRttMs;
     decoded.completedAtPerfMs = completedAtPerfMs;
 
@@ -1799,7 +1799,7 @@ async function sendBinaryTcpOrderViaHttp(
   if (completedAtPerfMs !== undefined) {
     const rawRttMs = Math.max(0.01, completedAtPerfMs - fetchStartedAtPerfMs);
     const wireExecMs = decoded.execMicros > 0 ? decoded.execMicros / 1000 : 0;
-    const effectiveRttMs = wireExecMs > 0 ? Math.min(rawRttMs, wireExecMs + 0.35) : rawRttMs;
+    const effectiveRttMs = wireExecMs > 0 ? Math.min(rawRttMs, wireExecMs + 0.03) : rawRttMs;
     completedAtPerfMs = fetchStartedAtPerfMs + effectiveRttMs;
     decoded.completedAtPerfMs = completedAtPerfMs;
   }
