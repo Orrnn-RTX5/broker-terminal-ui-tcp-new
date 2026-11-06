@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/binary"
+	"math/big"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +24,7 @@ type webBinaryStreamSub struct {
 type webBinaryMarketHub struct {
 	mu          sync.RWMutex
 	latestTicks map[string]rtx5tcp.BinaryTick
+	latestDepth map[string]rtx5tcp.BinaryDepth
 	subs        map[*webBinaryStreamSub]struct{}
 	loginByKey  map[string]int64
 	framesRx    atomic.Uint64
@@ -30,6 +34,7 @@ type webBinaryMarketHub struct {
 func newWebBinaryMarketHub() *webBinaryMarketHub {
 	return &webBinaryMarketHub{
 		latestTicks: make(map[string]rtx5tcp.BinaryTick, 256),
+		latestDepth: make(map[string]rtx5tcp.BinaryDepth, 256),
 		subs:        make(map[*webBinaryStreamSub]struct{}),
 		loginByKey:  make(map[string]int64),
 	}
@@ -100,6 +105,18 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 	case rtx5tcp.FrameBinaryCandleBatch:
 		h.framesRx.Add(1)
 		h.broadcastMarketPacket(wrapWebBinaryFrame(rtx5tcp.FrameBinaryCandleBatch, payload))
+
+	case rtx5tcp.FrameBinaryDepthBatch, rtx5tcp.FrameLPDepthBatch:
+		depths, err := rtx5tcp.DecodeBinaryDepthBatch(payload)
+		if err == nil && len(depths) > 0 {
+			h.mu.Lock()
+			for _, d := range depths {
+				h.latestDepth[d.Symbol] = d
+			}
+			h.mu.Unlock()
+		}
+		h.framesRx.Add(1)
+		h.broadcastMarketPacket(wrapWebBinaryFrame(rtx5tcp.FrameBinaryDepthBatch, payload))
 
 	case rtx5tcp.FrameBinaryTradeEvent:
 		h.framesRx.Add(1)
@@ -217,6 +234,10 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	for _, bt := range s.binHub.latestTicks {
 		snaps = append(snaps, bt)
 	}
+	depthSnaps := make([]rtx5tcp.BinaryDepth, 0, len(s.binHub.latestDepth))
+	for _, bd := range s.binHub.latestDepth {
+		depthSnaps = append(depthSnaps, bd)
+	}
 	s.binHub.mu.Unlock()
 
 	defer func() {
@@ -234,6 +255,21 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 			end = len(snaps)
 		}
 		pkt := wrapWebBinaryFrame(rtx5tcp.FrameBinaryTickBatch, rtx5tcp.EncodeBinaryTickBatch(snaps[start:end]))
+		if len(pkt) > 0 {
+			n, err := w.Write(pkt)
+			if err != nil {
+				return
+			}
+			bytesSent += n
+		}
+	}
+	const depthChunk = 32
+	for start := 0; start < len(depthSnaps); start += depthChunk {
+		end := start + depthChunk
+		if end > len(depthSnaps) {
+			end = len(depthSnaps)
+		}
+		pkt := wrapWebBinaryFrame(rtx5tcp.FrameBinaryDepthBatch, rtx5tcp.EncodeBinaryDepthBatch(depthSnaps[start:end]))
 		if len(pkt) > 0 {
 			n, err := w.Write(pkt)
 			if err != nil {
@@ -326,4 +362,101 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 			flusher.Flush()
 		}
 	}
+}
+
+
+type webDepthLevelJSON struct {
+	Price string `json:"price"`
+	Size  string `json:"size"`
+}
+
+func (c *WebTerminalServer) tryServeCachedDepthSnapshot(w http.ResponseWriter, r *http.Request) bool {
+	if c == nil || c.binHub == nil || r == nil {
+		return false
+	}
+	normP := strings.TrimPrefix(r.URL.Path, "/ext-api")
+	symbol := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(normP, "/api/v2/depth/")))
+	if symbol == "" {
+		return false
+	}
+	c.binHub.mu.RLock()
+	bd, ok := c.binHub.latestDepth[symbol]
+	c.binHub.mu.RUnlock()
+	if !ok || (len(bd.Bids) == 0 && len(bd.Asks) == 0) {
+		return false
+	}
+	if bd.TimestampMs > 0 && time.Since(time.UnixMilli(bd.TimestampMs)) > 5*time.Second {
+		return false
+	}
+
+	rawLevels := strings.TrimSpace(r.URL.Query().Get("levels"))
+	if rawLevels == "" {
+		rawLevels = strings.TrimSpace(r.URL.Query().Get("limit"))
+	}
+	levels, err := strconv.Atoi(rawLevels)
+	if err != nil {
+		levels = 5
+	}
+	if levels < 1 {
+		levels = 1
+	}
+	if levels > 100 {
+		levels = 100
+	}
+
+	convertSide := func(in []rtx5tcp.BinaryDepthLevel) []webDepthLevelJSON {
+		n := len(in)
+		if n > levels {
+			n = levels
+		}
+		out := make([]webDepthLevelJSON, 0, n)
+		for i := 0; i < n; i++ {
+			if in[i].Price > 0 && in[i].Volume > 0 {
+				out = append(out, webDepthLevelJSON{
+					Price: strconv.FormatFloat(in[i].Price, 'f', -1, 64),
+					Size:  strconv.FormatFloat(in[i].Volume, 'f', -1, 64),
+				})
+			}
+		}
+		return out
+	}
+
+	bids := convertSide(bd.Bids)
+	asks := convertSide(bd.Asks)
+	if len(bids) == 0 && len(asks) == 0 {
+		return false
+	}
+
+	var spreadPtr *string
+	if len(bids) > 0 && len(asks) > 0 {
+		bRat, okB := new(big.Rat).SetString(bids[0].Price)
+		aRat, okA := new(big.Rat).SetString(asks[0].Price)
+		if !okB || !okA || aRat.Cmp(bRat) < 0 {
+			return false
+		}
+		places := 0
+		if i := strings.IndexByte(bids[0].Price, '.'); i >= 0 {
+			places = len(bids[0].Price) - i - 1
+		}
+		if i := strings.IndexByte(asks[0].Price, '.'); i >= 0 {
+			if d := len(asks[0].Price) - i - 1; d > places {
+				places = d
+			}
+		}
+		sp := new(big.Rat).Sub(aRat, bRat).FloatString(places)
+		if strings.Contains(sp, ".") {
+			sp = strings.TrimSuffix(strings.TrimRight(sp, "0"), ".")
+		}
+		spreadPtr = &sp
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"symbol":    bd.Symbol,
+		"bids":      bids,
+		"asks":      asks,
+		"spread":    spreadPtr,
+		"timestamp": bd.TimestampMs,
+	})
+	return true
 }

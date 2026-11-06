@@ -19,6 +19,9 @@ import (
 
 func TestNativeGuardAndMultiplexedBinaryTCP(t *testing.T) {
 	dllPath := filepath.Clean(`..\build\rtx5_guard.dll`)
+	if _, err := os.Stat(dllPath); os.IsNotExist(err) {
+		t.Skipf("skipping native guard DLL test: %s not built", dllPath)
+	}
 	masterPub, masterPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -282,5 +285,83 @@ func TestBinaryTickAndCandleEncoding(t *testing.T) {
 	}
 	if outCandles[0].Closed != false || outCandles[1].Closed != true || outCandles[0].Close != 77605.25 || outCandles[1].TickVolume != 68 {
 		t.Fatalf("decoded candle mismatch: %+v", outCandles)
+	}
+}
+
+
+func TestBinaryDepthBatchEncoding(t *testing.T) {
+	if FrameLPDepthBatch != 0x23 || FrameBinaryDepthBatch != 0x24 {
+		t.Fatalf("unexpected depth frame constants: LP=0x%02x Binary=0x%02x", FrameLPDepthBatch, FrameBinaryDepthBatch)
+	}
+	if BinaryDepthRecordSize != 360 {
+		t.Fatalf("unexpected BinaryDepthRecordSize=%d, want 360", BinaryDepthRecordSize)
+	}
+
+	var manyBids []BinaryDepthLevel
+	for i := 0; i < 14; i++ {
+		manyBids = append(manyBids, BinaryDepthLevel{
+			Price:  1.1000 - float64(i)*0.0001,
+			Volume: float64((i + 1) * 100000),
+		})
+	}
+
+	inDepths := []BinaryDepth{
+		{
+			Symbol:      "eurusd",
+			TimestampMs: 1793359841127,
+			Sequence:    990011,
+			Bids:        manyBids,
+			Asks: []BinaryDepthLevel{
+				{Price: 1.1002, Volume: 150000},
+				{Price: 1.1003, Volume: 250000},
+				{Price: 1.1005, Volume: 500000},
+			},
+		},
+		{
+			Symbol:      "XAUUSD",
+			TimestampMs: 1793359841200,
+			Sequence:    990012,
+			Bids: []BinaryDepthLevel{
+				{Price: 3989.77, Volume: 50},
+			},
+			Asks: nil,
+		},
+	}
+
+	encoded := EncodeBinaryDepthBatch(inDepths)
+	if len(encoded) != 2+2*BinaryDepthRecordSize {
+		t.Fatalf("unexpected encoded depth batch len %d, want %d", len(encoded), 2+2*BinaryDepthRecordSize)
+	}
+
+	out, err := DecodeBinaryDepthBatch(encoded)
+	if err != nil || len(out) != 2 {
+		t.Fatalf("DecodeBinaryDepthBatch failed: len=%d err=%v", len(out), err)
+	}
+
+	// Symbol normalized to uppercase and Bids clamped to BinaryDepthMaxLevels (10).
+	if out[0].Symbol != "EURUSD" || out[0].TimestampMs != 1793359841127 || out[0].Sequence != 990011 {
+		t.Fatalf("record 0 header mismatch: %+v", out[0])
+	}
+	if len(out[0].Bids) != BinaryDepthMaxLevels {
+		t.Fatalf("record 0 bid count = %d, want clamped %d", len(out[0].Bids), BinaryDepthMaxLevels)
+	}
+	if out[0].Bids[0].Price != 1.1000 || out[0].Bids[0].Volume != 100000 {
+		t.Fatalf("record 0 top bid mismatch: %+v", out[0].Bids[0])
+	}
+	if len(out[0].Asks) != 3 || out[0].Asks[2].Price != 1.1005 || out[0].Asks[2].Volume != 500000 {
+		t.Fatalf("record 0 asks mismatch: %+v", out[0].Asks)
+	}
+
+	// One-sided book preserved.
+	if out[1].Symbol != "XAUUSD" || len(out[1].Bids) != 1 || len(out[1].Asks) != 0 {
+		t.Fatalf("record 1 mismatch: %+v", out[1])
+	}
+
+	// Truncated payloads rejected.
+	if _, err := DecodeBinaryDepthBatch(encoded[:1]); err == nil {
+		t.Fatal("expected error for 1-byte truncated depth batch")
+	}
+	if _, err := DecodeBinaryDepthBatch(encoded[:len(encoded)-1]); err == nil {
+		t.Fatal("expected error for truncated depth batch payload")
 	}
 }

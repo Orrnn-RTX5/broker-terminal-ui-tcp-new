@@ -52,6 +52,8 @@ const (
 	FrameLPTickBatch       uint8 = 0x20
 	FrameBinaryTickBatch   uint8 = 0x21
 	FrameBinaryCandleBatch uint8 = 0x22
+	FrameLPDepthBatch      uint8 = 0x23
+	FrameBinaryDepthBatch  uint8 = 0x24
 
 	FrameRPCReq        uint8 = 0x30
 	FrameRPCRespHeader uint8 = 0x31

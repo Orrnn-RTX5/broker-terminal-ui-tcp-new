@@ -1412,6 +1412,9 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			c.serveEmbeddedBrokerLogo(w, r)
 			return
 		}
+		if strings.HasPrefix(normP, "/api/v2/depth/") && c.tryServeCachedDepthSnapshot(w, r) {
+			return
+		}
 	}
 
 	if svc, rewritten, ok := classifyBrokerRoute(appKind, r); ok {
