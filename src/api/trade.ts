@@ -1001,6 +1001,24 @@ export const tradingV2Api = {
   modifyPosition: (id: number | string, changes: ModifyPositionRequest, options?: ApiRequestOptions) =>
     apiClient.put<Position>(`/positions/${id}`, changes, v2Options(options)),
 
+  closeBy: (
+    payload: {
+      ticket: number;
+      other_ticket: number;
+      account_login?: number;
+      client_order_id?: string;
+    },
+    options?: ApiRequestOptions,
+  ) =>
+    apiClient.post<Record<string, unknown>>(
+      '/positions/close-by',
+      {
+        ...payload,
+        client_order_id: payload.client_order_id || createTradeOrderUuid(),
+      },
+      v2Options(options),
+    ),
+
   getOrders: (login: number | string, params?: { limit?: number }, options?: ApiRequestOptions) =>
     apiClient.get<Order[]>(`/orders/${login}`, v2Options({ ...options, params })),
 

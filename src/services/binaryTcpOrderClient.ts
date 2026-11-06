@@ -34,7 +34,7 @@ export const BINARY_ORDER_ENDPOINT = '/__rtx5_binary_order';
 export const BINARY_ORDER_WS_ENDPOINT = '/__rtx5_binary_order_ws';
 export const BINARY_ACCOUNT_SUB_ENDPOINT = '/__rtx5_binary_account_sub';
 
-// ─── Wire Actions (uint8: 1..7) ──────────────────────────────────────────────
+// ─── Wire Actions (uint8: 1..8) ──────────────────────────────────────────────
 
 export const BINARY_ORDER_ACTION_PLACE_MARKET = 1;
 export const BINARY_ORDER_ACTION_CLOSE_POSITION = 2;
@@ -43,6 +43,7 @@ export const BINARY_ORDER_ACTION_PLACE_PENDING = 4;
 export const BINARY_ORDER_ACTION_MODIFY_PENDING = 5;
 export const BINARY_ORDER_ACTION_CANCEL_PENDING = 6;
 export const BINARY_ORDER_ACTION_CLOSE_BULK = 7;
+export const BINARY_ORDER_ACTION_CLOSE_BY = 8;
 
 export const BINARY_ORDER_BULK_MODE_ALL = 0;
 export const BINARY_ORDER_BULK_MODE_WINNERS = 1;
@@ -58,6 +59,7 @@ export const BINARY_ORDER_ACTIONS = {
   MODIFY_PENDING: BINARY_ORDER_ACTION_MODIFY_PENDING,
   CANCEL_PENDING: BINARY_ORDER_ACTION_CANCEL_PENDING,
   CLOSE_BULK: BINARY_ORDER_ACTION_CLOSE_BULK,
+  CLOSE_BY: BINARY_ORDER_ACTION_CLOSE_BY,
 } as const;
 
 export type BinaryOrderAction =
@@ -67,7 +69,8 @@ export type BinaryOrderAction =
   | typeof BINARY_ORDER_ACTION_PLACE_PENDING
   | typeof BINARY_ORDER_ACTION_MODIFY_PENDING
   | typeof BINARY_ORDER_ACTION_CANCEL_PENDING
-  | typeof BINARY_ORDER_ACTION_CLOSE_BULK;
+  | typeof BINARY_ORDER_ACTION_CLOSE_BULK
+  | typeof BINARY_ORDER_ACTION_CLOSE_BY;
 
 // ─── Wire Sides (uint8: 0..2) ────────────────────────────────────────────────
 
@@ -152,6 +155,8 @@ export const BINARY_ORDER_FLAG_CLEAR_TP = 0x0010;
 export const BINARY_ORDER_FLAG_HAS_PRICE = 0x0020;
 export const BINARY_ORDER_FLAG_HAS_STOP_LIMIT = 0x0040;
 export const BINARY_ORDER_FLAG_HAS_EXPIRATION = 0x0080;
+export const BINARY_ORDER_FLAG_HAS_TRAILING = 0x0100;
+export const BINARY_ORDER_FLAG_CLEAR_TRAILING = 0x0200;
 
 export const BINARY_ORDER_FLAGS = {
   NONE: BINARY_ORDER_FLAG_NONE,
@@ -163,6 +168,8 @@ export const BINARY_ORDER_FLAGS = {
   HAS_PRICE: BINARY_ORDER_FLAG_HAS_PRICE,
   HAS_STOP_LIMIT: BINARY_ORDER_FLAG_HAS_STOP_LIMIT,
   HAS_EXPIRATION: BINARY_ORDER_FLAG_HAS_EXPIRATION,
+  HAS_TRAILING: BINARY_ORDER_FLAG_HAS_TRAILING,
+  CLEAR_TRAILING: BINARY_ORDER_FLAG_CLEAR_TRAILING,
 } as const;
 
 // ─── Types & Error Class ─────────────────────────────────────────────────────
@@ -175,8 +182,10 @@ export interface BinaryTcpOrderParams {
   orderSubType?: BinaryOrderSubTypeInput;
   /** Explicit bitmask flags (OR-ed with flags inferred from sl/tp/price/stopLimitPrice/expiration/partialClose/clearSl/clearTp). */
   flags?: number;
-  /** Target position ticket (actions 2, 3) or pending order ticket (actions 5, 6). */
+  /** Target position ticket (actions 2, 3, 8) or pending order ticket (actions 5, 6). */
   ticket?: number;
+  /** Counterpart position ticket for Close-By (action 8); encoded into expiration [64..72]. */
+  otherTicket?: number;
   symbol?: string;
   volume?: number;
   price?: number;
@@ -979,7 +988,7 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   const action = params.action;
   const clientOrderId = (params.clientOrderId ?? '').trim() || createFastBinaryClientOrderId();
 
-  if (!Number.isInteger(action) || action < 1 || action > 7) {
+  if (!Number.isInteger(action) || action < 1 || action > 8) {
     throw new BinaryTcpOrderError(`Unsupported binary order action: ${String(action)}`, {
       status: 400,
       code: 'INVALID_ACTION',
@@ -1031,13 +1040,24 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   const rawSl = normalizeFiniteFloat(params.sl, 'sl', clientOrderId, action);
   const rawTp = normalizeFiniteFloat(params.tp, 'tp', clientOrderId, action);
 
-  const rawExpInput = params.expiration !== undefined ? params.expiration : params.expiry;
-  const rawExp = normalizeFiniteFloat(rawExpInput, 'expiration', clientOrderId, action);
-  const expiration = rawExp > UNIX_MS_THRESHOLD
-    ? Math.floor(rawExp / 1000)
-    : rawExp > 0
-      ? Math.trunc(rawExp)
-      : 0;
+  let expiration = 0;
+  if (action === BINARY_ORDER_ACTION_CLOSE_BY) {
+    const rawOtherInput = params.otherTicket !== undefined
+      ? params.otherTicket
+      : params.expiration !== undefined
+        ? params.expiration
+        : params.expiry;
+    const rawOther = normalizeFiniteFloat(rawOtherInput, 'otherTicket', clientOrderId, action);
+    expiration = rawOther > 0 ? Math.trunc(rawOther) : 0;
+  } else {
+    const rawExpInput = params.expiration !== undefined ? params.expiration : params.expiry;
+    const rawExp = normalizeFiniteFloat(rawExpInput, 'expiration', clientOrderId, action);
+    expiration = rawExp > UNIX_MS_THRESHOLD
+      ? Math.floor(rawExp / 1000)
+      : rawExp > 0
+        ? Math.trunc(rawExp)
+        : 0;
+  }
 
   const isModifyAction =
     action === BINARY_ORDER_ACTION_MODIFY_POSITION || action === BINARY_ORDER_ACTION_MODIFY_PENDING;
@@ -1286,6 +1306,36 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
         throw new BinaryTcpOrderError('Bulk close requires a valid bulk filter mode (0..4)', {
           status: 400,
           code: 'INVALID_ORDER_TYPE',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      break;
+    }
+    case BINARY_ORDER_ACTION_CLOSE_BY: {
+      if (ticket <= 0) {
+        throw new BinaryTcpOrderError('Missing primary position ticket for close-by', {
+          status: 400,
+          code: 'INVALID_TICKET',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (expiration <= 0) {
+        throw new BinaryTcpOrderError('Missing counterpart position ticket for close-by', {
+          status: 400,
+          code: 'INVALID_COUNTER_TICKET',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (ticket === expiration) {
+        throw new BinaryTcpOrderError('Close-by tickets must be distinct', {
+          status: 400,
+          code: 'CLOSE_BY_SAME_TICKET',
           retryable: false,
           clientOrderId,
           action,
@@ -1873,6 +1923,33 @@ export async function sendBinaryTcpOrder(
   }
 
   return sendBinaryTcpOrderViaHttp(validated, params, timeoutMs);
+}
+
+/**
+ * Convenience helper to close two opposing hedged positions against each other
+ * using Binary TCP Action 8 (`BINARY_ORDER_ACTION_CLOSE_BY`).
+ */
+export async function closeByPositionsBinaryTcp(params: {
+  ticket: number;
+  otherTicket: number;
+  accountLogin?: number;
+  symbol?: string;
+  clientOrderId?: string;
+  authToken?: string | null;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}): Promise<DecodedBinaryOrderResp> {
+  return sendBinaryTcpOrder({
+    action: BINARY_ORDER_ACTION_CLOSE_BY,
+    ticket: params.ticket,
+    otherTicket: params.otherTicket,
+    accountLogin: params.accountLogin,
+    symbol: params.symbol,
+    clientOrderId: params.clientOrderId,
+    authToken: params.authToken,
+    signal: params.signal,
+    timeoutMs: params.timeoutMs,
+  });
 }
 
 /**

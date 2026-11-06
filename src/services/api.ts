@@ -158,6 +158,7 @@ import {
 import {
   BINARY_ORDER_ACTION_CANCEL_PENDING,
   BINARY_ORDER_ACTION_CLOSE_BULK,
+  BINARY_ORDER_ACTION_CLOSE_BY,
   BINARY_ORDER_ACTION_CLOSE_POSITION,
   BINARY_ORDER_ACTION_MODIFY_PENDING,
   BINARY_ORDER_ACTION_MODIFY_POSITION,
@@ -1658,6 +1659,155 @@ export const positionsApi = {
     return {
       closed: candidates.length,
       message: `Closed ${candidates.length} ${type.toLowerCase()} position${candidates.length === 1 ? '' : 's'}`,
+    };
+  },
+
+  async closeBy(
+    ticket: number | string,
+    otherTicket: number | string,
+    options?: TradeActionTimingOptions & {
+      account_login?: number;
+      accountLogin?: number;
+      symbol?: string;
+      client_order_id?: string;
+      clientOrderId?: string;
+      signal?: AbortSignal;
+      timeoutMs?: number;
+    },
+  ): Promise<ClosePositionResult> {
+    const primaryTicket = Number.parseInt(String(ticket), 10);
+    const counterpartTicket = Number.parseInt(String(otherTicket), 10);
+    if (!Number.isSafeInteger(primaryTicket) || primaryTicket <= 0) {
+      throw new Error('Invalid primary position ticket for close-by');
+    }
+    if (!Number.isSafeInteger(counterpartTicket) || counterpartTicket <= 0) {
+      throw new Error('Invalid counterpart position ticket for close-by');
+    }
+    if (primaryTicket === counterpartTicket) {
+      throw new Error('Close-by tickets must be distinct');
+    }
+
+    const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
+    const accountLogin = tryResolveTradingLogin(options?.account_login ?? options?.accountLogin);
+    const existingPosition = useAppStore.getState().positions.find(
+      (p) => Number(p.id ?? (p as { ticket?: unknown }).ticket) === primaryTicket,
+    );
+    const existingSymbol = typeof options?.symbol === 'string' && options.symbol.trim()
+      ? options.symbol.trim().toUpperCase()
+      : typeof existingPosition?.symbol === 'string'
+        ? existingPosition.symbol.trim().toUpperCase()
+        : '';
+
+    const rawSuppliedId = String(options?.client_order_id ?? options?.clientOrderId ?? '').trim();
+    const clientOrderId = rawSuppliedId || (isBinaryTcpOrderEnabled() ? createFastBinaryClientOrderId() : createTradeOrderUuid());
+
+    if (isBinaryTcpOrderEnabled()) {
+      try {
+        const resp = await sendBinaryTcpOrder({
+          action: BINARY_ORDER_ACTION_CLOSE_BY,
+          accountLogin,
+          ticket: primaryTicket,
+          otherTicket: counterpartTicket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          clientOrderId,
+          authToken: getAuthToken(),
+          ...(options?.signal ? { signal: options.signal } : {}),
+          ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        });
+        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+        const timing = formatBinaryExecTiming(resp.execMicros);
+        const closedTicket = resp.positionTicket > 0 ? resp.positionTicket : primaryTicket;
+        const dealTicket = resp.dealTicket;
+        const orderTicket = resp.orderTicket || counterpartTicket;
+        const closePrice = resp.fillPrice;
+        const profit = resp.profit;
+        const commission = resp.commission;
+        const closedVolume = resp.volume;
+        const resolvedSymbol = resp.symbol || existingSymbol;
+        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, false);
+
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'websocket',
+          traceId: toTradeOrderTraceId(effectiveClientOrderId),
+          clientOrderId: effectiveClientOrderId,
+          sessionScope,
+          ticket: closedTicket,
+          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+          ...(closedVolume > 0 ? { volume: closedVolume } : {}),
+          ...(closePrice > 0 ? { price: closePrice } : {}),
+          operationLabel: 'Close-By executed',
+          journalMessage: `Close-By #${primaryTicket} by #${counterpartTicket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''}`,
+          terminalStatus: 'filled',
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+
+        return {
+          ticket: closedTicket,
+          position_id: String(closedTicket),
+          position_ticket: closedTicket,
+          deal_ticket: dealTicket,
+          order_ticket: orderTicket,
+          ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
+          price: closePrice,
+          fill_price: closePrice,
+          close_price: closePrice,
+          profit,
+          commission,
+          closed_volume: closedVolume,
+          volume: closedVolume,
+          symbol: resolvedSymbol,
+          client_order_id: effectiveClientOrderId,
+          ...timing,
+          status: 'closed',
+        };
+      } catch (err) {
+        if (isBinaryTcpOrderError(err)) {
+          if (isNonRetryableBinaryTcpOrderError(err)) {
+            throw toBinaryTcpApiError(err, clientOrderId);
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const fallbackClientOrderId = isTradeOrderUuidV4(clientOrderId)
+      ? clientOrderId
+      : createTradeOrderUuid();
+    const restResult = await endpoints.tradingApi.closeBy({
+      ticket: primaryTicket,
+      other_ticket: counterpartTicket,
+      ...(accountLogin > 0 ? { account_login: accountLogin } : {}),
+      client_order_id: fallbackClientOrderId,
+    });
+    const closedTicket = toFiniteNumber(restResult.ticket ?? restResult.position_ticket, primaryTicket);
+    const dealTicket = toFiniteNumber(restResult.deal_ticket, 0);
+    const orderTicket = toFiniteNumber(restResult.other_ticket ?? restResult.order_ticket, counterpartTicket);
+    const closePrice = toFiniteNumber(restResult.close_price ?? restResult.fill_price ?? restResult.price, 0);
+    const profit = toFiniteNumber(restResult.profit ?? restResult.realized_profit, 0);
+    const commission = toFiniteNumber(restResult.commission, 0);
+    const closedVolume = toFiniteNumber(restResult.closed_volume ?? restResult.volume, 0);
+    const resolvedSymbol = String(restResult.symbol ?? existingSymbol ?? '').trim().toUpperCase();
+    return {
+      ticket: closedTicket,
+      position_id: String(closedTicket),
+      position_ticket: closedTicket,
+      deal_ticket: dealTicket,
+      order_ticket: orderTicket,
+      ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
+      price: closePrice,
+      fill_price: closePrice,
+      close_price: closePrice,
+      profit,
+      commission,
+      closed_volume: closedVolume,
+      volume: closedVolume,
+      symbol: resolvedSymbol,
+      client_order_id: String(restResult.client_order_id ?? fallbackClientOrderId),
+      exec_ms: 0,
+      execMicros: 0,
+      status: 'closed',
     };
   },
 };
