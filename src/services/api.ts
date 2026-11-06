@@ -6,6 +6,7 @@
 
 import { resolveTickFromLookup, useAppStore } from '../store/useAppStore';
 import { readBackendNumber } from './backendAccountMetrics';
+import { normalizeBrokerOperationalConfig } from './brokerOperationalConfig';
 import { API_V2_BASE_URL, normalizeBrokerServerUrl } from '../config/api';
 import {
   getRuntimeConfiguredBrokerId,
@@ -1775,12 +1776,16 @@ export const positionsApi = {
     const fallbackClientOrderId = isTradeOrderUuidV4(clientOrderId)
       ? clientOrderId
       : createTradeOrderUuid();
-    const restResult = await endpoints.tradingApi.closeBy({
-      ticket: primaryTicket,
-      other_ticket: counterpartTicket,
-      ...(accountLogin > 0 ? { account_login: accountLogin } : {}),
-      client_order_id: fallbackClientOrderId,
-    });
+    const restResult = await apiClient.post<Record<string, unknown>>(
+      '/positions/close-by',
+      {
+        ticket: primaryTicket,
+        other_ticket: counterpartTicket,
+        ...(accountLogin > 0 ? { account_login: accountLogin } : {}),
+        client_order_id: fallbackClientOrderId,
+      },
+      { baseUrl: API_V2_BASE_URL },
+    );
     const closedTicket = toFiniteNumber(restResult.ticket ?? restResult.position_ticket, primaryTicket);
     const dealTicket = toFiniteNumber(restResult.deal_ticket, 0);
     const orderTicket = toFiniteNumber(restResult.other_ticket ?? restResult.order_ticket, counterpartTicket);
@@ -3216,7 +3221,7 @@ export const configApi = {
       if (error instanceof ApiError && error.status === 404) {
         return {
           ...normalizeBrokerOperationalConfig(null),
-        };
+        } as unknown as BrokerConfig;
       }
       throw error;
     }
