@@ -1635,18 +1635,42 @@ func classifySuperAdminRoute(r *http.Request) (service string, rewrittenPath str
 		return "control-plane", strings.TrimPrefix(p, "/candle-api"), true
 	case p == "/candle-api":
 		return "control-plane", "/", true
-	case strings.HasPrefix(p, "/license/"):
+	case strings.HasPrefix(p, "/license/"), p == "/license":
 		return "license", p, true
 	case strings.HasPrefix(p, "/api/"),
 		strings.HasPrefix(p, "/uploads/"),
 		strings.HasPrefix(p, "/ws/"),
 		p == "/health",
 		p == "/readiness",
+		p == "/livez",
+		p == "/readyz",
+		p == "/healthz",
+		p == "/ready",
+		p == "/health/live",
+		p == "/health/ready",
 		isWS:
 		return "control-plane", p, true
 	default:
 		return "", "", false
 	}
+}
+
+func rewriteManagerPrefixPath(sub string) string {
+	if sub == "" {
+		return "/"
+	}
+	if sub == "/accounts" || strings.HasPrefix(sub, "/accounts/") ||
+		strings.HasPrefix(sub, "/transactions/") ||
+		strings.HasPrefix(sub, "/auth/") ||
+		sub == "/access" || strings.HasPrefix(sub, "/access/") ||
+		strings.HasPrefix(sub, "/broker/") ||
+		strings.HasPrefix(sub, "/payment-requests/") ||
+		strings.HasPrefix(sub, "/calculation-baseline/") ||
+		sub == "/orders" || strings.HasPrefix(sub, "/orders/") ||
+		strings.HasPrefix(sub, "/positions/") {
+		return "/api/v1/manager" + sub
+	}
+	return sub
 }
 
 func classifyBrokerRoute(appKind string, r *http.Request) (service string, rewrittenPath string, matched bool) {
@@ -1657,47 +1681,132 @@ func classifyBrokerRoute(appKind string, r *http.Request) (service string, rewri
 		p = strings.TrimPrefix(p, "/ext-api")
 	}
 	if strings.HasPrefix(p, "/api/manager/") {
-		return "manager", strings.TrimPrefix(p, "/api/manager"), true
+		return "manager", rewriteManagerPrefixPath(strings.TrimPrefix(p, "/api/manager")), true
 	}
 	if strings.HasPrefix(p, "/manager/") {
-		return "manager", strings.TrimPrefix(p, "/manager"), true
+		return "manager", rewriteManagerPrefixPath(strings.TrimPrefix(p, "/manager")), true
 	}
 	if strings.HasPrefix(p, "/Manager/") {
-		return "manager", strings.TrimPrefix(p, "/Manager"), true
+		return "manager", rewriteManagerPrefixPath(strings.TrimPrefix(p, "/Manager")), true
 	}
 
+	// Most specific /api/v2/admin/* rules first:
+	// - /api/v2/admin/instruments/bulk-configure is served by gateway (:8090)
+	// - /api/v2/admin/login, /api/v2/admin/instrument-catalogue, /api/v2/admin/instruments{,/*},
+	//   and /api/v2/admin/engine/accounts/* are served by manager (:8091)
+	if p == "/api/v2/admin/instruments/bulk-configure" ||
+		strings.HasPrefix(p, "/api/v2/admin/instruments/bulk-configure/") {
+		return "gateway", p, true
+	}
 	if p == "/api/v2/admin/login" ||
 		p == "/api/v2/admin/instrument-catalogue" ||
+		strings.HasPrefix(p, "/api/v2/admin/instrument-catalogue/") ||
 		p == "/api/v2/admin/instruments" ||
-		strings.HasPrefix(p, "/api/v2/admin/instruments/") {
+		strings.HasPrefix(p, "/api/v2/admin/instruments/") ||
+		p == "/api/v2/admin/engine/accounts" ||
+		strings.HasPrefix(p, "/api/v2/admin/engine/accounts/") {
 		return "manager", p, true
+	}
+
+	// /api/v2/auth/register (public demo signup) is only on gateway (:8090);
+	// other /api/v2/auth/* routes go to manager (:8091) for admin/manager apps and gateway (:8090) for terminal.
+	if p == "/api/v2/auth/register" || strings.HasPrefix(p, "/api/v2/auth/register/") {
+		return "gateway", p, true
 	}
 	if (appKind == "admin" || appKind == "manager") && strings.HasPrefix(p, "/api/v2/auth/") {
 		return "manager", p, true
 	}
 
+	// Normalize GET /api/v2/orders/pending?account_login={login} -> /api/v2/orders/pending/{login}
+	// so Manager UI's fetchPendingOrders(accountLogin) hits gateway's GET /api/v2/orders/pending/{login}.
+	if r.Method == http.MethodGet && p == "/api/v2/orders/pending" && r.URL != nil {
+		q := r.URL.Query()
+		login := strings.TrimSpace(q.Get("account_login"))
+		if login == "" {
+			login = strings.TrimSpace(q.Get("login"))
+		}
+		if login != "" && !strings.Contains(login, "/") {
+			p = "/api/v2/orders/pending/" + login
+		}
+	}
+
 	switch {
-	case strings.HasPrefix(p, "/ota/"):
+	case p == "/ota" || strings.HasPrefix(p, "/ota/") || strings.HasPrefix(p, "/api/v1/ota/"):
 		return "ota", p, true
+
 	case strings.HasPrefix(p, "/api/v2/binary-candles/"),
 		strings.HasPrefix(p, "/api/v2/candles/"),
 		strings.HasPrefix(p, "/api/v2/market-data/candles/"),
 		strings.HasPrefix(p, "/history/candles/"),
 		p == "/api/v1/candles" || strings.HasPrefix(p, "/api/v1/candles/"):
 		return "binary-candles", p, true
-	case p == "/ws/feed" || p == "/ws/feed/status" || strings.HasPrefix(p, "/ws/feed/"):
+
+	case p == "/ws/feed" || p == "/ws/feed/status" || strings.HasPrefix(p, "/ws/feed/"),
+		p == "/lp/health",
+		strings.HasPrefix(p, "/api/v1/market/"),
+		strings.HasPrefix(p, "/api/v1/central-lp/"),
+		strings.HasPrefix(p, "/api/v1/t4b/"),
+		p == "/api/v1/lps" || strings.HasPrefix(p, "/api/v1/lps/"),
+		p == "/api/v1/fills" || strings.HasPrefix(p, "/api/v1/fills/"),
+		p == "/api/v1/order",
+		strings.HasPrefix(p, "/api/v1/feed/"),
+		strings.HasPrefix(p, "/api/v1/gateway/feed/"),
+		p == "/api/v1/gateway/quote-source" || strings.HasPrefix(p, "/api/v1/gateway/quote-source/"),
+		p == "/api/v1/gateway/lp-connections" || strings.HasPrefix(p, "/api/v1/gateway/lp-connections/"),
+		p == "/api/v1/gateway/lp-feeds" || strings.HasPrefix(p, "/api/v1/gateway/lp-feeds/"),
+		p == "/api/v1/gateway/lp-journal" || strings.HasPrefix(p, "/api/v1/gateway/lp-journal/"),
+		p == "/api/v1/gateway/lp-routing" || strings.HasPrefix(p, "/api/v1/gateway/lp-routing/"),
+		p == "/api/v1/gateway/lp-execution" || strings.HasPrefix(p, "/api/v1/gateway/lp-execution/"),
+		strings.HasPrefix(p, "/api/v1/gateway/runtime/"):
 		return "bridge", p, true
 
 	case p == "/health" || p == "/readiness" ||
+		p == "/livez" || p == "/readyz" || p == "/healthz" || p == "/ready" ||
+		p == "/health/live" || p == "/health/ready" ||
 		p == "/ws/v2" || strings.HasPrefix(p, "/ws/v2/") ||
 		p == "/ws/manager-trade" || strings.HasPrefix(p, "/ws/manager-trade/") ||
 		strings.HasPrefix(p, "/api/v2/") ||
 		p == "/api/v1/journal" || strings.HasPrefix(p, "/api/v1/journal/") ||
+		p == "/api/v1/positions" || strings.HasPrefix(p, "/api/v1/positions/") ||
+		p == "/api/v1/admin/positions" || strings.HasPrefix(p, "/api/v1/admin/positions/") ||
+		p == "/api/v1/brokers" || strings.HasPrefix(p, "/api/v1/brokers/") ||
+		p == "/api/v1/broker/servers" ||
 		p == "/fix-ws" || strings.HasPrefix(p, "/fix-ws/"):
 		return "gateway", p, true
 
-	case p == "/history" || strings.HasPrefix(p, "/history/"):
+	case p == "/ws/history" || strings.HasPrefix(p, "/ws/history/") ||
+		p == "/history" || strings.HasPrefix(p, "/history/"):
 		return "history", p, true
+
+	case p == "/api/v1/exposure" || strings.HasPrefix(p, "/api/v1/exposure/") ||
+		p == "/api/v1/book" || strings.HasPrefix(p, "/api/v1/book/") ||
+		p == "/api/v1/rules" || strings.HasPrefix(p, "/api/v1/rules/") ||
+		p == "/api/v1/alerts" || strings.HasPrefix(p, "/api/v1/alerts/") ||
+		p == "/api/v1/dealing" || strings.HasPrefix(p, "/api/v1/dealing/") ||
+		p == "/risk/health" || strings.HasPrefix(p, "/risk/"):
+		return "risk", p, true
+
+	case p == "/api/v1/news" || strings.HasPrefix(p, "/api/v1/news/") ||
+		p == "/api/v1/calendar" || strings.HasPrefix(p, "/api/v1/calendar/") ||
+		p == "/news/health" || strings.HasPrefix(p, "/news/"):
+		return "news", p, true
+
+	case p == "/api/v1/audit" || strings.HasPrefix(p, "/api/v1/audit/") ||
+		p == "/api/v1/metrics/latency" || p == "/api/v1/metrics/volume" || strings.HasPrefix(p, "/api/v1/metrics/") ||
+		p == "/logs/health" || strings.HasPrefix(p, "/logs/"):
+		return "logging", p, true
+
+	case p == "/license" || strings.HasPrefix(p, "/license/"):
+		return "license", p, true
+
+	case p == "/reports/health" ||
+		strings.HasPrefix(p, "/api/v1/statement/") ||
+		strings.HasPrefix(p, "/api/v1/equity/") ||
+		p == "/api/v1/daily/all" || strings.HasPrefix(p, "/api/v1/daily/") ||
+		strings.HasPrefix(p, "/api/v1/export/") ||
+		p == "/api/v1/summary/broker" ||
+		p == "/api/v1/eod/recovery":
+		return "reports", p, true
 
 	case strings.HasPrefix(p, "/api/"),
 		strings.HasPrefix(p, "/reports/"),
