@@ -104,6 +104,9 @@ func zipSubdirsDeterministic(baseDir string, subDirs []string, outZipPath string
 					return nil
 				}
 			}
+			if filepath.Base(outZipPath) == "web-terminal-linux.zip" && strings.HasPrefix(relSlash, "ui-dist/terminal/") {
+				return nil
+			}
 			f, err := os.Open(path)
 			if err != nil {
 				return err
@@ -719,20 +722,31 @@ func runCIPartialOTAPush(pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, v
 		if err := json.Unmarshal(mBody, &m); err != nil || len(m.Apps) == 0 {
 			continue
 		}
-		m.ReleaseID = releaseID
-		m.PublishedAt = now.Unix()
+		anyChanged := false
 		for k, a := range m.Apps {
 			if a == nil {
 				continue
 			}
-			a.Version = ver
+			if a.Version != ver {
+				a.Version = ver
+				anyChanged = true
+			}
 			if k == ciApp && uploadedSHA != "" {
+				if a.UITreeSHA256 != uploadedTreeSHA || a.UISHA256 != uploadedSHA {
+					anyChanged = true
+				}
 				a.UIZipFile = uploadedZipName
 				a.UISHA256 = uploadedSHA
 				a.UISize = uploadedSize
 				a.UITreeSHA256 = uploadedTreeSHA
 			}
 		}
+		if !anyChanged && m.ReleaseID != "" {
+			fmt.Printf("[CI-OTA] Channel %s already up-to-date at %s (v%s); skipping duplicate manifest push\n", ch, m.ReleaseID, ver)
+			continue
+		}
+		m.ReleaseID = releaseID
+		m.PublishedAt = now.Unix()
 		if err := rtx5tcp.SignOTAManifest(&m, masterPrivHex); err != nil {
 			log.Fatalf("[CI-OTA] sign manifest (%s): %v", ch, err)
 		}
@@ -877,7 +891,7 @@ func main() {
 			Key:     "web-terminal-linux",
 			Name:    "RTX5 Binary TCP Web Terminal Linux Server (:8443)",
 			RelDir:  filepath.Join("linux", "3-WEB-TERMINAL-Linux-VPS"),
-			SubDirs: []string{"server-engines", "scripts"},
+			SubDirs: []string{"server-engines", "scripts", "ui-dist"},
 			ZipName: "web-terminal-linux.zip",
 		},
 	}
