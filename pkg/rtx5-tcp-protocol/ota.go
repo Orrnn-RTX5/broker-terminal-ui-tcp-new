@@ -390,7 +390,7 @@ func PromoteOTAChannel(otaDir, fromChannel, toChannel, masterPrivHex, masterPubH
 			if prodRaw, err := os.ReadFile(filepath.Join(otaDir, "manifest.json")); err == nil {
 				var existingProd OTAManifest
 				if json.Unmarshal(prodRaw, &existingProd) == nil && existingProd.Apps != nil {
-					for _, bkKey := range []string{"broker-linux", "web-terminal-linux"} {
+					for _, bkKey := range []string{"superadmin-linux", "broker-linux", "web-terminal-linux"} {
 						if _, has := m.Apps[bkKey]; !has && existingProd.Apps[bkKey] != nil {
 							cp := *existingProd.Apps[bkKey]
 							m.Apps[bkKey] = &cp

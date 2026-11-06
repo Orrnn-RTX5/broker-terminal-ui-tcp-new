@@ -316,3 +316,39 @@ After **every** backend, protocol, or UI code change, engineers and AI agents **
 7. **Keep Package Folders Clean of `.running_old` / `.old` / Obsolete Binaries**:
    - Never leave `*.running_old`, `*.old`, `rtx5-fix-receiver`, or `rtx5-webterminal` inside `3-EXE-Packages-To-Run-And-Share\`.
    - For `web-terminal-linux.zip`, the Linux Web Terminal source directory is strictly `2-TCP-Codebase\web-terminal-tcp\server` (never `desktop-clients\cmd\rtx5-web-terminal-server`).
+
+---
+
+## 11. `v2.2.8` MULTI-PORTAL SSL WEB SERVER (`tcp-{terminal,manager,admin,superadmin}.orrnn.com`), ACCOUNT `200025` POSITION/BALANCE SYNC, & OTA TOAST FIXES (2026-11-06)
+
+### A. Multi-Portal SSL Binary TCP Web Server (`rtx5-web-terminal-server` on `:443` / `:8443`)
+- `2-TCP-Codebase/web-terminal-tcp/server` (`rtx5-web-terminal-server`) dynamically routes by `Host` header across all 4 SSL subdomains on `185.126.217.108`:
+  1. **`https://tcp-terminal.orrnn.com`** -> `terminal` (`Broker-Terminal-UI-TCP`)
+  2. **`https://tcp-manager.orrnn.com`** -> `manager` (`Broker-Manager-UI-TCP`)
+  3. **`https://tcp-admin.orrnn.com`** -> `admin` (`Broker-Admin-UI-TCP`)
+  4. **`https://tcp-superadmin.orrnn.com`** -> `superadmin` (`rtx5-production-superadmin-UI-TCP`, routed to `:9100` Hub)
+- Serves Let's Encrypt multi-SAN certificate (`/etc/letsencrypt/live/tcp-terminal.orrnn.com/{fullchain.pem,privkey.pem}`) covering all 4 domains and hot-swaps Ed25519-signed UI bundles (`terminal-ui.zip`, `manager-ui.zip`, `admin-ui.zip`, `superadmin-ui.zip`) per `appKey`.
+- Includes an in-memory `250ms` TTL `/api/market/quotes` & `/api/market/prices` cache (`quotesCacheMu` in `web-terminal-tcp/server/main.go`) so browser pre-checks before binary order execution complete in `< 0.05 ms` instead of adding a `2–3 ms` localhost HTTP proxy round-trip.
+
+### B. Root Cause & Fix — Account `200025` Terminal (`0` Open Positions, `Balance: 9,985.99`) vs Manager (`14` Open `XAUUSD`, `Balance: 9,948.43`)
+1. **What Happened**:
+   - The 14 `XAUUSD buy 0.01` positions on Account `200025` (opened at `19:18:01–19:18:02` at `4124.40–4124.99`) were closed in the Trader Terminal for `+$37.56` realized profit (`$9,948.43 -> $9,985.99`), leaving `0` open positions and `1` pending order (`#1016583 XAUUSD BUY_LIMIT 0.01 @ 4117.83`).
+   - Trader Terminal reads directly from `rtx5-gateway` (`RAMMT5Engine`), so it immediately showed the true state (`0` open positions, `Balance: 9,985.99`, `1` pending order).
+2. **Why Manager Showed Stale State (4 Compounding Bugs Fixed in `v2.2.8`)**:
+   - **Bug 1 — PostgreSQL Write-Fence Trigger Rejected `RAMPGFlusher` Close Flush (`ram_mt5_pg_flusher.go` & `ram_mt5_wal.go`)**:
+     - Opening the 14 `XAUUSD` positions on `demo/STD` (`commission = 0`) had `BalanceDelta = 0`, so `execBatchTx` skipped `UPDATE public.accounts` and inserted the 14 open rows into `public.positions`.
+     - Closing them had `BalanceDelta = +37.56 != 0`, which ran `UPDATE public.accounts SET balance = balance + $1 ... WHERE login = 200025`.
+     - Step 0 (`ram_mt5_pg_flusher.go` & `ram_mt5_wal.go`) only set `rtx5.ram_flusher = '1'` and did **not** set `SELECT set_config('rtx5.bbook_projector', 'on', true)`. PostgreSQL's `a0_account_ram_legacy_money_v1` / `guard_bbook_engine_owned_write()` trigger rejected the `accounts` update with `SQLSTATE 55000`, rolling back the entire close transaction in PostgreSQL!
+     - **Fix**: Both `execBatchTx` (`ram_mt5_pg_flusher.go`) and `replaySingleWalBundleIdempotent` (`ram_mt5_wal.go`) now set `SELECT set_config('rtx5.bbook_projector', 'on', true)` alongside `rtx5.ram_flusher = '1'`, remove `price_sl`/`price_tp` from the Step 5 position close `UPDATE`, and `ReplayPriorSkippedBundlesToPG` automatically replays any prior rolled-back WAL close/deal bundles into PostgreSQL on startup before RAM hydration.
+   - **Bug 2 — PostgreSQL `accounts` (`equity`, `margin`, `free_margin`, `margin_level`) & Redis `metrics:{login}:cache` Sync (`ram_mt5_pg_flusher.go`, `ram_mt5_engine.go`, `ram_mt5_views_sync.go`)**:
+     - `RAMPGFlusher` previously only updated `balance` and `credit` on `public.accounts` and never wrote `metrics:{login}:cache` / `metrics:{login}` to Redis (`e.rdb`), which `rtx5-manager` reads for `/AccountDetails` and `/AccountDetailsMany`.
+     - **Fix**: `RAMPGFlusher` Step 1 now persists `equity`, `margin`, `free_margin`, `margin_level` (plus `balance` and `credit` deltas) on `public.accounts` for every affected login, and `RAMMT5Engine` writes `metrics:{login}:cache` and `metrics:{login}` to Redis on every position/account mutation and on startup hydration (`syncAllHydratedAccountMetricsToPGAndRedis`).
+   - **Bug 3 — `flusherIdle` Counter Drift & `position_closed` Payload (`ram_mt5_pg_flusher.go` & `ram_mt5_engine.go`)**:
+     - **Fix**: `commitBatchWithRetry` increments `committedCount` even if an isolated fallback bundle fails so `enqueuedCount == committedCount` (`flusherIdle`) never wedges, and `position_closed` NATS payloads now explicitly include `"volume": 0.0, "lots": 0.0, "closed": true`.
+   - **Bug 4 — `Broker-Manager-UI` Cache Resurrection of Closed Positions (`ui-overrides/manager-ui/src/services/api.js` & `positionSync.js`)**:
+     - `applyPositionsSnapshot` previously merged `isClosedPositionUpdate(row)` rows into `cachedPositionsDataset` (`rtx5_positions_dataset_v3`) and bumped `positionUpdateRevisions`, causing `reconcileLivePositions` (`trustedTickets.has(ticket)`) to resurrect closed positions into HTTP `/Positions` results.
+     - **Fix**: `applyPositionsSnapshot` and `evictClosedPositionsFromCache` now immediately delete closed tickets from `cachedPositionsDataset`, `positionUpdateRevisions`, `pendingNewPositions`, and `accountPositionsRequests`, and `reconcileLivePositions` never resurrects closed or HTTP-absent tickets from `trustedTickets`.
+
+### C. Root Cause & Fix — False `Signed OTA UI Update Ready` Toast (`ota-packager/main.go` & `tcp_toolbar.js`)
+- In `2-TCP-Codebase/scripts/ota-packager/main.go` (`runCIPartialOTAPush`), CI runs where no artifact hash or version changed previously minted a new `ReleaseID` timestamp. Now `runCIPartialOTAPush` skips re-signing/uploading when `anyChanged == false`.
+- In `desktop-clients/clientcore/tcp_toolbar.js` and `web-terminal-tcp/server/tcp_toolbar.js`, when a browser tab loads a page that is already serving the current `active_ui_tree_sha` / `release_id`, `tcp_toolbar.js` records `bootUIKey` in `localStorage` (`rtx5_ack_ota_ui_key_v1`) and acknowledges `/api/tcp-client/ota-ack-ui` so a server-wide `ui_reload_ready` flag from before the tab opened never triggers a false reload banner.

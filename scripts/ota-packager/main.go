@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -96,6 +97,14 @@ func zipSubdirsDeterministic(baseDir string, subDirs []string, outZipPath string
 			if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".ota-") || strings.HasSuffix(relSlash, ".DS_Store") {
 				return nil
 			}
+			if filepath.Base(outZipPath) == "superadmin-linux-backend.zip" && strings.HasPrefix(relSlash, "server-engines/") {
+				baseName := filepath.Base(relSlash)
+				switch baseName {
+				case "rtx5-superadmin-control-plane", "superadmin-tcp-hub":
+				default:
+					return nil
+				}
+			}
 			if filepath.Base(outZipPath) == "broker-linux-backend.zip" && strings.HasPrefix(relSlash, "server-engines/") {
 				baseName := filepath.Base(relSlash)
 				switch baseName {
@@ -103,6 +112,9 @@ func zipSubdirsDeterministic(baseDir string, subDirs []string, outZipPath string
 				default:
 					return nil
 				}
+			}
+			if filepath.Base(outZipPath) == "web-terminal-linux.zip" && strings.HasPrefix(relSlash, "ui-dist/terminal/") {
+				return nil
 			}
 			f, err := os.Open(path)
 			if err != nil {
@@ -365,9 +377,9 @@ func cloneManifestForChannel(base *rtx5tcp.OTAManifest, channel string) *rtx5tcp
 		if a == nil {
 			continue
 		}
-		// Backend Linux VPS packages (broker-linux, web-terminal-linux) do NOT use Alpha/Beta staging;
+		// Backend Linux VPS packages (superadmin-linux, broker-linux, web-terminal-linux) do NOT use Alpha/Beta staging;
 		// they are published directly to Production (manifest.json).
-		if normCh != rtx5tcp.OTAChannelProduction && (k == "broker-linux" || k == "web-terminal-linux") {
+		if normCh != rtx5tcp.OTAChannelProduction && (k == "superadmin-linux" || k == "broker-linux" || k == "web-terminal-linux") {
 			continue
 		}
 		cp := *a
@@ -664,7 +676,21 @@ func pushOTAReleaseOverBinaryTCP(outDir string, pushAddr string, masterPrivHex s
 	}
 }
 
-func runCIPartialOTAPush(pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ver, releaseID string, now time.Time) {
+func buildLinuxGoBinary(srcDir, outBinPath string) error {
+	if err := os.MkdirAll(filepath.Dir(outBinPath), 0755); err != nil {
+		return err
+	}
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w", "-o", outBinPath, ".")
+	cmd.Dir = srcDir
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build in %s failed (%v): %s", srcDir, err, strings.TrimSpace(string(out)))
+	}
+	return os.Chmod(outBinPath, 0755)
+}
+
+func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ver, releaseID string, now time.Time) {
 	if pushAddr == "" {
 		pushAddr = "185.126.217.108:9100"
 	}
@@ -708,6 +734,81 @@ func runCIPartialOTAPush(pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, v
 		uploadedTreeSHA = treeSHA
 		uploadedSize = int64(len(zipBytes))
 		fmt.Printf("[CI-OTA] Uploaded %s (%.2f MB | sha256=%s)\n", uploadedZipName, float64(uploadedSize)/(1024*1024), shaHex[:12])
+	} else if ciApp == "version-only" || ciApp == "superadmin-linux" || ciApp == "broker-linux" {
+		saControlPlaneDir := filepath.Join(prodRoot, "services", "rtx5-superadmin-control-plane")
+		saHubDir := filepath.Join(prodRoot, "services", "superadmin-tcp-hub")
+		brkAccessDir := filepath.Join(prodRoot, "services", "broker-tcp-access-server")
+		brkGatewayDir := filepath.Join(prodRoot, "services", "gateway")
+
+		if _, err1 := os.Stat(filepath.Join(saControlPlaneDir, "main.go")); err1 == nil {
+			if _, err2 := os.Stat(filepath.Join(saHubDir, "main.go")); err2 == nil {
+				ciApp = "superadmin-linux"
+				stageDir := filepath.Join(os.TempDir(), "rtx5-ci-superadmin-linux")
+				_ = os.RemoveAll(stageDir)
+				defer os.RemoveAll(stageDir)
+
+				fmt.Printf("[CI-OTA] Compiling stripped Linux amd64 SuperAdmin backend binaries (rtx5-superadmin-control-plane + superadmin-tcp-hub)...\n")
+				if berr := buildLinuxGoBinary(saControlPlaneDir, filepath.Join(stageDir, "server-engines", "rtx5-superadmin-control-plane")); berr != nil {
+					log.Fatalf("[CI-OTA] %v", berr)
+				}
+				if berr := buildLinuxGoBinary(saHubDir, filepath.Join(stageDir, "server-engines", "superadmin-tcp-hub")); berr != nil {
+					log.Fatalf("[CI-OTA] %v", berr)
+				}
+
+				uploadedZipName = "superadmin-linux-backend.zip"
+				tmpZip := filepath.Join(os.TempDir(), uploadedZipName)
+				treeSHA, zerr := zipSubdirsDeterministic(stageDir, []string{"server-engines"}, tmpZip)
+				if zerr != nil {
+					log.Fatalf("[CI-OTA] zip %s: %v", uploadedZipName, zerr)
+				}
+				zipBytes, rerr := os.ReadFile(tmpZip)
+				if rerr != nil {
+					log.Fatalf("[CI-OTA] read %s: %v", tmpZip, rerr)
+				}
+				_, shaHex, uerr := uploadOTAFileOverTCP(sess, masterPriv, uploadedZipName, zipBytes)
+				if uerr != nil {
+					log.Fatalf("[CI-OTA] upload %s failed: %v", uploadedZipName, uerr)
+				}
+				uploadedSHA = shaHex
+				uploadedTreeSHA = treeSHA
+				uploadedSize = int64(len(zipBytes))
+				fmt.Printf("[CI-OTA] Uploaded %s (%.2f MB | sha256=%s)\n", uploadedZipName, float64(uploadedSize)/(1024*1024), shaHex[:12])
+			}
+		} else if _, err1 := os.Stat(filepath.Join(brkAccessDir, "main.go")); err1 == nil {
+			if _, err2 := os.Stat(filepath.Join(brkGatewayDir, "main.go")); err2 == nil {
+				ciApp = "broker-linux"
+				stageDir := filepath.Join(os.TempDir(), "rtx5-ci-broker-linux")
+				_ = os.RemoveAll(stageDir)
+				defer os.RemoveAll(stageDir)
+
+				fmt.Printf("[CI-OTA] Compiling stripped Linux amd64 Broker backend binaries (broker-tcp-access-server + rtx5-gateway)...\n")
+				if berr := buildLinuxGoBinary(brkAccessDir, filepath.Join(stageDir, "server-engines", "broker-tcp-access-server")); berr != nil {
+					log.Fatalf("[CI-OTA] %v", berr)
+				}
+				if berr := buildLinuxGoBinary(brkGatewayDir, filepath.Join(stageDir, "server-engines", "rtx5-gateway")); berr != nil {
+					log.Fatalf("[CI-OTA] %v", berr)
+				}
+
+				uploadedZipName = "broker-linux-backend.zip"
+				tmpZip := filepath.Join(os.TempDir(), uploadedZipName)
+				treeSHA, zerr := zipSubdirsDeterministic(stageDir, []string{"server-engines"}, tmpZip)
+				if zerr != nil {
+					log.Fatalf("[CI-OTA] zip %s: %v", uploadedZipName, zerr)
+				}
+				zipBytes, rerr := os.ReadFile(tmpZip)
+				if rerr != nil {
+					log.Fatalf("[CI-OTA] read %s: %v", tmpZip, rerr)
+				}
+				_, shaHex, uerr := uploadOTAFileOverTCP(sess, masterPriv, uploadedZipName, zipBytes)
+				if uerr != nil {
+					log.Fatalf("[CI-OTA] upload %s failed: %v", uploadedZipName, uerr)
+				}
+				uploadedSHA = shaHex
+				uploadedTreeSHA = treeSHA
+				uploadedSize = int64(len(zipBytes))
+				fmt.Printf("[CI-OTA] Uploaded %s (%.2f MB | sha256=%s)\n", uploadedZipName, float64(uploadedSize)/(1024*1024), shaHex[:12])
+			}
+		}
 	}
 
 	for _, ch := range []string{"production", "beta", "alpha"} {
@@ -719,20 +820,43 @@ func runCIPartialOTAPush(pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, v
 		if err := json.Unmarshal(mBody, &m); err != nil || len(m.Apps) == 0 {
 			continue
 		}
-		m.ReleaseID = releaseID
-		m.PublishedAt = now.Unix()
+		anyChanged := false
+		if ch == "production" && uploadedSHA != "" && (ciApp == "superadmin-linux" || ciApp == "broker-linux") && m.Apps[ciApp] == nil {
+			appName := "RTX5 Super Admin Linux VPS Backend (:9100 Hub + :8102 Control Plane)"
+			if ciApp == "broker-linux" {
+				appName = "RTX5 Broker Linux VPS Backend (:4443 + 256-Shard RAM Engine)"
+			}
+			m.Apps[ciApp] = &rtx5tcp.OTAAppArtifact{
+				AppKey:  ciApp,
+				AppName: appName,
+				Version: ver,
+			}
+			anyChanged = true
+		}
 		for k, a := range m.Apps {
 			if a == nil {
 				continue
 			}
-			a.Version = ver
-			if k == ciApp && uploadedSHA != "" {
+			if a.Version != ver {
+				a.Version = ver
+				anyChanged = true
+			}
+			if k == ciApp && uploadedSHA != "" && (ch == "production" || (ciApp != "superadmin-linux" && ciApp != "broker-linux")) {
+				if a.UITreeSHA256 != uploadedTreeSHA || a.UISHA256 != uploadedSHA {
+					anyChanged = true
+				}
 				a.UIZipFile = uploadedZipName
 				a.UISHA256 = uploadedSHA
 				a.UISize = uploadedSize
 				a.UITreeSHA256 = uploadedTreeSHA
 			}
 		}
+		if !anyChanged && m.ReleaseID != "" {
+			fmt.Printf("[CI-OTA] Channel %s already up-to-date at %s (v%s); skipping duplicate manifest push\n", ch, m.ReleaseID, ver)
+			continue
+		}
+		m.ReleaseID = releaseID
+		m.PublishedAt = now.Unix()
 		if err := rtx5tcp.SignOTAManifest(&m, masterPrivHex); err != nil {
 			log.Fatalf("[CI-OTA] sign manifest (%s): %v", ch, err)
 		}
@@ -823,7 +947,7 @@ func main() {
 	releaseID := fmt.Sprintf("rtx5-tcp-ota-%s", now.Format("20060102-150405"))
 
 	if strings.TrimSpace(*ciAppFlag) != "" {
-		runCIPartialOTAPush(pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), ver, releaseID, now)
+		runCIPartialOTAPush(prodRoot, pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), ver, releaseID, now)
 		return
 	}
 
@@ -867,6 +991,13 @@ func main() {
 
 	linuxSpecs := []linuxAppSpec{
 		{
+			Key:     "superadmin-linux",
+			Name:    "RTX5 Super Admin Linux VPS Backend (:9100 Hub + :8102 Control Plane)",
+			RelDir:  filepath.Join("linux", "1-SUPERADMIN-Linux-VPS"),
+			SubDirs: []string{"server-engines", "scripts", "config"},
+			ZipName: "superadmin-linux-backend.zip",
+		},
+		{
 			Key:     "broker-linux",
 			Name:    "RTX5 Broker Linux VPS Backend (:4443 + 256-Shard RAM Engine)",
 			RelDir:  filepath.Join("linux", "2-BROKER-Linux-VPS"),
@@ -877,7 +1008,7 @@ func main() {
 			Key:     "web-terminal-linux",
 			Name:    "RTX5 Binary TCP Web Terminal Linux Server (:8443)",
 			RelDir:  filepath.Join("linux", "3-WEB-TERMINAL-Linux-VPS"),
-			SubDirs: []string{"server-engines", "scripts"},
+			SubDirs: []string{"server-engines", "scripts", "ui-dist"},
 			ZipName: "web-terminal-linux.zip",
 		},
 	}
