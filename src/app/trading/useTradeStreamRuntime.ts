@@ -90,6 +90,9 @@ export const useTradeStreamRuntime = ({
     const invalidator = createStateInvalidator((login) => {
       if (!isSessionActive() || getLiveTradingLogin() !== login) return;
       window.dispatchEvent(new Event('rtx:trade-stream-recovered'));
+      if (changedEntities.has('positions') || changedEntities.has('*')) {
+        requestPositionSnapshotRevalidation();
+      }
       window.dispatchEvent(new CustomEvent('rtx:state-changed', { detail: { entities: [...changedEntities] } }));
       changedEntities.clear();
       if (configurationChanged) {
@@ -139,10 +142,11 @@ export const useTradeStreamRuntime = ({
 
         if (data.channel?.startsWith('state.')) {
           const login = getAcceptedChannelLogin(data.channel);
-          const entityData = asRecord(asRecord(data.data)?.data);
+          const payloadData = asRecord(data.data);
+          const entityData = asRecord(payloadData?.data) ?? payloadData;
           const entity = typeof entityData?.entity === 'string' ? entityData.entity : '*';
           changedEntities.add(entity);
-          if (['groups', 'group_symbol_settings', 'accounts', 'instruments', 'brokers'].includes(entity)) {
+          if (['groups', 'group_symbol_settings', 'instruments', 'brokers'].includes(entity)) {
             configurationChanged = true;
           }
           if (login) invalidator.invalidate(login);
@@ -158,22 +162,28 @@ export const useTradeStreamRuntime = ({
           )
         ) {
           const acceptedLogin = getAcceptedChannelLogin(data.channel);
-          if (!acceptedLogin || !isBackendAccountForLogin(data, acceptedLogin, getCommittedBrokerAccountSessionScope().brokerId)) return;
-          if (!extractBackendAccountRecord(data)) return;
-          markTradeWsMessage();
-          const accountData = extractAccountMetrics(data);
-          const previousAccount = useAppStore.getState().account as Account | null | undefined;
-          const next = normalizeAccountSummary(accountData, previousAccount, {
-            partial: !accountData.publication_token,
-            login: acceptedLogin,
-            scope: getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()),
-          });
-          if (!isSessionActive() || getLiveTradingLogin() !== acceptedLogin) return;
-          useAppStore.getState().setAccount(next);
-          return;
+          if (!acceptedLogin) return;
+          if (
+            isBackendAccountForLogin(data, acceptedLogin, getCommittedBrokerAccountSessionScope().brokerId)
+            && extractBackendAccountRecord(data)
+          ) {
+            markTradeWsMessage();
+            const accountData = extractAccountMetrics(data);
+            const previousAccount = useAppStore.getState().account as Account | null | undefined;
+            const next = normalizeAccountSummary(accountData, previousAccount, {
+              partial: !accountData.publication_token,
+              login: acceptedLogin,
+              scope: getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()),
+            });
+            if (!isSessionActive() || getLiveTradingLogin() !== acceptedLogin) return;
+            useAppStore.getState().setAccount(next);
+          }
+          if (data.channel.startsWith('metrics.') || !decodePositionStreamMessage(data)) {
+            return;
+          }
         }
 
-        if (data.channel?.startsWith('positions.')) {
+        if (data.channel?.startsWith('positions.') || data.channel?.startsWith('account.')) {
           const acceptedLogin = getAcceptedChannelLogin(data.channel);
           if (!acceptedLogin) return;
           const bulkClose = readPositionBulkCloseEvent(data);
@@ -225,6 +235,7 @@ export const useTradeStreamRuntime = ({
             if (!isSessionActive() || getLiveTradingLogin() !== acceptedLogin) return;
 
             const touchedTickets = decoded.rows
+              .filter((row) => row.update_kind !== 'pnl')
               .map((row) => getPositionStreamTicket(row))
               .filter((value): value is number => value !== null);
             let batchClosedTickets: number[] = [];
@@ -241,6 +252,7 @@ export const useTradeStreamRuntime = ({
                 useAppStore.getState().positions.filter((position) => position.id !== ticket),
                 { closedTickets: closeResult.closedTickets },
               );
+              requestPositionSnapshotRevalidation();
               scheduleStreamHistoryRefresh(acceptedLogin, 'close');
             } else if (batch) {
               const result = reconcilePositionStreamBatch(useAppStore.getState().positions, batch);
@@ -265,7 +277,14 @@ export const useTradeStreamRuntime = ({
                 reconcileOptimisticClosedPositions(result.positions as Position[]),
                 { closedTickets: result.closedTickets, touchedTickets },
               );
-              if (result.needsRevalidation || eventName === 'position_partial_close') requestPositionSnapshotRevalidation();
+              if (
+                result.needsRevalidation
+                || eventName === 'position_opened'
+                || eventName === 'position_increased'
+                || eventName === 'position_partial_close'
+              ) {
+                requestPositionSnapshotRevalidation();
+              }
             }
 
             const openTickets = new Set((useAppStore.getState().positions as Position[]).map((position) => position.id));

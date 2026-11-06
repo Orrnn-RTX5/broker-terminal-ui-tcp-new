@@ -113,6 +113,9 @@ const normalizeImmediatePosition = (
     };
 };
 
+const sameSymbol = (left: unknown, right: unknown): boolean =>
+    String(left ?? '').trim().toUpperCase() === String(right ?? '').trim().toUpperCase();
+
 let pendingImmediatePositions: Position[] = [];
 let immediatePositionsFlushRaf: number | null = null;
 
@@ -126,6 +129,8 @@ const flushImmediatePositions = () => {
         const store = useAppStore.getState();
         let nextPositions = store.positions;
         for (const position of batch) {
+            if (nextPositions.some((existing) => String(existing.id) === String(position.id)
+                && sameSymbol(existing.symbol, position.symbol))) continue;
             const existingIndex = nextPositions.findIndex((existing) => existing.id === position.id);
             nextPositions = existingIndex >= 0
                 ? nextPositions.map((existing, index) => index === existingIndex ? { ...existing, ...position } : existing)
@@ -136,6 +141,13 @@ const flushImmediatePositions = () => {
 };
 
 const upsertImmediatePosition = (position: Position) => {
+    const store = useAppStore.getState();
+    // A result whose ticket is already an open row is a netting add/reduce/close:
+    // its price/volume describe the deal, not the re-averaged position. Keep the
+    // row; the position stream (and the forced refresh) carries the real one.
+    // Hedging fills always get a new ticket and are admitted at once.
+    if (store.positions.some((existing) => String(existing.id) === String(position.id)
+        && sameSymbol(existing.symbol, position.symbol))) return;
     if (isBinaryTcpOrderEnabled() && typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
         pendingImmediatePositions.push(position);
         if (immediatePositionsFlushRaf === null) {
@@ -143,7 +155,6 @@ const upsertImmediatePosition = (position: Position) => {
         }
         return;
     }
-    const store = useAppStore.getState();
     const existingIndex = store.positions.findIndex((existing) => existing.id === position.id);
     const nextPositions = existingIndex >= 0
         ? store.positions.map((existing, index) => index === existingIndex ? { ...existing, ...position } : existing)

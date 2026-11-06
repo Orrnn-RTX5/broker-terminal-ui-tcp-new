@@ -3317,7 +3317,7 @@ export interface Notification {
 export const notificationsApi = {
   async getUnreadCount(): Promise<{ count: number }> {
     try {
-      return await apiClient.get<{ count: number }>('/api/notifications/unread-count');
+      return await apiClient.get<{ count: number }>('/api/v2/notifications/unread-count');
     } catch {
       // Optional endpoint — silently return 0 on any error (404, 502, network, etc.)
       return { count: 0 };
@@ -3325,22 +3325,22 @@ export const notificationsApi = {
   },
 
   async getNotifications(limit = 50): Promise<Notification[]> {
-    const data = await apiClient.get<Notification[]>('/api/notifications', {
+    const data = await apiClient.get<Notification[]>('/api/v2/notifications', {
       params: { limit }
     });
     return data || [];
   },
 
   async markAsRead(notificationId: string): Promise<void> {
-    return apiClient.post<void>('/api/notifications/mark-read', { notificationId });
+    return apiClient.post<void>(`/api/v2/notifications/${notificationId}/read`, { notificationId });
   },
 
   async markAllRead(): Promise<void> {
-    return apiClient.post<void>('/api/notifications/mark-all-read', {});
+    return apiClient.post<void>('/api/v2/notifications/read-all', {});
   },
 
   async deleteNotification(notificationId: string): Promise<void> {
-    return apiClient.delete<void>(`/api/notifications/${notificationId}`);
+    return apiClient.delete<void>(`/api/v2/notifications/${notificationId}`);
   },
 };
 

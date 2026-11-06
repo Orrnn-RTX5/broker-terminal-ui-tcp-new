@@ -1846,7 +1846,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     };
   }, []);
 
-  const terminalBrokerInfo = useTerminalBrokerInfo();
+  const terminalBrokerInfo = useTerminalBrokerInfo(desktopToolbarSymbol);
 
   useEffect(() => {
     if (!isAuthenticated || !accountId) return;
