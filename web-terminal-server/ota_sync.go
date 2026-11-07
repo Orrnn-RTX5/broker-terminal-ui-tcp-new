@@ -326,6 +326,9 @@ func (c *WebTerminalServer) checkExistingAppUIMatch(appKey string, targetUISHA s
 }
 
 func (c *WebTerminalServer) syncHotUIOTA() error {
+	if c.localUIOnly {
+		return nil // RTX5_WEB_UI_SOURCE=local: serve local ui-dist builds; never pull the production OTA UI
+	}
 	c.otaSyncMu.Lock()
 	defer c.otaSyncMu.Unlock()
 
