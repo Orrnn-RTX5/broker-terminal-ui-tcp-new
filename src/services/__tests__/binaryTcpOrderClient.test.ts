@@ -1,13 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetBinaryOrderWsForTests,
+  BINARY_ORDER_ACTION_CANCEL_PENDING,
+  BINARY_ORDER_ACTION_CLOSE_POSITION,
+  BINARY_ORDER_ACTION_MODIFY_PENDING,
+  BINARY_ORDER_ACTION_MODIFY_POSITION,
   BINARY_ORDER_ACTION_PLACE_MARKET,
+  BINARY_ORDER_ACTION_PLACE_PENDING,
   BINARY_ORDER_CODEC_VERSION,
   BINARY_ORDER_ENDPOINT,
+  BINARY_ORDER_EXTRA_TAG_COMMENT,
+  BINARY_ORDER_EXTRA_TAG_MAGIC,
+  BINARY_ORDER_FLAG_HAS_EXTRAS,
+  BINARY_ORDER_SUBTYPE_BUY_LIMIT,
   BINARY_ORDER_WS_ENDPOINT,
+  encodeBinaryOrderReq,
+  encodeBinaryOrderWsModeAFrame,
+  encodeBinaryOrderWsModeBFrame,
   ensureBinaryOrderWebSocket,
+  REQ_HEADER_SIZE,
   RESP_HEADER_SIZE,
   sendBinaryTcpOrder,
+  WS_FAST_ORDER_FRAME_SIZE,
 } from '../binaryTcpOrderClient';
 
 vi.mock('../../config/backendTarget.js', () => ({
@@ -157,5 +171,222 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
       'http://127.0.0.1:18404/__rtx5_binary_order',
       BINARY_ORDER_ENDPOINT,
     ]);
+  });
+});
+
+describe('binaryTcpOrderClient HAS_EXTRAS (0x0400) TLV encoding & validation', () => {
+  const FIXED_UUID = '123e4567-e89b-42d3-a456-426614174000';
+
+  it('encodes zero-extras market order as exact 132-byte Mode A, 134+tokenLen Mode B, and 130+tokenLen HTTP with HAS_EXTRAS clear', () => {
+    const token = 'jwt-tok';
+    const tokenBytes = new TextEncoder().encode(token);
+
+    const modeA = encodeBinaryOrderWsModeAFrame(42, {
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 5058375,
+      symbol: 'EURUSD',
+      side: 'BUY',
+      volume: 0.1,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    expect(modeA.byteLength).toBe(WS_FAST_ORDER_FRAME_SIZE); // 132
+    const modeAView = new DataView(modeA.buffer, modeA.byteOffset, modeA.byteLength);
+    expect(modeAView.getUint32(0, true)).toBe(42);
+    expect(modeAView.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(0);
+
+    const modeB = encodeBinaryOrderWsModeBFrame(42, {
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 5058375,
+      symbol: 'EURUSD',
+      side: 'BUY',
+      volume: 0.1,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    expect(modeB.byteLength).toBe(4 + REQ_HEADER_SIZE + 2 + tokenBytes.byteLength);
+    const modeBView = new DataView(modeB.buffer, modeB.byteOffset, modeB.byteLength);
+    expect(modeBView.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(0);
+    expect(modeBView.getUint16(4 + REQ_HEADER_SIZE, true)).toBe(tokenBytes.byteLength);
+
+    const { packet: httpPacket, buffer: httpBuf } = encodeBinaryOrderReq({
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 5058375,
+      symbol: 'EURUSD',
+      side: 'BUY',
+      volume: 0.1,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    expect(httpPacket.byteLength).toBe(REQ_HEADER_SIZE + 2 + tokenBytes.byteLength);
+    const httpView = new DataView(httpBuf);
+    expect(httpView.getUint16(4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(0);
+  });
+
+  it('encodes golden bytes for COMMENT (0x01) and MAGIC (0x02) across WS Mode A, WS Mode B, and HTTP binary body', () => {
+    const comment = 'bot-v2'; // 6 UTF-8 bytes: [0x62, 0x6f, 0x74, 0x2d, 0x76, 0x32]
+    const magic = 0x0102030405060708n; // int64 LE: [0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+    const token = 'tok-xyz';
+    const tokenBytes = Array.from(new TextEncoder().encode(token));
+
+    // Expected TLV:
+    // Tag 0x01, len 6, 'b','o','t','-','v','2' (8 bytes)
+    // Tag 0x02, len 8, 8-byte int64 LE (10 bytes)
+    // Total extrasLen = 18 (0x12, 0x00)
+    const expectedExtrasBlock = [
+      18, 0, // u16 LE extrasLen = 18
+      BINARY_ORDER_EXTRA_TAG_COMMENT, 6, 0x62, 0x6f, 0x74, 0x2d, 0x76, 0x32,
+      BINARY_ORDER_EXTRA_TAG_MAGIC, 8, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+    ];
+
+    // 1. WS Mode A: [u32 reqId][128 header][u16 LE extrasLen][TLV] (extras at byte 132)
+    const modeA = encodeBinaryOrderWsModeAFrame(7, {
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 1001,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      volume: 0.5,
+      comment,
+      magic,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    expect(modeA.byteLength).toBe(132 + expectedExtrasBlock.length);
+    const modeAView = new DataView(modeA.buffer, modeA.byteOffset, modeA.byteLength);
+    expect(modeAView.getUint32(0, true)).toBe(7);
+    expect(modeAView.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(BINARY_ORDER_FLAG_HAS_EXTRAS);
+    expect(Array.from(modeA.subarray(132))).toEqual(expectedExtrasBlock);
+
+    // 2. WS Mode B: [u32 reqId][128 header][u16 LE tokenLen][token][u16 LE extrasLen][TLV]
+    const modeB = encodeBinaryOrderWsModeBFrame(7, {
+      action: BINARY_ORDER_ACTION_PLACE_PENDING,
+      accountLogin: 1001,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      orderSubType: BINARY_ORDER_SUBTYPE_BUY_LIMIT,
+      price: 2300.5,
+      volume: 0.5,
+      comment,
+      magic,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    const modeBTokenOffset = 4 + REQ_HEADER_SIZE;
+    const modeBExtrasOffset = modeBTokenOffset + 2 + tokenBytes.length;
+    expect(modeB.byteLength).toBe(modeBExtrasOffset + expectedExtrasBlock.length);
+    const modeBView = new DataView(modeB.buffer, modeB.byteOffset, modeB.byteLength);
+    expect(modeBView.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(BINARY_ORDER_FLAG_HAS_EXTRAS);
+    expect(modeBView.getUint16(modeBTokenOffset, true)).toBe(tokenBytes.length);
+    expect(Array.from(modeB.subarray(modeBTokenOffset + 2, modeBExtrasOffset))).toEqual(tokenBytes);
+    expect(Array.from(modeB.subarray(modeBExtrasOffset))).toEqual(expectedExtrasBlock);
+
+    // 3. HTTP binary body: [128 header][u16 LE tokenLen][token][u16 LE extrasLen][TLV]
+    const { packet: httpBytes, buffer: httpBuf } = encodeBinaryOrderReq({
+      action: BINARY_ORDER_ACTION_MODIFY_PENDING,
+      accountLogin: 1001,
+      ticket: 889900,
+      price: 2305.0,
+      comment,
+      magic,
+      clientOrderId: FIXED_UUID,
+      authToken: token,
+    });
+    const httpTokenOffset = REQ_HEADER_SIZE;
+    const httpExtrasOffset = httpTokenOffset + 2 + tokenBytes.length;
+    expect(httpBytes.byteLength).toBe(httpExtrasOffset + expectedExtrasBlock.length);
+    const httpView = new DataView(httpBuf);
+    expect(httpView.getUint16(4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(BINARY_ORDER_FLAG_HAS_EXTRAS);
+    expect(httpView.getUint16(httpTokenOffset, true)).toBe(tokenBytes.length);
+    expect(Array.from(httpBytes.subarray(httpTokenOffset + 2, httpExtrasOffset))).toEqual(tokenBytes);
+    expect(Array.from(httpBytes.subarray(httpExtrasOffset))).toEqual(expectedExtrasBlock);
+  });
+
+  it('omits empty/whitespace comment and zero magic and clears HAS_EXTRAS when both are empty', () => {
+    const modeA = encodeBinaryOrderWsModeAFrame(1, {
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 1001,
+      symbol: 'EURUSD',
+      side: 'SELL',
+      volume: 1,
+      comment: '   ',
+      magic: 0,
+      clientOrderId: FIXED_UUID,
+    });
+    expect(modeA.byteLength).toBe(132);
+    const view = new DataView(modeA.buffer, modeA.byteOffset, modeA.byteLength);
+    expect(view.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(0);
+  });
+
+  it('ignores extras for close, modify-position, and cancel actions', () => {
+    for (const actionParams of [
+      { action: BINARY_ORDER_ACTION_CLOSE_POSITION, ticket: 101, volume: 0 },
+      { action: BINARY_ORDER_ACTION_MODIFY_POSITION, ticket: 101, sl: 1.1 },
+      { action: BINARY_ORDER_ACTION_CANCEL_PENDING, ticket: 101 },
+    ] as const) {
+      const frame = encodeBinaryOrderWsModeAFrame(5, {
+        ...actionParams,
+        accountLogin: 1001,
+        comment: 'ignored-comment',
+        magic: 12345,
+        clientOrderId: FIXED_UUID,
+      });
+      expect(frame.byteLength).toBe(132);
+      const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+      expect(view.getUint16(4 + 4, true) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(0);
+    }
+  });
+
+  it('validates comment UTF-8 byte length <= 64 and rejects NUL bytes without silent truncation', () => {
+    // Exact 64 ASCII bytes -> valid
+    const exact64 = 'a'.repeat(64);
+    const validFrame = encodeBinaryOrderWsModeAFrame(1, {
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 1001,
+      symbol: 'EURUSD',
+      side: 'BUY',
+      volume: 0.1,
+      comment: exact64,
+      clientOrderId: FIXED_UUID,
+    });
+    expect(validFrame.byteLength).toBe(132 + 2 + 2 + 64);
+
+    // 65 ASCII bytes -> throws COMMENT_TOO_LONG
+    expect(() =>
+      encodeBinaryOrderWsModeAFrame(1, {
+        action: BINARY_ORDER_ACTION_PLACE_MARKET,
+        accountLogin: 1001,
+        symbol: 'EURUSD',
+        side: 'BUY',
+        volume: 0.1,
+        comment: 'a'.repeat(65),
+        clientOrderId: FIXED_UUID,
+      }),
+    ).toThrow(/64 UTF-8 bytes/);
+
+    // 22 Euro signs ('€') = 22 UTF-16 chars, 66 UTF-8 bytes -> throws COMMENT_TOO_LONG
+    expect(() =>
+      encodeBinaryOrderWsModeAFrame(1, {
+        action: BINARY_ORDER_ACTION_PLACE_MARKET,
+        accountLogin: 1001,
+        symbol: 'EURUSD',
+        side: 'BUY',
+        volume: 0.1,
+        comment: '€'.repeat(22),
+        clientOrderId: FIXED_UUID,
+      }),
+    ).toThrow(/64 UTF-8 bytes/);
+
+    // NUL byte inside comment -> throws INVALID_COMMENT
+    expect(() =>
+      encodeBinaryOrderWsModeAFrame(1, {
+        action: BINARY_ORDER_ACTION_PLACE_MARKET,
+        accountLogin: 1001,
+        symbol: 'EURUSD',
+        side: 'BUY',
+        volume: 0.1,
+        comment: 'abc\0def',
+        clientOrderId: FIXED_UUID,
+      }),
+    ).toThrow(/NUL/);
   });
 });

@@ -168,9 +168,11 @@ import {
   BINARY_ORDER_BULK_MODE_ALL,
   BINARY_ORDER_BULK_MODE_LOSERS,
   BINARY_ORDER_BULK_MODE_WINNERS,
+  BINARY_ORDER_COMMENT_MAX_BYTES,
   BINARY_ORDER_FLAG_CLEAR_SL,
   BINARY_ORDER_FLAG_CLEAR_TP,
   BINARY_ORDER_FLAG_HAS_EXPIRATION,
+  BINARY_ORDER_FLAG_HAS_EXTRAS,
   BINARY_ORDER_FLAG_HAS_PRICE,
   BINARY_ORDER_FLAG_HAS_SL,
   BINARY_ORDER_FLAG_HAS_STOP_LIMIT,
@@ -190,9 +192,20 @@ import {
   isBinaryTcpOrderEnabled,
   sendBinaryTcpOrder,
   type BinaryOrderSubType,
+  type BinaryTcpOrderParams,
   type DecodedBinaryOrderResp,
 } from './binaryTcpOrderClient';
 
+// TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+export const TRAILING_STOP_REST_EXCEPTION = true;
+
+export const FAST_CHANNEL_NOT_CONFIGURED_MESSAGE = 'Fast order channel is not configured for this Terminal';
+export const FAST_CHANNEL_UNAVAILABLE_MESSAGE = 'Fast order channel unavailable - order not sent, try again';
+export const FAST_CHANNEL_UNCERTAIN_MESSAGE =
+  'The order was sent, but its final status could not be confirmed. Check history, do not repeat.';
+
+const BINARY_ORDER_MAX_ATTEMPTS = 3;
+const BINARY_ORDER_RETRY_BACKOFF_MS = [10, 25] as const;
 
 if (!isBinaryTcpOrderEnabled()) {
   initializeTradeWebSocketClient();
@@ -289,17 +302,225 @@ const isBinaryTcpOrderError = (error: unknown): error is BinaryTcpOrderError => 
   || (
     Boolean(error)
     && typeof error === 'object'
-    && (error as { name?: unknown }).name === 'BinaryTcpOrderError'
+    && (
+      (error as { name?: unknown }).name === 'BinaryTcpOrderError'
+      || typeof (error as { retryable?: unknown }).retryable === 'boolean'
+    )
     && typeof (error as { status?: unknown }).status === 'number'
   )
 );
 
 const isNonRetryableBinaryTcpOrderError = (error: BinaryTcpOrderError): boolean => (
   !error.retryable
+  || error.status === 0
   || (error.status >= 400 && error.status < 500)
   || error.status === 500
   || error.status === 504
 );
+
+const isRetryableBinaryTcpOrderError = (error: BinaryTcpOrderError): boolean => (
+  Boolean(error.retryable && !isNonRetryableBinaryTcpOrderError(error))
+);
+
+const createFastChannelNotConfiguredError = (clientOrderId?: string): ApiError => {
+  const code = 'FAST_ORDER_CHANNEL_NOT_CONFIGURED';
+  const apiError = new ApiError(503, FAST_CHANNEL_NOT_CONFIGURED_MESSAGE, {
+    code,
+    error: code,
+    message: FAST_CHANNEL_NOT_CONFIGURED_MESSAGE,
+    ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
+  });
+  Object.assign(apiError, {
+    code,
+    backendMessage: FAST_CHANNEL_NOT_CONFIGURED_MESSAGE,
+    ...(clientOrderId ? { clientOrderId } : {}),
+    retryable: false,
+  });
+  return apiError;
+};
+
+const waitForBinaryRetryBackoff = (ms: number, signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(new BinaryTcpOrderError('Order request aborted', {
+      status: 0,
+      code: 'ABORTED',
+      retryable: false,
+    }));
+    return;
+  }
+  let onAbort: (() => void) | null = null;
+  const timer = setTimeout(() => {
+    if (onAbort && signal) {
+      signal.removeEventListener('abort', onAbort);
+    }
+    resolve();
+  }, ms);
+  if (signal) {
+    onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort!);
+      reject(new BinaryTcpOrderError('Order request aborted', {
+        status: 0,
+        code: 'ABORTED',
+        retryable: false,
+      }));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+});
+
+/**
+ * Cold-path retry helper invoked ONLY after the initial `sendBinaryTcpOrder(params)` rejects
+ * with a retryable error. Costs zero allocations/timers/promises on the normal success path.
+ * Retries up to 2 more times (3 total attempts) with the SAME `clientOrderId`.
+ */
+const retryBinaryTcpOrderAfterFailure = async (
+  firstError: BinaryTcpOrderError,
+  params: BinaryTcpOrderParams,
+): Promise<DecodedBinaryOrderResp> => {
+  let lastError: BinaryTcpOrderError = firstError;
+  for (let retryIdx = 0; retryIdx < BINARY_ORDER_MAX_ATTEMPTS - 1; retryIdx += 1) {
+    if (!isRetryableBinaryTcpOrderError(lastError) || params.signal?.aborted) {
+      break;
+    }
+    const backoffMs = BINARY_ORDER_RETRY_BACKOFF_MS[retryIdx] ?? 25;
+    await waitForBinaryRetryBackoff(backoffMs, params.signal);
+    try {
+      return await sendBinaryTcpOrder(params);
+    } catch (nextErr) {
+      if (!isBinaryTcpOrderError(nextErr)) {
+        throw nextErr;
+      }
+      lastError = nextErr;
+    }
+  }
+
+  if (lastError.status === 0 || lastError.code === 'ABORTED' || params.signal?.aborted) {
+    throw lastError;
+  }
+  if (!isRetryableBinaryTcpOrderError(lastError)) {
+    throw lastError;
+  }
+
+  const isUncertain = (lastError as { orderWasSent?: unknown }).orderWasSent === true
+    || lastError.code === 'EXECUTION_UNCERTAIN'
+    || lastError.code === 'BINARY_TCP_TIMEOUT';
+  const message = isUncertain ? FAST_CHANNEL_UNCERTAIN_MESSAGE : FAST_CHANNEL_UNAVAILABLE_MESSAGE;
+  const exhaustedErr = new BinaryTcpOrderError(message, {
+    status: lastError.status > 0 ? lastError.status : 503,
+    code: lastError.code || 'BINARY_TCP_UNAVAILABLE',
+    backendMessage: message,
+    clientOrderId: lastError.clientOrderId || params.clientOrderId,
+    retryable: false,
+    execMicros: lastError.execMicros,
+    action: lastError.action ?? params.action,
+    response: lastError.response,
+    completedAtPerfMs: lastError.completedAtPerfMs,
+  });
+  if (isUncertain) {
+    Object.assign(exhaustedErr, { orderWasSent: true });
+  }
+  throw exhaustedErr;
+};
+
+const utf8StringByteLength = (str: string): number => {
+  let bytes = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    const code = str.charCodeAt(i);
+    if (code === 0) {
+      return -1;
+    }
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      if (i + 1 < str.length) {
+        const next = str.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          bytes += 4;
+          i += 1;
+          continue;
+        }
+      }
+      return -2;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return -2;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+};
+
+const validateAndNormalizeOrderComment = (rawComment: unknown): string | undefined => {
+  if (rawComment === undefined || rawComment === null) {
+    return undefined;
+  }
+  if (typeof rawComment !== 'string') {
+    throw new ApiError(400, 'Order comment must be a string', {
+      code: 'INVALID_COMMENT',
+      error: 'INVALID_COMMENT',
+      message: 'Order comment must be a string',
+    });
+  }
+  const trimmed = rawComment.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const byteLen = utf8StringByteLength(trimmed);
+  if (byteLen === -1) {
+    throw new ApiError(400, 'Order comment must not contain NUL bytes', {
+      code: 'INVALID_COMMENT',
+      error: 'INVALID_COMMENT',
+      message: 'Order comment must not contain NUL bytes',
+    });
+  }
+  if (byteLen === -2) {
+    throw new ApiError(400, 'Order comment contains invalid UTF-16 surrogate', {
+      code: 'INVALID_COMMENT',
+      error: 'INVALID_COMMENT',
+      message: 'Order comment contains invalid UTF-16 surrogate',
+    });
+  }
+  if (byteLen > BINARY_ORDER_COMMENT_MAX_BYTES) {
+    throw new ApiError(
+      400,
+      `Order comment exceeds maximum length of ${BINARY_ORDER_COMMENT_MAX_BYTES} UTF-8 bytes`,
+      {
+        code: 'COMMENT_TOO_LONG',
+        error: 'COMMENT_TOO_LONG',
+        message: `Order comment exceeds maximum length of ${BINARY_ORDER_COMMENT_MAX_BYTES} UTF-8 bytes`,
+      },
+    );
+  }
+  return trimmed;
+};
+
+const validateAndNormalizeOrderMagic = (rawMagic: unknown): number | bigint | undefined => {
+  if (rawMagic === undefined || rawMagic === null || rawMagic === '') {
+    return undefined;
+  }
+  if (typeof rawMagic === 'bigint') {
+    if (rawMagic < -9223372036854775808n || rawMagic > 9223372036854775807n) {
+      throw new ApiError(400, 'Order magic must fit in signed int64', {
+        code: 'INVALID_MAGIC',
+        error: 'INVALID_MAGIC',
+        message: 'Order magic must fit in signed int64',
+      });
+    }
+    return rawMagic === 0n ? undefined : rawMagic;
+  }
+  const parsed = typeof rawMagic === 'number' ? rawMagic : Number(rawMagic);
+  if (!Number.isFinite(parsed) || !Number.isSafeInteger(parsed)) {
+    throw new ApiError(400, 'Order magic must be a safe integer', {
+      code: 'INVALID_MAGIC',
+      error: 'INVALID_MAGIC',
+      message: 'Order magic must be a safe integer',
+    });
+  }
+  return parsed === 0 ? undefined : parsed;
+};
 
 const readBinaryErrorTerminalAtMs = (error: BinaryTcpOrderError, baseStartMs?: number): number | undefined => {
   const rawCompletedAtMs = typeof error.completedAtPerfMs === 'number' && Number.isFinite(error.completedAtPerfMs)
@@ -410,7 +631,14 @@ const extractTerminalErrorInfo = (error: unknown): {
 const toBinaryTcpApiError = (error: BinaryTcpOrderError, fallbackClientOrderId: string): ApiError => {
   const status = Number.isFinite(error.status) && error.status >= 0 ? error.status : 400;
   const code = String(error.code || '').trim();
-  const message = String(error.backendMessage || error.message || code || 'Order rejected').trim();
+  const isUncertain = status === 504
+    || code === 'BINARY_TCP_TIMEOUT'
+    || code === 'EXECUTION_UNCERTAIN'
+    || (error as { orderWasSent?: unknown }).orderWasSent === true;
+  const rawMessage = String(error.backendMessage || error.message || '').trim();
+  const message = isUncertain && (!rawMessage || rawMessage.startsWith('Binary TCP order timed out'))
+    ? FAST_CHANNEL_UNCERTAIN_MESSAGE
+    : (rawMessage || code || 'Order rejected');
   const clientOrderId = error.clientOrderId || fallbackClientOrderId;
   const apiError = new ApiError(status, message, {
     ...(code ? { code, error: code } : {}),
@@ -422,7 +650,7 @@ const toBinaryTcpApiError = (error: BinaryTcpOrderError, fallbackClientOrderId: 
     ...(message ? { backendMessage: message } : {}),
     clientOrderId,
     retryable: false,
-    ...(status === 504 ? { code: code || 'GATEWAY_TIMEOUT', orderWasSent: true } : {}),
+    ...(isUncertain ? { code: code || 'GATEWAY_TIMEOUT', orderWasSent: true } : {}),
   });
   return apiError;
 };
@@ -1084,205 +1312,168 @@ export const positionsApi = {
       ? requestedVolume
       : undefined;
     const isPartialClose = partialVolume !== undefined && partialVolume > 0;
-    const useBinaryCloseFastPath = isBinaryTcpOrderEnabled() && hasSafeNumericTicket && !opts.signal?.aborted;
-    const clientOrderId = suppliedClientOrderId
-      || (useBinaryCloseFastPath ? createFastBinaryClientOrderId() : createTradeOrderUuid());
+    if (!hasSafeNumericTicket) {
+      throw new ApiError(400, 'Invalid position ticket', {
+        code: 'INVALID_TICKET',
+        error: 'INVALID_TICKET',
+        message: 'Invalid position ticket',
+      });
+    }
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError(suppliedClientOrderId || undefined);
+    }
 
-    if (useBinaryCloseFastPath) {
-      const accountLogin = tryResolveTradingLogin(explicitAccountLogin ?? aliasAccountLogin);
-      const binarySubmittedAtMs = Date.now();
+    const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
+    const accountLogin = tryResolveTradingLogin(explicitAccountLogin ?? aliasAccountLogin);
+    const binarySubmittedAtMs = Date.now();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_CLOSE_POSITION,
+      accountLogin,
+      ticket: numericTicket,
+      volume: isPartialClose ? partialVolume : 0,
+      flags: isPartialClose ? BINARY_ORDER_FLAG_PARTIAL_CLOSE : 0,
+      partialClose: isPartialClose,
+      clientOrderId,
+      authToken: opts.authToken ?? getAuthToken(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_CLOSE_POSITION,
-          accountLogin,
-          ticket: numericTicket,
-          volume: isPartialClose ? partialVolume : 0,
-          flags: isPartialClose ? BINARY_ORDER_FLAG_PARTIAL_CLOSE : 0,
-          partialClose: isPartialClose,
-          clientOrderId,
-          authToken: opts.authToken ?? getAuthToken(),
-          ...(opts.signal ? { signal: opts.signal } : {}),
-          ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-        });
-
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        const timing = formatBinaryExecTiming(resp.execMicros);
-        let closedTicket = resp.positionTicket > 0 ? resp.positionTicket : numericTicket;
-        let dealTicket = resp.dealTicket;
-        let orderTicket = resp.orderTicket;
-        let closePrice = resp.fillPrice;
-        let profit = resp.profit;
-        let commission = resp.commission;
-        let closedVolume = resp.volume > 0 ? resp.volume : (partialVolume ?? existingPosVolume);
-        let resolvedSymbol = resp.symbol || existingPosSymbol;
-
-        if (resp.status === 202) {
-          const settled = await settleBinaryOrderCommand({
-            clientOrderId: effectiveClientOrderId,
-            submittedAtMs: binarySubmittedAtMs,
-            accountLogin,
-          });
-          const settledData = (settled.position ?? {}) as Record<string, unknown>;
-          closedTicket = toFiniteNumber(
-            settledData.position_ticket ?? settledData.position_id ?? settledData.ticket,
-            closedTicket,
-          );
-          dealTicket = toFiniteNumber(
-            settledData.deal_ticket ?? settledData.closing_deal_ticket,
-            dealTicket,
-          );
-          orderTicket = toFiniteNumber(settledData.order_ticket, orderTicket);
-          closePrice = toFiniteNumber(
-            settledData.close_price ?? settledData.price_close ?? settledData.fill_price ?? settledData.price,
-            closePrice,
-          );
-          profit = toFiniteNumber(settledData.profit ?? settledData.realized_profit, profit);
-          commission = toFiniteNumber(settledData.commission, commission);
-          closedVolume = toFiniteNumber(
-            settledData.closed_volume ?? settledData.volume_closed ?? settledData.volume,
-            closedVolume,
-          );
-          const settledSym = String(settledData.symbol ?? '').trim().toUpperCase();
-          if (settledSym) resolvedSymbol = settledSym;
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !opts.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
         }
+      }
 
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
-        const closeSubject = [
-          `#${closedTicket}`,
-          existingPosSide,
-          resolvedSymbol,
-          closedVolume > 0 ? formatCompactJournalNum(closedVolume) : '',
-          closePrice > 0 ? `@ ${formatCompactJournalNum(closePrice)}` : '',
-        ].filter(Boolean).join(' ');
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const timing = formatBinaryExecTiming(resp.execMicros);
+      let closedTicket = resp.positionTicket > 0 ? resp.positionTicket : numericTicket;
+      let dealTicket = resp.dealTicket;
+      let orderTicket = resp.orderTicket;
+      let closePrice = resp.fillPrice;
+      let profit = resp.profit;
+      let commission = resp.commission;
+      let closedVolume = resp.volume > 0 ? resp.volume : (partialVolume ?? existingPosVolume);
+      let resolvedSymbol = resp.symbol || existingPosSymbol;
+
+      if (resp.status === 202) {
+        const settled = await settleBinaryOrderCommand({
+          clientOrderId: effectiveClientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+        const settledData = (settled.position ?? {}) as Record<string, unknown>;
+        closedTicket = toFiniteNumber(
+          settledData.position_ticket ?? settledData.position_id ?? settledData.ticket,
+          closedTicket,
+        );
+        dealTicket = toFiniteNumber(
+          settledData.deal_ticket ?? settledData.closing_deal_ticket,
+          dealTicket,
+        );
+        orderTicket = toFiniteNumber(settledData.order_ticket, orderTicket);
+        closePrice = toFiniteNumber(
+          settledData.close_price ?? settledData.price_close ?? settledData.fill_price ?? settledData.price,
+          closePrice,
+        );
+        profit = toFiniteNumber(settledData.profit ?? settledData.realized_profit, profit);
+        commission = toFiniteNumber(settledData.commission, commission);
+        closedVolume = toFiniteNumber(
+          settledData.closed_volume ?? settledData.volume_closed ?? settledData.volume,
+          closedVolume,
+        );
+        const settledSym = String(settledData.symbol ?? '').trim().toUpperCase();
+        if (settledSym) resolvedSymbol = settledSym;
+      }
+
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+      const closeSubject = [
+        `#${closedTicket}`,
+        existingPosSide,
+        resolvedSymbol,
+        closedVolume > 0 ? formatCompactJournalNum(closedVolume) : '',
+        closePrice > 0 ? `@ ${formatCompactJournalNum(closePrice)}` : '',
+      ].filter(Boolean).join(' ');
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ticket: closedTicket,
+        ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+        ...(existingPosSide ? { side: existingPosSide } : {}),
+        ...(closedVolume > 0 ? { volume: closedVolume } : {}),
+        ...(closePrice > 0 ? { price: closePrice } : {}),
+        operationLabel: isPartialClose ? 'Position partially closed' : 'Position closed',
+        journalMessage: `${isPartialClose ? 'Position partially closed' : 'Position closed'} ${closeSubject}`.trim(),
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+
+      const closeResult: ClosePositionResult = {
+        ticket: closedTicket,
+        position_id: String(closedTicket),
+        position_ticket: closedTicket,
+        deal_ticket: dealTicket,
+        order_ticket: orderTicket,
+        ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
+        price: closePrice,
+        fill_price: closePrice,
+        close_price: closePrice,
+        profit,
+        commission,
+        closed_volume: closedVolume,
+        volume: closedVolume,
+        symbol: resolvedSymbol,
+        client_order_id: effectiveClientOrderId,
+        ...timing,
+        status: isPartialClose ? 'partial_closed' : 'closed',
+      };
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rtx:position-closed', {
+          detail: {
+            ...closeResult,
+            login: accountLogin,
+          },
+        }));
+      }
+      return closeResult;
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
           traceId: toTradeOrderTraceId(effectiveClientOrderId),
           clientOrderId: effectiveClientOrderId,
           sessionScope,
-          ticket: closedTicket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+          ticket: numericTicket,
+          ...(existingPosSymbol ? { symbol: existingPosSymbol } : {}),
           ...(existingPosSide ? { side: existingPosSide } : {}),
-          ...(closedVolume > 0 ? { volume: closedVolume } : {}),
-          ...(closePrice > 0 ? { price: closePrice } : {}),
-          operationLabel: isPartialClose ? 'Position partially closed' : 'Position closed',
-          journalMessage: `${isPartialClose ? 'Position partially closed' : 'Position closed'} ${closeSubject}`.trim(),
-          terminalStatus: 'filled',
+          ...((partialVolume ?? existingPosVolume) > 0 ? { volume: partialVolume ?? existingPosVolume } : {}),
+          operationLabel: `Position close ${terminalStatus}`,
+          journalMessage: `Position close ${terminalStatus} #${numericTicket}${existingPosSymbol ? ` ${existingPosSymbol}` : ''}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-
-        const closeResult: ClosePositionResult = {
-          ticket: closedTicket,
-          position_id: String(closedTicket),
-          position_ticket: closedTicket,
-          deal_ticket: dealTicket,
-          order_ticket: orderTicket,
-          ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
-          price: closePrice,
-          fill_price: closePrice,
-          close_price: closePrice,
-          profit,
-          commission,
-          closed_volume: closedVolume,
-          volume: closedVolume,
-          symbol: resolvedSymbol,
-          client_order_id: effectiveClientOrderId,
-          ...timing,
-          status: isPartialClose ? 'partial_closed' : 'closed',
-        };
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('rtx:position-closed', {
-            detail: {
-              ...closeResult,
-              login: accountLogin,
-            },
-          }));
-        }
-        return closeResult;
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          if (isNonRetryableBinaryTcpOrderError(err)) {
-            const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-            const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-            recordTradeOrderLatency({
-              phase: 'placement_terminal',
-              transport: 'websocket',
-              traceId: toTradeOrderTraceId(effectiveClientOrderId),
-              clientOrderId: effectiveClientOrderId,
-              sessionScope,
-              ticket: numericTicket,
-              ...(existingPosSymbol ? { symbol: existingPosSymbol } : {}),
-              ...(existingPosSide ? { side: existingPosSide } : {}),
-              ...((partialVolume ?? existingPosVolume) > 0 ? { volume: partialVolume ?? existingPosVolume } : {}),
-              operationLabel: `Position close ${terminalStatus}`,
-              journalMessage: `Position close ${terminalStatus} #${numericTicket}${existingPosSymbol ? ` ${existingPosSymbol}` : ''}`,
-              terminalStatus,
-              ...(err.code ? { errorCode: err.code } : {}),
-              ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-              totalMs: Math.max(0, terminalAtMs - intentAtMs),
-            });
-            throw toBinaryTcpApiError(err, clientOrderId);
-          }
-        } else {
-          throw err;
-        }
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
-    }
-
-    const fallbackClientOrderId = isTradeOrderUuidV4(clientOrderId)
-      ? clientOrderId
-      : createTradeOrderUuid();
-    const fallbackOptions: ClosePositionRequestOptions = {
-      ...opts,
-      ...(partialVolume !== undefined ? { volume: partialVolume } : {}),
-      client_order_id: fallbackClientOrderId,
-    };
-    try {
-      await endpoints.tradingApi.closePosition(positionId, fallbackOptions);
-      const terminalAtMs = tradeOrderNow();
-      const closeVolume = partialVolume ?? existingPosVolume;
-      const closeSubject = [
-        hasSafeNumericTicket ? `#${numericTicket}` : `#${trimmedTicket}`,
-        existingPosSide,
-        existingPosSymbol,
-        closeVolume > 0 ? formatCompactJournalNum(closeVolume) : '',
-      ].filter(Boolean).join(' ');
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(fallbackClientOrderId),
-        clientOrderId: fallbackClientOrderId,
-        sessionScope,
-        ...(hasSafeNumericTicket ? { ticket: numericTicket } : {}),
-        ...(existingPosSymbol ? { symbol: existingPosSymbol } : {}),
-        ...(existingPosSide ? { side: existingPosSide } : {}),
-        ...(closeVolume > 0 ? { volume: closeVolume } : {}),
-        operationLabel: isPartialClose ? 'Position partially closed' : 'Position closed',
-        journalMessage: `${isPartialClose ? 'Position partially closed' : 'Position closed'} ${closeSubject}`.trim(),
-        terminalStatus: 'filled',
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-    } catch (error) {
-      const terminalAtMs = tradeOrderNow();
-      const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(fallbackClientOrderId),
-        clientOrderId: fallbackClientOrderId,
-        sessionScope,
-        ...(hasSafeNumericTicket ? { ticket: numericTicket } : {}),
-        ...(existingPosSymbol ? { symbol: existingPosSymbol } : {}),
-        ...(existingPosSide ? { side: existingPosSide } : {}),
-        operationLabel: `Position close ${terminalStatus}`,
-        journalMessage: `Position close ${terminalStatus} #${hasSafeNumericTicket ? numericTicket : trimmedTicket}${existingPosSymbol ? ` ${existingPosSymbol}` : ''}`,
-        terminalStatus,
-        ...(errorCode ? { errorCode } : {}),
-        ...(errorMessage ? { errorMessage } : {}),
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      throw error;
+      throw err;
     }
   },
 
@@ -1313,7 +1504,7 @@ export const positionsApi = {
 
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
     const ticket = Number.parseInt(String(positionId), 10);
-    if (!Number.isFinite(ticket) || ticket <= 0) throw new Error('Invalid position ticket');
+    if (!Number.isSafeInteger(ticket) || ticket <= 0) throw new Error('Invalid position ticket');
 
     const extendedData = data as endpoints.ModifyPositionRequest & {
       sl?: number | null;
@@ -1328,233 +1519,246 @@ export const positionsApi = {
     const existingSymbol = typeof existingPosition?.symbol === 'string'
       ? existingPosition.symbol.trim().toUpperCase()
       : '';
-    const existingComment = String((existingPosition as { comment?: unknown } | undefined)?.comment ?? '').trim();
-    const hasCommentChange = data.comment !== undefined && data.comment.trim() !== existingComment;
-    const hasTrailingChanges = hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step);
-    const hasSlOrTpModification = rawSl !== undefined || rawTp !== undefined;
 
-    if (
-      isBinaryTcpOrderEnabled()
-      && Number.isSafeInteger(ticket)
-      && !hasTrailingChanges
-      && !hasCommentChange
-      && hasSlOrTpModification
-    ) {
-      let flags = 0;
-      let slParam: number | undefined;
-      let tpParam: number | undefined;
-      let clearSl = false;
-      let clearTp = false;
+    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+    const hasTrailingChanges = TRAILING_STOP_REST_EXCEPTION && (
+      hasNonZeroOptionalNumeric(data.trailing_stop)
+      || hasNonZeroOptionalNumeric(data.trailing_step)
+    );
 
-      if (rawSl !== undefined) {
-        if (isClearingStopValue(rawSl)) {
-          flags |= BINARY_ORDER_FLAG_CLEAR_SL;
-          clearSl = true;
-          slParam = 0;
-        } else {
-          const parsedSl = Number(rawSl);
-          if (!Number.isFinite(parsedSl) || parsedSl < 0) {
-            throw new Error('SL must be zero (disabled) or a positive finite number');
-          }
-          flags |= BINARY_ORDER_FLAG_HAS_SL;
-          slParam = parsedSl;
-        }
-      }
-
-      if (rawTp !== undefined) {
-        if (isClearingStopValue(rawTp)) {
-          flags |= BINARY_ORDER_FLAG_CLEAR_TP;
-          clearTp = true;
-          tpParam = 0;
-        } else {
-          const parsedTp = Number(rawTp);
-          if (!Number.isFinite(parsedTp) || parsedTp < 0) {
-            throw new Error('TP must be zero (disabled) or a positive finite number');
-          }
-          flags |= BINARY_ORDER_FLAG_HAS_TP;
-          tpParam = parsedTp;
-        }
-      }
-
-      const clientOrderId = createFastBinaryClientOrderId();
-      const accountLogin = tryResolveTradingLogin();
-      const binarySubmittedAtMs = Date.now();
+    if (hasTrailingChanges) {
+      const restClientOrderId = createTradeOrderUuid();
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_MODIFY_POSITION,
-          accountLogin,
-          ticket,
-          flags,
-          ...(slParam !== undefined ? { sl: slParam } : {}),
-          ...(tpParam !== undefined ? { tp: tpParam } : {}),
-          clearSl,
-          clearTp,
-          clientOrderId,
-          authToken: getAuthToken(),
+        const updated = await endpoints.tradingApi.modifyPosition(ticket, {
+          price_sl: rawSl ?? undefined,
+          price_tp: rawTp ?? undefined,
+          comment: data.comment,
+          trailing_stop: data.trailing_stop,
+          trailing_step: data.trailing_step,
         });
-
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        const timing = formatBinaryExecTiming(resp.execMicros);
-        let settledData: Record<string, unknown> | undefined;
-        if (resp.status === 202) {
-          const settled = await settleBinaryOrderCommand({
-            clientOrderId: effectiveClientOrderId,
-            submittedAtMs: binarySubmittedAtMs,
-            accountLogin,
-          });
-          settledData = (settled.position ?? {}) as Record<string, unknown>;
-        }
-
-        const resolvedTicket = toFiniteNumber(
-          settledData?.position_ticket ?? settledData?.position_id ?? settledData?.ticket,
-          resp.positionTicket > 0 ? resp.positionTicket : ticket,
-        );
-        const existingRecord = existingPosition as unknown as LooseRecord | undefined;
-        const settledSym = String(settledData?.symbol ?? '').trim().toUpperCase();
-        const resolvedSymbol = settledSym
-          || resp.symbol
-          || existingSymbol;
-        const resolvedSide: 'buy' | 'sell' = String(existingPosition?.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy';
-        const resolvedVolume = toFiniteNumber(
-          settledData?.volume ?? settledData?.quantity,
-          resp.volume > 0 ? resp.volume : toFiniteNumber(existingPosition?.volume, 0),
-        );
-        const openPrice = toFiniteNumber(
-          settledData?.price_open ?? settledData?.open_price ?? settledData?.price,
-          resp.fillPrice > 0
-            ? resp.fillPrice
-            : toFiniteNumber(existingRecord?.openPrice ?? existingRecord?.open_price ?? existingRecord?.price_open, 0),
-        );
-        const settledSl = settledData && (settledData.sl !== undefined || settledData.price_sl !== undefined)
-          ? toFiniteNumber(settledData.sl ?? settledData.price_sl, 0)
-          : undefined;
-        const settledTp = settledData && (settledData.tp !== undefined || settledData.price_tp !== undefined)
-          ? toFiniteNumber(settledData.tp ?? settledData.price_tp, 0)
-          : undefined;
-        const nextSl = rawSl !== undefined
-          ? (clearSl ? 0 : (settledSl !== undefined && settledSl > 0 ? settledSl : (resp.sl > 0 ? resp.sl : (slParam ?? 0))))
-          : (settledSl !== undefined ? settledSl : (resp.sl > 0 ? resp.sl : toFiniteNumber(existingPosition?.sl, 0)));
-        const nextTp = rawTp !== undefined
-          ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
-          : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingPosition?.tp, 0)));
-
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+        const terminalAtMs = tradeOrderNow();
+        const updatedRecord = updated as unknown as LooseRecord | undefined;
+        const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
+        const nextSl = toFiniteNumber(updatedRecord?.price_sl ?? updatedRecord?.sl, toFiniteNumber(rawSl, 0));
+        const nextTp = toFiniteNumber(updatedRecord?.price_tp ?? updatedRecord?.tp, toFiniteNumber(rawTp, 0));
         const protectionSummary = `SL: ${formatCompactJournalNum(nextSl) || '0'}, TP: ${formatCompactJournalNum(nextTp) || '0'}`;
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          ticket,
+          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+          operationLabel: 'Position modified',
+          journalMessage: `Position modified #${ticket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''} (${protectionSummary})`,
+          terminalStatus: 'filled',
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        return updated;
+      } catch (error) {
+        const terminalAtMs = tradeOrderNow();
+        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          ticket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Position modify ${terminalStatus}`,
+          journalMessage: `Position modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(errorCode ? { errorCode } : {}),
+          ...(errorMessage ? { errorMessage } : {}),
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        throw error;
+      }
+    }
+
+    let flags = 0;
+    let slParam: number | undefined;
+    let tpParam: number | undefined;
+    let clearSl = false;
+    let clearTp = false;
+
+    if (rawSl !== undefined) {
+      if (isClearingStopValue(rawSl)) {
+        flags |= BINARY_ORDER_FLAG_CLEAR_SL;
+        clearSl = true;
+        slParam = 0;
+      } else {
+        const parsedSl = Number(rawSl);
+        if (!Number.isFinite(parsedSl) || parsedSl < 0) {
+          throw new Error('SL must be zero (disabled) or a positive finite number');
+        }
+        flags |= BINARY_ORDER_FLAG_HAS_SL;
+        slParam = parsedSl;
+      }
+    }
+
+    if (rawTp !== undefined) {
+      if (isClearingStopValue(rawTp)) {
+        flags |= BINARY_ORDER_FLAG_CLEAR_TP;
+        clearTp = true;
+        tpParam = 0;
+      } else {
+        const parsedTp = Number(rawTp);
+        if (!Number.isFinite(parsedTp) || parsedTp < 0) {
+          throw new Error('TP must be zero (disabled) or a positive finite number');
+        }
+        flags |= BINARY_ORDER_FLAG_HAS_TP;
+        tpParam = parsedTp;
+      }
+    }
+
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError();
+    }
+
+    const clientOrderId = createFastBinaryClientOrderId();
+    const accountLogin = tryResolveTradingLogin();
+    const binarySubmittedAtMs = Date.now();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_MODIFY_POSITION,
+      accountLogin,
+      ticket,
+      flags,
+      ...(slParam !== undefined ? { sl: slParam } : {}),
+      ...(tpParam !== undefined ? { tp: tpParam } : {}),
+      clearSl,
+      clearTp,
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
+      try {
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options?.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const timing = formatBinaryExecTiming(resp.execMicros);
+      let settledData: Record<string, unknown> | undefined;
+      if (resp.status === 202) {
+        const settled = await settleBinaryOrderCommand({
+          clientOrderId: effectiveClientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+        settledData = (settled.position ?? {}) as Record<string, unknown>;
+      }
+
+      const resolvedTicket = toFiniteNumber(
+        settledData?.position_ticket ?? settledData?.position_id ?? settledData?.ticket,
+        resp.positionTicket > 0 ? resp.positionTicket : ticket,
+      );
+      const existingRecord = existingPosition as unknown as LooseRecord | undefined;
+      const settledSym = String(settledData?.symbol ?? '').trim().toUpperCase();
+      const resolvedSymbol = settledSym
+        || resp.symbol
+        || existingSymbol;
+      const resolvedSide: 'buy' | 'sell' = String(existingPosition?.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy';
+      const resolvedVolume = toFiniteNumber(
+        settledData?.volume ?? settledData?.quantity,
+        resp.volume > 0 ? resp.volume : toFiniteNumber(existingPosition?.volume, 0),
+      );
+      const openPrice = toFiniteNumber(
+        settledData?.price_open ?? settledData?.open_price ?? settledData?.price,
+        resp.fillPrice > 0
+          ? resp.fillPrice
+          : toFiniteNumber(existingRecord?.openPrice ?? existingRecord?.open_price ?? existingRecord?.price_open, 0),
+      );
+      const settledSl = settledData && (settledData.sl !== undefined || settledData.price_sl !== undefined)
+        ? toFiniteNumber(settledData.sl ?? settledData.price_sl, 0)
+        : undefined;
+      const settledTp = settledData && (settledData.tp !== undefined || settledData.price_tp !== undefined)
+        ? toFiniteNumber(settledData.tp ?? settledData.price_tp, 0)
+        : undefined;
+      const nextSl = rawSl !== undefined
+        ? (clearSl ? 0 : (settledSl !== undefined && settledSl > 0 ? settledSl : (resp.sl > 0 ? resp.sl : (slParam ?? 0))))
+        : (settledSl !== undefined ? settledSl : (resp.sl > 0 ? resp.sl : toFiniteNumber(existingPosition?.sl, 0)));
+      const nextTp = rawTp !== undefined
+        ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
+        : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingPosition?.tp, 0)));
+
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+      const protectionSummary = `SL: ${formatCompactJournalNum(nextSl) || '0'}, TP: ${formatCompactJournalNum(nextTp) || '0'}`;
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ticket: resolvedTicket,
+        ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+        side: resolvedSide,
+        ...(resolvedVolume > 0 ? { volume: resolvedVolume } : {}),
+        operationLabel: 'Position modified',
+        journalMessage: `Position modified #${resolvedTicket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''} (${protectionSummary})`,
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+
+      return {
+        id: String(resolvedTicket),
+        ticket: resolvedTicket,
+        position_id: String(resolvedTicket),
+        position_ticket: resolvedTicket,
+        client_order_id: effectiveClientOrderId,
+        account_login: accountLogin || toFiniteNumber(existingRecord?.account_login, 0),
+        symbol: resolvedSymbol,
+        side: resolvedSide,
+        quantity: resolvedVolume,
+        volume: resolvedVolume,
+        price: openPrice,
+        fill_price: openPrice,
+        open_price: openPrice,
+        price_open: openPrice,
+        price_sl: nextSl,
+        price_tp: nextTp,
+        sl: nextSl,
+        tp: nextTp,
+        ...timing,
+      } as endpoints.Position;
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
           traceId: toTradeOrderTraceId(effectiveClientOrderId),
           clientOrderId: effectiveClientOrderId,
           sessionScope,
-          ticket: resolvedTicket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-          side: resolvedSide,
-          ...(resolvedVolume > 0 ? { volume: resolvedVolume } : {}),
-          operationLabel: 'Position modified',
-          journalMessage: `Position modified #${resolvedTicket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''} (${protectionSummary})`,
-          terminalStatus: 'filled',
+          ticket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Position modify ${terminalStatus}`,
+          journalMessage: `Position modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-
-        return {
-          id: String(resolvedTicket),
-          ticket: resolvedTicket,
-          position_id: String(resolvedTicket),
-          position_ticket: resolvedTicket,
-          client_order_id: effectiveClientOrderId,
-          account_login: accountLogin || toFiniteNumber(existingRecord?.account_login, 0),
-          symbol: resolvedSymbol,
-          side: resolvedSide,
-          quantity: resolvedVolume,
-          volume: resolvedVolume,
-          price: openPrice,
-          fill_price: openPrice,
-          open_price: openPrice,
-          price_open: openPrice,
-          price_sl: nextSl,
-          price_tp: nextTp,
-          sl: nextSl,
-          tp: nextTp,
-          ...timing,
-        } as endpoints.Position;
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          if (isNonRetryableBinaryTcpOrderError(err)) {
-            const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-            const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-            recordTradeOrderLatency({
-              phase: 'placement_terminal',
-              transport: 'websocket',
-              traceId: toTradeOrderTraceId(effectiveClientOrderId),
-              clientOrderId: effectiveClientOrderId,
-              sessionScope,
-              ticket,
-              ...(existingSymbol ? { symbol: existingSymbol } : {}),
-              operationLabel: `Position modify ${terminalStatus}`,
-              journalMessage: `Position modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-              terminalStatus,
-              ...(err.code ? { errorCode: err.code } : {}),
-              ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-              totalMs: Math.max(0, terminalAtMs - intentAtMs),
-            });
-            throw toBinaryTcpApiError(err, clientOrderId);
-          }
-        } else {
-          throw err;
-        }
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
-    }
-
-    const restClientOrderId = createTradeOrderUuid();
-    try {
-      const updated = await endpoints.tradingApi.modifyPosition(ticket, {
-        price_sl: rawSl ?? undefined,
-        price_tp: rawTp ?? undefined,
-        comment: data.comment,
-        trailing_stop: data.trailing_stop,
-        trailing_step: data.trailing_step,
-      });
-      const terminalAtMs = tradeOrderNow();
-      const updatedRecord = updated as unknown as LooseRecord | undefined;
-      const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
-      const nextSl = toFiniteNumber(updatedRecord?.price_sl ?? updatedRecord?.sl, toFiniteNumber(rawSl, 0));
-      const nextTp = toFiniteNumber(updatedRecord?.price_tp ?? updatedRecord?.tp, toFiniteNumber(rawTp, 0));
-      const protectionSummary = `SL: ${formatCompactJournalNum(nextSl) || '0'}, TP: ${formatCompactJournalNum(nextTp) || '0'}`;
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ticket,
-        ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-        operationLabel: 'Position modified',
-        journalMessage: `Position modified #${ticket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''} (${protectionSummary})`,
-        terminalStatus: 'filled',
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      return updated;
-    } catch (error) {
-      const terminalAtMs = tradeOrderNow();
-      const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ticket,
-        ...(existingSymbol ? { symbol: existingSymbol } : {}),
-        operationLabel: `Position modify ${terminalStatus}`,
-        journalMessage: `Position modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-        terminalStatus,
-        ...(errorCode ? { errorCode } : {}),
-        ...(errorMessage ? { errorMessage } : {}),
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      throw error;
+      throw err;
     }
   },
 
@@ -1569,29 +1773,75 @@ export const positionsApi = {
     const normalizedSymbol = symbol ? requireSymbol(symbol) : undefined;
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
 
-    if (isBinaryTcpOrderEnabled() && Number.isFinite(numericLogin) && numericLogin > 0) {
-      const clientOrderId = createFastBinaryClientOrderId();
-      const bulkMode =
-        type === 'WINNERS'
-          ? BINARY_ORDER_BULK_MODE_WINNERS
-          : type === 'LOSERS'
-            ? BINARY_ORDER_BULK_MODE_LOSERS
-            : BINARY_ORDER_BULK_MODE_ALL;
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError();
+    }
+
+    const clientOrderId = createFastBinaryClientOrderId();
+    const bulkMode =
+      type === 'WINNERS'
+        ? BINARY_ORDER_BULK_MODE_WINNERS
+        : type === 'LOSERS'
+          ? BINARY_ORDER_BULK_MODE_LOSERS
+          : BINARY_ORDER_BULK_MODE_ALL;
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_CLOSE_BULK,
+      accountLogin: numericLogin,
+      orderSubType: bulkMode,
+      ...(normalizedSymbol ? { symbol: normalizedSymbol } : {}),
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_CLOSE_BULK,
-          accountLogin: numericLogin,
-          orderSubType: bulkMode,
-          ...(normalizedSymbol ? { symbol: normalizedSymbol } : {}),
-          clientOrderId,
-          authToken: getAuthToken(),
-        });
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        const closedCount = Math.max(
-          0,
-          Number(resp.orderTicket || resp.positionTicket || options?.expectedCount || 0),
-        );
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options?.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const closedCount = Math.max(
+        0,
+        Number(resp.orderTicket || resp.positionTicket || options?.expectedCount || 0),
+      );
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ...(normalizedSymbol ? { symbol: normalizedSymbol } : {}),
+        ...(resp.volume > 0 ? { volume: resp.volume } : {}),
+        operationLabel: 'Bulk positions closed',
+        journalMessage: `Bulk positions closed (${closedCount} ${type.toLowerCase()}${normalizedSymbol ? ` ${normalizedSymbol}` : ''})`,
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+      return {
+        closed: closedCount,
+        profit: resp.profit,
+        volume: resp.volume,
+        execMicros: resp.execMicros,
+        message: 'Closed ' + closedCount + ' positions',
+      };
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
@@ -1599,68 +1849,17 @@ export const positionsApi = {
           clientOrderId: effectiveClientOrderId,
           sessionScope,
           ...(normalizedSymbol ? { symbol: normalizedSymbol } : {}),
-          ...(resp.volume > 0 ? { volume: resp.volume } : {}),
-          operationLabel: 'Bulk positions closed',
-          journalMessage: `Bulk positions closed (${closedCount} ${type.toLowerCase()}${normalizedSymbol ? ` ${normalizedSymbol}` : ''})`,
-          terminalStatus: 'filled',
+          operationLabel: `Bulk close ${terminalStatus}`,
+          journalMessage: `Bulk close ${terminalStatus} (${type.toLowerCase()}${normalizedSymbol ? ` ${normalizedSymbol}` : ''})`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-        return {
-          closed: closedCount,
-          profit: resp.profit,
-          volume: resp.volume,
-          execMicros: resp.execMicros,
-          message: 'Closed ' + closedCount + ' positions',
-        };
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-          const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-          const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-          recordTradeOrderLatency({
-            phase: 'placement_terminal',
-            transport: 'websocket',
-            traceId: toTradeOrderTraceId(effectiveClientOrderId),
-            clientOrderId: effectiveClientOrderId,
-            sessionScope,
-            ...(normalizedSymbol ? { symbol: normalizedSymbol } : {}),
-            operationLabel: `Bulk close ${terminalStatus}`,
-            journalMessage: `Bulk close ${terminalStatus} (${type.toLowerCase()}${normalizedSymbol ? ` ${normalizedSymbol}` : ''})`,
-            terminalStatus,
-            ...(err.code ? { errorCode: err.code } : {}),
-            ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-            totalMs: Math.max(0, terminalAtMs - intentAtMs),
-          });
-          throw toBinaryTcpApiError(err, clientOrderId);
-        }
-        throw err;
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
+      throw err;
     }
-
-    if (type === 'ALL' && !normalizedSymbol) {
-      return apiClient.post<{ closed: number; message: string }>(
-        `/accounts/${login}/close-all`,
-        {},
-        { baseUrl: API_V2_BASE_URL }
-      );
-    }
-
-    const response = await endpoints.tradingApi.getPositions(login, { limit: 500, offset: 0 });
-    const positions = unwrapList(response, 'positions')
-      .map((position) => normalizeGatewayPositionForApp(position as unknown as LooseRecord));
-    const candidates = positions.filter((position) => {
-      if (normalizedSymbol && position.symbol !== normalizedSymbol) return false;
-      if (type === 'ALL') return true;
-      const profit = toFiniteNumber(position.profit ?? position.unrealized_pl ?? position.unrealizedPnL, 0);
-      return type === 'WINNERS' ? profit > 0 : profit < 0;
-    });
-
-    await Promise.all(candidates.map((position) => positionsApi.closePosition(position.id ?? position.ticket, { account_login: login })));
-
-    return {
-      closed: candidates.length,
-      message: `Closed ${candidates.length} ${type.toLowerCase()} position${candidates.length === 1 ? '' : 's'}`,
-    };
   },
 
   async closeBy(
@@ -1700,120 +1899,113 @@ export const positionsApi = {
         : '';
 
     const rawSuppliedId = String(options?.client_order_id ?? options?.clientOrderId ?? '').trim();
-    const clientOrderId = rawSuppliedId || (isBinaryTcpOrderEnabled() ? createFastBinaryClientOrderId() : createTradeOrderUuid());
+    if (rawSuppliedId && !isTradeOrderUuidV4(rawSuppliedId)) {
+      throw new Error('client_order_id must be a UUID v4');
+    }
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError(rawSuppliedId || undefined);
+    }
 
-    if (isBinaryTcpOrderEnabled()) {
+    const clientOrderId = rawSuppliedId || createFastBinaryClientOrderId();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_CLOSE_BY,
+      accountLogin,
+      ticket: primaryTicket,
+      otherTicket: counterpartTicket,
+      ...(existingSymbol ? { symbol: existingSymbol } : {}),
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_CLOSE_BY,
-          accountLogin,
-          ticket: primaryTicket,
-          otherTicket: counterpartTicket,
-          ...(existingSymbol ? { symbol: existingSymbol } : {}),
-          clientOrderId,
-          authToken: getAuthToken(),
-          ...(options?.signal ? { signal: options.signal } : {}),
-          ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
-        });
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        const timing = formatBinaryExecTiming(resp.execMicros);
-        const closedTicket = resp.positionTicket > 0 ? resp.positionTicket : primaryTicket;
-        const dealTicket = resp.dealTicket;
-        const orderTicket = resp.orderTicket || counterpartTicket;
-        const closePrice = resp.fillPrice;
-        const profit = resp.profit;
-        const commission = resp.commission;
-        const closedVolume = resp.volume;
-        const resolvedSymbol = resp.symbol || existingSymbol;
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, false);
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options?.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
+        }
+      }
 
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const timing = formatBinaryExecTiming(resp.execMicros);
+      const closedTicket = resp.positionTicket > 0 ? resp.positionTicket : primaryTicket;
+      const dealTicket = resp.dealTicket;
+      const orderTicket = resp.orderTicket || counterpartTicket;
+      const closePrice = resp.fillPrice;
+      const profit = resp.profit;
+      const commission = resp.commission;
+      const closedVolume = resp.volume;
+      const resolvedSymbol = resp.symbol || existingSymbol;
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, false);
+
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ticket: closedTicket,
+        ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+        ...(closedVolume > 0 ? { volume: closedVolume } : {}),
+        ...(closePrice > 0 ? { price: closePrice } : {}),
+        operationLabel: 'Close-By executed',
+        journalMessage: `Close-By #${primaryTicket} by #${counterpartTicket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''}`,
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+
+      return {
+        ticket: closedTicket,
+        position_id: String(closedTicket),
+        position_ticket: closedTicket,
+        deal_ticket: dealTicket,
+        order_ticket: orderTicket,
+        ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
+        price: closePrice,
+        fill_price: closePrice,
+        close_price: closePrice,
+        profit,
+        commission,
+        closed_volume: closedVolume,
+        volume: closedVolume,
+        symbol: resolvedSymbol,
+        client_order_id: effectiveClientOrderId,
+        ...timing,
+        status: 'closed',
+      };
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
           traceId: toTradeOrderTraceId(effectiveClientOrderId),
           clientOrderId: effectiveClientOrderId,
           sessionScope,
-          ticket: closedTicket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-          ...(closedVolume > 0 ? { volume: closedVolume } : {}),
-          ...(closePrice > 0 ? { price: closePrice } : {}),
-          operationLabel: 'Close-By executed',
-          journalMessage: `Close-By #${primaryTicket} by #${counterpartTicket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''}`,
-          terminalStatus: 'filled',
+          ticket: primaryTicket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Close-By ${terminalStatus}`,
+          journalMessage: `Close-By ${terminalStatus} #${primaryTicket} by #${counterpartTicket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-
-        return {
-          ticket: closedTicket,
-          position_id: String(closedTicket),
-          position_ticket: closedTicket,
-          deal_ticket: dealTicket,
-          order_ticket: orderTicket,
-          ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
-          price: closePrice,
-          fill_price: closePrice,
-          close_price: closePrice,
-          profit,
-          commission,
-          closed_volume: closedVolume,
-          volume: closedVolume,
-          symbol: resolvedSymbol,
-          client_order_id: effectiveClientOrderId,
-          ...timing,
-          status: 'closed',
-        };
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          if (isNonRetryableBinaryTcpOrderError(err)) {
-            throw toBinaryTcpApiError(err, clientOrderId);
-          }
-        } else {
-          throw err;
-        }
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
+      throw err;
     }
-
-    const fallbackClientOrderId = isTradeOrderUuidV4(clientOrderId)
-      ? clientOrderId
-      : createTradeOrderUuid();
-    const restResult = await apiClient.post<Record<string, unknown>>(
-      '/positions/close-by',
-      {
-        ticket: primaryTicket,
-        other_ticket: counterpartTicket,
-        ...(accountLogin > 0 ? { account_login: accountLogin } : {}),
-        client_order_id: fallbackClientOrderId,
-      },
-      { baseUrl: API_V2_BASE_URL },
-    );
-    const closedTicket = toFiniteNumber(restResult.ticket ?? restResult.position_ticket, primaryTicket);
-    const dealTicket = toFiniteNumber(restResult.deal_ticket, 0);
-    const orderTicket = toFiniteNumber(restResult.other_ticket ?? restResult.order_ticket, counterpartTicket);
-    const closePrice = toFiniteNumber(restResult.close_price ?? restResult.fill_price ?? restResult.price, 0);
-    const profit = toFiniteNumber(restResult.profit ?? restResult.realized_profit, 0);
-    const commission = toFiniteNumber(restResult.commission, 0);
-    const closedVolume = toFiniteNumber(restResult.closed_volume ?? restResult.volume, 0);
-    const resolvedSymbol = String(restResult.symbol ?? existingSymbol ?? '').trim().toUpperCase();
-    return {
-      ticket: closedTicket,
-      position_id: String(closedTicket),
-      position_ticket: closedTicket,
-      deal_ticket: dealTicket,
-      order_ticket: orderTicket,
-      ...(orderTicket > 0 ? { order_id: String(orderTicket) } : {}),
-      price: closePrice,
-      fill_price: closePrice,
-      close_price: closePrice,
-      profit,
-      commission,
-      closed_volume: closedVolume,
-      volume: closedVolume,
-      symbol: resolvedSymbol,
-      client_order_id: String(restResult.client_order_id ?? fallbackClientOrderId),
-      exec_ms: 0,
-      execMicros: 0,
-      status: 'closed',
-    };
   },
 };
 
@@ -1824,6 +2016,8 @@ export const positionsApi = {
 export interface MarketOrderPlacementOptions {
   /** Monotonic timestamp captured at the first instruction of the user action. */
   intentAtMs?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export type TradeActionTimingOptions = MarketOrderPlacementOptions;
@@ -1856,33 +2050,39 @@ export const ordersApi = {
     const volume = requireVolume(data.volume ?? data.quantity);
     const rawSl = data.price_sl !== undefined ? data.price_sl : data.sl;
     const rawTp = data.price_tp !== undefined ? data.price_tp : data.tp;
-    // Keep 0 as the app-level "disabled" value for Position mapping. The
-    // WebSocket serializer omits that sentinel on the wire because the current
-    // /ws/v2 validator rejects an explicitly present zero.
     const sl = normalizeMarketProtection(rawSl, 'SL');
     const tp = normalizeMarketProtection(rawTp, 'TP');
-    // These fields are deliberately not added to the fixed Binary TCP / WS contract.
-    // Route enriched orders through REST instead of silently dropping trade intent.
-    const hasRestOnlyFields = (typeof data.comment === 'string' && data.comment.trim() !== '')
-      || hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step)
-      || hasNonZeroOptionalNumeric(data.magic);
-    const useBinaryTcpFastPath = !hasRestOnlyFields && isBinaryTcpOrderEnabled();
 
-    // Generate exactly once per user action, or preserve a valid key supplied
-    // by an upstream retry. WS recovery and REST fallback must use this same
-    // durable key so an uncertain transport outcome cannot duplicate an order.
+    const normalizedComment = data.comment !== undefined && data.comment !== null
+      ? validateAndNormalizeOrderComment(data.comment)
+      : undefined;
+    const normalizedMagic = data.magic !== undefined && data.magic !== null
+      ? validateAndNormalizeOrderMagic(data.magic)
+      : undefined;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
+
+    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+    const hasTrailingStopException = TRAILING_STOP_REST_EXCEPTION && (
+      hasNonZeroOptionalNumeric(data.trailing_stop)
+      || hasNonZeroOptionalNumeric(data.trailing_step)
+    );
+
     const suppliedClientOrderId = typeof data.client_order_id === 'string'
       ? data.client_order_id.trim()
       : '';
     if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
       throw new Error('client_order_id must be a UUID v4');
     }
-    let clientOrderId = suppliedClientOrderId
+    if (!hasTrailingStopException && !isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError(suppliedClientOrderId || undefined);
+    }
+
+    const useBinaryTcpFastPath = !hasTrailingStopException;
+    const clientOrderId = suppliedClientOrderId
       || (useBinaryTcpFastPath ? createFastBinaryClientOrderId() : createTradeOrderUuid());
     const provisionalTicket = createProvisionalMarketOrderTicket();
     let pendingPlacementDispatched = false;
-    let terminalTransport: TradeOrderLatencyTransport = 'rest';
+    let terminalTransport: TradeOrderLatencyTransport = useBinaryTcpFastPath ? 'websocket' : 'rest';
     let binaryEnqueueStartedAtMs: number | undefined;
 
     const recordPlacementTerminal = (
@@ -1911,8 +2111,6 @@ export const ordersApi = {
         terminalStatus,
         ...(error?.code ? { errorCode: error.code } : {}),
         ...(error?.message ? { errorMessage: error.message } : {}),
-        // This is the user-visible click-to-result duration. If a caller did
-        // not provide an intent timestamp, intentAtMs safely equals API entry.
         totalMs: Math.max(0.01, terminalAtMs - baseStartMs),
       });
     };
@@ -1967,241 +2165,34 @@ export const ordersApi = {
       });
     };
 
-    const settleOrderCommand = async (
-      initialResponse: unknown,
-      submittedAtMs: number,
-      pollImmediately = false,
-      subscribeTerminal?: PollOrderCommandOptions['subscribeTerminal'],
-    ): Promise<endpoints.Position> => {
-      let lastVisibleStatus: string | null = null;
-      const command = await pollOrderCommandUntilTerminal({
-        clientOrderId,
-        initialResponse,
-        readStatus: async (id) => normalizeCommandSnapshotForPoll(
-          await endpoints.tradingApi.getOrderCommand(id),
-        ),
-        startedAtMs: submittedAtMs,
-        pollImmediately,
-        subscribeTerminal,
-        onStatus: (next) => {
-          if (
-            (next.status === 'accepted' || next.status === 'processing')
-            && next.status !== lastVisibleStatus
-          ) {
-            lastVisibleStatus = next.status;
-            dispatchPlacementState(next.status);
-          }
-        },
-        onPollError: (pollError) => {
-          console.warn('[Trade] Order command status read failed; retrying until execute_before:', pollError);
-        },
-      });
-      if (command.status !== 'filled') {
-        throw new OrderCommandTerminalError(command, clientOrderId);
-      }
-      return mapRestCommandToPosition(command, {
-        accountLogin,
-        symbol,
-        side,
-        volume,
-        sl,
-        tp,
-      });
-    };
-
-    const placeViaRest = async (reason: string): Promise<endpoints.Position> => {
-      terminalTransport = 'rest';
-      // Keep fallback-only allocations off the successful WebSocket path. The
-      // durable UUID was created once above and is reused here verbatim, so a
-      // transport-uncertain WS attempt still cannot become a duplicate order.
-      const traceId = toTradeOrderTraceId(clientOrderId);
-      const restOrder: endpoints.CreateOrderRequest = {
-        login: accountLogin,
-        client_order_id: clientOrderId,
-        symbol,
-        side,
-        type: 'market',
-        volume,
-        price_sl: rawSl,
-        price_tp: rawTp,
-        comment: data.comment,
-        trailing_stop: data.trailing_stop,
-        trailing_step: data.trailing_step,
-        magic: data.magic,
-      };
-      const restStartedAtMs = tradeOrderNow();
-      recordTradeOrderLatency({
-        phase: 'rest_started',
-        transport: 'rest',
-        traceId,
-        sessionScope,
-        symbol,
-        reason,
-        totalMs: restStartedAtMs - apiStartedAtMs,
-      });
-      try {
-        const submittedAtMs = Date.now();
-        const response = await endpoints.tradingApi.placeOrder(restOrder);
-        // Separate the HTTP response from any subsequent command polling.
-        // Otherwise a slow status-recovery path looks like a slow POST.
-        const restRespondedAtMs = tradeOrderNow();
-        recordTradeOrderLatency({
-          phase: 'rest_response',
-          transport: 'rest',
-          traceId,
-          sessionScope,
-          symbol,
-          reason,
-          restRttMs: restRespondedAtMs - restStartedAtMs,
-          totalMs: restRespondedAtMs - apiStartedAtMs,
-        });
-        const legacyPosition = readLegacyRestPosition(response);
-        let terminalPosition: endpoints.Position;
-        if (legacyPosition) {
-          terminalPosition = legacyPosition;
-        } else {
-          terminalPosition = await settleOrderCommand(response, submittedAtMs);
-        }
-        const restCompletedAtMs = tradeOrderNow();
-        recordTradeOrderLatency({
-          phase: 'rest_completed',
-          transport: 'rest',
-          traceId,
-          sessionScope,
-          symbol,
-          reason,
-          restRttMs: restCompletedAtMs - restStartedAtMs,
-          totalMs: restCompletedAtMs - apiStartedAtMs,
-        });
-        return terminalPosition;
-      } catch (error) {
-        const restFailedAtMs = tradeOrderNow();
-        recordTradeOrderLatency({
-          phase: 'rest_failed',
-          transport: 'rest',
-          traceId,
-          sessionScope,
-          symbol,
-          reason,
-          restRttMs: restFailedAtMs - restStartedAtMs,
-          totalMs: restFailedAtMs - apiStartedAtMs,
-        });
-        throw error;
-      }
-    };
-
-    // Defer TradeWebSocketClient lookup lazily so Desktop Binary TCP mode
-    // incurs zero WebSocket instantiation or connection overhead on the hot path.
-    let cachedTradeSocket: ReturnType<typeof getTradeWebSocketClient> | null = null;
-    const resolveTradeSocket = () => {
-      if (!cachedTradeSocket) {
-        cachedTradeSocket = getTradeWebSocketClient();
-      }
-      return cachedTradeSocket;
-    };
-    const isTradeSocketReady = (): boolean => {
-      const tradeSocket = resolveTradeSocket();
-      return typeof tradeSocket.isReadyForOrders === 'function'
-        ? tradeSocket.isReadyForOrders()
-        : typeof tradeSocket.isConnected === 'function' && tradeSocket.isConnected();
-    };
-
-    const placeViaTradeSocket = (): Promise<endpoints.Position> => {
-      const tradeSocket = resolveTradeSocket();
-      terminalTransport = 'websocket';
-      const wsSubmittedAtMs = Date.now();
-      return tradeSocket.placeOrder({
-          account_login: accountLogin,
-          symbol,
-          side,
-          type: 'market',
-          volume,
-          sl,
-          tp,
-        }, clientOrderId, { intentAtMs, apiStartedAtMs, sessionScope })
-        .then((filled) => mapFilledOrderToPosition(filled, {
-          accountLogin,
-          symbol,
-          side,
-          volume,
-          sl,
-          tp,
-        }))
-        .catch((error) => {
-          const socketError = error && typeof error === 'object'
-            ? error as {
-                name?: unknown;
-                code?: unknown;
-                message?: unknown;
-                status?: unknown;
-                requestId?: unknown;
-                orderWasSent?: unknown;
-              }
-            : undefined;
-          if (
-            error instanceof TradeSocketOrderRejectedError
-            || socketError?.name === 'TradeSocketOrderRejectedError'
-          ) {
-            throw new OrderCommandTerminalError({
-              status: socketError?.status === 'expired' ? 'expired' : 'rejected',
-              terminal: true,
-              clientOrderId,
-              error: {
-                code: typeof socketError?.code === 'string' ? socketError.code : undefined,
-                message: typeof socketError?.message === 'string' ? socketError.message : undefined,
-              },
-              raw: error,
-            }, clientOrderId);
-          }
-          if (socketError?.orderWasSent === true) {
-            // The create frame may already have executed. Reconcile the same
-            // idempotency key via GET for the remainder of the original
-            // command window; never submit a second create request.
-            const requestId = socketError.requestId;
-            // A failed status read does not stop the server's original order
-            // watcher. Keep accepting its correlated terminal frame while GET
-            // reconciliation runs; whichever arrives first completes the order.
-            const subscribeTerminal: PollOrderCommandOptions['subscribeTerminal'] =
-              typeof requestId === 'string' && typeof tradeSocket.onMessage === 'function'
-                ? (listener) => tradeSocket.onMessage((message) => {
-                    const frame = message as Record<string, unknown>;
-                    if (frame.request_id !== requestId || frame.client_order_id !== clientOrderId) return;
-                    if (isTerminalTradeOrderMessage(message)) listener(frame);
-                  })
-                : undefined;
-            return settleOrderCommand({
-              status: 'processing',
-              client_order_id: clientOrderId,
-            }, wsSubmittedAtMs, true, subscribeTerminal);
-          }
-          if (!isRetryableTradeSocketFailure(error)) throw error;
-          const fallbackCode = error && typeof error === 'object' && 'code' in error
-            ? String((error as { code?: unknown }).code || '').trim().toLowerCase()
-            : '';
-          return placeViaRest(fallbackCode || 'ws_transport_failure');
-        });
-    };
-
     let binaryFilledAtMs: number | undefined;
-    let executionPromise: Promise<endpoints.Position>;
+    let result: endpoints.Position;
     if (useBinaryTcpFastPath) {
-      terminalTransport = 'websocket';
       const binarySubmittedAtMs = Date.now();
       const enqueueStartedAtMs = tradeOrderNow();
       binaryEnqueueStartedAtMs = enqueueStartedAtMs;
-      const binaryOrderPromise = sendBinaryTcpOrder({
+      const binaryFlags = (sl > 0 ? BINARY_ORDER_FLAG_HAS_SL : 0)
+        | (tp > 0 ? BINARY_ORDER_FLAG_HAS_TP : 0)
+        | (hasExtras ? BINARY_ORDER_FLAG_HAS_EXTRAS : 0);
+      const binaryParams: BinaryTcpOrderParams = {
         action: BINARY_ORDER_ACTION_PLACE_MARKET,
         accountLogin,
         symbol,
         side: side === 'sell' ? BINARY_ORDER_SIDE_SELL : BINARY_ORDER_SIDE_BUY,
         orderSubType: BINARY_ORDER_SUBTYPE_MARKET,
-        flags: (sl > 0 ? BINARY_ORDER_FLAG_HAS_SL : 0) | (tp > 0 ? BINARY_ORDER_FLAG_HAS_TP : 0),
+        flags: binaryFlags,
         volume,
-        ...(sl > 0 ? { sl } : {}),
-        ...(tp > 0 ? { tp } : {}),
         clientOrderId,
         authToken: getAuthToken(),
-      });
+      };
+      if (sl > 0) binaryParams.sl = sl;
+      if (tp > 0) binaryParams.tp = tp;
+      if (normalizedComment !== undefined) binaryParams.comment = normalizedComment;
+      if (normalizedMagic !== undefined) binaryParams.magic = normalizedMagic;
+      if (options.signal) binaryParams.signal = options.signal;
+      if (options.timeoutMs !== undefined) binaryParams.timeoutMs = options.timeoutMs;
+
+      const binaryOrderPromise = sendBinaryTcpOrder(binaryParams);
       const enqueueCompletedAtMs = tradeOrderNow();
       recordTradeOrderLatency({
         phase: 'ws_enqueued',
@@ -2217,33 +2208,56 @@ export const ordersApi = {
         apiToEnqueueMs: Math.max(0, enqueueCompletedAtMs - apiStartedAtMs),
       });
 
-      executionPromise = binaryOrderPromise
-        .then(async (resp) => {
-          if (resp.status === 202 || (resp.positionTicket <= 0 && resp.orderTicket <= 0)) {
-            const settledPosition = await settleOrderCommand({
-              status: 'accepted',
-              client_order_id: resp.clientOrderId || clientOrderId,
-            }, binarySubmittedAtMs, false);
-            const settledTicket = toFiniteNumber(
-              (settledPosition as unknown as LooseRecord).ticket ?? (settledPosition as unknown as LooseRecord).id,
-              0,
-            );
-            const settledOpenPrice = toFiniteNumber(
-              (settledPosition as unknown as LooseRecord).price_open ?? (settledPosition as unknown as LooseRecord).open_price,
-              0,
-            );
-            return {
-              ...settledPosition,
-              ...(settledTicket > 0 ? {
-                position_id: String(settledTicket),
-                position_ticket: settledTicket,
-              } : {}),
-              price: settledOpenPrice,
-              fill_price: settledOpenPrice,
-              ...formatBinaryExecTiming(resp.execMicros),
-            } as endpoints.Position;
+      const pendingPlacementTimer = setTimeout(dispatchPendingPlacement, 45);
+      try {
+        let resp: DecodedBinaryOrderResp;
+        try {
+          resp = await binaryOrderPromise;
+        } catch (firstError) {
+          if (
+            isBinaryTcpOrderError(firstError)
+            && isRetryableBinaryTcpOrderError(firstError)
+            && !options.signal?.aborted
+          ) {
+            resp = await retryBinaryTcpOrderAfterFailure(firstError, binaryParams);
+          } else {
+            throw firstError;
           }
+        }
 
+        if (resp.status === 202 || (resp.positionTicket <= 0 && resp.orderTicket <= 0)) {
+          const settled = await settleBinaryOrderCommand({
+            clientOrderId: resp.clientOrderId || clientOrderId,
+            submittedAtMs: binarySubmittedAtMs,
+            accountLogin,
+          });
+          const settledPosition = mapRestCommandToPosition(settled, {
+            accountLogin,
+            symbol,
+            side,
+            volume,
+            sl,
+            tp,
+          });
+          const settledTicket = toFiniteNumber(
+            (settledPosition as unknown as LooseRecord).ticket ?? (settledPosition as unknown as LooseRecord).id,
+            0,
+          );
+          const settledOpenPrice = toFiniteNumber(
+            (settledPosition as unknown as LooseRecord).price_open ?? (settledPosition as unknown as LooseRecord).open_price,
+            0,
+          );
+          result = {
+            ...settledPosition,
+            ...(settledTicket > 0 ? {
+              position_id: String(settledTicket),
+              position_ticket: settledTicket,
+            } : {}),
+            price: settledOpenPrice,
+            fill_price: settledOpenPrice,
+            ...formatBinaryExecTiming(resp.execMicros),
+          } as endpoints.Position;
+        } else {
           const rawElapsedMs = typeof resp.completedAtPerfMs === 'number' && Number.isFinite(resp.completedAtPerfMs)
             ? Math.max(0.01, resp.completedAtPerfMs - enqueueStartedAtMs)
             : Math.max(0.01, tradeOrderNow() - enqueueStartedAtMs);
@@ -2268,7 +2282,7 @@ export const ordersApi = {
             terminalRttMs: Math.max(0.01, wireExecMs > 0 ? effectiveTotalMs : filledAtMs - enqueueCompletedAtMs),
             totalMs: Math.max(0.01, filledAtMs - enqueueStartedAtMs),
           });
-          return mapBinaryRespToPosition(resp, {
+          result = mapBinaryRespToPosition(resp, {
             accountLogin,
             symbol,
             side,
@@ -2276,99 +2290,174 @@ export const ordersApi = {
             sl,
             tp,
           });
-        })
-        .catch((error) => {
-          if (isBinaryTcpOrderError(error)) {
-            const effectiveClientOrderId = error.clientOrderId || clientOrderId;
-            if (isNonRetryableBinaryTcpOrderError(error) && error.status !== 504) {
-              binaryFilledAtMs = readBinaryErrorTerminalAtMs(error, enqueueStartedAtMs);
-              throw new OrderCommandTerminalError({
-                status: 'rejected',
-                terminal: true,
-                clientOrderId: effectiveClientOrderId,
-                error: {
-                  code: error.code || undefined,
-                  message: error.backendMessage || error.message || undefined,
-                },
-                raw: error,
-              }, effectiveClientOrderId);
-            }
-            if (error.status === 504) {
-              return settleOrderCommand({
-                status: 'processing',
-                client_order_id: effectiveClientOrderId,
-              }, binarySubmittedAtMs, true);
-            }
-            if (!isTradeOrderUuidV4(clientOrderId)) {
-              clientOrderId = createTradeOrderUuid();
-            }
-            if (isTradeSocketReady()) {
-              return placeViaTradeSocket();
-            }
-            const fallbackCode = String(error.code || 'binary_tcp_unavailable').trim().toLowerCase();
-            return placeViaRest(fallbackCode || 'binary_tcp_unavailable');
-          }
-          throw error;
-        });
-    } else if (!hasRestOnlyFields && isTradeSocketReady()) {
-      executionPromise = placeViaTradeSocket();
-    } else {
-      executionPromise = placeViaRest(hasRestOnlyFields ? 'unsupported_ws_fields' : 'socket_not_ready');
-    }
-
-    // In Desktop Binary TCP mode, fills complete in <1-30 ms, so defer the
-    // provisional 'pending' row by 45 ms to avoid a throwaway full-Toolbox React
-    // render right while the binary fill packet is in flight.
-    let pendingPlacementTimer: ReturnType<typeof setTimeout> | null = null;
-    if (useBinaryTcpFastPath) {
-      pendingPlacementTimer = setTimeout(dispatchPendingPlacement, 45);
-    } else {
-      dispatchPendingPlacement();
-    }
-
-    let result: endpoints.Position;
-    try {
-      result = await executionPromise;
-    } catch (error) {
-      if (pendingPlacementTimer !== null) {
-        clearTimeout(pendingPlacementTimer);
-        pendingPlacementTimer = null;
-      }
-      const errorRecord = error && typeof error === 'object'
-        ? error as { code?: unknown; message?: unknown }
-        : undefined;
-      const terminalStatus: TradeOrderTerminalStatus = error instanceof OrderCommandTerminalError
-        ? error.status
-        : 'failed';
-      const errorCode = error instanceof OrderCommandTerminalError
-        ? error.code
-        : typeof errorRecord?.code === 'string'
-          ? errorRecord.code
-          : undefined;
-      const errorMessage = error instanceof OrderCommandTerminalError
-        ? error.backendMessage || error.message
-        : typeof errorRecord?.message === 'string'
-          ? errorRecord.message
-          : undefined;
-      recordPlacementTerminal(terminalStatus, {
-        code: errorCode,
-        message: errorMessage,
-      }, binaryFilledAtMs);
-      if (pendingPlacementDispatched) {
-        if (error instanceof OrderCommandTerminalError) {
-          dispatchPlacementState(error.status, undefined, {
-            code: error.code,
-            message: error.backendMessage,
-          });
-        } else {
-          dispatchPlacementState('failed');
         }
-      }
-      throw error;
-    } finally {
-      if (pendingPlacementTimer !== null) {
+      } catch (rawError) {
         clearTimeout(pendingPlacementTimer);
-        pendingPlacementTimer = null;
+        let error: unknown = rawError;
+        if (isBinaryTcpOrderError(rawError)) {
+          const effectiveClientOrderId = rawError.clientOrderId || clientOrderId;
+          binaryFilledAtMs = readBinaryErrorTerminalAtMs(rawError, enqueueStartedAtMs);
+          error = toBinaryTcpApiError(rawError, effectiveClientOrderId);
+        }
+        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
+        recordPlacementTerminal(terminalStatus, {
+          code: errorCode,
+          message: errorMessage,
+        }, binaryFilledAtMs);
+        if (pendingPlacementDispatched) {
+          if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
+            dispatchPlacementState(terminalStatus, undefined, {
+              code: errorCode,
+              message: errorMessage,
+            });
+          } else {
+            dispatchPlacementState('failed', undefined, {
+              code: errorCode,
+              message: errorMessage,
+            });
+          }
+        }
+        throw error;
+      }
+      clearTimeout(pendingPlacementTimer);
+    } else {
+      // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+      const settleOrderCommand = async (
+        initialResponse: unknown,
+        submittedAtMs: number,
+        pollImmediately = false,
+      ): Promise<endpoints.Position> => {
+        let lastVisibleStatus: string | null = null;
+        const command = await pollOrderCommandUntilTerminal({
+          clientOrderId,
+          initialResponse,
+          readStatus: async (id) => normalizeCommandSnapshotForPoll(
+            await endpoints.tradingApi.getOrderCommand(id),
+          ),
+          startedAtMs: submittedAtMs,
+          pollImmediately,
+          onStatus: (next) => {
+            if (
+              (next.status === 'accepted' || next.status === 'processing')
+              && next.status !== lastVisibleStatus
+            ) {
+              lastVisibleStatus = next.status;
+              dispatchPlacementState(next.status);
+            }
+          },
+          onPollError: (pollError) => {
+            console.warn('[Trade] Order command status read failed; retrying until execute_before:', pollError);
+          },
+        });
+        if (command.status !== 'filled') {
+          throw new OrderCommandTerminalError(command, clientOrderId);
+        }
+        return mapRestCommandToPosition(command, {
+          accountLogin,
+          symbol,
+          side,
+          volume,
+          sl,
+          tp,
+        });
+      };
+
+      const placeViaTrailingRestException = async (): Promise<endpoints.Position> => {
+        terminalTransport = 'rest';
+        const reason = 'trailing_stop_rest_exception';
+        const traceId = toTradeOrderTraceId(clientOrderId);
+        const restOrder: endpoints.CreateOrderRequest = {
+          login: accountLogin,
+          client_order_id: clientOrderId,
+          symbol,
+          side,
+          type: 'market',
+          volume,
+          price_sl: rawSl,
+          price_tp: rawTp,
+          comment: normalizedComment ?? data.comment,
+          trailing_stop: data.trailing_stop,
+          trailing_step: data.trailing_step,
+          magic: typeof normalizedMagic === 'number' ? normalizedMagic : data.magic,
+        };
+        const restStartedAtMs = tradeOrderNow();
+        recordTradeOrderLatency({
+          phase: 'rest_started',
+          transport: 'rest',
+          traceId,
+          sessionScope,
+          symbol,
+          reason,
+          totalMs: restStartedAtMs - apiStartedAtMs,
+        });
+        try {
+          const submittedAtMs = Date.now();
+          const response = await endpoints.tradingApi.placeOrder(restOrder);
+          const restRespondedAtMs = tradeOrderNow();
+          recordTradeOrderLatency({
+            phase: 'rest_response',
+            transport: 'rest',
+            traceId,
+            sessionScope,
+            symbol,
+            reason,
+            restRttMs: restRespondedAtMs - restStartedAtMs,
+            totalMs: restRespondedAtMs - apiStartedAtMs,
+          });
+          const legacyPosition = readLegacyRestPosition(response);
+          const terminalPosition = legacyPosition ?? await settleOrderCommand(response, submittedAtMs);
+          const restCompletedAtMs = tradeOrderNow();
+          recordTradeOrderLatency({
+            phase: 'rest_completed',
+            transport: 'rest',
+            traceId,
+            sessionScope,
+            symbol,
+            reason,
+            restRttMs: restCompletedAtMs - restStartedAtMs,
+            totalMs: restCompletedAtMs - apiStartedAtMs,
+          });
+          return terminalPosition;
+        } catch (error) {
+          const restFailedAtMs = tradeOrderNow();
+          recordTradeOrderLatency({
+            phase: 'rest_failed',
+            transport: 'rest',
+            traceId,
+            sessionScope,
+            symbol,
+            reason,
+            restRttMs: restFailedAtMs - restStartedAtMs,
+            totalMs: restFailedAtMs - apiStartedAtMs,
+          });
+          throw error;
+        }
+      };
+
+      const executionPromise = placeViaTrailingRestException();
+      dispatchPendingPlacement();
+      try {
+        result = await executionPromise;
+      } catch (error) {
+        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
+        recordPlacementTerminal(terminalStatus, {
+          code: errorCode,
+          message: errorMessage,
+        }, binaryFilledAtMs);
+        if (pendingPlacementDispatched) {
+          if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
+            dispatchPlacementState(terminalStatus, undefined, {
+              code: errorCode,
+              message: errorMessage,
+            });
+          } else {
+            dispatchPlacementState('failed', undefined, {
+              code: errorCode,
+              message: errorMessage,
+            });
+          }
+        }
+        throw error;
       }
     }
 
@@ -2377,10 +2466,6 @@ export const ordersApi = {
       dispatchPlacementState('filled', result);
 
       if (typeof window !== 'undefined') {
-        // Publish the confirmed fill itself so Toolbox can render the new row
-        // without waiting for its next stream packet or REST read.
-        // Account + broker scope prevent a late fill from leaking into a newly
-        // selected session.
         window.dispatchEvent(new CustomEvent('rtx:new-trade-placed', {
           detail: {
             login: accountLogin,
@@ -2441,252 +2526,284 @@ export const ordersApi = {
     const rawTp = data.price_tp ?? data.tp;
     const rawExpiration = data.expiration ?? data.expiry;
 
-    const hasRestOnlyFields = (typeof data.comment === 'string' && data.comment.trim() !== '')
-      || hasNonZeroOptionalNumeric(data.trailing_stop)
+    const normalizedComment = data.comment !== undefined && data.comment !== null
+      ? validateAndNormalizeOrderComment(data.comment)
+      : undefined;
+    const normalizedMagic = data.magic !== undefined && data.magic !== null
+      ? validateAndNormalizeOrderMagic(data.magic)
+      : undefined;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
+
+    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+    const hasTrailingStopException = TRAILING_STOP_REST_EXCEPTION && (
+      hasNonZeroOptionalNumeric(data.trailing_stop)
       || hasNonZeroOptionalNumeric(data.trailing_step)
-      || hasNonZeroOptionalNumeric(data.magic);
+    );
 
-    if (!hasRestOnlyFields && isBinaryTcpOrderEnabled()) {
-      const sl = rawSl !== undefined && rawSl !== null && String(rawSl) !== '' ? Number(rawSl) : 0;
-      const tp = rawTp !== undefined && rawTp !== null && String(rawTp) !== '' ? Number(rawTp) : 0;
-      if (!Number.isFinite(sl) || sl < 0) {
-        throw new Error('SL must be zero (disabled) or a positive finite number');
-      }
-      if (!Number.isFinite(tp) || tp < 0) {
-        throw new Error('TP must be zero (disabled) or a positive finite number');
-      }
-      const expiration = normalizePendingExpiration(rawExpiration);
-
-      const suppliedClientOrderId = typeof (data as { client_order_id?: unknown }).client_order_id === 'string'
-        ? String((data as { client_order_id?: string }).client_order_id).trim()
-        : '';
-      if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
-        throw new Error('client_order_id must be a UUID v4');
-      }
-      const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
-
-      let flags = BINARY_ORDER_FLAG_HAS_PRICE;
-      if (stopLimitPrice !== undefined && stopLimitPrice > 0) flags |= BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
-      if (sl > 0) flags |= BINARY_ORDER_FLAG_HAS_SL;
-      if (tp > 0) flags |= BINARY_ORDER_FLAG_HAS_TP;
-      if (expiration > 0) flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
-
-      const binarySubmittedAtMs = Date.now();
+    if (hasTrailingStopException) {
+      const restClientOrderId = createTradeOrderUuid();
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_PLACE_PENDING,
-          accountLogin,
+        const result = await endpoints.tradingApi.placePendingOrder({
+          login: accountLogin,
           symbol,
-          side: side === 'sell' ? BINARY_ORDER_SIDE_SELL : BINARY_ORDER_SIDE_BUY,
-          orderSubType,
-          flags,
+          side,
           volume,
+          type: type as endpoints.PendingOrderRequest['type'],
           price,
-          ...(stopLimitPrice !== undefined && stopLimitPrice > 0 ? { stopLimitPrice } : {}),
-          ...(sl > 0 ? { sl } : {}),
-          ...(tp > 0 ? { tp } : {}),
-          ...(expiration > 0 ? { expiration } : {}),
-          clientOrderId,
-          authToken: getAuthToken(),
+          price_limit: stopLimitPrice,
+          price_sl: rawSl,
+          price_tp: rawTp,
+          expiration: rawExpiration,
+          comment: normalizedComment ?? data.comment,
+          trailing_stop: data.trailing_stop,
+          trailing_step: data.trailing_step,
+          magic: typeof normalizedMagic === 'number' ? normalizedMagic : data.magic,
         });
-
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        const timing = formatBinaryExecTiming(resp.execMicros);
-        let settledData: Record<string, unknown> | undefined;
-        const neededSettlement = resp.status === 202 || (resp.orderTicket <= 0 && resp.positionTicket <= 0);
-        if (neededSettlement) {
-          const settled = await settleBinaryOrderCommand({
-            clientOrderId: effectiveClientOrderId,
-            submittedAtMs: binarySubmittedAtMs,
-            accountLogin,
-          });
-          settledData = (settled.position ?? {}) as Record<string, unknown>;
-        }
-
-        const orderTicket = toFiniteNumber(
-          settledData?.order_ticket ?? settledData?.ticket ?? settledData?.id,
-          resp.orderTicket > 0 ? resp.orderTicket : resp.positionTicket,
-        );
-        const resolvedVolume = toFiniteNumber(
-          settledData?.volume ?? settledData?.quantity,
-          resp.volume > 0 ? resp.volume : volume,
-        );
-        const resolvedPrice = toFiniteNumber(
-          settledData?.price ?? settledData?.price_trigger ?? settledData?.fill_price,
-          resp.fillPrice > 0 ? resp.fillPrice : price,
-        );
-        const resolvedSl = toFiniteNumber(
-          settledData?.sl ?? settledData?.price_sl,
-          resp.sl > 0 ? resp.sl : sl,
-        );
-        const resolvedTp = toFiniteNumber(
-          settledData?.tp ?? settledData?.price_tp,
-          resp.tp > 0 ? resp.tp : tp,
-        );
-        const resolvedSymbol = requireSymbol(settledData?.symbol ?? (resp.symbol || symbol));
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, neededSettlement);
+        const terminalAtMs = tradeOrderNow();
+        const resultRecord = result as unknown as LooseRecord | undefined;
+        const orderTicket = toFiniteNumber(resultRecord?.order_ticket ?? resultRecord?.ticket ?? resultRecord?.id, 0);
         const pendingSubject = [
           orderTicket > 0 ? `#${orderTicket}` : '',
           type,
-          resolvedSymbol,
-          formatCompactJournalNum(resolvedVolume),
-          resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
+          symbol,
+          formatCompactJournalNum(volume),
+          price > 0 ? `@ ${formatCompactJournalNum(price)}` : '',
         ].filter(Boolean).join(' ');
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          ...(orderTicket > 0 ? { ticket: orderTicket } : {}),
+          symbol,
+          side,
+          orderSubType: type,
+          volume,
+          price,
+          operationLabel: 'Pending order placed',
+          journalMessage: `Pending order placed ${pendingSubject}`.trim(),
+          terminalStatus: 'filled',
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('rtx:new-trade-placed'));
+        }
+        return result;
+      } catch (error) {
+        const terminalAtMs = tradeOrderNow();
+        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          symbol,
+          side,
+          orderSubType: type,
+          volume,
+          price,
+          operationLabel: `Pending order ${terminalStatus}`,
+          journalMessage: `Pending order ${terminalStatus} ${type} ${symbol} ${formatCompactJournalNum(volume)} @ ${formatCompactJournalNum(price)}`,
+          terminalStatus,
+          ...(errorCode ? { errorCode } : {}),
+          ...(errorMessage ? { errorMessage } : {}),
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        throw error;
+      }
+    }
+
+    const sl = rawSl !== undefined && rawSl !== null && String(rawSl) !== '' ? Number(rawSl) : 0;
+    const tp = rawTp !== undefined && rawTp !== null && String(rawTp) !== '' ? Number(rawTp) : 0;
+    if (!Number.isFinite(sl) || sl < 0) {
+      throw new Error('SL must be zero (disabled) or a positive finite number');
+    }
+    if (!Number.isFinite(tp) || tp < 0) {
+      throw new Error('TP must be zero (disabled) or a positive finite number');
+    }
+    const expiration = normalizePendingExpiration(rawExpiration);
+
+    const suppliedClientOrderId = typeof (data as { client_order_id?: unknown }).client_order_id === 'string'
+      ? String((data as { client_order_id?: string }).client_order_id).trim()
+      : '';
+    if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
+      throw new Error('client_order_id must be a UUID v4');
+    }
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError(suppliedClientOrderId || undefined);
+    }
+
+    const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
+
+    let flags = BINARY_ORDER_FLAG_HAS_PRICE;
+    if (stopLimitPrice !== undefined && stopLimitPrice > 0) flags |= BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
+    if (sl > 0) flags |= BINARY_ORDER_FLAG_HAS_SL;
+    if (tp > 0) flags |= BINARY_ORDER_FLAG_HAS_TP;
+    if (expiration > 0) flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
+    if (hasExtras) flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
+
+    const binarySubmittedAtMs = Date.now();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_PLACE_PENDING,
+      accountLogin,
+      symbol,
+      side: side === 'sell' ? BINARY_ORDER_SIDE_SELL : BINARY_ORDER_SIDE_BUY,
+      orderSubType,
+      flags,
+      volume,
+      price,
+      ...(stopLimitPrice !== undefined && stopLimitPrice > 0 ? { stopLimitPrice } : {}),
+      ...(sl > 0 ? { sl } : {}),
+      ...(tp > 0 ? { tp } : {}),
+      ...(expiration > 0 ? { expiration } : {}),
+      ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
+      ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
+      try {
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const timing = formatBinaryExecTiming(resp.execMicros);
+      let settledData: Record<string, unknown> | undefined;
+      const neededSettlement = resp.status === 202 || (resp.orderTicket <= 0 && resp.positionTicket <= 0);
+      if (neededSettlement) {
+        const settled = await settleBinaryOrderCommand({
+          clientOrderId: effectiveClientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+        settledData = (settled.position ?? {}) as Record<string, unknown>;
+      }
+
+      const orderTicket = toFiniteNumber(
+        settledData?.order_ticket ?? settledData?.ticket ?? settledData?.id,
+        resp.orderTicket > 0 ? resp.orderTicket : resp.positionTicket,
+      );
+      const resolvedVolume = toFiniteNumber(
+        settledData?.volume ?? settledData?.quantity,
+        resp.volume > 0 ? resp.volume : volume,
+      );
+      const resolvedPrice = toFiniteNumber(
+        settledData?.price ?? settledData?.price_trigger ?? settledData?.fill_price,
+        resp.fillPrice > 0 ? resp.fillPrice : price,
+      );
+      const resolvedSl = toFiniteNumber(
+        settledData?.sl ?? settledData?.price_sl,
+        resp.sl > 0 ? resp.sl : sl,
+      );
+      const resolvedTp = toFiniteNumber(
+        settledData?.tp ?? settledData?.price_tp,
+        resp.tp > 0 ? resp.tp : tp,
+      );
+      const resolvedSymbol = requireSymbol(settledData?.symbol ?? (resp.symbol || symbol));
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, neededSettlement);
+      const pendingSubject = [
+        orderTicket > 0 ? `#${orderTicket}` : '',
+        type,
+        resolvedSymbol,
+        formatCompactJournalNum(resolvedVolume),
+        resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
+      ].filter(Boolean).join(' ');
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ...(orderTicket > 0 ? { ticket: orderTicket } : {}),
+        symbol: resolvedSymbol,
+        side,
+        orderSubType: type,
+        volume: resolvedVolume,
+        price: resolvedPrice,
+        operationLabel: 'Pending order placed',
+        journalMessage: `Pending order placed ${pendingSubject}`.trim(),
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+
+      const result: endpoints.Order = {
+        ...(orderTicket > 0 ? {
+          id: String(orderTicket),
+          ticket: orderTicket,
+          order_id: String(orderTicket),
+          order_ticket: orderTicket,
+        } : {}),
+        client_order_id: effectiveClientOrderId,
+        account_login: accountLogin,
+        symbol: resolvedSymbol,
+        type,
+        side,
+        quantity: resolvedVolume,
+        volume: resolvedVolume,
+        price: resolvedPrice,
+        fill_price: resolvedPrice,
+        ...(stopLimitPrice !== undefined ? {
+          price_limit: stopLimitPrice,
+          stop_limit_price: stopLimitPrice,
+        } : {}),
+        price_sl: resolvedSl,
+        price_tp: resolvedTp,
+        sl: resolvedSl,
+        tp: resolvedTp,
+        ...(expiration > 0 ? { expiration, expiry: expiration } : {}),
+        ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
+        ...(normalizedMagic !== undefined ? { magic: Number(normalizedMagic) } : {}),
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        time_create: Math.floor(Date.now() / 1000),
+        ...timing,
+      } as endpoints.Order;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rtx:new-trade-placed'));
+      }
+      return result;
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
           traceId: toTradeOrderTraceId(effectiveClientOrderId),
           clientOrderId: effectiveClientOrderId,
           sessionScope,
-          ...(orderTicket > 0 ? { ticket: orderTicket } : {}),
-          symbol: resolvedSymbol,
+          symbol,
           side,
           orderSubType: type,
-          volume: resolvedVolume,
-          price: resolvedPrice,
-          operationLabel: 'Pending order placed',
-          journalMessage: `Pending order placed ${pendingSubject}`.trim(),
-          terminalStatus: 'filled',
+          volume,
+          price,
+          operationLabel: `Pending order ${terminalStatus}`,
+          journalMessage: `Pending order ${terminalStatus} ${type} ${symbol} ${formatCompactJournalNum(volume)} @ ${formatCompactJournalNum(price)}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-
-        const result: endpoints.Order = {
-          ...(orderTicket > 0 ? {
-            id: String(orderTicket),
-            ticket: orderTicket,
-            order_id: String(orderTicket),
-            order_ticket: orderTicket,
-          } : {}),
-          client_order_id: effectiveClientOrderId,
-          account_login: accountLogin,
-          symbol: resolvedSymbol,
-          type,
-          side,
-          quantity: resolvedVolume,
-          volume: resolvedVolume,
-          price: resolvedPrice,
-          fill_price: resolvedPrice,
-          ...(stopLimitPrice !== undefined ? {
-            price_limit: stopLimitPrice,
-            stop_limit_price: stopLimitPrice,
-          } : {}),
-          price_sl: resolvedSl,
-          price_tp: resolvedTp,
-          sl: resolvedSl,
-          tp: resolvedTp,
-          ...(expiration > 0 ? { expiration, expiry: expiration } : {}),
-          status: 'pending',
-          created_at: new Date().toISOString(),
-          time_create: Math.floor(Date.now() / 1000),
-          ...timing,
-        } as endpoints.Order;
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('rtx:new-trade-placed'));
-        }
-        return result;
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          if (isNonRetryableBinaryTcpOrderError(err)) {
-            const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-            const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-            recordTradeOrderLatency({
-              phase: 'placement_terminal',
-              transport: 'websocket',
-              traceId: toTradeOrderTraceId(effectiveClientOrderId),
-              clientOrderId: effectiveClientOrderId,
-              sessionScope,
-              symbol,
-              side,
-              orderSubType: type,
-              volume,
-              price,
-              operationLabel: `Pending order ${terminalStatus}`,
-              journalMessage: `Pending order ${terminalStatus} ${type} ${symbol} ${formatCompactJournalNum(volume)} @ ${formatCompactJournalNum(price)}`,
-              terminalStatus,
-              ...(err.code ? { errorCode: err.code } : {}),
-              ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-              totalMs: Math.max(0, terminalAtMs - intentAtMs),
-            });
-            throw toBinaryTcpApiError(err, clientOrderId);
-          }
-        } else {
-          throw err;
-        }
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
-    }
-
-    const restClientOrderId = createTradeOrderUuid();
-    try {
-      const result = await endpoints.tradingApi.placePendingOrder({
-        login: accountLogin,
-        symbol,
-        side,
-        volume,
-        type: type as endpoints.PendingOrderRequest['type'],
-        price,
-        price_limit: stopLimitPrice,
-        price_sl: rawSl,
-        price_tp: rawTp,
-        expiration: rawExpiration,
-        comment: data.comment,
-        trailing_stop: data.trailing_stop,
-        trailing_step: data.trailing_step,
-        magic: data.magic,
-      });
-      const terminalAtMs = tradeOrderNow();
-      const resultRecord = result as unknown as LooseRecord | undefined;
-      const orderTicket = toFiniteNumber(resultRecord?.order_ticket ?? resultRecord?.ticket ?? resultRecord?.id, 0);
-      const pendingSubject = [
-        orderTicket > 0 ? `#${orderTicket}` : '',
-        type,
-        symbol,
-        formatCompactJournalNum(volume),
-        price > 0 ? `@ ${formatCompactJournalNum(price)}` : '',
-      ].filter(Boolean).join(' ');
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ...(orderTicket > 0 ? { ticket: orderTicket } : {}),
-        symbol,
-        side,
-        orderSubType: type,
-        volume,
-        price,
-        operationLabel: 'Pending order placed',
-        journalMessage: `Pending order placed ${pendingSubject}`.trim(),
-        terminalStatus: 'filled',
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('rtx:new-trade-placed'));
-      }
-      return result;
-    } catch (error) {
-      const terminalAtMs = tradeOrderNow();
-      const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        symbol,
-        side,
-        orderSubType: type,
-        volume,
-        price,
-        operationLabel: `Pending order ${terminalStatus}`,
-        journalMessage: `Pending order ${terminalStatus} ${type} ${symbol} ${formatCompactJournalNum(volume)} @ ${formatCompactJournalNum(price)}`,
-        terminalStatus,
-        ...(errorCode ? { errorCode } : {}),
-        ...(errorMessage ? { errorMessage } : {}),
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      throw error;
+      throw err;
     }
   },
 
@@ -2702,7 +2819,7 @@ export const ordersApi = {
   ): Promise<void> {
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
     const ticket = Number.parseInt(String(orderId), 10);
-    if (!Number.isFinite(ticket) || ticket <= 0) throw new Error('Invalid pending order ticket');
+    if (!Number.isSafeInteger(ticket) || ticket <= 0) throw new Error('Invalid pending order ticket');
 
     const storeState = useAppStore.getState() as unknown as {
       orders?: Array<Record<string, unknown>>;
@@ -2718,28 +2835,67 @@ export const ordersApi = {
       ? existingOrder.symbol.trim().toUpperCase()
       : '';
 
-    if (isBinaryTcpOrderEnabled() && Number.isSafeInteger(ticket)) {
-      const clientOrderId = createFastBinaryClientOrderId();
-      const accountLogin = tryResolveTradingLogin();
-      const binarySubmittedAtMs = Date.now();
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError();
+    }
+
+    const clientOrderId = createFastBinaryClientOrderId();
+    const accountLogin = tryResolveTradingLogin();
+    const binarySubmittedAtMs = Date.now();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_CANCEL_PENDING,
+      accountLogin,
+      ticket,
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
+    try {
+      let resp: DecodedBinaryOrderResp;
       try {
-        const resp = await sendBinaryTcpOrder({
-          action: BINARY_ORDER_ACTION_CANCEL_PENDING,
-          accountLogin,
-          ticket,
-          clientOrderId,
-          authToken: getAuthToken(),
-        });
-        const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-        if (resp.status === 202) {
-          await settleBinaryOrderCommand({
-            clientOrderId: effectiveClientOrderId,
-            submittedAtMs: binarySubmittedAtMs,
-            accountLogin,
-          });
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
         }
-        const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
-        const resolvedSymbol = resp.symbol || existingSymbol;
+      }
+
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      if (resp.status === 202) {
+        await settleBinaryOrderCommand({
+          clientOrderId: effectiveClientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+      }
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
+      const resolvedSymbol = resp.symbol || existingSymbol;
+      recordTradeOrderLatency({
+        phase: 'placement_terminal',
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
+        sessionScope,
+        ticket,
+        ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+        operationLabel: 'Pending order cancelled',
+        journalMessage: `Pending order cancelled #${ticket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''}`,
+        terminalStatus: 'filled',
+        totalMs: Math.max(0, terminalAtMs - intentAtMs),
+      });
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
         recordTradeOrderLatency({
           phase: 'placement_terminal',
           transport: 'websocket',
@@ -2747,78 +2903,17 @@ export const ordersApi = {
           clientOrderId: effectiveClientOrderId,
           sessionScope,
           ticket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-          operationLabel: 'Pending order cancelled',
-          journalMessage: `Pending order cancelled #${ticket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''}`,
-          terminalStatus: 'filled',
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Pending order cancel ${terminalStatus}`,
+          journalMessage: `Pending order cancel ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
           totalMs: Math.max(0, terminalAtMs - intentAtMs),
         });
-        return;
-      } catch (err) {
-        if (isBinaryTcpOrderError(err)) {
-          if (isNonRetryableBinaryTcpOrderError(err)) {
-            const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-            const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-            const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-            recordTradeOrderLatency({
-              phase: 'placement_terminal',
-              transport: 'websocket',
-              traceId: toTradeOrderTraceId(effectiveClientOrderId),
-              clientOrderId: effectiveClientOrderId,
-              sessionScope,
-              ticket,
-              ...(existingSymbol ? { symbol: existingSymbol } : {}),
-              operationLabel: `Pending order cancel ${terminalStatus}`,
-              journalMessage: `Pending order cancel ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-              terminalStatus,
-              ...(err.code ? { errorCode: err.code } : {}),
-              ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-              totalMs: Math.max(0, terminalAtMs - intentAtMs),
-            });
-            throw toBinaryTcpApiError(err, clientOrderId);
-          }
-        } else {
-          throw err;
-        }
+        throw toBinaryTcpApiError(err, clientOrderId);
       }
-    }
-
-    const restClientOrderId = createTradeOrderUuid();
-    try {
-      await endpoints.tradingApi.cancelOrder(ticket);
-      const terminalAtMs = tradeOrderNow();
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ticket,
-        ...(existingSymbol ? { symbol: existingSymbol } : {}),
-        operationLabel: 'Pending order cancelled',
-        journalMessage: `Pending order cancelled #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-        terminalStatus: 'filled',
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-    } catch (error) {
-      const terminalAtMs = tradeOrderNow();
-      const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ticket,
-        ...(existingSymbol ? { symbol: existingSymbol } : {}),
-        operationLabel: `Pending order cancel ${terminalStatus}`,
-        journalMessage: `Pending order cancel ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-        terminalStatus,
-        ...(errorCode ? { errorCode } : {}),
-        ...(errorMessage ? { errorMessage } : {}),
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      throw error;
+      throw err;
     }
   },
 
@@ -2829,7 +2924,7 @@ export const ordersApi = {
   ): Promise<endpoints.Order> {
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
     const ticket = Number.parseInt(String(orderId), 10);
-    if (!Number.isFinite(ticket) || ticket <= 0) throw new Error('Invalid pending order ticket');
+    if (!Number.isSafeInteger(ticket) || ticket <= 0) throw new Error('Invalid pending order ticket');
 
     const storeState = useAppStore.getState() as unknown as {
       orders?: Array<Record<string, unknown>>;
@@ -2844,300 +2939,332 @@ export const ordersApi = {
     const existingSymbol = typeof existingOrder?.symbol === 'string'
       ? existingOrder.symbol.trim().toUpperCase()
       : '';
-    const existingComment = String(existingOrder?.comment ?? '').trim();
-    const hasCommentChange = data.comment !== undefined && data.comment.trim() !== existingComment;
-    const hasTrailingChanges = hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step);
+
+    const extendedModifyData = data as endpoints.ModifyPendingOrderRequest & {
+      magic?: number | bigint | null;
+    };
+    const normalizedComment = data.comment !== undefined && data.comment !== null
+      ? validateAndNormalizeOrderComment(data.comment)
+      : undefined;
+    const normalizedMagic = extendedModifyData.magic !== undefined && extendedModifyData.magic !== null
+      ? validateAndNormalizeOrderMagic(extendedModifyData.magic)
+      : undefined;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
+
+    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
+    const hasTrailingChanges = TRAILING_STOP_REST_EXCEPTION && (
+      hasNonZeroOptionalNumeric(data.trailing_stop)
+      || hasNonZeroOptionalNumeric(data.trailing_step)
+    );
 
     const rawStopLimit = resolveRawStopLimitPrice(data);
     const rawSl = data.price_sl !== undefined ? data.price_sl : data.sl;
     const rawTp = data.price_tp !== undefined ? data.price_tp : data.tp;
     const rawExpiration = data.expiration !== undefined ? data.expiration : data.expiry;
-    const hasBinarySupportedChanges = data.price !== undefined
-      || rawStopLimit !== undefined
-      || rawSl !== undefined
-      || rawTp !== undefined
-      || rawExpiration !== undefined;
 
-    if (
-      isBinaryTcpOrderEnabled()
-      && Number.isSafeInteger(ticket)
-      && !hasCommentChange
-      && !hasTrailingChanges
-      && hasBinarySupportedChanges
-    ) {
-      let flags = 0;
-      let priceParam: number | undefined;
-      let stopLimitParam: number | undefined;
-      let slParam: number | undefined;
-      let tpParam: number | undefined;
-      let expirationParam: number | undefined;
-      let clearSl = false;
-      let clearTp = false;
-
-      if (data.price !== undefined) {
-        const parsedPrice = requirePendingPrice(data.price, 'Pending order price');
-        flags |= BINARY_ORDER_FLAG_HAS_PRICE;
-        priceParam = parsedPrice;
-      }
-
-      if (rawStopLimit !== undefined && rawStopLimit !== null && rawStopLimit !== '') {
-        const parsedLimit = Number(rawStopLimit);
-        if (!Number.isFinite(parsedLimit) || parsedLimit < 0) {
-          throw new Error('Pending order stop-limit price must be non-negative');
-        }
-        if (parsedLimit > 0) {
-          flags |= BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
-        }
-        stopLimitParam = parsedLimit;
-      }
-
-      if (rawSl !== undefined) {
-        if (isClearingStopValue(rawSl)) {
-          flags |= BINARY_ORDER_FLAG_CLEAR_SL;
-          clearSl = true;
-          slParam = 0;
-        } else {
-          const parsedSl = Number(rawSl);
-          if (!Number.isFinite(parsedSl) || parsedSl < 0) {
-            throw new Error('SL must be zero (disabled) or a positive finite number');
-          }
-          flags |= BINARY_ORDER_FLAG_HAS_SL;
-          slParam = parsedSl;
-        }
-      }
-
-      if (rawTp !== undefined) {
-        if (isClearingStopValue(rawTp)) {
-          flags |= BINARY_ORDER_FLAG_CLEAR_TP;
-          clearTp = true;
-          tpParam = 0;
-        } else {
-          const parsedTp = Number(rawTp);
-          if (!Number.isFinite(parsedTp) || parsedTp < 0) {
-            throw new Error('TP must be zero (disabled) or a positive finite number');
-          }
-          flags |= BINARY_ORDER_FLAG_HAS_TP;
-          tpParam = parsedTp;
-        }
-      }
-
-      if (rawExpiration !== undefined && rawExpiration !== null && String(rawExpiration) !== '') {
-        const parsedExp = normalizePendingExpiration(rawExpiration);
-        if (parsedExp > 0) {
-          flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
-          expirationParam = parsedExp;
-        }
-      }
-
-      if (flags !== 0) {
-        const clientOrderId = createFastBinaryClientOrderId();
-        const accountLogin = tryResolveTradingLogin();
-        const binarySubmittedAtMs = Date.now();
-        try {
-          const resp = await sendBinaryTcpOrder({
-            action: BINARY_ORDER_ACTION_MODIFY_PENDING,
-            accountLogin,
-            ticket,
-            flags,
-            ...(priceParam !== undefined ? { price: priceParam } : {}),
-            ...(stopLimitParam !== undefined && stopLimitParam > 0 ? { stopLimitPrice: stopLimitParam } : {}),
-            ...(slParam !== undefined ? { sl: slParam } : {}),
-            ...(tpParam !== undefined ? { tp: tpParam } : {}),
-            ...(expirationParam !== undefined && expirationParam > 0 ? { expiration: expirationParam } : {}),
-            clearSl,
-            clearTp,
-            clientOrderId,
-            authToken: getAuthToken(),
-          });
-
-          const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
-          const timing = formatBinaryExecTiming(resp.execMicros);
-          let settledData: Record<string, unknown> | undefined;
-          if (resp.status === 202) {
-            const settled = await settleBinaryOrderCommand({
-              clientOrderId: effectiveClientOrderId,
-              submittedAtMs: binarySubmittedAtMs,
-              accountLogin,
-            });
-            settledData = (settled.position ?? {}) as Record<string, unknown>;
-          }
-
-          const resolvedTicket = toFiniteNumber(
-            settledData?.order_ticket ?? settledData?.ticket ?? settledData?.id,
-            resp.orderTicket > 0 ? resp.orderTicket : ticket,
-          );
-          const settledSym = String(settledData?.symbol ?? '').trim().toUpperCase();
-          const resolvedSymbol = settledSym
-            || resp.symbol
-            || existingSymbol;
-          const resolvedSide: 'buy' | 'sell' = String(existingOrder?.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy';
-          const resolvedType = typeof existingOrder?.type === 'string' && existingOrder.type ? existingOrder.type : 'buy_limit';
-          const resolvedVolume = toFiniteNumber(
-            settledData?.volume ?? settledData?.quantity,
-            resp.volume > 0 ? resp.volume : toFiniteNumber(existingOrder?.volume ?? existingOrder?.quantity, 0),
-          );
-          const resolvedPrice = toFiniteNumber(
-            settledData?.price ?? settledData?.price_trigger ?? settledData?.fill_price,
-            resp.fillPrice > 0 ? resp.fillPrice : (priceParam ?? toFiniteNumber(existingOrder?.price, 0)),
-          );
-          const settledSl = settledData && (settledData.sl !== undefined || settledData.price_sl !== undefined)
-            ? toFiniteNumber(settledData.sl ?? settledData.price_sl, 0)
-            : undefined;
-          const settledTp = settledData && (settledData.tp !== undefined || settledData.price_tp !== undefined)
-            ? toFiniteNumber(settledData.tp ?? settledData.price_tp, 0)
-            : undefined;
-          const nextSl = rawSl !== undefined
-            ? (clearSl ? 0 : (settledSl !== undefined && settledSl > 0 ? settledSl : (resp.sl > 0 ? resp.sl : (slParam ?? 0))))
-            : (settledSl !== undefined ? settledSl : (resp.sl > 0 ? resp.sl : toFiniteNumber(existingOrder?.price_sl ?? existingOrder?.sl, 0)));
-          const nextTp = rawTp !== undefined
-            ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
-            : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingOrder?.price_tp ?? existingOrder?.tp, 0)));
-
-          const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
-          const modifySubject = [
-            `#${resolvedTicket}`,
-            resolvedSymbol,
-            resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
-          ].filter(Boolean).join(' ');
-          recordTradeOrderLatency({
-            phase: 'placement_terminal',
-            transport: 'websocket',
-            traceId: toTradeOrderTraceId(effectiveClientOrderId),
-            clientOrderId: effectiveClientOrderId,
-            sessionScope,
-            ticket: resolvedTicket,
-            ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-            side: resolvedSide,
-            orderSubType: resolvedType,
-            ...(resolvedVolume > 0 ? { volume: resolvedVolume } : {}),
-            ...(resolvedPrice > 0 ? { price: resolvedPrice } : {}),
-            operationLabel: 'Pending order modified',
-            journalMessage: `Pending order modified ${modifySubject}`.trim(),
-            terminalStatus: 'filled',
-            totalMs: Math.max(0, terminalAtMs - intentAtMs),
-          });
-
-          return {
-            id: String(resolvedTicket),
-            ticket: resolvedTicket,
-            order_id: String(resolvedTicket),
-            order_ticket: resolvedTicket,
-            client_order_id: effectiveClientOrderId,
-            account_login: accountLogin || toFiniteNumber(existingOrder?.account_login, 0),
-            symbol: resolvedSymbol,
-            type: resolvedType,
-            side: resolvedSide,
-            quantity: resolvedVolume,
-            volume: resolvedVolume,
-            price: resolvedPrice,
-            fill_price: resolvedPrice,
-            ...(stopLimitParam !== undefined ? {
-              price_limit: stopLimitParam,
-              stop_limit_price: stopLimitParam,
-            } : {}),
-            price_sl: nextSl,
-            price_tp: nextTp,
-            sl: nextSl,
-            tp: nextTp,
-            ...(expirationParam !== undefined ? {
-              expiration: expirationParam,
-              expiry: expirationParam,
-            } : {}),
-            status: 'pending',
-            ...timing,
-          } as endpoints.Order;
-        } catch (err) {
-          if (isBinaryTcpOrderError(err)) {
-            if (isNonRetryableBinaryTcpOrderError(err)) {
-              const effectiveClientOrderId = err.clientOrderId || clientOrderId;
-              const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
-              const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
-              recordTradeOrderLatency({
-                phase: 'placement_terminal',
-                transport: 'websocket',
-                traceId: toTradeOrderTraceId(effectiveClientOrderId),
-                clientOrderId: effectiveClientOrderId,
-                sessionScope,
-                ticket,
-                ...(existingSymbol ? { symbol: existingSymbol } : {}),
-                operationLabel: `Pending order modify ${terminalStatus}`,
-                journalMessage: `Pending order modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-                terminalStatus,
-                ...(err.code ? { errorCode: err.code } : {}),
-                ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
-                totalMs: Math.max(0, terminalAtMs - intentAtMs),
-              });
-              throw toBinaryTcpApiError(err, clientOrderId);
-            }
-          } else {
-            throw err;
-          }
-        }
+    if (hasTrailingChanges) {
+      const restClientOrderId = createTradeOrderUuid();
+      try {
+        const updated = await endpoints.tradingApi.modifyPendingOrder(ticket, {
+          price: data.price,
+          price_limit: rawStopLimit !== undefined && rawStopLimit !== null && rawStopLimit !== ''
+            ? Number(rawStopLimit)
+            : data.price_limit,
+          ...(data.time_in_force !== undefined ? { time_in_force: data.time_in_force } : {}),
+          ...(data.state_version !== undefined ? { state_version: data.state_version } : {}),
+          price_sl: data.price_sl ?? data.sl,
+          price_tp: data.price_tp ?? data.tp,
+          expiration: data.expiration !== undefined ? data.expiration : data.expiry,
+          expiry: data.expiry !== undefined ? data.expiry : data.expiration,
+          comment: normalizedComment ?? data.comment,
+          trailing_stop: data.trailing_stop,
+          trailing_step: data.trailing_step,
+          client_order_id: data.client_order_id || restClientOrderId,
+        });
+        const terminalAtMs = tradeOrderNow();
+        const updatedRecord = updated as unknown as LooseRecord | undefined;
+        const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
+        const resolvedPrice = toFiniteNumber(updatedRecord?.price, toFiniteNumber(data.price, 0));
+        const modifySubject = [
+          `#${ticket}`,
+          resolvedSymbol,
+          resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
+        ].filter(Boolean).join(' ');
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          ticket,
+          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+          ...(resolvedPrice > 0 ? { price: resolvedPrice } : {}),
+          operationLabel: 'Pending order modified',
+          journalMessage: `Pending order modified ${modifySubject}`.trim(),
+          terminalStatus: 'filled',
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        return updated;
+      } catch (error) {
+        const terminalAtMs = tradeOrderNow();
+        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'rest',
+          traceId: toTradeOrderTraceId(restClientOrderId),
+          clientOrderId: restClientOrderId,
+          sessionScope,
+          ticket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Pending order modify ${terminalStatus}`,
+          journalMessage: `Pending order modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(errorCode ? { errorCode } : {}),
+          ...(errorMessage ? { errorMessage } : {}),
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        throw error;
       }
     }
 
-    const restClientOrderId = createTradeOrderUuid();
+    let flags = 0;
+    let priceParam: number | undefined;
+    let stopLimitParam: number | undefined;
+    let slParam: number | undefined;
+    let tpParam: number | undefined;
+    let expirationParam: number | undefined;
+    let clearSl = false;
+    let clearTp = false;
+
+    if (data.price !== undefined) {
+      const parsedPrice = requirePendingPrice(data.price, 'Pending order price');
+      flags |= BINARY_ORDER_FLAG_HAS_PRICE;
+      priceParam = parsedPrice;
+    }
+
+    if (rawStopLimit !== undefined && rawStopLimit !== null && rawStopLimit !== '') {
+      const parsedLimit = Number(rawStopLimit);
+      if (!Number.isFinite(parsedLimit) || parsedLimit < 0) {
+        throw new Error('Pending order stop-limit price must be non-negative');
+      }
+      if (parsedLimit > 0) {
+        flags |= BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
+      }
+      stopLimitParam = parsedLimit;
+    }
+
+    if (rawSl !== undefined) {
+      if (isClearingStopValue(rawSl)) {
+        flags |= BINARY_ORDER_FLAG_CLEAR_SL;
+        clearSl = true;
+        slParam = 0;
+      } else {
+        const parsedSl = Number(rawSl);
+        if (!Number.isFinite(parsedSl) || parsedSl < 0) {
+          throw new Error('SL must be zero (disabled) or a positive finite number');
+        }
+        flags |= BINARY_ORDER_FLAG_HAS_SL;
+        slParam = parsedSl;
+      }
+    }
+
+    if (rawTp !== undefined) {
+      if (isClearingStopValue(rawTp)) {
+        flags |= BINARY_ORDER_FLAG_CLEAR_TP;
+        clearTp = true;
+        tpParam = 0;
+      } else {
+        const parsedTp = Number(rawTp);
+        if (!Number.isFinite(parsedTp) || parsedTp < 0) {
+          throw new Error('TP must be zero (disabled) or a positive finite number');
+        }
+        flags |= BINARY_ORDER_FLAG_HAS_TP;
+        tpParam = parsedTp;
+      }
+    }
+
+    if (rawExpiration !== undefined && rawExpiration !== null && String(rawExpiration) !== '') {
+      const parsedExp = normalizePendingExpiration(rawExpiration);
+      if (parsedExp > 0) {
+        flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
+        expirationParam = parsedExp;
+      }
+    }
+
+    if (hasExtras) {
+      flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
+    }
+
+    const suppliedClientOrderId = typeof data.client_order_id === 'string'
+      ? data.client_order_id.trim()
+      : '';
+    if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
+      throw new Error('client_order_id must be a UUID v4');
+    }
+    if (!isBinaryTcpOrderEnabled()) {
+      throw createFastChannelNotConfiguredError(suppliedClientOrderId || undefined);
+    }
+
+    const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
+    const accountLogin = tryResolveTradingLogin();
+    const binarySubmittedAtMs = Date.now();
+    const binaryParams: BinaryTcpOrderParams = {
+      action: BINARY_ORDER_ACTION_MODIFY_PENDING,
+      accountLogin,
+      ticket,
+      flags,
+      ...(priceParam !== undefined ? { price: priceParam } : {}),
+      ...(stopLimitParam !== undefined && stopLimitParam > 0 ? { stopLimitPrice: stopLimitParam } : {}),
+      ...(slParam !== undefined ? { sl: slParam } : {}),
+      ...(tpParam !== undefined ? { tp: tpParam } : {}),
+      ...(expirationParam !== undefined && expirationParam > 0 ? { expiration: expirationParam } : {}),
+      ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
+      ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
+      clearSl,
+      clearTp,
+      clientOrderId,
+      authToken: getAuthToken(),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    };
+
     try {
-      const updated = await endpoints.tradingApi.modifyPendingOrder(ticket, {
-        price: data.price,
-        price_limit: rawStopLimit !== undefined && rawStopLimit !== null && rawStopLimit !== ''
-          ? Number(rawStopLimit)
-          : data.price_limit,
-        ...(data.time_in_force !== undefined ? { time_in_force: data.time_in_force } : {}),
-        ...(data.state_version !== undefined ? { state_version: data.state_version } : {}),
-        price_sl: data.price_sl ?? data.sl,
-        price_tp: data.price_tp ?? data.tp,
-        expiration: data.expiration !== undefined ? data.expiration : data.expiry,
-        expiry: data.expiry !== undefined ? data.expiry : data.expiration,
-        comment: data.comment,
-        trailing_stop: data.trailing_stop,
-        trailing_step: data.trailing_step,
-        client_order_id: data.client_order_id || restClientOrderId,
-      });
-      const terminalAtMs = tradeOrderNow();
-      const updatedRecord = updated as unknown as LooseRecord | undefined;
-      const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
-      const resolvedPrice = toFiniteNumber(updatedRecord?.price, toFiniteNumber(data.price, 0));
+      let resp: DecodedBinaryOrderResp;
+      try {
+        resp = await sendBinaryTcpOrder(binaryParams);
+      } catch (firstErr) {
+        if (
+          isBinaryTcpOrderError(firstErr)
+          && isRetryableBinaryTcpOrderError(firstErr)
+          && !options.signal?.aborted
+        ) {
+          resp = await retryBinaryTcpOrderAfterFailure(firstErr, binaryParams);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
+      const timing = formatBinaryExecTiming(resp.execMicros);
+      let settledData: Record<string, unknown> | undefined;
+      if (resp.status === 202) {
+        const settled = await settleBinaryOrderCommand({
+          clientOrderId: effectiveClientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+        settledData = (settled.position ?? {}) as Record<string, unknown>;
+      }
+
+      const resolvedTicket = toFiniteNumber(
+        settledData?.order_ticket ?? settledData?.ticket ?? settledData?.id,
+        resp.orderTicket > 0 ? resp.orderTicket : ticket,
+      );
+      const settledSym = String(settledData?.symbol ?? '').trim().toUpperCase();
+      const resolvedSymbol = settledSym
+        || resp.symbol
+        || existingSymbol;
+      const resolvedSide: 'buy' | 'sell' = String(existingOrder?.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy';
+      const resolvedType = typeof existingOrder?.type === 'string' && existingOrder.type ? existingOrder.type : 'buy_limit';
+      const resolvedVolume = toFiniteNumber(
+        settledData?.volume ?? settledData?.quantity,
+        resp.volume > 0 ? resp.volume : toFiniteNumber(existingOrder?.volume ?? existingOrder?.quantity, 0),
+      );
+      const resolvedPrice = toFiniteNumber(
+        settledData?.price ?? settledData?.price_trigger ?? settledData?.fill_price,
+        resp.fillPrice > 0 ? resp.fillPrice : (priceParam ?? toFiniteNumber(existingOrder?.price, 0)),
+      );
+      const settledSl = settledData && (settledData.sl !== undefined || settledData.price_sl !== undefined)
+        ? toFiniteNumber(settledData.sl ?? settledData.price_sl, 0)
+        : undefined;
+      const settledTp = settledData && (settledData.tp !== undefined || settledData.price_tp !== undefined)
+        ? toFiniteNumber(settledData.tp ?? settledData.price_tp, 0)
+        : undefined;
+      const nextSl = rawSl !== undefined
+        ? (clearSl ? 0 : (settledSl !== undefined && settledSl > 0 ? settledSl : (resp.sl > 0 ? resp.sl : (slParam ?? 0))))
+        : (settledSl !== undefined ? settledSl : (resp.sl > 0 ? resp.sl : toFiniteNumber(existingOrder?.price_sl ?? existingOrder?.sl, 0)));
+      const nextTp = rawTp !== undefined
+        ? (clearTp ? 0 : (settledTp !== undefined && settledTp > 0 ? settledTp : (resp.tp > 0 ? resp.tp : (tpParam ?? 0))))
+        : (settledTp !== undefined ? settledTp : (resp.tp > 0 ? resp.tp : toFiniteNumber(existingOrder?.price_tp ?? existingOrder?.tp, 0)));
+
+      const terminalAtMs = resolveBinaryTerminalAtMs(resp, intentAtMs, resp.status === 202);
       const modifySubject = [
-        `#${ticket}`,
+        `#${resolvedTicket}`,
         resolvedSymbol,
         resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
       ].filter(Boolean).join(' ');
       recordTradeOrderLatency({
         phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
+        transport: 'websocket',
+        traceId: toTradeOrderTraceId(effectiveClientOrderId),
+        clientOrderId: effectiveClientOrderId,
         sessionScope,
-        ticket,
+        ticket: resolvedTicket,
         ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
+        side: resolvedSide,
+        orderSubType: resolvedType,
+        ...(resolvedVolume > 0 ? { volume: resolvedVolume } : {}),
         ...(resolvedPrice > 0 ? { price: resolvedPrice } : {}),
         operationLabel: 'Pending order modified',
         journalMessage: `Pending order modified ${modifySubject}`.trim(),
         terminalStatus: 'filled',
         totalMs: Math.max(0, terminalAtMs - intentAtMs),
       });
-      return updated;
-    } catch (error) {
-      const terminalAtMs = tradeOrderNow();
-      const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-      recordTradeOrderLatency({
-        phase: 'placement_terminal',
-        transport: 'rest',
-        traceId: toTradeOrderTraceId(restClientOrderId),
-        clientOrderId: restClientOrderId,
-        sessionScope,
-        ticket,
-        ...(existingSymbol ? { symbol: existingSymbol } : {}),
-        operationLabel: `Pending order modify ${terminalStatus}`,
-        journalMessage: `Pending order modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-        terminalStatus,
-        ...(errorCode ? { errorCode } : {}),
-        ...(errorMessage ? { errorMessage } : {}),
-        totalMs: Math.max(0, terminalAtMs - intentAtMs),
-      });
-      throw error;
+
+      return {
+        id: String(resolvedTicket),
+        ticket: resolvedTicket,
+        order_id: String(resolvedTicket),
+        order_ticket: resolvedTicket,
+        client_order_id: effectiveClientOrderId,
+        account_login: accountLogin || toFiniteNumber(existingOrder?.account_login, 0),
+        symbol: resolvedSymbol,
+        type: resolvedType,
+        side: resolvedSide,
+        quantity: resolvedVolume,
+        volume: resolvedVolume,
+        price: resolvedPrice,
+        fill_price: resolvedPrice,
+        ...(stopLimitParam !== undefined ? {
+          price_limit: stopLimitParam,
+          stop_limit_price: stopLimitParam,
+        } : {}),
+        price_sl: nextSl,
+        price_tp: nextTp,
+        sl: nextSl,
+        tp: nextTp,
+        ...(expirationParam !== undefined ? {
+          expiration: expirationParam,
+          expiry: expirationParam,
+        } : {}),
+        ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
+        ...(normalizedMagic !== undefined ? { magic: Number(normalizedMagic) } : {}),
+        status: 'pending',
+        ...timing,
+      } as endpoints.Order;
+    } catch (err) {
+      if (isBinaryTcpOrderError(err)) {
+        const effectiveClientOrderId = err.clientOrderId || clientOrderId;
+        const terminalAtMs = readBinaryErrorTerminalAtMs(err, intentAtMs) ?? tradeOrderNow();
+        const terminalStatus: TradeOrderTerminalStatus = err.status === 504 ? 'expired' : 'rejected';
+        recordTradeOrderLatency({
+          phase: 'placement_terminal',
+          transport: 'websocket',
+          traceId: toTradeOrderTraceId(effectiveClientOrderId),
+          clientOrderId: effectiveClientOrderId,
+          sessionScope,
+          ticket,
+          ...(existingSymbol ? { symbol: existingSymbol } : {}),
+          operationLabel: `Pending order modify ${terminalStatus}`,
+          journalMessage: `Pending order modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
+          terminalStatus,
+          ...(err.code ? { errorCode: err.code } : {}),
+          ...((err.backendMessage || err.message) ? { errorMessage: err.backendMessage || err.message } : {}),
+          totalMs: Math.max(0, terminalAtMs - intentAtMs),
+        });
+        throw toBinaryTcpApiError(err, clientOrderId);
+      }
+      throw err;
     }
   },
 };

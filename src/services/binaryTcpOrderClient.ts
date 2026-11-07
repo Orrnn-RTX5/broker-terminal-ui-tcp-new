@@ -157,6 +157,13 @@ export const BINARY_ORDER_FLAG_HAS_STOP_LIMIT = 0x0040;
 export const BINARY_ORDER_FLAG_HAS_EXPIRATION = 0x0080;
 export const BINARY_ORDER_FLAG_HAS_TRAILING = 0x0100;
 export const BINARY_ORDER_FLAG_CLEAR_TRAILING = 0x0200;
+export const BINARY_ORDER_FLAG_HAS_EXTRAS = 0x0400;
+
+export const BINARY_ORDER_EXTRA_TAG_COMMENT = 0x01;
+export const BINARY_ORDER_EXTRA_TAG_MAGIC = 0x02;
+export const BINARY_ORDER_COMMENT_MAX_BYTES = 64;
+export const BINARY_ORDER_MAGIC_BYTE_LEN = 8;
+export const BINARY_ORDER_EXTRAS_MAX_BYTES = 512;
 
 export const BINARY_ORDER_FLAGS = {
   NONE: BINARY_ORDER_FLAG_NONE,
@@ -170,6 +177,7 @@ export const BINARY_ORDER_FLAGS = {
   HAS_EXPIRATION: BINARY_ORDER_FLAG_HAS_EXPIRATION,
   HAS_TRAILING: BINARY_ORDER_FLAG_HAS_TRAILING,
   CLEAR_TRAILING: BINARY_ORDER_FLAG_CLEAR_TRAILING,
+  HAS_EXTRAS: BINARY_ORDER_FLAG_HAS_EXTRAS,
 } as const;
 
 // ─── Types & Error Class ─────────────────────────────────────────────────────
@@ -201,6 +209,10 @@ export interface BinaryTcpOrderParams {
   partialClose?: boolean;
   clearSl?: boolean;
   clearTp?: boolean;
+  /** Optional UTF-8 order comment (1..64 UTF-8 bytes, no NUL; encoded in TLV extras tag 0x01 for actions 1, 4, 5). */
+  comment?: string | null;
+  /** Optional non-zero int64 order magic number (encoded in TLV extras tag 0x02 for actions 1, 4, 5). */
+  magic?: number | bigint | null;
   /** Idempotent client order ID (max 40 ASCII bytes; UUID v4 generated automatically if omitted). */
   clientOrderId?: string;
   /** Bearer/JWT token override (defaults to `getAccessToken()` from `brokerSession`). */
@@ -632,6 +644,7 @@ interface ValidatedBinaryOrderReq {
   clientOrderId: string;
   resolvedToken: string;
   hasExplicitTokenOverride: boolean;
+  extrasBytes: Uint8Array;
 }
 
 interface PendingWsOrderEntry {
@@ -1345,6 +1358,21 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     }
   }
 
+  let extrasBytes = EMPTY_BYTES;
+  if (
+    (action === BINARY_ORDER_ACTION_PLACE_MARKET
+      || action === BINARY_ORDER_ACTION_PLACE_PENDING
+      || action === BINARY_ORDER_ACTION_MODIFY_PENDING)
+    && (params.comment !== undefined || params.magic !== undefined)
+  ) {
+    extrasBytes = encodeBinaryOrderExtrasTlv(params.comment, params.magic, clientOrderId, action);
+  }
+  if (extrasBytes.byteLength > 0) {
+    flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
+  } else {
+    flags &= ~BINARY_ORDER_FLAG_HAS_EXTRAS;
+  }
+
   const hasExplicitTokenOverride = params.authToken !== undefined;
   const resolvedToken = hasExplicitTokenOverride
     ? String(params.authToken ?? '').trim()
@@ -1367,7 +1395,150 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     clientOrderId,
     resolvedToken,
     hasExplicitTokenOverride,
+    extrasBytes,
   };
+}
+
+/**
+ * Validates and encodes optional `comment` (`0x01`, UTF-8 1..64 bytes, no NUL) and
+ * `magic` (`0x02`, non-zero int64 LE, 8 bytes) into TLV bytes (without the outer `u16_le` length prefix).
+ * Returns `EMPTY_BYTES` (0-alloc singleton) when neither entry is present.
+ */
+export function encodeBinaryOrderExtrasTlv(
+  rawComment?: string | null,
+  rawMagic?: number | bigint | null,
+  clientOrderId = '',
+  action = 0,
+): Uint8Array {
+  let commentBytes: Uint8Array = EMPTY_BYTES;
+  if (rawComment !== undefined && rawComment !== null) {
+    if (typeof rawComment !== 'string') {
+      throw new BinaryTcpOrderError('Order comment must be a string', {
+        status: 400,
+        code: 'INVALID_COMMENT',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+    const trimmed = rawComment.trim();
+    if (trimmed.length > 0) {
+      if (trimmed.indexOf('\0') !== -1) {
+        throw new BinaryTcpOrderError('Order comment must not contain NUL bytes', {
+          status: 400,
+          code: 'INVALID_COMMENT',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      for (let i = 0; i < trimmed.length; i++) {
+        const code = trimmed.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdfff) {
+          if (code <= 0xdbff && i + 1 < trimmed.length) {
+            const next = trimmed.charCodeAt(i + 1);
+            if (next >= 0xdc00 && next <= 0xdfff) {
+              i++;
+              continue;
+            }
+          }
+          throw new BinaryTcpOrderError('Order comment contains invalid UTF-8 surrogate', {
+            status: 400,
+            code: 'INVALID_COMMENT',
+            retryable: false,
+            clientOrderId,
+            action,
+          });
+        }
+      }
+      commentBytes = utf8Encoder.encode(trimmed);
+      if (commentBytes.byteLength > BINARY_ORDER_COMMENT_MAX_BYTES) {
+        throw new BinaryTcpOrderError(
+          `Order comment exceeds maximum length of ${BINARY_ORDER_COMMENT_MAX_BYTES} UTF-8 bytes (got ${commentBytes.byteLength})`,
+          {
+            status: 400,
+            code: 'INVALID_COMMENT',
+            retryable: false,
+            clientOrderId,
+            action,
+          },
+        );
+      }
+    }
+  }
+
+  let magicBig: bigint | null = null;
+  if (rawMagic !== undefined && rawMagic !== null) {
+    if (typeof rawMagic === 'bigint') {
+      if (rawMagic < -9223372036854775808n || rawMagic > 9223372036854775807n) {
+        throw new BinaryTcpOrderError('Order magic number out of int64 range', {
+          status: 400,
+          code: 'INVALID_MAGIC',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (rawMagic !== 0n) {
+        magicBig = rawMagic;
+      }
+    } else if (typeof rawMagic === 'number') {
+      if (!Number.isFinite(rawMagic) || !Number.isInteger(rawMagic) || !Number.isSafeInteger(rawMagic)) {
+        throw new BinaryTcpOrderError('Order magic number must be a finite safe integer', {
+          status: 400,
+          code: 'INVALID_MAGIC',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (rawMagic !== 0) {
+        magicBig = BigInt(rawMagic);
+      }
+    } else {
+      throw new BinaryTcpOrderError('Invalid order magic number', {
+        status: 400,
+        code: 'INVALID_MAGIC',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+  }
+
+  const hasComment = commentBytes.byteLength > 0;
+  const hasMagic = magicBig !== null;
+  if (!hasComment && !hasMagic) {
+    return EMPTY_BYTES;
+  }
+
+  const extrasLen = (hasComment ? 2 + commentBytes.byteLength : 0) + (hasMagic ? 2 + BINARY_ORDER_MAGIC_BYTE_LEN : 0);
+  if (extrasLen > BINARY_ORDER_EXTRAS_MAX_BYTES) {
+    throw new BinaryTcpOrderError(`Order extras TLV exceeds maximum ${BINARY_ORDER_EXTRAS_MAX_BYTES} bytes`, {
+      status: 400,
+      code: 'INVALID_EXTRAS',
+      retryable: false,
+      clientOrderId,
+      action,
+    });
+  }
+
+  const tlv = new Uint8Array(extrasLen);
+  let offset = 0;
+  if (hasComment) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_COMMENT;
+    tlv[offset + 1] = commentBytes.byteLength;
+    tlv.set(commentBytes, offset + 2);
+    offset += 2 + commentBytes.byteLength;
+  }
+  if (hasMagic && magicBig !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_MAGIC;
+    tlv[offset + 1] = BINARY_ORDER_MAGIC_BYTE_LEN;
+    new DataView(tlv.buffer, tlv.byteOffset, tlv.byteLength).setBigInt64(offset + 2, magicBig, true);
+    offset += 2 + BINARY_ORDER_MAGIC_BYTE_LEN;
+  }
+
+  return tlv;
 }
 
 const BINARY_ORDER_ORDER_CLEAR_STOP_LIMIT_MASK = BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
@@ -1403,8 +1574,9 @@ function encodeHttpBinaryOrderReqFromValidated(
 ): { packet: Uint8Array; buffer: ArrayBuffer; clientOrderId: string } {
   const rawTokenBytes = getCachedTokenUtf8Bytes(validated.resolvedToken);
   const tokenByteLength = Math.min(rawTokenBytes.byteLength, 0xffff);
+  const extrasLen = validated.extrasBytes.byteLength;
 
-  const totalBytes = REQ_HEADER_SIZE + 2 + tokenByteLength;
+  const totalBytes = REQ_HEADER_SIZE + 2 + tokenByteLength + (extrasLen > 0 ? 2 + extrasLen : 0);
   const buffer = new ArrayBuffer(totalBytes);
   const packet = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -1415,8 +1587,32 @@ function encodeHttpBinaryOrderReqFromValidated(
   if (tokenByteLength > 0) {
     packet.set(rawTokenBytes.subarray(0, tokenByteLength), 130);
   }
+  if (extrasLen > 0) {
+    const extrasOffset = 130 + tokenByteLength;
+    view.setUint16(extrasOffset, extrasLen, true);
+    packet.set(validated.extrasBytes, extrasOffset + 2);
+  }
 
   return { packet, buffer, clientOrderId: validated.clientOrderId };
+}
+
+function encodeWsModeAOrderFrameFromValidated(
+  reqId: number,
+  validated: ValidatedBinaryOrderReq,
+): Uint8Array {
+  const extrasLen = validated.extrasBytes.byteLength;
+  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + (extrasLen > 0 ? 2 + extrasLen : 0);
+  const buffer = new ArrayBuffer(totalBytes);
+  const packet = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+
+  view.setUint32(0, reqId >>> 0, true);
+  packValidatedBinaryOrderHeader(packet, view, WS_REQ_ID_SIZE, validated);
+  if (extrasLen > 0) {
+    view.setUint16(WS_FAST_ORDER_FRAME_SIZE, extrasLen, true);
+    packet.set(validated.extrasBytes, WS_FAST_ORDER_FRAME_SIZE + 2);
+  }
+  return packet;
 }
 
 function encodeWsInlineTokenOrderFrame(
@@ -1426,7 +1622,8 @@ function encodeWsInlineTokenOrderFrame(
 ): Uint8Array {
   const tokenBytes = getCachedTokenUtf8Bytes(token);
   const tokenLen = Math.min(tokenBytes.byteLength, 0xffff);
-  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen; // 134 + tokenLen
+  const extrasLen = validated.extrasBytes.byteLength;
+  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen + (extrasLen > 0 ? 2 + extrasLen : 0);
   const buffer = new ArrayBuffer(totalBytes);
   const packet = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -1437,18 +1634,52 @@ function encodeWsInlineTokenOrderFrame(
   if (tokenLen > 0) {
     packet.set(tokenBytes.subarray(0, tokenLen), WS_FAST_ORDER_FRAME_SIZE + 2);
   }
+  if (extrasLen > 0) {
+    const extrasOffset = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen;
+    view.setUint16(extrasOffset, extrasLen, true);
+    packet.set(validated.extrasBytes, extrasOffset + 2);
+  }
   return packet;
 }
 
 /**
- * Packs a `BinaryTcpOrderParams` command into the exact `130 + tokenByteLength`
- * Little-Endian wire packet (`REQ_HEADER_SIZE = 128` + `u16_le` token len + UTF-8 token).
+ * Packs a `BinaryTcpOrderParams` command into the canonical HTTP binary packet
+ * (`[128 header][u16 tokenLen][token]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
  */
 export function encodeBinaryOrderReq(
   params: BinaryTcpOrderParams,
 ): { packet: Uint8Array; buffer: ArrayBuffer; clientOrderId: string } {
   const validated = validateBinaryOrderReq(params);
   return encodeHttpBinaryOrderReqFromValidated(validated);
+}
+
+/**
+ * Packs a `BinaryTcpOrderParams` command into a WebSocket Mode A (pre-bound token) frame
+ * (`[u32 reqId][128 header]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
+ */
+export function encodeBinaryOrderWsModeAFrame(
+  reqId: number,
+  params: BinaryTcpOrderParams,
+): Uint8Array {
+  const validated = validateBinaryOrderReq(params);
+  return encodeWsModeAOrderFrameFromValidated(reqId, validated);
+}
+
+/**
+ * Packs a `BinaryTcpOrderParams` command into a WebSocket Mode B (inline token) frame
+ * (`[u32 reqId][128 header][u16 tokenLen][token]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
+ */
+export function encodeBinaryOrderWsModeBFrame(
+  reqId: number,
+  params: BinaryTcpOrderParams,
+  tokenOverride?: string,
+): Uint8Array {
+  const validated = validateBinaryOrderReq(params);
+  return encodeWsInlineTokenOrderFrame(
+    reqId,
+    validated,
+    tokenOverride !== undefined ? tokenOverride : validated.resolvedToken,
+  );
 }
 
 /**
@@ -1678,12 +1909,18 @@ function sendBinaryTcpOrderOverOpenWs(
 
     try {
       if (useFast132Frame) {
-        // Ultra-fast 132-byte 0-alloc, 0-JWT-copy frame using pre-allocated scratch buffer.
-        fastWsTxPacket.fill(0);
-        fastWsTxView.setUint32(0, reqId, true);
-        packValidatedBinaryOrderHeader(fastWsTxPacket, fastWsTxView, WS_REQ_ID_SIZE, validated);
-        pendingEntry.sentAtPerfMs = perfNow();
-        socket.send(fastWsTxPacket);
+        if (validated.extrasBytes.byteLength === 0) {
+          // Ultra-fast 132-byte 0-alloc, 0-JWT-copy frame using pre-allocated scratch buffer.
+          fastWsTxPacket.fill(0);
+          fastWsTxView.setUint32(0, reqId, true);
+          packValidatedBinaryOrderHeader(fastWsTxPacket, fastWsTxView, WS_REQ_ID_SIZE, validated);
+          pendingEntry.sentAtPerfMs = perfNow();
+          socket.send(fastWsTxPacket);
+        } else {
+          const modeAWithExtras = encodeWsModeAOrderFrameFromValidated(reqId, validated);
+          pendingEntry.sentAtPerfMs = perfNow();
+          socket.send(modeAWithExtras);
+        }
       } else {
         const inlineFrame = encodeWsInlineTokenOrderFrame(reqId, validated, validated.resolvedToken);
         pendingEntry.sentAtPerfMs = perfNow();
