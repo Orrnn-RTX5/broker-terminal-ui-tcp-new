@@ -86,11 +86,13 @@ describe.each(['web', 'packaged desktop'] as const)('StatusBar in %s', (runtime)
     });
   });
 
-  it('shows the terminal version without a desktop download shortcut', () => {
-    render(<StatusBar wsRef={{ current: null }} />);
+  it('leaves the version to the bottom-right RTX5 badge and has no desktop download shortcut', () => {
+    const { container } = render(<StatusBar wsRef={{ current: null }} />);
     const download = screen.queryByRole('button', { name: 'Desktop App' });
     expect(download).toBeNull();
-    expect(screen.getByText(runtime === 'web' ? 'v1.0.0' : 'v1.0.25')).toBeVisible();
+    // One place for the version in every RTX5 app: the Rtx5VersionBadge, not the status bar.
+    expect(container.querySelector('.rtx-status-bar__version')).toBeNull();
+    expect(screen.queryByText(runtime === 'web' ? 'v1.0.0' : 'v1.0.25')).toBeNull();
   });
 
   it('always renders the RTX5 logo in the bottom-left status bar across all brokers', () => {

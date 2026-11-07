@@ -1,4 +1,5 @@
 import { mountApp } from './bootstrap';
+import { mountRtx5VersionBadge } from './components/mountRtx5VersionBadge';
 
 // ── Electron-only: Suppress all console output and runtime errors ──
 // In Electron, end users must never see red error overlays or console noise.
@@ -116,3 +117,6 @@ if ('serviceWorker' in navigator) {
     .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
     .catch(() => undefined);
 }
+
+// One place for "what is running": bottom-right badge, same as every RTX5 app.
+mountRtx5VersionBadge('/api/v2/version');
