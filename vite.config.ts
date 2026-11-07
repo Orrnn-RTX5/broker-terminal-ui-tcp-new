@@ -6,6 +6,7 @@ import { terminalPreloadPlugin } from './viteTerminalPreload'
 import { validateBrokerRuntimeConfig } from './src/config/brokerRuntimeConfig'
 import { extractBrokerDiscoveryList, isDirectoryBrokerSelectable } from './src/services/brokerDiscovery'
 import react from '@vitejs/plugin-react'
+import { rtx5BuildInfo } from './viteRtx5BuildInfo'
 import reactSwc from '@vitejs/plugin-react-swc'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import * as http from 'node:http'
@@ -838,6 +839,7 @@ export default defineConfig(({ mode, command }) => {
         : [],
     },
     plugins: [
+      rtx5BuildInfo(),
       ...(mode === 'web' ? [webRuntimeConfigPlugin(env), terminalPreloadPlugin()] : []),
       retiredServiceWorkerDevPlugin(),
       dynamicBrokerProxyPlugin(['/__broker_api', '/__broker_discovery'], brokerProxyAccess),

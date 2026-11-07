@@ -11,7 +11,6 @@ import {
     useTerminalBrokerInfo,
 } from '../../hooks/useTerminalTitle';
 import type { NormalizedMarketStatus } from '../../utils/marketStatus';
-import { getAppVersion } from '../../config/appVersion';
 import './StatusBar.css';
 
 interface TcpRuntimeStatus {
@@ -64,7 +63,6 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                 + ` - ${brokerInfo.marginMode}`
             : getWebTerminalTitle());
 
-    const appVersion = getAppVersion();
     const hasUpdater = Boolean(window.electron?.updater?.isSupported);
     const { updatePhase, updateLabel, updateButtonDisabled, handleUpdateClick } = useDesktopUpdater();
     const tcpAddr = tcpInfo.target_tcp || ':4443';
@@ -118,9 +116,6 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                             {tr(updateLabel)}
                         </button>
                     )}
-                    <span className="rtx-status-bar__metric rtx-status-bar__version whitespace-nowrap font-normal">
-                        v{appVersion}
-                    </span>
                 </div>
             </div>
         </div>

@@ -2282,3 +2282,35 @@ html:root.rtx-skin-untitled-light .rtx-login-overlay .rtx-login-panel :is(
     line-height: inherit;
     overflow-wrap: anywhere;
 }
+
+/* Secondary action under Login: opens the demo / new account dialog (desktop). */
+.rtx-login-open-account {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 12px;
+    border: 1px solid rgba(128, 195, 63, 0.55);
+    border-radius: 6px;
+    background: transparent;
+    color: #a9d977;
+    font-size: 14px;
+    font-weight: var(--rtx-font-weight-control, 400);
+    line-height: 20px;
+    cursor: pointer;
+    transition: background-color 80ms ease, border-color 80ms ease;
+}
+
+.rtx-login-open-account:hover:not(:disabled) {
+    background: rgba(128, 195, 63, 0.1);
+    border-color: #8bd24a;
+}
+
+.rtx-login-open-account:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+/* The login overlay sits at z-index 99999; the Open an Account dialog (z-index 9999)
+   must stack above it when it is opened from the login screen. */
+body:has(.rtx-login-overlay) .rtx-open-account-backdrop {
+    z-index: 100000;
+}
