@@ -58,6 +58,7 @@ vi.mock('../config/backendTarget.js', async (importOriginal) => ({
   resolveBrokerExtApiUrl: () => 'https://environment-broker.test',
 }));
 vi.mock('./WelcomeTerminal', () => ({
+  LAST_AUTHENTICATED_BROKER_ID_KEY: 'rtx_last_authenticated_broker_id',
   pickDiscoveryBroker: (rows: Array<{ broker_id: string }>, options: { savedBrokerId: string }) =>
     rows.find(row => row.broker_id === options.savedBrokerId) || rows[0],
 }));

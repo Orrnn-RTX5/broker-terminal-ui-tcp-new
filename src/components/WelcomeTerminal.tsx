@@ -39,6 +39,7 @@ import {
     normalizeBrokerThemeColor,
 } from '../services/brokerPresentation';
 import { resolveLoginHeroAsset, type LoginHeroAsset } from './welcomeHeroAssets';
+import { openAccountFeature } from '../startup/terminalFeatures';
 import { BrokerLogoImage, buildBrokerDirectoryLogoUrl } from './BrokerLogoImage';
 import { resolveLoginTitleBrandName } from './loginTitleBrand';
 import {
@@ -57,6 +58,8 @@ import {
     createAuthenticatedSessionHandoff,
     type AuthenticatedSessionHandoff,
 } from '../startup/authenticatedSessionHandoff';
+
+const OpenAccountDialog = openAccountFeature.Component;
 
 export interface BrokerServerItem {
     broker_id: string;
@@ -552,6 +555,9 @@ export function WelcomeTerminal({
     const [rememberMe, setRememberMe] = useState(() => Boolean(localStorage.getItem('rtx_saved_username')));
 
     const isDesktopBrokerSelection = isDesktopBackendTarget();
+    // The desktop app opens on this login screen, so a new user needs a way to
+    // create a demo account here. It reuses the File > Open an Account dialog.
+    const [openAccountOpen, setOpenAccountOpen] = useState(false);
     const [configuredRuntimeBroker] = useState<BrokerServerItem | null>(() => {
         const broker = buildConfiguredRuntimeBroker();
         if (!broker) return null;
@@ -1611,6 +1617,23 @@ export function WelcomeTerminal({
                                     </>
                                 </button>
                             </form>
+                            {isDesktopBrokerSelection && (
+                                <button
+                                    type="button"
+                                    className="rtx-login-open-account"
+                                    data-rtx-login-open-account
+                                    disabled={loading}
+                                    onClick={() => setOpenAccountOpen(true)}
+                                    onPointerEnter={() => { void openAccountFeature.preload(); }}
+                                >
+                                    {tr("Open an Account")}
+                                </button>
+                            )}
+                            {openAccountOpen && (
+                                <React.Suspense fallback={null}>
+                                    <OpenAccountDialog isOpen onClose={() => setOpenAccountOpen(false)} />
+                                </React.Suspense>
+                            )}
 
                         </div>
                     </section>
