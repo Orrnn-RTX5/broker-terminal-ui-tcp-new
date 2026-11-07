@@ -2,6 +2,7 @@
 //   bottom-right corner:  UI v1.0.0 (a1b2c3d) · Backend v1.0.0 (d4e5f6a)
 // UI values are baked in at build time; the backend answers its own version endpoint.
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { formatVersionBadge } from '../utils/rtx5BuildLabel';
 
 declare const __RTX5_UI_VERSION__: string | undefined;
@@ -23,6 +24,14 @@ const badgeStyle: React.CSSProperties = {
   pointerEvents: 'none',
   whiteSpace: 'nowrap',
 };
+
+// Docked inside the status bar: inherit its colour and size, no overlay.
+const dockedStyle: React.CSSProperties = {
+  font: '12px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  color: 'inherit',
+  whiteSpace: 'nowrap',
+};
+const SLOT_CHECK_MS = 1000;
 
 type BackendBuild = { version?: string; commit?: string };
 
@@ -49,9 +58,42 @@ export function Rtx5VersionBadge({ backendUrl, refreshMs = REFRESH_MS }: { backe
     };
   }, [backendUrl, refreshMs]);
 
+  const slot = useVersionSlot();
+  const text = formatVersionBadge({ version: UI_VERSION, commit: UI_COMMIT }, backend);
+
+  // Inside the terminal the status bar offers a slot at its right end: show the badge there,
+  // inline, so it never covers status bar text. Without a slot (login screen) it stays in the corner.
+  if (slot) {
+    return createPortal(
+      <span data-rtx5-version-badge data-rtx5-version-docked="true" style={dockedStyle} title="Build running in this app">
+        {text}
+      </span>,
+      slot,
+    );
+  }
   return (
     <div data-rtx5-version-badge style={badgeStyle} title="Build running in this app">
-      {formatVersionBadge({ version: UI_VERSION, commit: UI_COMMIT }, backend)}
+      {text}
     </div>
   );
+}
+
+/** Element marked data-rtx5-version-slot, re-checked once a second (cheap; no DOM-wide observer). */
+function useVersionSlot(): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(findVersionSlot);
+  useEffect(() => {
+    const check = () => {
+      const found = findVersionSlot();
+      setSlot((current) => (current === found ? current : found));
+    };
+    check();
+    const timer = setInterval(check, SLOT_CHECK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return slot;
+}
+
+function findVersionSlot(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector<HTMLElement>('[data-rtx5-version-slot]');
 }

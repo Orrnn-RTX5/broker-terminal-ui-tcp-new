@@ -837,7 +837,7 @@ func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp,
 			if a == nil {
 				continue
 			}
-			if a.Version != ver {
+			if ciAppOwnsManifestKey(ciApp, k) && a.Version != ver {
 				a.Version = ver
 				anyChanged = true
 			}
