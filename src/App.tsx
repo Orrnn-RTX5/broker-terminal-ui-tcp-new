@@ -849,6 +849,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const {
     refreshPositions,
     refreshOrdersAndHistory,
+    postTradeRefresh,
   } = useTradeRefreshController({
     getLiveTradingLogin,
     beginTradeRestRead,
@@ -878,9 +879,9 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         idlePostTradeSyncTimerRef.current = window.setTimeout(attemptSync, 500);
         return;
       }
-      refreshPositions(loginId, { allowWsCommit: true });
+      postTradeRefresh.refreshPositions(loginId, { allowWsCommit: true });
       if (includeHistory) {
-        refreshOrdersAndHistory(loginId).catch((err) =>
+        postTradeRefresh.refreshOrdersAndHistory(loginId).catch((err) =>
           console.error('[Trade] Failed to refresh orders/history after binary trade:', err),
         );
       }
@@ -976,7 +977,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       if (useBinaryFastClose) {
         scheduleIdlePostTradeSync(loginId, true);
       } else {
-        refreshPositions(loginId, { allowWsCommit: true });
+        postTradeRefresh.refreshPositions(loginId, { allowWsCommit: true });
         refreshHistoryAfterFill(loginId);
       }
       return true;
@@ -986,7 +987,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       if (sessionCurrent) {
         // Already closed on the broker: refresh from backend and show a plain message.
         const staleMessage = handleStalePositionRefusal(err, id, {
-          refresh: () => refreshPositions(closeLogin, { allowWsCommit: true }),
+          refresh: () => postTradeRefresh.refreshPositions(closeLogin, { allowWsCommit: true }),
           tr: translateUi,
         });
         if (staleMessage) {
@@ -997,7 +998,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         if (useBinaryFastClose) {
           scheduleIdlePostTradeSync(closeLogin, false);
         } else {
-          refreshPositions(closeLogin, { allowWsCommit: true });
+          postTradeRefresh.refreshPositions(closeLogin, { allowWsCommit: true });
         }
       }
       return false;
@@ -1045,14 +1046,14 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         [feedbackLabel('Position closed'), feedbackValue(` #${ticket} → `), feedbackLabel(reverseSide.toUpperCase()), feedbackValue(` ${positionVolume} ${positionSymbol}`)],
         'success',
       );
-      refreshPositions(login, { allowWsCommit: true });
-      refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
+      postTradeRefresh.refreshPositions(login, { allowWsCommit: true });
+      postTradeRefresh.refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
       window.dispatchEvent(new Event('rtx:force-refresh-positions'));
     } catch (err) {
       console.error('[Chart] Reverse position failed:', err);
       publishOrderFeedback([feedbackLabel('Close position'), feedbackValue(` #${ticket}: `), feedbackLabel('Completed'), feedbackValue(' · '), feedbackLabel(reverseSide === 'buy' ? 'Buy Market' : 'Sell Market'), feedbackValue(': '), feedbackLabel('Order failed'), feedbackValue(` — ${formatOrderError(err)}`)]);
-      refreshPositions(login, { allowWsCommit: true });
-      refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
+      postTradeRefresh.refreshPositions(login, { allowWsCommit: true });
+      postTradeRefresh.refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
       window.dispatchEvent(new Event('rtx:force-refresh-positions'));
     } finally {
       chartPositionActionBusyRef.current.delete(actionKey);
@@ -1087,8 +1088,8 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         [feedbackValue(`#${ticket} · `), feedbackLabel(position.side), feedbackValue(` +${position.volume} ${position.symbol}`)],
         'success',
       );
-      refreshPositions(login, { allowWsCommit: true });
-      refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
+      postTradeRefresh.refreshPositions(login, { allowWsCommit: true });
+      postTradeRefresh.refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
       window.dispatchEvent(new Event('rtx:force-refresh-positions'));
     } catch (err) {
       console.error('[Chart] Double position failed:', err);
@@ -1241,14 +1242,14 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         if (loginId) scheduleIdlePostTradeSync(loginId, false);
       } else {
         // Refresh positions so chart draws the new SL/TP lines
-        refreshPositions(loginId || undefined);
+        postTradeRefresh.refreshPositions(loginId || undefined);
       }
     } catch (err: any) {
       console.error('Failed to modify position:', err);
       // Already closed on the broker (SL/TP/stop-out or a close elsewhere): one
       // refresh and a plain message, never the raw refusal code.
       const staleMessage = handleStalePositionRefusal(err, id, {
-        refresh: () => refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true }),
+        refresh: () => postTradeRefresh.refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true }),
         tr: translateUi,
       });
       if (staleMessage) {
@@ -1276,7 +1277,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         [feedbackLabel('Modify position'), feedbackValue(` #${id}: `), feedbackLabel('Failed'), feedbackValue(` — ${refusal ?? formatOrderError(err)}`)],
         'error',
       );
-      refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true });
+      postTradeRefresh.refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true });
     }
   };
 
@@ -1436,7 +1437,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             ? [feedbackLabel('Close positions'), feedbackValue(': '), feedbackLabel('Closing positions')]
             : [feedbackLabel('Close positions'), feedbackValue(': '), feedbackLabel('No matches found')],
         );
-        refreshPositions(accId, { allowWsCommit: true });
+        postTradeRefresh.refreshPositions(accId, { allowWsCommit: true });
         return;
       }
 
@@ -1461,12 +1462,12 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       if (closeResult.authoritativeSnapshotError) {
         console.warn('[Trade] Closed visible positions, but authoritative discovery failed:', closeResult.authoritativeSnapshotError);
       }
-      refreshPositions(accId, { allowWsCommit: true });
+      postTradeRefresh.refreshPositions(accId, { allowWsCommit: true });
       refreshHistoryAfterFill(accId);
     } catch (err) {
       console.error('Bulk close failed:', err);
       publishOrderFeedback(formatOrderError(err));
-      refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true });
+      postTradeRefresh.refreshPositions(getLiveTradingLogin() || undefined, { allowWsCommit: true });
     } finally {
       claimedBulkTicketIds.forEach((ticket) => closingTicketsRef.current.delete(
         createSessionScopedTicketKey(closeSessionScope, ticket),
@@ -1641,8 +1642,8 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     getLiveTradingLogin,
     captureTradeOperationContext,
     isTradeOperationContextCurrent,
-    refreshPositions,
-    refreshOrdersAndHistory,
+    refreshPositions: postTradeRefresh.refreshPositions,
+    refreshOrdersAndHistory: postTradeRefresh.refreshOrdersAndHistory,
   });
 
 
