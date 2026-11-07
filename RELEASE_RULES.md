@@ -52,15 +52,31 @@ Pushing a branch or opening a pull request does **not** deploy anything.
 - Do not share or install builds made on your own PC. Local builds are for
   testing only.
 
-## 5. One version for everything
+## 5. Versions: one common start, then each part on its own
 
-- All 6 repositories carry the **same** number in `VERSION`, and it is bumped
-  together for each release (one PR per repo, merged together).
-- Format: `MAJOR.MINOR.PATCH`, e.g. `1.0.0`.
-- Every release is tagged `vMAJOR.MINOR.PATCH` in all 6 repositories, on the
-  merged `main` commit.
-- Numbering restarts at **`v1.0.0`**. The existing `v1.0.0` tags (2026-11-04) must
-  be moved by the release owner before the first unified release.
+- All 6 repositories started together at **v1.0.0** (2026-11-07). That is the
+  common baseline, so everyone knows where each part began.
+- After that, each repository bumps **its own** `VERSION` when it changes
+  (`MAJOR.MINOR.PATCH`). Parts do not move together: the Admin UI can be
+  `1.0.3` while the broker backend is `1.2.0`.
+- **Every merge to `main` bumps that repository's `VERSION`, in the same PR.**
+  No merge and no deploy without a new number:
+  - `PATCH` (`1.0.0` -> `1.0.1`) for a bug fix,
+  - `MINOR` (`1.0.1` -> `1.1.0`) for a new feature,
+  - `MAJOR` (`1.1.0` -> `2.0.0`) for a breaking change.
+- A deploy updates only its own entries in the OTA release list:
+  | Repository | Release-list entries |
+  |---|---|
+  | rtx5-production-superadmin-backend-TCP | `superadmin-linux` |
+  | rtx5-production-superadmin-UI-TCP | `superadmin` |
+  | Broker-Backend-V2-TCP | `broker-linux`, `broker-windows` |
+  | Broker-Admin-UI-TCP | `admin` |
+  | Broker-Manager-UI-TCP | `manager` |
+  | Broker-Terminal-UI-TCP | `terminal` |
+- Tag each release in its own repository: `vX.Y.Z` on that repository's merged
+  `main` commit.
+- The truth is what each app shows (rule 6): the UI's own version and the
+  backend's own version, each with its commit.
 
 ## 6. Every build shows what it is
 
@@ -80,8 +96,8 @@ Pushing a branch or opening a pull request does **not** deploy anything.
 ## Release checklist (release owner)
 
 1. All PRs for the release are merged into `main` in every repository involved.
-2. `VERSION` is the same in all 6 repositories.
+2. Each merged PR bumped its repository's `VERSION` (PATCH fix / MINOR feature / MAJOR breaking).
 3. CI is green for every repository.
-4. Tag `vX.Y.Z` in all 6 repositories.
+4. Tag `vX.Y.Z` in each repository that was released.
 5. Check on the server and in each app that UI and backend show `vX.Y.Z` and the
    expected commit.
