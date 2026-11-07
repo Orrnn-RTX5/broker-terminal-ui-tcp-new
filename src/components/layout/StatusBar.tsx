@@ -116,6 +116,8 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                             {tr(updateLabel)}
                         </button>
                     )}
+                    {/* The RTX5 version badge docks here (UI + backend build), so it never covers status bar text. */}
+                    <span data-rtx5-version-slot className="rtx-status-bar__metric rtx-status-bar__version whitespace-nowrap font-normal" />
                 </div>
             </div>
         </div>

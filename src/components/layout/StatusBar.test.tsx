@@ -86,12 +86,14 @@ describe.each(['web', 'packaged desktop'] as const)('StatusBar in %s', (runtime)
     });
   });
 
-  it('leaves the version to the bottom-right RTX5 badge and has no desktop download shortcut', () => {
+  it('offers the RTX5 version badge a slot and has no desktop download shortcut', () => {
     const { container } = render(<StatusBar wsRef={{ current: null }} />);
     const download = screen.queryByRole('button', { name: 'Desktop App' });
     expect(download).toBeNull();
-    // One place for the version in every RTX5 app: the Rtx5VersionBadge, not the status bar.
-    expect(container.querySelector('.rtx-status-bar__version')).toBeNull();
+    // The version is shown only by Rtx5VersionBadge, which docks into this slot.
+    const slot = container.querySelector('[data-rtx5-version-slot]');
+    expect(slot).not.toBeNull();
+    expect(slot?.textContent).toBe('');
     expect(screen.queryByText(runtime === 'web' ? 'v1.0.0' : 'v1.0.25')).toBeNull();
   });
 

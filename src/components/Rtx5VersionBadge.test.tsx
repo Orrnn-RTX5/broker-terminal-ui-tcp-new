@@ -31,3 +31,34 @@ describe('RTX5 version badge', () => {
     expect(formatBuild('', 'x')).toBe('—');
   });
 });
+
+describe('RTX5 version badge placement', () => {
+  it('docks inside the status bar slot instead of covering it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '1.0.0', commit: '5886961abcdef' }), { status: 200 })));
+    const slot = document.createElement('span');
+    slot.setAttribute('data-rtx5-version-slot', '');
+    document.body.appendChild(slot);
+    try {
+      render(<Rtx5VersionBadge backendUrl="/api/v2/version" />);
+      await waitFor(() => expect(slot.textContent).toMatch(/Backend v1\.0\.0 \(5886961\)/));
+      const badge = slot.querySelector('[data-rtx5-version-badge]') as HTMLElement;
+      expect(badge.getAttribute('data-rtx5-version-docked')).toBe('true');
+      expect(badge.style.position).not.toBe('fixed');
+      expect(document.querySelectorAll('[data-rtx5-version-badge]')).toHaveLength(1);
+    } finally {
+      slot.remove();
+    }
+  });
+
+  it('stays in the bottom-right corner when there is no status bar (login screen)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    render(<Rtx5VersionBadge backendUrl="/api/v2/version" />);
+    const badge = await waitFor(() => {
+      const el = document.querySelector('[data-rtx5-version-badge]') as HTMLElement | null;
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(badge.style.position).toBe('fixed');
+    expect(badge.getAttribute('data-rtx5-version-docked')).toBeNull();
+  });
+});
