@@ -53,6 +53,10 @@ type WebTerminalServer struct {
 	masterPubHex string
 	distRoot     fs.FS
 	externalDist string
+	// localUIOnly (RTX5_WEB_UI_SOURCE=local) is for development/test web servers: the hot-UI OTA sync is off and every
+	// app is served from <exe>/../ui-dist/<app> (or <exe>/ui-dist/<app>), so a local UI build shows up at once and the
+	// production OTA bundle never replaces it. Terminal falls back to the external/embedded dist as before.
+	localUIOnly bool
 
 	binHub *webBinaryMarketHub
 
@@ -300,6 +304,7 @@ func main() {
 		masterPubHex:     loadAuthorityMasterPubHex(exeDir),
 		distRoot:         subFS,
 		externalDist:     extDist,
+		localUIOnly:      strings.EqualFold(strings.TrimSpace(os.Getenv("RTX5_WEB_UI_SOURCE")), "local"),
 		binHub:           newWebBinaryMarketHub(),
 		localBrokerID:    strings.TrimSpace(*brokerIDFlag),
 		targetTCPAddr:    strings.TrimSpace(*targetFlag),
@@ -449,6 +454,9 @@ func (c *WebTerminalServer) getActiveDistFSForApp(appKind string) fs.FS {
 		filepath.Join(c.exeDir, "ui-cache", appKind),
 		filepath.Join(c.exeDir, "..", "ui-dist", appKind),
 		filepath.Join(c.exeDir, "ui-dist", appKind),
+	}
+	if c.localUIOnly {
+		candidates = candidates[2:] // local builds only; an old OTA cache must not shadow them
 	}
 	for _, cand := range candidates {
 		if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
