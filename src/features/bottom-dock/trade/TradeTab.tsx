@@ -986,15 +986,70 @@ ${rows}
             { divider: true },
             {
                 label: 'Trailing Stop',
-                submenu: [
-                    { label: 'Delete All', disabled: true },
-                    { label: 'None', checked: true, disabled: true },
-                    { divider: true },
-                    ...[50, 55, 60, 65, 70, 75, 80, 85, 90, 95].map(points => ({
-                        label: `${points} points`,
-                        disabled: true,
-                    })),
-                ],
+                submenu: (() => {
+                    const currentTrail = Number(
+                        (position as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                        ?? (position as { trailingStop?: unknown }).trailingStop
+                        ?? 0,
+                    );
+                    const hasAnyTrail = positions.some(
+                        (p) => Number(
+                            (p as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                            ?? (p as { trailingStop?: unknown }).trailingStop
+                            ?? 0,
+                        ) > 0,
+                    );
+                    const setPosTrailing = async (points: number) => {
+                        try {
+                            await api.positions.modifyPosition(position.id, {
+                                trailing_stop: points,
+                                trailing_step: 0,
+                            });
+                            window.dispatchEvent(new Event('rtx:force-refresh-positions'));
+                        } catch (err) {
+                            publishOrderFeedback(
+                                [feedbackLabel('Trailing Stop'), feedbackValue(` #${position.id}: `), feedbackLabel('Failed'), feedbackValue(` — ${formatOrderError(err)}`)],
+                                'error',
+                            );
+                        }
+                    };
+                    return [
+                        {
+                            label: 'Delete All',
+                            disabled: !hasAnyTrail,
+                            action: () => {
+                                void (async () => {
+                                    for (const p of positions) {
+                                        const t = Number(
+                                            (p as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                                            ?? (p as { trailingStop?: unknown }).trailingStop
+                                            ?? 0,
+                                        );
+                                        if (t > 0) {
+                                            try {
+                                                await api.positions.modifyPosition(p.id, { trailing_stop: 0, trailing_step: 0 });
+                                            } catch {
+                                                // best-effort clear across positions
+                                            }
+                                        }
+                                    }
+                                    window.dispatchEvent(new Event('rtx:force-refresh-positions'));
+                                })();
+                            },
+                        },
+                        {
+                            label: 'None',
+                            checked: !Number.isFinite(currentTrail) || currentTrail <= 0,
+                            action: () => void setPosTrailing(0),
+                        },
+                        { divider: true },
+                        ...[50, 55, 60, 65, 70, 75, 80, 85, 90, 95].map(points => ({
+                            label: `${points} points`,
+                            checked: currentTrail === points,
+                            action: () => void setPosTrailing(points),
+                        })),
+                    ];
+                })(),
             },
             {
                 label: 'Volumes',

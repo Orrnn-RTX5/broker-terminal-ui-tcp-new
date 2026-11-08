@@ -11,7 +11,11 @@ import {
   BINARY_ORDER_ENDPOINT,
   BINARY_ORDER_EXTRA_TAG_COMMENT,
   BINARY_ORDER_EXTRA_TAG_MAGIC,
+  BINARY_ORDER_EXTRA_TAG_TRAILING_STEP,
+  BINARY_ORDER_EXTRA_TAG_TRAILING_STOP,
+  BINARY_ORDER_FLAG_CLEAR_TRAILING,
   BINARY_ORDER_FLAG_HAS_EXTRAS,
+  BINARY_ORDER_FLAG_HAS_TRAILING,
   BINARY_ORDER_SUBTYPE_BUY_LIMIT,
   BINARY_ORDER_WS_ENDPOINT,
   encodeBinaryOrderReq,
@@ -388,5 +392,69 @@ describe('binaryTcpOrderClient HAS_EXTRAS (0x0400) TLV encoding & validation', (
         clientOrderId: FIXED_UUID,
       }),
     ).toThrow(/NUL/);
+  });
+
+  it('encodes TRAILING_STOP (0x03) and TRAILING_STEP (0x04) TLV tags for market, pending, modify-position, and modify-pending', () => {
+    // 1. Modify Position set trailingStop=55, trailingStep=10 -> flags HAS_TRAILING | HAS_EXTRAS
+    const modSet = encodeBinaryOrderWsModeAFrame(9, {
+      action: BINARY_ORDER_ACTION_MODIFY_POSITION,
+      accountLogin: 1001,
+      ticket: 77001,
+      trailingStop: 55,
+      trailingStep: 10,
+      clientOrderId: FIXED_UUID,
+    });
+    const expectedTrailingBlock = [
+      12, 0, // u16 LE extrasLen = 12 (2 * 6 bytes)
+      BINARY_ORDER_EXTRA_TAG_TRAILING_STOP, 4, 55, 0, 0, 0,
+      BINARY_ORDER_EXTRA_TAG_TRAILING_STEP, 4, 10, 0, 0, 0,
+    ];
+    expect(modSet.byteLength).toBe(132 + expectedTrailingBlock.length);
+    const modSetView = new DataView(modSet.buffer, modSet.byteOffset, modSet.byteLength);
+    const modSetFlags = modSetView.getUint16(4 + 4, true);
+    expect(modSetFlags & BINARY_ORDER_FLAG_HAS_TRAILING).toBe(BINARY_ORDER_FLAG_HAS_TRAILING);
+    expect(modSetFlags & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(BINARY_ORDER_FLAG_HAS_EXTRAS);
+    expect(Array.from(modSet.subarray(132))).toEqual(expectedTrailingBlock);
+
+    // 2. Modify Position clear trailingStop=0 -> flags CLEAR_TRAILING | HAS_EXTRAS and TLV 0x03=0
+    const modClear = encodeBinaryOrderWsModeAFrame(10, {
+      action: BINARY_ORDER_ACTION_MODIFY_POSITION,
+      accountLogin: 1001,
+      ticket: 77001,
+      trailingStop: 0,
+      clientOrderId: FIXED_UUID,
+    });
+    const modClearView = new DataView(modClear.buffer, modClear.byteOffset, modClear.byteLength);
+    const modClearFlags = modClearView.getUint16(4 + 4, true);
+    expect(modClearFlags & BINARY_ORDER_FLAG_CLEAR_TRAILING).toBe(BINARY_ORDER_FLAG_CLEAR_TRAILING);
+    expect(modClearFlags & BINARY_ORDER_FLAG_HAS_TRAILING).toBe(0);
+    expect(Array.from(modClear.subarray(132))).toEqual([
+      6, 0,
+      BINARY_ORDER_EXTRA_TAG_TRAILING_STOP, 4, 0, 0, 0, 0,
+    ]);
+
+    // 3. Reject conflicting HAS_TRAILING | CLEAR_TRAILING
+    expect(() =>
+      encodeBinaryOrderWsModeAFrame(11, {
+        action: BINARY_ORDER_ACTION_MODIFY_POSITION,
+        accountLogin: 1001,
+        ticket: 77001,
+        flags: BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING,
+        clientOrderId: FIXED_UUID,
+      }),
+    ).toThrow(/HAS_TRAILING and CLEAR_TRAILING/);
+
+    // 4. Reject trailingStep > 0 without trailingStop > 0
+    expect(() =>
+      encodeBinaryOrderWsModeAFrame(12, {
+        action: BINARY_ORDER_ACTION_PLACE_MARKET,
+        accountLogin: 1001,
+        symbol: 'EURUSD',
+        side: 'BUY',
+        volume: 0.1,
+        trailingStep: 10,
+        clientOrderId: FIXED_UUID,
+      }),
+    ).toThrow(/trailing_step requires trailing_stop > 0/);
   });
 });

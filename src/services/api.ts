@@ -171,13 +171,16 @@ import {
   BINARY_ORDER_COMMENT_MAX_BYTES,
   BINARY_ORDER_FLAG_CLEAR_SL,
   BINARY_ORDER_FLAG_CLEAR_TP,
+  BINARY_ORDER_FLAG_CLEAR_TRAILING,
   BINARY_ORDER_FLAG_HAS_EXPIRATION,
   BINARY_ORDER_FLAG_HAS_EXTRAS,
   BINARY_ORDER_FLAG_HAS_PRICE,
   BINARY_ORDER_FLAG_HAS_SL,
   BINARY_ORDER_FLAG_HAS_STOP_LIMIT,
   BINARY_ORDER_FLAG_HAS_TP,
+  BINARY_ORDER_FLAG_HAS_TRAILING,
   BINARY_ORDER_FLAG_PARTIAL_CLOSE,
+  BINARY_ORDER_TRAILING_MAX_POINTS,
   BINARY_ORDER_SIDE_BUY,
   BINARY_ORDER_SIDE_SELL,
   BINARY_ORDER_SUBTYPE_BUY_LIMIT,
@@ -195,9 +198,6 @@ import {
   type BinaryTcpOrderParams,
   type DecodedBinaryOrderResp,
 } from './binaryTcpOrderClient';
-
-// TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-export const TRAILING_STOP_REST_EXCEPTION = true;
 
 export const FAST_CHANNEL_NOT_CONFIGURED_MESSAGE = 'Fast order channel is not configured for this Terminal';
 export const FAST_CHANNEL_UNAVAILABLE_MESSAGE = 'Fast order channel unavailable - order not sent, try again';
@@ -845,12 +845,14 @@ const isClearingStopValue = (raw: unknown): boolean => (
   || (typeof raw !== 'boolean' && Number(raw) === 0)
 );
 
-const hasNonZeroOptionalNumeric = (raw: unknown): boolean => (
-  raw !== undefined
-  && raw !== null
-  && raw !== ''
-  && Number(raw) !== 0
-);
+const normalizeOptionalTrailingPoints = (raw: unknown, label: 'trailing_stop' | 'trailing_step'): number | undefined => {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const parsed = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > BINARY_ORDER_TRAILING_MAX_POINTS) {
+    throw new Error(`${label} must be an integer between 0 and ${BINARY_ORDER_TRAILING_MAX_POINTS} points`);
+  }
+  return parsed;
+};
 
 const normalizeMarketProtection = (value: unknown, label: 'SL' | 'TP'): number => {
   if (value === undefined) return 0;
@@ -1520,69 +1522,14 @@ export const positionsApi = {
       ? existingPosition.symbol.trim().toUpperCase()
       : '';
 
-    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-    const hasTrailingChanges = TRAILING_STOP_REST_EXCEPTION && (
-      hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step)
-    );
-
-    if (hasTrailingChanges) {
-      const restClientOrderId = createTradeOrderUuid();
-      try {
-        const updated = await endpoints.tradingApi.modifyPosition(ticket, {
-          price_sl: rawSl ?? undefined,
-          price_tp: rawTp ?? undefined,
-          comment: data.comment,
-          trailing_stop: data.trailing_stop,
-          trailing_step: data.trailing_step,
-        });
-        const terminalAtMs = tradeOrderNow();
-        const updatedRecord = updated as unknown as LooseRecord | undefined;
-        const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
-        const nextSl = toFiniteNumber(updatedRecord?.price_sl ?? updatedRecord?.sl, toFiniteNumber(rawSl, 0));
-        const nextTp = toFiniteNumber(updatedRecord?.price_tp ?? updatedRecord?.tp, toFiniteNumber(rawTp, 0));
-        const protectionSummary = `SL: ${formatCompactJournalNum(nextSl) || '0'}, TP: ${formatCompactJournalNum(nextTp) || '0'}`;
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          ticket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-          operationLabel: 'Position modified',
-          journalMessage: `Position modified #${ticket}${resolvedSymbol ? ` ${resolvedSymbol}` : ''} (${protectionSummary})`,
-          terminalStatus: 'filled',
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        return updated;
-      } catch (error) {
-        const terminalAtMs = tradeOrderNow();
-        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          ticket,
-          ...(existingSymbol ? { symbol: existingSymbol } : {}),
-          operationLabel: `Position modify ${terminalStatus}`,
-          journalMessage: `Position modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-          terminalStatus,
-          ...(errorCode ? { errorCode } : {}),
-          ...(errorMessage ? { errorMessage } : {}),
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        throw error;
-      }
-    }
-
     let flags = 0;
     let slParam: number | undefined;
     let tpParam: number | undefined;
     let clearSl = false;
     let clearTp = false;
+    let trailingStopParam: number | undefined;
+    let trailingStepParam: number | undefined;
+    let clearTrailing = false;
 
     if (rawSl !== undefined) {
       if (isClearingStopValue(rawSl)) {
@@ -1614,6 +1561,30 @@ export const positionsApi = {
       }
     }
 
+    if (data.trailing_stop !== undefined || data.trailing_step !== undefined) {
+      if (data.trailing_stop !== undefined && isClearingStopValue(data.trailing_stop)) {
+        const parsedStep = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+        if (parsedStep !== undefined && parsedStep > 0) {
+          throw new Error('trailing_step requires trailing_stop > 0');
+        }
+        flags |= BINARY_ORDER_FLAG_CLEAR_TRAILING | BINARY_ORDER_FLAG_HAS_EXTRAS;
+        clearTrailing = true;
+        trailingStopParam = 0;
+        if (data.trailing_step !== undefined) {
+          trailingStepParam = 0;
+        }
+      } else {
+        trailingStopParam = normalizeOptionalTrailingPoints(data.trailing_stop, 'trailing_stop');
+        trailingStepParam = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+        if (trailingStepParam !== undefined && trailingStepParam > 0 && (trailingStopParam === undefined || trailingStopParam <= 0)) {
+          throw new Error('trailing_step requires trailing_stop > 0');
+        }
+        if (trailingStopParam !== undefined && trailingStopParam > 0) {
+          flags |= BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_HAS_EXTRAS;
+        }
+      }
+    }
+
     if (!isBinaryTcpOrderEnabled()) {
       throw createFastChannelNotConfiguredError();
     }
@@ -1628,6 +1599,9 @@ export const positionsApi = {
       flags,
       ...(slParam !== undefined ? { sl: slParam } : {}),
       ...(tpParam !== undefined ? { tp: tpParam } : {}),
+      ...(trailingStopParam !== undefined ? { trailingStop: trailingStopParam } : {}),
+      ...(trailingStepParam !== undefined ? { trailingStep: trailingStepParam } : {}),
+      ...(clearTrailing ? { clearTrailing: true } : {}),
       clearSl,
       clearTp,
       clientOrderId,
@@ -1734,6 +1708,8 @@ export const positionsApi = {
         price_tp: nextTp,
         sl: nextSl,
         tp: nextTp,
+        ...(trailingStopParam !== undefined ? { trailing_stop: trailingStopParam } : {}),
+        ...(trailingStepParam !== undefined ? { trailing_step: trailingStepParam } : {}),
         ...timing,
       } as endpoints.Position;
     } catch (err) {
@@ -2059,13 +2035,19 @@ export const ordersApi = {
     const normalizedMagic = data.magic !== undefined && data.magic !== null
       ? validateAndNormalizeOrderMagic(data.magic)
       : undefined;
-    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
-
-    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-    const hasTrailingStopException = TRAILING_STOP_REST_EXCEPTION && (
-      hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step)
-    );
+    let trailingStopParam: number | undefined;
+    let trailingStepParam: number | undefined;
+    if (data.trailing_stop !== undefined || data.trailing_step !== undefined) {
+      trailingStopParam = normalizeOptionalTrailingPoints(data.trailing_stop, 'trailing_stop');
+      trailingStepParam = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+      if (trailingStepParam !== undefined && trailingStepParam > 0 && (trailingStopParam === undefined || trailingStopParam <= 0)) {
+        throw new Error('trailing_step requires trailing_stop > 0');
+      }
+      if (trailingStopParam === 0) trailingStopParam = undefined;
+      if (trailingStepParam === 0 && trailingStopParam === undefined) trailingStepParam = undefined;
+    }
+    const hasTrailing = trailingStopParam !== undefined && trailingStopParam > 0;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined || hasTrailing;
 
     const suppliedClientOrderId = typeof data.client_order_id === 'string'
       ? data.client_order_id.trim()
@@ -2073,16 +2055,14 @@ export const ordersApi = {
     if (suppliedClientOrderId && !isTradeOrderUuidV4(suppliedClientOrderId)) {
       throw new Error('client_order_id must be a UUID v4');
     }
-    if (!hasTrailingStopException && !isBinaryTcpOrderEnabled()) {
+    if (!isBinaryTcpOrderEnabled()) {
       throw createFastChannelNotConfiguredError(suppliedClientOrderId || undefined);
     }
 
-    const useBinaryTcpFastPath = !hasTrailingStopException;
-    const clientOrderId = suppliedClientOrderId
-      || (useBinaryTcpFastPath ? createFastBinaryClientOrderId() : createTradeOrderUuid());
+    const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
     const provisionalTicket = createProvisionalMarketOrderTicket();
     let pendingPlacementDispatched = false;
-    let terminalTransport: TradeOrderLatencyTransport = useBinaryTcpFastPath ? 'websocket' : 'rest';
+    const terminalTransport: TradeOrderLatencyTransport = 'websocket';
     let binaryEnqueueStartedAtMs: number | undefined;
 
     const recordPlacementTerminal = (
@@ -2167,12 +2147,13 @@ export const ordersApi = {
 
     let binaryFilledAtMs: number | undefined;
     let result: endpoints.Position;
-    if (useBinaryTcpFastPath) {
+    {
       const binarySubmittedAtMs = Date.now();
       const enqueueStartedAtMs = tradeOrderNow();
       binaryEnqueueStartedAtMs = enqueueStartedAtMs;
       const binaryFlags = (sl > 0 ? BINARY_ORDER_FLAG_HAS_SL : 0)
         | (tp > 0 ? BINARY_ORDER_FLAG_HAS_TP : 0)
+        | (hasTrailing ? BINARY_ORDER_FLAG_HAS_TRAILING : 0)
         | (hasExtras ? BINARY_ORDER_FLAG_HAS_EXTRAS : 0);
       const binaryParams: BinaryTcpOrderParams = {
         action: BINARY_ORDER_ACTION_PLACE_MARKET,
@@ -2187,8 +2168,12 @@ export const ordersApi = {
       };
       if (sl > 0) binaryParams.sl = sl;
       if (tp > 0) binaryParams.tp = tp;
-      if (normalizedComment !== undefined) binaryParams.comment = normalizedComment;
-      if (normalizedMagic !== undefined) binaryParams.magic = normalizedMagic;
+      if (hasExtras) {
+        if (normalizedComment !== undefined) binaryParams.comment = normalizedComment;
+        if (normalizedMagic !== undefined) binaryParams.magic = normalizedMagic;
+        if (trailingStopParam !== undefined) binaryParams.trailingStop = trailingStopParam;
+        if (trailingStepParam !== undefined) binaryParams.trailingStep = trailingStepParam;
+      }
       if (options.signal) binaryParams.signal = options.signal;
       if (options.timeoutMs !== undefined) binaryParams.timeoutMs = options.timeoutMs;
 
@@ -2320,144 +2305,13 @@ export const ordersApi = {
         throw error;
       }
       clearTimeout(pendingPlacementTimer);
-    } else {
-      // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-      const settleOrderCommand = async (
-        initialResponse: unknown,
-        submittedAtMs: number,
-        pollImmediately = false,
-      ): Promise<endpoints.Position> => {
-        let lastVisibleStatus: string | null = null;
-        const command = await pollOrderCommandUntilTerminal({
-          clientOrderId,
-          initialResponse,
-          readStatus: async (id) => normalizeCommandSnapshotForPoll(
-            await endpoints.tradingApi.getOrderCommand(id),
-          ),
-          startedAtMs: submittedAtMs,
-          pollImmediately,
-          onStatus: (next) => {
-            if (
-              (next.status === 'accepted' || next.status === 'processing')
-              && next.status !== lastVisibleStatus
-            ) {
-              lastVisibleStatus = next.status;
-              dispatchPlacementState(next.status);
-            }
-          },
-          onPollError: (pollError) => {
-            console.warn('[Trade] Order command status read failed; retrying until execute_before:', pollError);
-          },
-        });
-        if (command.status !== 'filled') {
-          throw new OrderCommandTerminalError(command, clientOrderId);
+      if (hasTrailing) {
+        if (trailingStopParam !== undefined) {
+          (result as unknown as LooseRecord).trailing_stop = trailingStopParam;
         }
-        return mapRestCommandToPosition(command, {
-          accountLogin,
-          symbol,
-          side,
-          volume,
-          sl,
-          tp,
-        });
-      };
-
-      const placeViaTrailingRestException = async (): Promise<endpoints.Position> => {
-        terminalTransport = 'rest';
-        const reason = 'trailing_stop_rest_exception';
-        const traceId = toTradeOrderTraceId(clientOrderId);
-        const restOrder: endpoints.CreateOrderRequest = {
-          login: accountLogin,
-          client_order_id: clientOrderId,
-          symbol,
-          side,
-          type: 'market',
-          volume,
-          price_sl: rawSl,
-          price_tp: rawTp,
-          comment: normalizedComment ?? data.comment,
-          trailing_stop: data.trailing_stop,
-          trailing_step: data.trailing_step,
-          magic: typeof normalizedMagic === 'number' ? normalizedMagic : data.magic,
-        };
-        const restStartedAtMs = tradeOrderNow();
-        recordTradeOrderLatency({
-          phase: 'rest_started',
-          transport: 'rest',
-          traceId,
-          sessionScope,
-          symbol,
-          reason,
-          totalMs: restStartedAtMs - apiStartedAtMs,
-        });
-        try {
-          const submittedAtMs = Date.now();
-          const response = await endpoints.tradingApi.placeOrder(restOrder);
-          const restRespondedAtMs = tradeOrderNow();
-          recordTradeOrderLatency({
-            phase: 'rest_response',
-            transport: 'rest',
-            traceId,
-            sessionScope,
-            symbol,
-            reason,
-            restRttMs: restRespondedAtMs - restStartedAtMs,
-            totalMs: restRespondedAtMs - apiStartedAtMs,
-          });
-          const legacyPosition = readLegacyRestPosition(response);
-          const terminalPosition = legacyPosition ?? await settleOrderCommand(response, submittedAtMs);
-          const restCompletedAtMs = tradeOrderNow();
-          recordTradeOrderLatency({
-            phase: 'rest_completed',
-            transport: 'rest',
-            traceId,
-            sessionScope,
-            symbol,
-            reason,
-            restRttMs: restCompletedAtMs - restStartedAtMs,
-            totalMs: restCompletedAtMs - apiStartedAtMs,
-          });
-          return terminalPosition;
-        } catch (error) {
-          const restFailedAtMs = tradeOrderNow();
-          recordTradeOrderLatency({
-            phase: 'rest_failed',
-            transport: 'rest',
-            traceId,
-            sessionScope,
-            symbol,
-            reason,
-            restRttMs: restFailedAtMs - restStartedAtMs,
-            totalMs: restFailedAtMs - apiStartedAtMs,
-          });
-          throw error;
+        if (trailingStepParam !== undefined) {
+          (result as unknown as LooseRecord).trailing_step = trailingStepParam;
         }
-      };
-
-      const executionPromise = placeViaTrailingRestException();
-      dispatchPendingPlacement();
-      try {
-        result = await executionPromise;
-      } catch (error) {
-        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-        recordPlacementTerminal(terminalStatus, {
-          code: errorCode,
-          message: errorMessage,
-        }, binaryFilledAtMs);
-        if (pendingPlacementDispatched) {
-          if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
-            dispatchPlacementState(terminalStatus, undefined, {
-              code: errorCode,
-              message: errorMessage,
-            });
-          } else {
-            dispatchPlacementState('failed', undefined, {
-              code: errorCode,
-              message: errorMessage,
-            });
-          }
-        }
-        throw error;
       }
     }
 
@@ -2477,7 +2331,7 @@ export const ordersApi = {
         }));
       }
     };
-    if (useBinaryTcpFastPath && typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(publishConfirmedFillToUi);
     } else {
       publishConfirmedFillToUi();
@@ -2532,88 +2386,19 @@ export const ordersApi = {
     const normalizedMagic = data.magic !== undefined && data.magic !== null
       ? validateAndNormalizeOrderMagic(data.magic)
       : undefined;
-    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
-
-    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-    const hasTrailingStopException = TRAILING_STOP_REST_EXCEPTION && (
-      hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step)
-    );
-
-    if (hasTrailingStopException) {
-      const restClientOrderId = createTradeOrderUuid();
-      try {
-        const result = await endpoints.tradingApi.placePendingOrder({
-          login: accountLogin,
-          symbol,
-          side,
-          volume,
-          type: type as endpoints.PendingOrderRequest['type'],
-          price,
-          price_limit: stopLimitPrice,
-          price_sl: rawSl,
-          price_tp: rawTp,
-          expiration: rawExpiration,
-          comment: normalizedComment ?? data.comment,
-          trailing_stop: data.trailing_stop,
-          trailing_step: data.trailing_step,
-          magic: typeof normalizedMagic === 'number' ? normalizedMagic : data.magic,
-        });
-        const terminalAtMs = tradeOrderNow();
-        const resultRecord = result as unknown as LooseRecord | undefined;
-        const orderTicket = toFiniteNumber(resultRecord?.order_ticket ?? resultRecord?.ticket ?? resultRecord?.id, 0);
-        const pendingSubject = [
-          orderTicket > 0 ? `#${orderTicket}` : '',
-          type,
-          symbol,
-          formatCompactJournalNum(volume),
-          price > 0 ? `@ ${formatCompactJournalNum(price)}` : '',
-        ].filter(Boolean).join(' ');
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          ...(orderTicket > 0 ? { ticket: orderTicket } : {}),
-          symbol,
-          side,
-          orderSubType: type,
-          volume,
-          price,
-          operationLabel: 'Pending order placed',
-          journalMessage: `Pending order placed ${pendingSubject}`.trim(),
-          terminalStatus: 'filled',
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('rtx:new-trade-placed'));
-        }
-        return result;
-      } catch (error) {
-        const terminalAtMs = tradeOrderNow();
-        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          symbol,
-          side,
-          orderSubType: type,
-          volume,
-          price,
-          operationLabel: `Pending order ${terminalStatus}`,
-          journalMessage: `Pending order ${terminalStatus} ${type} ${symbol} ${formatCompactJournalNum(volume)} @ ${formatCompactJournalNum(price)}`,
-          terminalStatus,
-          ...(errorCode ? { errorCode } : {}),
-          ...(errorMessage ? { errorMessage } : {}),
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        throw error;
+    let trailingStopParam: number | undefined;
+    let trailingStepParam: number | undefined;
+    if (data.trailing_stop !== undefined || data.trailing_step !== undefined) {
+      trailingStopParam = normalizeOptionalTrailingPoints(data.trailing_stop, 'trailing_stop');
+      trailingStepParam = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+      if (trailingStepParam !== undefined && trailingStepParam > 0 && (trailingStopParam === undefined || trailingStopParam <= 0)) {
+        throw new Error('trailing_step requires trailing_stop > 0');
       }
+      if (trailingStopParam === 0) trailingStopParam = undefined;
+      if (trailingStepParam === 0 && trailingStopParam === undefined) trailingStepParam = undefined;
     }
+    const hasTrailing = trailingStopParam !== undefined && trailingStopParam > 0;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined || hasTrailing;
 
     const sl = rawSl !== undefined && rawSl !== null && String(rawSl) !== '' ? Number(rawSl) : 0;
     const tp = rawTp !== undefined && rawTp !== null && String(rawTp) !== '' ? Number(rawTp) : 0;
@@ -2642,6 +2427,7 @@ export const ordersApi = {
     if (sl > 0) flags |= BINARY_ORDER_FLAG_HAS_SL;
     if (tp > 0) flags |= BINARY_ORDER_FLAG_HAS_TP;
     if (expiration > 0) flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
+    if (hasTrailing) flags |= BINARY_ORDER_FLAG_HAS_TRAILING;
     if (hasExtras) flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
 
     const binarySubmittedAtMs = Date.now();
@@ -2660,6 +2446,8 @@ export const ordersApi = {
       ...(expiration > 0 ? { expiration } : {}),
       ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
       ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
+      ...(trailingStopParam !== undefined ? { trailingStop: trailingStopParam } : {}),
+      ...(trailingStepParam !== undefined ? { trailingStep: trailingStepParam } : {}),
       clientOrderId,
       authToken: getAuthToken(),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -2769,6 +2557,8 @@ export const ordersApi = {
         ...(expiration > 0 ? { expiration, expiry: expiration } : {}),
         ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
         ...(normalizedMagic !== undefined ? { magic: Number(normalizedMagic) } : {}),
+        ...(trailingStopParam !== undefined ? { trailing_stop: trailingStopParam } : {}),
+        ...(trailingStepParam !== undefined ? { trailing_step: trailingStepParam } : {}),
         status: 'pending',
         created_at: new Date().toISOString(),
         time_create: Math.floor(Date.now() / 1000),
@@ -2949,83 +2739,35 @@ export const ordersApi = {
     const normalizedMagic = extendedModifyData.magic !== undefined && extendedModifyData.magic !== null
       ? validateAndNormalizeOrderMagic(extendedModifyData.magic)
       : undefined;
-    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined;
-
-    // TRAILING_STOP_REST_EXCEPTION - remove when the engine supports trailing
-    const hasTrailingChanges = TRAILING_STOP_REST_EXCEPTION && (
-      hasNonZeroOptionalNumeric(data.trailing_stop)
-      || hasNonZeroOptionalNumeric(data.trailing_step)
-    );
+    let trailingStopParam: number | undefined;
+    let trailingStepParam: number | undefined;
+    let clearTrailing = false;
+    if (data.trailing_stop !== undefined || data.trailing_step !== undefined) {
+      if (data.trailing_stop !== undefined && isClearingStopValue(data.trailing_stop)) {
+        const parsedStep = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+        if (parsedStep !== undefined && parsedStep > 0) {
+          throw new Error('trailing_step requires trailing_stop > 0');
+        }
+        clearTrailing = true;
+        trailingStopParam = 0;
+        if (data.trailing_step !== undefined) {
+          trailingStepParam = 0;
+        }
+      } else {
+        trailingStopParam = normalizeOptionalTrailingPoints(data.trailing_stop, 'trailing_stop');
+        trailingStepParam = normalizeOptionalTrailingPoints(data.trailing_step, 'trailing_step');
+        if (trailingStepParam !== undefined && trailingStepParam > 0 && (trailingStopParam === undefined || trailingStopParam <= 0)) {
+          throw new Error('trailing_step requires trailing_stop > 0');
+        }
+      }
+    }
+    const hasTrailing = trailingStopParam !== undefined && trailingStopParam > 0;
+    const hasExtras = normalizedComment !== undefined || normalizedMagic !== undefined || hasTrailing || clearTrailing;
 
     const rawStopLimit = resolveRawStopLimitPrice(data);
     const rawSl = data.price_sl !== undefined ? data.price_sl : data.sl;
     const rawTp = data.price_tp !== undefined ? data.price_tp : data.tp;
     const rawExpiration = data.expiration !== undefined ? data.expiration : data.expiry;
-
-    if (hasTrailingChanges) {
-      const restClientOrderId = createTradeOrderUuid();
-      try {
-        const updated = await endpoints.tradingApi.modifyPendingOrder(ticket, {
-          price: data.price,
-          price_limit: rawStopLimit !== undefined && rawStopLimit !== null && rawStopLimit !== ''
-            ? Number(rawStopLimit)
-            : data.price_limit,
-          ...(data.time_in_force !== undefined ? { time_in_force: data.time_in_force } : {}),
-          ...(data.state_version !== undefined ? { state_version: data.state_version } : {}),
-          price_sl: data.price_sl ?? data.sl,
-          price_tp: data.price_tp ?? data.tp,
-          expiration: data.expiration !== undefined ? data.expiration : data.expiry,
-          expiry: data.expiry !== undefined ? data.expiry : data.expiration,
-          comment: normalizedComment ?? data.comment,
-          trailing_stop: data.trailing_stop,
-          trailing_step: data.trailing_step,
-          client_order_id: data.client_order_id || restClientOrderId,
-        });
-        const terminalAtMs = tradeOrderNow();
-        const updatedRecord = updated as unknown as LooseRecord | undefined;
-        const resolvedSymbol = String(updatedRecord?.symbol ?? existingSymbol ?? '').trim().toUpperCase();
-        const resolvedPrice = toFiniteNumber(updatedRecord?.price, toFiniteNumber(data.price, 0));
-        const modifySubject = [
-          `#${ticket}`,
-          resolvedSymbol,
-          resolvedPrice > 0 ? `@ ${formatCompactJournalNum(resolvedPrice)}` : '',
-        ].filter(Boolean).join(' ');
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          ticket,
-          ...(resolvedSymbol ? { symbol: resolvedSymbol } : {}),
-          ...(resolvedPrice > 0 ? { price: resolvedPrice } : {}),
-          operationLabel: 'Pending order modified',
-          journalMessage: `Pending order modified ${modifySubject}`.trim(),
-          terminalStatus: 'filled',
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        return updated;
-      } catch (error) {
-        const terminalAtMs = tradeOrderNow();
-        const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
-        recordTradeOrderLatency({
-          phase: 'placement_terminal',
-          transport: 'rest',
-          traceId: toTradeOrderTraceId(restClientOrderId),
-          clientOrderId: restClientOrderId,
-          sessionScope,
-          ticket,
-          ...(existingSymbol ? { symbol: existingSymbol } : {}),
-          operationLabel: `Pending order modify ${terminalStatus}`,
-          journalMessage: `Pending order modify ${terminalStatus} #${ticket}${existingSymbol ? ` ${existingSymbol}` : ''}`,
-          terminalStatus,
-          ...(errorCode ? { errorCode } : {}),
-          ...(errorMessage ? { errorMessage } : {}),
-          totalMs: Math.max(0, terminalAtMs - intentAtMs),
-        });
-        throw error;
-      }
-    }
 
     let flags = 0;
     let priceParam: number | undefined;
@@ -3091,6 +2833,11 @@ export const ordersApi = {
       }
     }
 
+    if (clearTrailing) {
+      flags |= BINARY_ORDER_FLAG_CLEAR_TRAILING;
+    } else if (hasTrailing) {
+      flags |= BINARY_ORDER_FLAG_HAS_TRAILING;
+    }
     if (hasExtras) {
       flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
     }
@@ -3120,6 +2867,9 @@ export const ordersApi = {
       ...(expirationParam !== undefined && expirationParam > 0 ? { expiration: expirationParam } : {}),
       ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
       ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
+      ...(trailingStopParam !== undefined ? { trailingStop: trailingStopParam } : {}),
+      ...(trailingStepParam !== undefined ? { trailingStep: trailingStepParam } : {}),
+      ...(clearTrailing ? { clearTrailing: true } : {}),
       clearSl,
       clearTp,
       clientOrderId,
@@ -3238,6 +2988,8 @@ export const ordersApi = {
           expiry: expirationParam,
         } : {}),
         ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
+        ...(trailingStopParam !== undefined ? { trailing_stop: trailingStopParam } : {}),
+        ...(trailingStepParam !== undefined ? { trailing_step: trailingStepParam } : {}),
         ...(normalizedMagic !== undefined ? { magic: Number(normalizedMagic) } : {}),
         status: 'pending',
         ...timing,
