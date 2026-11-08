@@ -537,6 +537,27 @@ describe('useToolboxTradeData helpers', () => {
     });
   });
 
+  it('divides tick-repriced profit by the cent group lot_divisor', () => {
+    const initial = replaceToolboxPositions([], [
+      {
+        ticket: 7001,
+        symbol: 'BTCUSD',
+        side: 'buy',
+        volume: 1,
+        contract_size: 1,
+        lot_divisor: 100,
+        price_open: 75000,
+        price_current: 75000,
+        profit: 0,
+      },
+    ]);
+
+    const patched = patchPositionsFromTick(initial, { symbol: 'BTCUSD', bid: 75100, ask: 75101, timestamp: 1794135000 });
+
+    // 1 cent lot = 0.01 BTC: a 100 USD move is 1.00 USD, not 100.00
+    expect(patched[0]).toMatchObject({ currentPrice: 75100, profit: 1, unrealizedPnL: 1 });
+  });
+
   it('removes only close-event tickets', () => {
     const initial = replaceToolboxPositions([], [
       {

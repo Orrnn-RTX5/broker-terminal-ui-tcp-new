@@ -44,6 +44,7 @@ export type ToolboxTradePosition = Omit<Position, 'time_create' | 'time_update'>
   digits?: number;
   contractSize?: number;
   contract_size?: number;
+  lot_divisor?: number;
   margin?: number;
   used_margin?: number;
   margin_available?: boolean;
@@ -192,6 +193,7 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
     ...(digits !== null ? { digits } : {}),
     contractSize: toNumber(raw?.contractSize ?? raw?.contract_size ?? normalized.contractSize, 0) || undefined,
     contract_size: toNumber(raw?.contract_size ?? raw?.contractSize ?? normalized.contract_size, 0) || undefined,
+    lot_divisor: toNumber(raw?.lot_divisor ?? raw?.lotDivisor ?? (normalized as { lot_divisor?: unknown }).lot_divisor, 0) || undefined,
     openPrice,
     price_open: openPrice,
     open_price: openPrice,
@@ -240,6 +242,7 @@ const positionSignature = (position: ToolboxTradePosition): string => [
   position.volume,
   position.digits ?? '',
   position.contractSize ?? position.contract_size ?? '',
+  position.lot_divisor ?? '',
   position.margin ?? position.used_margin ?? '',
   position.hasBackendMargin ?? '',
   position.margin_available ?? '',
