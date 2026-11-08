@@ -29,7 +29,7 @@ import {
   readDailyChangePreviousClose,
   resolveDailyChangePercent,
 } from '../utils/dailyChange';
-import { resolveDailyChangePriceMode } from './dailyChangePriceModeRegistry';
+import { readRegisteredSymbolPriceSpec, resolveDailyChangePriceMode } from './dailyChangePriceModeRegistry';
 import {
   isEnhancedStoreHandledTickFrame,
   isExactAccountStreamChannel,
@@ -807,6 +807,7 @@ export class EnhancedWebSocketService {
 
     const emitBinaryTick = (bt: DecodedBinaryTick) => {
       if (this.disposed) return;
+      const specDigits = readRegisteredSymbolPriceSpec(bt.symbol).digits;
       const msg: WebSocketMessage = {
         type: 'tick',
         channel,
@@ -816,6 +817,7 @@ export class EnhancedWebSocketService {
         spread: bt.spread,
         timestamp: bt.timestamp,
         sourceTimestamp: bt.sourceTimestamp,
+        ...(specDigits !== null ? { digits: specDigits } : {}),
         ...(bt.dailyChange !== undefined ? { dailyChange: bt.dailyChange } : {}),
         ...(bt.high24h !== undefined ? { high24h: bt.high24h } : {}),
         ...(bt.low24h !== undefined ? { low24h: bt.low24h } : {}),

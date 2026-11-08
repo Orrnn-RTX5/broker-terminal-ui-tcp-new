@@ -28,7 +28,7 @@ import { tradeApi } from '../api/trade';
 import { getStoredAccountLogin } from '../api/tradeGateway';
 import { buildOrderTicketSymbolOptions } from '../utils/accountSymbolUniverse';
 import { resolveSymbolDescription } from '../utils/symbolDescription';
-import { resolveSpecDigits } from '../utils/symbolUtils';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
 import { inferObservedPriceDigits } from '../utils/chartPriceScale';
 import { readRegisteredSymbolPriceSpec, readRegisteredSymbolStopsLevel } from '../services/dailyChangePriceModeRegistry';
 import { depthExecutionForLevel } from './depthOfMarketModel';
@@ -197,7 +197,7 @@ export function getInstrumentConfig(
 
 /** Broker digits -> fixed precision; unknown digits -> raw value (no guess). */
 function formatDialogPrice(price: number, digits: number | null): string {
-  return digits === null ? String(price) : price.toFixed(digits);
+  return digits === null ? String(stripFloatPrecisionNoise(price)) : price.toFixed(digits);
 }
 
 // Format number with space separators (MT5 style: "1 000")

@@ -7,7 +7,7 @@ import { useDialogFocusScope } from '../../../hooks/useDialogFocusScope';
 import { useChartSettingsStore } from '../../../store/useChartSettingsStore';
 import { useAppStore, type Trade } from '../../../store/useAppStore';
 import { formatPrice, resolveSpecDigits } from '../../../utils/symbolUtils';
-import { resolveMarketWatchPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
+import { lookupStoreCatalogPriceDigits, resolveMarketWatchPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
 import { safeReadBoolean, safeReadJson, safeReadString } from '../preferences';
 import { escapeHtml } from '../reporting';
 import { getCurrentBrokerAccountSessionScopeKey, normalizeTradeSymbol } from '../sessionScope';
@@ -294,31 +294,32 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
     };
 
     // Spec digits only (broker catalog, registered spec, then live tick); unknown renders raw (never guessed).
-    const lookupHistoryTickDigits = (symbol: string, observedPrice?: number): number | null => {
+    const lookupHistoryTickDigits = (symbol: string, observedPrice?: number, tradeDigits?: unknown): number | null => {
         const normalized = normalizeTradeSymbol(symbol);
         const ticks = (useAppStore.getState().ticks ?? {}) as Record<string, { digits?: unknown } | undefined>;
         const tick = ticks[symbol] ?? ticks[normalized];
+        const catalogDigits = digitsBySymbol.get(normalized) ?? lookupStoreCatalogPriceDigits(normalized || symbol);
         return resolveMarketWatchPriceDigits(
             normalized || symbol,
-            digitsBySymbol.get(normalized),
+            resolveSpecDigits(tradeDigits, catalogDigits),
             tick?.digits,
             observedPrice,
         );
     };
 
-    const formatPriceCell = (value: number | undefined, symbol: string) => {
+    const formatPriceCell = (value: number | undefined, symbol: string, tradeDigits?: unknown) => {
         const price = Number(value);
         if (!Number.isFinite(price) || price <= 0) return '-';
-        const digits = lookupHistoryTickDigits(symbol, price);
+        const digits = lookupHistoryTickDigits(symbol, price, tradeDigits);
         return digits !== null
             ? formatPrice(price, digits)
             : formatPrice(Number(price.toFixed(8)), undefined);
     };
 
-    const formatLevelCell = (value: number | undefined, symbol: string) => {
+    const formatLevelCell = (value: number | undefined, symbol: string, tradeDigits?: unknown) => {
         const price = Number(value);
         if (!Number.isFinite(price) || price <= 0) return '0.00';
-        const digits = lookupHistoryTickDigits(symbol, price);
+        const digits = lookupHistoryTickDigits(symbol, price, tradeDigits);
         return digits !== null
             ? formatPrice(price, digits)
             : formatPrice(Number(price.toFixed(8)), undefined);
@@ -455,11 +456,11 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         ...(isColumnVisible('ticket') ? [{ label: 'Ticket', value: (trade: Trade): string | number => getHistoryTicket(trade) }] : []),
         { label: 'Type', value: (trade: Trade): string | number => String(trade.orderType || trade.side || trade.type || '-').toLowerCase() },
         { label: 'Volume', value: (trade: Trade): string | number => formatHistoryVolume(trade) },
-        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.openPrice, trade.symbol) },
-        { label: 'S/L', value: (trade: Trade): string | number => formatLevelCell(trade.sl, trade.symbol) },
-        { label: 'T/P', value: (trade: Trade): string | number => formatLevelCell(trade.tp, trade.symbol) },
+        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.openPrice, trade.symbol, trade.digits) },
+        { label: 'S/L', value: (trade: Trade): string | number => formatLevelCell(trade.sl, trade.symbol, trade.digits) },
+        { label: 'T/P', value: (trade: Trade): string | number => formatLevelCell(trade.tp, trade.symbol, trade.digits) },
         { label: 'Time', value: (trade: Trade): string | number => formatTs(trade.closeTime) },
-        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.closePrice, trade.symbol) },
+        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.closePrice, trade.symbol, trade.digits) },
         ...(isColumnVisible('marketValue') ? [{ label: 'Market Value', value: (trade: Trade): string | number => {
             const value = getHistoryMarketValue(trade);
             return value === null ? '\u2014' : formatGroupedNumber(value, 2, 2);
@@ -838,7 +839,7 @@ ${rows}
                             const rowStatus = resolveHistoryRowStatus(order);
                             const closePriceCellLabel = rowStatus !== 'FILLED' && !(Number(order.closePrice) > 0)
                                 ? '—'
-                                : formatPriceCell(order.closePrice, order.symbol);
+                                : formatPriceCell(order.closePrice, order.symbol, order.digits);
                             return (
                                 <tr
                                     key={`${tradeKey}-${index}`}
@@ -854,12 +855,12 @@ ${rows}
                                         <div className="flex items-center justify-center"><span>{tr(sideLabel)}</span></div>
                                     </td>
                                     <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 tabular-nums`} title={tr(volumeMode === 'lots' ? "Volume: {{value0}}" : "Amount: {{value0}}", { value0: volumeLabel })}>{volumeLabel}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Open price: {{value0}}", { value0: formatPriceCell(order.openPrice, order.symbol) })}>{formatPriceCell(order.openPrice, order.symbol)}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Stop Loss: {{value0}}", { value0: formatLevelCell(order.sl, order.symbol) })}>
-                                        <span className={(order.sl ?? 0) > 0 ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.sl, order.symbol)}</span>
+                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Open price: {{value0}}", { value0: formatPriceCell(order.openPrice, order.symbol, order.digits) })}>{formatPriceCell(order.openPrice, order.symbol, order.digits)}</td>
+                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Stop Loss: {{value0}}", { value0: formatLevelCell(order.sl, order.symbol, order.digits) })}>
+                                        <span className={(order.sl ?? 0) > 0 ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.sl, order.symbol, order.digits)}</span>
                                     </td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Take Profit: {{value0}}", { value0: formatLevelCell(order.tp, order.symbol) })}>
-                                        <span className={(order.tp ?? 0) > 0 ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.tp, order.symbol)}</span>
+                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Take Profit: {{value0}}", { value0: formatLevelCell(order.tp, order.symbol, order.digits) })}>
+                                        <span className={(order.tp ?? 0) > 0 ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.tp, order.symbol, order.digits)}</span>
                                     </td>
                                     <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Close time: {{value0}}", { value0: formatTs(order.closeTime) })}>{formatTs(order.closeTime)}</td>
                                     <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Close price: {{value0}}", { value0: closePriceCellLabel })}>{closePriceCellLabel}</td>

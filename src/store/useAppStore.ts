@@ -108,6 +108,7 @@ export interface Position {
   price_time_msc?: string | number;
   pnl_available?: boolean;
   comment?: string;
+  digits?: number;
   // Backend wire-format aliases (snake_case). Optional — preserves existing defensive fallback logic.
   open_price?: number;
   price_open?: number;
@@ -327,6 +328,7 @@ export interface Trade {
   magicNumber?: number;
   comment?: string;
   contractSize?: number;
+  digits?: number;
   historySource?: 'closed-position' | 'deal' | 'order';
 }
 

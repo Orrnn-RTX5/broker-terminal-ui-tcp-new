@@ -1,4 +1,4 @@
-import { resolveSpecDigits } from './symbolUtils';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from './symbolUtils';
 
 const MAX_SUPPORTED_PRICE_DIGITS = 12;
 const MAX_OBSERVED_PRICE_DIGITS = 8;
@@ -189,7 +189,7 @@ const axisPriceFormatters = new Map<number, Intl.NumberFormat>();
 /** Group large axis values without losing broker precision or trailing zeros. Unknown precision renders raw (never a guessed fallback). */
 export const formatChartAxisPrice = (price: number, digits: unknown): string => {
   const precision = normalizePriceDigits(digits);
-  if (precision === null) return String(price);
+  if (precision === null) return String(stripFloatPrecisionNoise(price));
   let formatter = axisPriceFormatters.get(precision);
   if (!formatter) {
     formatter = new Intl.NumberFormat('en-US', {
