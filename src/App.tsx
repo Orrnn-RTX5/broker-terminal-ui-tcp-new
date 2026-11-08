@@ -1,3 +1,4 @@
+import { isDesktopBackendTarget } from './config/backendTarget.js';
 import { useGuestMarketData } from './hooks/useGuestMarketData';
 import { useBrokerAccountSessionScope } from './hooks/useBrokerAccountSessionScope';
 import { useGuestChartLoginContinuity } from './hooks/useGuestChartLoginContinuity';
@@ -10,6 +11,7 @@ import { translateUi } from './hooks/useUiTranslation';
 import { feedbackLabel, feedbackValue, feedbackSymbol, type UiMessage } from './utils/uiFeedback';
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { isElectronRuntime } from './config/backendTarget.js';
 import { WelcomeTerminal } from './startup/WelcomeTerminalEntry';
 import {
   completeTradingAuthentication,
@@ -221,8 +223,7 @@ interface AppProps {
 }
 
 function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
-  // Public quotes and charts before login, in the browser and in RTX5-Terminal64.exe alike.
-  const guestMarketAccess = true;
+  const guestMarketAccess = !isDesktopBackendTarget();
   const drawingSidebarVisible = useDrawingSidebarStore((state) => state.visible);
 
   // A fresh handoff exists only in memory and only after WelcomeTerminal has
@@ -248,7 +249,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       !hasTokenExpiryElapsed(expiryMs)
     );
   });
-  const guestMode = !isAuthenticated;
+  const guestMode = !isAuthenticated && !isElectronRuntime();
   const [isAutoAuthenticating, setIsAutoAuthenticating] = useState(() => {
     if (isAuthenticated) return false;
     const state = useAppStore.getState();

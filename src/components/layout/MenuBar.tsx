@@ -25,7 +25,6 @@ import { supportedLanguages } from '../../config/supportedLanguages';
 import { changeInterfaceLanguage } from '../../i18n';
 import { getTerminalShortcutHint, runTerminalShortcutAction } from '../../services/shortcutCatalog';
 import { getAppVersion } from '../../config/appVersion';
-import { isDesktopBackendTarget } from '../../config/backendTarget.js';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
 import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
 import { brokerDisplayName, isBrokerName } from '../../services/brokerDisplayName';
@@ -127,8 +126,7 @@ export const MenuBar = ({
     const openPositionsCount = useAppStore(state => state.positions?.length ?? 0);
     const pendingOrdersCount = useAppStore(state => state.orders?.filter(o => o.status === 'PENDING').length ?? 0);
     const hasUnsavedChanges = openPositionsCount > 0 || pendingOrdersCount > 0;
-    const isElectronDesktop = isDesktopBackendTarget();
-    const hasNativeDataFolder = typeof window !== 'undefined' && Boolean(window.electron?.window);
+    const isElectronDesktop = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [brokerChrome, setBrokerChrome] = useState(getBrokerChrome);
@@ -906,7 +904,7 @@ export const MenuBar = ({
             onSaveAsPicture={() => {
                 console.log('Save as picture');
             }}
-            onOpenDataFolder={hasNativeDataFolder ? () => {
+            onOpenDataFolder={isElectronDesktop ? () => {
                 console.log('[MenuBar] Open data folder triggered');
                 window.dispatchEvent(new CustomEvent('openDataFolder'));
                 closeMenu();
@@ -1442,7 +1440,7 @@ const MenuItem = ({
     const tr = useUiTranslation();
     const submenuRef = useRef<HTMLDivElement>(null);
     const anchorRef = useRef<HTMLDivElement>(null);
-    const desktop = isDesktopBackendTarget();
+    const desktop = Boolean(window.electron?.window);
     const [position, setPosition] = useState({ left: 0, top: 0 });
     useLayoutEffect(() => {
         if (!desktop || !isSubmenuOpen) return;

@@ -16,7 +16,7 @@ describe('same-document logout transition source contract', () => {
     expect(logoutHandler).not.toContain('Logging out...');
   });
 
-  it('returns web and desktop sessions to guest charts', () => {
+  it('returns web sessions to guest charts and desktop sessions to login', () => {
     const appShell = readSource('src/AppShell.tsx');
     const app = readSource('src/App.tsx');
     const sessionLifecycle = readSource('src/app/session/useAppSessionLifecycle.ts');
@@ -27,9 +27,7 @@ describe('same-document logout transition source contract', () => {
     );
 
     expect(appShell).toContain('const handleSessionEnded');
-    // Desktop and web both return to the public workspace (a fresh guest terminal), not to a login screen.
-    expect(appShell).toContain('setShouldMountTerminal(true)');
-    expect(appShell).not.toContain('isElectronRuntime');
+    expect(appShell).toContain('setShouldMountTerminal(!isElectronRuntime())');
     expect(appShell).toContain('onSessionEnded={handleSessionEnded}');
     expect(lifecycleBindingStart).toBeGreaterThan(0);
     expect(lifecycleBinding).toContain('onSessionEnded,');

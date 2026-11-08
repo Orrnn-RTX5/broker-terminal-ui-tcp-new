@@ -95,7 +95,7 @@ describe('AppShell startup boundary', () => {
     vi.unstubAllGlobals();
   });
 
-  it('opens the public workspace for a known-expired stored session on desktop', async () => {
+  it('keeps a known-expired stored session on the lightweight login path', async () => {
     localStorage.setItem('rtx_last_login', '200002');
     localStorage.setItem('auth_token', 'expired-token');
     localStorage.setItem('token_expires_at', new Date(Date.now() - 60_000).toISOString());
@@ -103,11 +103,10 @@ describe('AppShell startup boundary', () => {
     const view = render(<AppShell />);
 
     await waitFor(
-      () => expect(view.getByTestId('authenticated-terminal')).toBeTruthy(),
+      () => expect(view.getByTestId('login-input')).toBeTruthy(),
       { timeout: 10_000 },
     );
-    expect(view.queryByTestId('login-input')).toBeNull();
-    expect(shellMocks.terminalRender).toHaveBeenCalledWith(null);
+    expect(shellMocks.terminalRender).not.toHaveBeenCalled();
   });
 
   it('can retry a failed cold stored-session terminal load', async () => {
@@ -123,12 +122,8 @@ describe('AppShell startup boundary', () => {
     const loadStoredSessionTerminal = vi.fn<() => Promise<typeof import('./App')>>()
       .mockRejectedValueOnce(new Error('temporary chunk failure'))
       .mockResolvedValue(retryableTerminalModule);
-    // Earlier tests mount the terminal too (desktop opens the public workspace), which caches the App module at
-    // module scope. Use a fresh AppShell module so this cold start really goes through loadStoredSessionTerminal.
-    vi.resetModules();
-    const { default: FreshAppShell } = await import('./AppShell');
     const view = render(
-      <FreshAppShell loadStoredSessionTerminal={loadStoredSessionTerminal} />,
+      <AppShell loadStoredSessionTerminal={loadStoredSessionTerminal} />,
     );
 
     await waitFor(() => expect(view.getByRole('button', { name: 'Retry' })).toBeTruthy());
@@ -198,27 +193,42 @@ describe('AppShell startup boundary', () => {
     expect(localStorage.getItem('auth_token')).toBe('matching-broker-token');
   });
 
-  it('opens the public workspace on desktop before login (no login screen)', async () => {
+  it('does not mount the authenticated terminal before login', async () => {
     const view = render(<AppShell />);
 
-    await waitFor(() => expect(view.getByTestId('authenticated-terminal')).toBeTruthy());
-    expect(view.queryByTestId('login-input')).toBeNull();
-    expect(shellMocks.terminalRender).toHaveBeenCalledWith(null);
+    await waitFor(() => expect(view.getByTestId('login-input')).toBeTruthy());
+    expect(shellMocks.terminalRender).not.toHaveBeenCalled();
   });
 
-  it('keeps the public workspace on desktop logout and remounts a clean guest terminal', async () => {
+  it('crosses the boundary immediately when authentication is committed', async () => {
     const view = render(<AppShell />);
 
+    await waitFor(() => expect(view.getByTestId('login-success')).toBeTruthy());
+    fireEvent.click(view.getByTestId('login-success'));
+
+    await waitFor(
+      () => expect(view.getByTestId('authenticated-terminal')).toBeTruthy(),
+      { timeout: 5_000 },
+    );
+    expect(shellMocks.terminalRender).toHaveBeenCalledTimes(1);
+    expect(shellMocks.terminalRender).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: '200002',
+      token: 'fresh-token',
+    }));
+  });
+
+  it('returns directly to the already-loaded real login UI on logout', async () => {
+    const view = render(<AppShell />);
+
+    await waitFor(() => expect(view.getByTestId('login-success')).toBeTruthy());
+    fireEvent.click(view.getByTestId('login-success'));
     await waitFor(() => expect(view.getByTestId('terminal-logout')).toBeTruthy());
-    const rendersBefore = shellMocks.terminalRender.mock.calls.length;
 
     fireEvent.click(view.getByTestId('terminal-logout'));
 
-    await waitFor(() => expect(shellMocks.terminalUnmount).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(view.getByTestId('authenticated-terminal')).toBeTruthy());
-    expect(shellMocks.terminalRender.mock.calls.length).toBeGreaterThan(rendersBefore);
-    expect(shellMocks.terminalRender).toHaveBeenLastCalledWith(null);
-    expect(view.queryByTestId('login-input')).toBeNull();
+    await waitFor(() => expect(view.getByTestId('login-input')).toBeTruthy());
+    expect(view.queryByTestId('authenticated-terminal')).toBeNull();
+    expect(document.querySelector('[data-login-module-loading="true"]')).toBeNull();
   });
 
   it('opens the real terminal for a web guest without an authenticated handoff', async () => {

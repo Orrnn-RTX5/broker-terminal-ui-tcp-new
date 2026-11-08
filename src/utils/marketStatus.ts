@@ -178,30 +178,23 @@ export const normalizeMarketStatus = (
       ? 'open'
     : 'unknown';
 
-  // MT5 behavior: only block trading when the session is EXPLICITLY closed,
-  // pre-market, or after-hours. Never disable BUY/SELL while schedule metadata
-  // is loading or unconfigured ('unknown'); server-side execution remains authoritative.
-  const isExplicitlyClosed = normalizedStatus === 'closed'
-    || normalizedStatus === 'pre_market'
-    || normalizedStatus === 'after_hours';
-  const isOpen = !isExplicitlyClosed;
-
+  const isOpen = normalizedStatus === 'open';
   const sessionOpenTimeMs = parseMarketSessionTimestampMs(status?.session_open) ?? undefined;
   const sessionCloseTimeMs = parseMarketSessionTimestampMs(status?.session_close) ?? undefined;
   const serverTimeMs = parseMarketSessionTimestampMs(status?.server_time) ?? undefined;
   const sessionOpenText = formatMarketSessionTimestamp(sessionOpenTimeMs, options);
   const sessionCloseText = formatMarketSessionTimestamp(sessionCloseTimeMs, options);
-  const scheduleText = normalizedStatus === 'open'
+  const scheduleText = isOpen
     ? sessionCloseText ? `Closes ${sessionCloseText}` : undefined
-    : isExplicitlyClosed && sessionOpenText ? `Opens ${sessionOpenText}` : undefined;
+    : sessionOpenText ? `Opens ${sessionOpenText}` : undefined;
 
   return {
     symbol,
     status: normalizedStatus,
     isOpen,
-    isTradeBlocked: isExplicitlyClosed,
+    isTradeBlocked: !isOpen,
     label: normalizedStatus === 'unknown'
-      ? 'Market Open'
+      ? 'Status unavailable'
       : MARKET_STATUS_LABELS[normalizedStatus],
     sessionOpenTimeMs,
     sessionCloseTimeMs,
@@ -233,7 +226,7 @@ export const shouldBlockSymbolTrading = (
 ): boolean => {
   const resolvedSymbol = normalizeSymbol(marketStatus.symbol) ?? normalizeSymbol(fallbackSymbol);
   if (isLikelyAlwaysOpenCryptoSymbol(resolvedSymbol)) return false;
-  return Boolean(marketStatus.isTradeBlocked);
+  return marketStatus.isTradeBlocked;
 };
 
 export const getMarketStatusTradeBlockMessage = (
@@ -258,6 +251,8 @@ export const getMarketStatusTradeBlockMessage = (
       ? translateUi('{{value0}} is after hours. Trading is currently disabled.', { value0: symbol })
       : translateUi('Market is after hours. Trading is currently disabled.');
   }
-  return '';
+  return symbol
+    ? translateUi('Market status unavailable for {{value0}}. Trading is blocked until status refreshes.', { value0: symbol })
+    : translateUi('Market status unavailable. Trading is blocked until status refreshes.');
 };
 

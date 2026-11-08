@@ -21,22 +21,12 @@ export const buildChartEligibleSymbolNames = (
   return getUniqueSymbolNames([...instrumentSymbols, ...activeFeedSymbols]);
 };
 
-/**
- * MT5-exact trade eligibility:
- * Any instrument authorized in the trader account's broker catalogue is eligible
- * for One-Click BUY/SELL and F9 Order Ticket submission. Never disable trading
- * buttons in the UI based on 30-second background `/ws/feed/status` REST polling;
- * real-time quote validation occurs atomically at order execution time on the server.
- */
 export const buildTradeEligibleSymbolNames = (
   instrumentSymbols: unknown[],
   activeFeedSymbols: unknown[],
 ): string[] => {
-  const authorized = getUniqueSymbolNames(instrumentSymbols);
-  if (authorized.length > 0) {
-    return authorized;
-  }
-  return getUniqueSymbolNames(activeFeedSymbols);
+  const activeFeedSymbolSet = new Set(getUniqueSymbolNames(activeFeedSymbols));
+  return getUniqueSymbolNames(instrumentSymbols).filter((symbol) => activeFeedSymbolSet.has(symbol));
 };
 
 export const resolveAuthorizedChartSymbol = (

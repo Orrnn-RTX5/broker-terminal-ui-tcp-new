@@ -158,7 +158,7 @@ type SettingsStore = SettingsState & SettingsActions;
 // Default Settings
 const defaultSettings: SettingsState = {
   server: {
-    serverName: 'FXTrust-TCP-Live',
+    serverName: NEUTRAL_TERMINAL_TITLE,
     proxyEnabled: false,
     keepPersonalSettings: true,
     enableNews: true,
@@ -187,7 +187,7 @@ const defaultSettings: SettingsState = {
     disableOnProfileChange: true,
     disableOnChartChange: false,
     allowDLL: true,
-    allowWebRequest: false,
+    allowWebRequest: true,
     allowedURLs: [],
   },
   notifications: {

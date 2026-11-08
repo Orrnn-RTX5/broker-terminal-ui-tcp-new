@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AppShell from './AppShell';
 
 vi.mock('./config/backendTarget.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('./config/backendTarget.js')>(),
-  // Desktop build: it opens the public workspace like the web terminal (no login boundary in AppShell).
+  // Desktop build: Electron keeps its login boundary and the public catalog
+  // preload stays out of this first-login handoff path.
   isElectronRuntime: () => true,
   isDesktopBackendTarget: () => true,
 }));
@@ -92,33 +93,62 @@ describe('AppShell first-login handoff', () => {
     sessionStorage.clear();
   });
 
-  it('opens the public workspace on desktop in StrictMode without a login screen', async () => {
-    // The desktop app no longer has a login boundary in AppShell: like the web terminal it mounts the
-    // terminal as a guest (public quotes and charts), and login happens in the trade/login dialog.
+  it('keeps login visible in StrictMode while one preload completes without a fallback commit', async () => {
     const view = render(
       <React.StrictMode>
         <AppShell />
       </React.StrictMode>,
     );
+    await waitFor(() => expect(view.getByTestId('login-success')).toBeTruthy());
 
-    expect(view.queryByTestId('login-screen')).toBeNull();
-    shellMocks.releaseTerminalImport();
+    const fallbackMutations: Element[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const addedNode of record.addedNodes) {
+          if (!(addedNode instanceof Element)) continue;
+          if (addedNode.matches('[data-terminal-module-loading]')) {
+            fallbackMutations.push(addedNode);
+          }
+          fallbackMutations.push(
+            ...addedNode.querySelectorAll('[data-terminal-module-loading]'),
+          );
+        }
+      }
+    });
+    observer.observe(view.container, { childList: true, subtree: true });
 
-    await waitFor(
-      () => expect(view.getByTestId('authenticated-terminal')).toBeTruthy(),
-      { timeout: 5_000 },
-    );
-    await Promise.resolve();
+    try {
+      fireEvent.click(view.getByTestId('login-success'));
 
-    expect(view.queryByTestId('login-screen')).toBeNull();
-    expect(shellMocks.terminalModuleImport).toHaveBeenCalledTimes(1);
-    expect(shellMocks.preloadTradingChartRuntime).toHaveBeenCalledTimes(1);
-    // App owns DockWorkspace; only its heavy chart runtime is warmed beside
-    // the shell and must not trigger a second workspace import.
-    expect(shellMocks.preloadDockWorkspaceViewport).not.toHaveBeenCalled();
-    expect(shellMocks.terminalRender).toHaveBeenCalled();
-    for (const [handoff] of shellMocks.terminalRender.mock.calls) {
-      expect(handoff).toBeNull();
+      await waitFor(() => expect(view.getByTestId('login-preparing')).toBeTruthy());
+      expect(view.getByTestId('login-screen')).toBeTruthy();
+      expect(view.container.querySelector('[data-terminal-module-loading]')).toBeNull();
+      expect(shellMocks.terminalRender).not.toHaveBeenCalled();
+
+      shellMocks.releaseTerminalImport();
+
+      await waitFor(
+        () => expect(view.getByTestId('authenticated-terminal')).toBeTruthy(),
+        { timeout: 5_000 },
+      );
+      await Promise.resolve();
+
+      expect(shellMocks.terminalModuleImport).toHaveBeenCalledTimes(1);
+      expect(shellMocks.preloadTradingChartRuntime).toHaveBeenCalledTimes(1);
+      // App owns DockWorkspace; only its heavy chart runtime is warmed beside
+      // the shell and must not trigger a second workspace import.
+      expect(shellMocks.preloadDockWorkspaceViewport).not.toHaveBeenCalled();
+      expect(shellMocks.terminalRender).toHaveBeenCalled();
+      for (const [handoff] of shellMocks.terminalRender.mock.calls) {
+        expect(handoff).toEqual(expect.objectContaining({
+          accountId: '200002',
+          token: 'fresh-token',
+        }));
+      }
+      expect(fallbackMutations).toEqual([]);
+      expect(view.container.querySelector('[data-terminal-module-loading]')).toBeNull();
+    } finally {
+      observer.disconnect();
     }
   });
 });
