@@ -9,6 +9,7 @@ import { enrichTradesWithCachedLevels } from '../utils/tradeHistoryLevelCache';
 import { normalizeCandleApiQueryParams } from '../utils/candleApi';
 import { readBackendNumber } from '../services/backendAccountMetrics';
 import { getAccessToken } from '../services/brokerSession';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
 
 export type GatewayAccount = {
   login?: number;
@@ -70,6 +71,7 @@ export type GatewayPosition = {
   time?: number;
   comment?: string;
   magic?: number;
+  digits?: number;
   contract_size?: number;
   contractSize?: number;
   state_version?: string | number;
@@ -106,6 +108,7 @@ export type GatewayDeal = {
   fee?: number;
   magic?: number;
   comment?: string;
+  digits?: number;
   contract_size?: number;
   contractSize?: number;
   time?: number;
@@ -138,6 +141,7 @@ export type GatewayOrder = {
   time_setup?: number;
   time_done?: number;
   magic?: number;
+  digits?: number;
   contract_size?: number;
   contractSize?: number;
 };
@@ -312,8 +316,8 @@ const buildClosedDealHistoryTrade = (groupDeals: Trade[], id: number): Trade | n
     status: 'closed',
     side: openingDeal.side || closingDeal.side || '',
     volume: closedVolume || openingDeal.volume || closingDeal.volume || 0,
-    openPrice: weightedPrice(openingDeals.length > 0 ? openingDeals : [openingDeal], 'openPrice') ?? openingDeal.openPrice,
-    closePrice: weightedPrice(closingDeals, 'closePrice') ?? closingDeal.closePrice ?? closingDeal.openPrice,
+    openPrice: stripFloatPrecisionNoise(weightedPrice(openingDeals.length > 0 ? openingDeals : [openingDeal], 'openPrice') ?? openingDeal.openPrice),
+    closePrice: stripFloatPrecisionNoise((weightedPrice(closingDeals, 'closePrice') ?? closingDeal.closePrice ?? closingDeal.openPrice) as number),
     openTime: openingDeal.openTime,
     closeTime: closingDeal.closeTime || closingDeal.openTime,
     profit,
@@ -323,6 +327,9 @@ const buildClosedDealHistoryTrade = (groupDeals: Trade[], id: number): Trade | n
     ...(comment ? { comment } : {}),
     ...(magicNumber === undefined ? {} : { magicNumber }),
     ...(contractSize === undefined ? {} : { contractSize }),
+    ...(resolveSpecDigits(openingDeal.digits, closingDeal.digits) !== null
+      ? { digits: resolveSpecDigits(openingDeal.digits, closingDeal.digits)! }
+      : {}),
     historySource: 'deal',
   };
 };
@@ -448,16 +455,19 @@ export const normalizeAccount = (raw: GatewayAccount, previous?: Account | null)
 export const normalizePosition = (raw: GatewayPosition): Position => {
   const side = String(raw.side ?? raw.action ?? '').toLowerCase();
   const volume = Number(raw.volume_lots ?? raw.volume ?? (raw as any).quantity ?? 0);
-  const openPrice = Number(raw.price_open ?? raw.open_price ?? (raw as any).openPrice ?? (raw as any).entryPrice ?? (raw as any).chartEntryPrice ?? (raw as any).price ?? 0);
+  const openPrice = stripFloatPrecisionNoise(Number(raw.price_open ?? raw.open_price ?? (raw as any).openPrice ?? (raw as any).entryPrice ?? (raw as any).chartEntryPrice ?? (raw as any).price ?? 0));
   const backendCurrentPrice = readBackendNumber(raw.price_current ?? raw.current_price ?? (raw as any).currentPrice ?? (raw as any).livePrice);
   const backendProfit = readBackendNumber(raw.profit ?? (raw as any).unrealized_pl ?? (raw as any).unrealized_pnl ?? (raw as any).unrealizedPnL);
   const backendMargin = readBackendNumber(raw.margin ?? raw.used_margin);
   const hasBackendCurrentPrice = raw.pnl_available !== false && raw.hasBackendCurrentPrice !== false && backendCurrentPrice !== undefined;
   const hasBackendProfit = raw.pnl_available !== false && raw.hasBackendProfit !== false && backendProfit !== undefined;
   const hasBackendMargin = raw.hasBackendMargin !== false && raw.margin_available !== false && backendMargin !== undefined && backendMargin >= 0;
-  const currentPrice = hasBackendCurrentPrice ? backendCurrentPrice : 0;
+  const currentPrice = hasBackendCurrentPrice ? stripFloatPrecisionNoise(backendCurrentPrice) : 0;
   const profit = hasBackendProfit ? backendProfit : 0;
   const openTime = resolvePositionOpenTime(raw);
+  const sl = stripFloatPrecisionNoise(Number(raw.price_sl ?? raw.sl ?? 0));
+  const tp = stripFloatPrecisionNoise(Number(raw.price_tp ?? raw.tp ?? 0));
+  const digits = resolveSpecDigits(raw.digits);
   return {
     ...raw,
     id: Number(raw.ticket ?? raw.position_id ?? (raw as any).id ?? 0),
@@ -471,6 +481,7 @@ export const normalizePosition = (raw: GatewayPosition): Position => {
     currentPrice,
     hasBackendCurrentPrice,
     hasBackendProfit,
+    ...(digits !== null ? { digits } : {}),
     ...(hasBackendMargin ? {
       margin: backendMargin,
       used_margin: backendMargin,
@@ -481,8 +492,8 @@ export const normalizePosition = (raw: GatewayPosition): Position => {
       hasBackendMargin: false,
     } : {})),
     openTime,
-    sl: Number(raw.price_sl ?? raw.sl ?? 0),
-    tp: Number(raw.price_tp ?? raw.tp ?? 0),
+    sl,
+    tp,
     swap: Number(raw.swap ?? raw.storage ?? 0),
     commission: Number(raw.commission ?? 0),
     unrealizedPnL: profit,
@@ -513,15 +524,17 @@ export const normalizeDeal = (raw: GatewayDeal, index = 0): Trade => {
   const fee = finiteValueOrUndefined(raw.fee);
   const magicNumber = finiteValueOrUndefined(raw.magic);
   const contractSize = finiteNumberOrUndefined(raw.contract_size ?? raw.contractSize);
+  const digits = resolveSpecDigits(raw.digits);
   const comment = String(raw.comment ?? '').trim();
+  const dealPrice = stripFloatPrecisionNoise(Number(raw.price ?? 0));
   return {
     id: dealTicket ?? positionId ?? index,
     symbol: raw.symbol ?? '',
     type: entry || action || 'deal',
     side,
     volume: Number(raw.volume ?? 0),
-    openPrice: Number(raw.price ?? 0),
-    closePrice: Number(raw.price ?? 0),
+    openPrice: dealPrice,
+    closePrice: dealPrice,
     openTime: toIsoFromSeconds(time),
     closeTime: toIsoFromSeconds(time),
     profit: Number(raw.profit ?? 0),
@@ -536,6 +549,7 @@ export const normalizeDeal = (raw: GatewayDeal, index = 0): Trade => {
     ...(magicNumber === undefined ? {} : { magicNumber }),
     ...(comment ? { comment } : {}),
     ...(contractSize === undefined ? {} : { contractSize }),
+    ...(digits !== null ? { digits } : {}),
     historySource: 'deal',
   };
 };
@@ -544,6 +558,7 @@ export const normalizeClosedPosition = (raw: GatewayClosedPosition, index = 0): 
   const side = String(raw.side ?? raw.action ?? '').toLowerCase();
   const magicNumber = finiteValueOrUndefined(raw.magic);
   const contractSize = finiteNumberOrUndefined(raw.contract_size ?? raw.contractSize);
+  const digits = resolveSpecDigits(raw.digits);
   const comment = String(raw.comment ?? '').trim();
   return {
     id: Number(raw.ticket ?? raw.position_id ?? index),
@@ -551,19 +566,20 @@ export const normalizeClosedPosition = (raw: GatewayClosedPosition, index = 0): 
     type: raw.reason ?? 'closed_position',
     side: side.includes('sell') || side === '1' ? 'SELL' : 'BUY',
     volume: Number(raw.volume_lots ?? raw.volume ?? 0),
-    openPrice: Number(raw.price_open ?? raw.open_price ?? 0),
-    closePrice: Number(raw.price_close ?? raw.price_current ?? raw.current_price ?? 0),
+    openPrice: stripFloatPrecisionNoise(Number(raw.price_open ?? raw.open_price ?? 0)),
+    closePrice: stripFloatPrecisionNoise(Number(raw.price_close ?? raw.price_current ?? raw.current_price ?? 0)),
     openTime: toIsoFromSeconds(raw.time_open ?? raw.time_create ?? raw.time_ms ?? raw.time),
     closeTime: toIsoFromSeconds(raw.time_close ?? raw.time_ms ?? raw.time),
     profit: Number(raw.profit ?? 0),
     commission: Number(raw.commission ?? 0),
     swap: Number(raw.swap ?? raw.storage ?? 0),
-    sl: Number(raw.price_sl ?? raw.sl ?? 0),
-    tp: Number(raw.price_tp ?? raw.tp ?? 0),
+    sl: stripFloatPrecisionNoise(Number(raw.price_sl ?? raw.sl ?? 0)),
+    tp: stripFloatPrecisionNoise(Number(raw.price_tp ?? raw.tp ?? 0)),
     status: 'closed',
     ...(magicNumber === undefined ? {} : { magicNumber }),
     ...(comment ? { comment } : {}),
     ...(contractSize === undefined ? {} : { contractSize }),
+    ...(digits !== null ? { digits } : {}),
     historySource: 'closed-position',
   };
 };
@@ -576,6 +592,7 @@ export const normalizeOrder = (raw: GatewayOrder, index = 0): Trade => {
   const orderType = String(raw.type ?? '').trim();
   const magicNumber = finiteValueOrUndefined(raw.magic);
   const contractSize = finiteNumberOrUndefined(raw.contract_size ?? raw.contractSize);
+  const digits = resolveSpecDigits(raw.digits);
   const comment = String(raw.comment ?? '').trim();
   const rawStatus = String(raw.status ?? '').trim().toLowerCase();
   const unexecutedTerminal = rawStatus === 'cancelled' || rawStatus === 'canceled' || rawStatus === 'expired' || rawStatus === 'rejected';
@@ -585,21 +602,22 @@ export const normalizeOrder = (raw: GatewayOrder, index = 0): Trade => {
     type: orderType || raw.status || 'order',
     side: side.includes('sell') ? 'SELL' : side.includes('buy') ? 'BUY' : side.toUpperCase(),
     volume: Number(raw.volume ?? 0),
-    openPrice: Number(raw.price_open ?? raw.open_price ?? raw.price ?? 0),
-    closePrice: unexecutedTerminal ? 0 : Number(raw.price ?? raw.price_open ?? raw.open_price ?? 0),
+    openPrice: stripFloatPrecisionNoise(Number(raw.price_open ?? raw.open_price ?? raw.price ?? 0)),
+    closePrice: unexecutedTerminal ? 0 : stripFloatPrecisionNoise(Number(raw.price ?? raw.price_open ?? raw.open_price ?? 0)),
     openTime: toIsoFromSeconds(setupTime),
     closeTime: toIsoFromSeconds(doneTime),
     profit: 0,
     commission: 0,
     swap: 0,
-    sl: Number(raw.price_sl ?? 0),
-    tp: Number(raw.price_tp ?? 0),
+    sl: stripFloatPrecisionNoise(Number(raw.price_sl ?? 0)),
+    tp: stripFloatPrecisionNoise(Number(raw.price_tp ?? 0)),
     status: raw.status,
     orderTicket: ticket,
     ...(orderType ? { orderType } : {}),
     ...(magicNumber === undefined ? {} : { magicNumber }),
     ...(comment ? { comment } : {}),
     ...(contractSize === undefined ? {} : { contractSize }),
+    ...(digits !== null ? { digits } : {}),
     historySource: 'order',
   };
 };

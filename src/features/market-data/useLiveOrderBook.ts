@@ -11,6 +11,10 @@ import {
   getAccountSpreadMarkupMap,
   onAccountSpreadMarkupChange,
 } from '../../services/accountSpreadMarkup';
+import {
+  binaryTcpMarketStream,
+  type DecodedBinaryDepth,
+} from '../../services/binaryTcpMarketStream';
 import { buildBrokerWsV2Uri } from '../../services/brokerSession';
 import { getEnhancedWebSocketService } from '../../services/websocket-enhanced';
 import { useAppStore } from '../../store/useAppStore';
@@ -29,7 +33,7 @@ import {
   normalizeOrderBook,
   normalizeSymbol,
 } from './marketDataNormalization';
-import type { LiveOrderBook } from './marketDataTypes';
+import type { LiveOrderBook, OrderBookLevel } from './marketDataTypes';
 
 /** Depth levels widened like the account's top-of-book quote. */
 export const applySpreadMarkupToOrderBook = (
@@ -58,6 +62,61 @@ export const applySpreadMarkupToOrderBook = (
 const useAccountSpreadMarkupMap = (): SpreadMarkupMap =>
   useSyncExternalStore(onAccountSpreadMarkupChange, getAccountSpreadMarkupMap, getAccountSpreadMarkupMap);
 
+export const decodedBinaryDepthToLiveOrderBook = (
+  decoded: DecodedBinaryDepth,
+  fallbackSymbol: string,
+  maxLevels: number,
+): LiveOrderBook | null => {
+  const symbol = normalizeSymbol(decoded.symbol) || fallbackSymbol;
+  if (!symbol) return null;
+  const limit = Number.isFinite(maxLevels) && maxLevels > 0 ? Math.floor(maxLevels) : 10;
+
+  let bidTotal = 0;
+  const bids: OrderBookLevel[] = [];
+  const rawBids = decoded.bids.slice(0, limit);
+  for (let i = 0; i < rawBids.length; i++) {
+    const level = rawBids[i];
+    if (Number.isFinite(level.price) && level.price > 0 && Number.isFinite(level.volume) && level.volume > 0) {
+      bidTotal += level.volume;
+      bids.push({
+        price: level.price,
+        volume: level.volume,
+        total: bidTotal,
+      });
+    }
+  }
+
+  let askTotal = 0;
+  const asks: OrderBookLevel[] = [];
+  const rawAsks = decoded.asks.slice(0, limit);
+  for (let i = 0; i < rawAsks.length; i++) {
+    const level = rawAsks[i];
+    if (Number.isFinite(level.price) && level.price > 0 && Number.isFinite(level.volume) && level.volume > 0) {
+      askTotal += level.volume;
+      asks.push({
+        price: level.price,
+        volume: level.volume,
+        total: askTotal,
+      });
+    }
+  }
+
+  if (bids.length === 0 && asks.length === 0) return null;
+
+  const bestBid = bids[0]?.price ?? 0;
+  const bestAsk = asks[0]?.price ?? 0;
+  const spread = bestBid > 0 && bestAsk > 0 ? bestAsk - bestBid : 0;
+
+  return {
+    symbol,
+    bids,
+    asks,
+    spread,
+    spreadPips: getSpreadPips(symbol, spread),
+    timestamp: decoded.timestamp > 0 ? decoded.timestamp : Date.now(),
+  };
+};
+
 export function useLiveOrderBook(symbol: string, depth: number) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const [rawOrderBook, setOrderBook] = useState<LiveOrderBook | null>(null);
@@ -80,6 +139,18 @@ export function useLiveOrderBook(symbol: string, depth: number) {
       setLoading(false);
       return;
     }
+
+    if (binaryTcpMarketStream.isSupported()) {
+      const cachedDepth = binaryTcpMarketStream.getLatestDepth(normalizedSymbol);
+      if (cachedDepth) {
+        const warmBook = decodedBinaryDepthToLiveOrderBook(cachedDepth, normalizedSymbol, depth);
+        if (warmBook) {
+          setOrderBook(warmBook);
+          setError(null);
+        }
+      }
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -88,8 +159,21 @@ export function useLiveOrderBook(symbol: string, depth: number) {
         levels: depth,
       });
       const next = normalizeOrderBook(response, normalizedSymbol);
-      setOrderBook(next);
+      if (next) {
+        setOrderBook(next);
+      }
     } catch (err) {
+      if (binaryTcpMarketStream.isSupported()) {
+        const cachedDepth = binaryTcpMarketStream.getLatestDepth(normalizedSymbol);
+        const warmBook = cachedDepth
+          ? decodedBinaryDepthToLiveOrderBook(cachedDepth, normalizedSymbol, depth)
+          : null;
+        if (warmBook) {
+          setOrderBook(warmBook);
+          setError(null);
+          return;
+        }
+      }
       setError(err instanceof ApiError ? err.message : 'Failed to load order book');
       setOrderBook(null);
     } finally {
@@ -105,19 +189,41 @@ export function useLiveOrderBook(symbol: string, depth: number) {
     void sessionRevision;
     if (!normalizedSymbol || !isAuthenticated) return;
 
+    let unsubscribeBinaryDepth: (() => void) | null = null;
+    if (binaryTcpMarketStream.isSupported()) {
+      const cached = binaryTcpMarketStream.getLatestDepth(normalizedSymbol);
+      if (cached) {
+        const warm = decodedBinaryDepthToLiveOrderBook(cached, normalizedSymbol, depth);
+        if (warm) {
+          setOrderBook(warm);
+          setError(null);
+          setLoading(false);
+        }
+      }
+      unsubscribeBinaryDepth = binaryTcpMarketStream.onDepth(normalizedSymbol, (decoded) => {
+        const next = decodedBinaryDepthToLiveOrderBook(decoded, normalizedSymbol, depth);
+        if (next) {
+          setOrderBook(next);
+          setError(null);
+          setLoading(false);
+        }
+      });
+    }
+
     const wsUrl = buildBrokerWsV2Uri(null) || MARKET_WS_URL;
     const ws = getEnhancedWebSocketService(wsUrl);
     ws.connect();
     const channel = `depth.${normalizedSymbol}`;
-    const unsubscribe = ws.subscribe(channel, (message) => {
+    const unsubscribeWs = ws.subscribe(channel, (message) => {
       const next = normalizeOrderBook(message, normalizedSymbol);
       if (next) setOrderBook(next);
     });
 
     return () => {
-      unsubscribe();
+      if (unsubscribeBinaryDepth) unsubscribeBinaryDepth();
+      unsubscribeWs();
     };
-  }, [normalizedSymbol, isAuthenticated, authToken, sessionRevision]);
+  }, [normalizedSymbol, depth, isAuthenticated, authToken, sessionRevision]);
 
   return { orderBook, loading, error, reload };
 }

@@ -34,7 +34,7 @@ export const BINARY_ORDER_ENDPOINT = '/__rtx5_binary_order';
 export const BINARY_ORDER_WS_ENDPOINT = '/__rtx5_binary_order_ws';
 export const BINARY_ACCOUNT_SUB_ENDPOINT = '/__rtx5_binary_account_sub';
 
-// ─── Wire Actions (uint8: 1..7) ──────────────────────────────────────────────
+// ─── Wire Actions (uint8: 1..8) ──────────────────────────────────────────────
 
 export const BINARY_ORDER_ACTION_PLACE_MARKET = 1;
 export const BINARY_ORDER_ACTION_CLOSE_POSITION = 2;
@@ -43,6 +43,7 @@ export const BINARY_ORDER_ACTION_PLACE_PENDING = 4;
 export const BINARY_ORDER_ACTION_MODIFY_PENDING = 5;
 export const BINARY_ORDER_ACTION_CANCEL_PENDING = 6;
 export const BINARY_ORDER_ACTION_CLOSE_BULK = 7;
+export const BINARY_ORDER_ACTION_CLOSE_BY = 8;
 
 export const BINARY_ORDER_BULK_MODE_ALL = 0;
 export const BINARY_ORDER_BULK_MODE_WINNERS = 1;
@@ -58,6 +59,7 @@ export const BINARY_ORDER_ACTIONS = {
   MODIFY_PENDING: BINARY_ORDER_ACTION_MODIFY_PENDING,
   CANCEL_PENDING: BINARY_ORDER_ACTION_CANCEL_PENDING,
   CLOSE_BULK: BINARY_ORDER_ACTION_CLOSE_BULK,
+  CLOSE_BY: BINARY_ORDER_ACTION_CLOSE_BY,
 } as const;
 
 export type BinaryOrderAction =
@@ -67,7 +69,8 @@ export type BinaryOrderAction =
   | typeof BINARY_ORDER_ACTION_PLACE_PENDING
   | typeof BINARY_ORDER_ACTION_MODIFY_PENDING
   | typeof BINARY_ORDER_ACTION_CANCEL_PENDING
-  | typeof BINARY_ORDER_ACTION_CLOSE_BULK;
+  | typeof BINARY_ORDER_ACTION_CLOSE_BULK
+  | typeof BINARY_ORDER_ACTION_CLOSE_BY;
 
 // ─── Wire Sides (uint8: 0..2) ────────────────────────────────────────────────
 
@@ -152,6 +155,19 @@ export const BINARY_ORDER_FLAG_CLEAR_TP = 0x0010;
 export const BINARY_ORDER_FLAG_HAS_PRICE = 0x0020;
 export const BINARY_ORDER_FLAG_HAS_STOP_LIMIT = 0x0040;
 export const BINARY_ORDER_FLAG_HAS_EXPIRATION = 0x0080;
+export const BINARY_ORDER_FLAG_HAS_TRAILING = 0x0100;
+export const BINARY_ORDER_FLAG_CLEAR_TRAILING = 0x0200;
+export const BINARY_ORDER_FLAG_HAS_EXTRAS = 0x0400;
+
+export const BINARY_ORDER_EXTRA_TAG_COMMENT = 0x01;
+export const BINARY_ORDER_EXTRA_TAG_MAGIC = 0x02;
+export const BINARY_ORDER_EXTRA_TAG_TRAILING_STOP = 0x03;
+export const BINARY_ORDER_EXTRA_TAG_TRAILING_STEP = 0x04;
+export const BINARY_ORDER_COMMENT_MAX_BYTES = 64;
+export const BINARY_ORDER_MAGIC_BYTE_LEN = 8;
+export const BINARY_ORDER_TRAILING_BYTE_LEN = 4;
+export const BINARY_ORDER_TRAILING_MAX_POINTS = 100_000;
+export const BINARY_ORDER_EXTRAS_MAX_BYTES = 512;
 
 export const BINARY_ORDER_FLAGS = {
   NONE: BINARY_ORDER_FLAG_NONE,
@@ -163,6 +179,9 @@ export const BINARY_ORDER_FLAGS = {
   HAS_PRICE: BINARY_ORDER_FLAG_HAS_PRICE,
   HAS_STOP_LIMIT: BINARY_ORDER_FLAG_HAS_STOP_LIMIT,
   HAS_EXPIRATION: BINARY_ORDER_FLAG_HAS_EXPIRATION,
+  HAS_TRAILING: BINARY_ORDER_FLAG_HAS_TRAILING,
+  CLEAR_TRAILING: BINARY_ORDER_FLAG_CLEAR_TRAILING,
+  HAS_EXTRAS: BINARY_ORDER_FLAG_HAS_EXTRAS,
 } as const;
 
 // ─── Types & Error Class ─────────────────────────────────────────────────────
@@ -175,8 +194,10 @@ export interface BinaryTcpOrderParams {
   orderSubType?: BinaryOrderSubTypeInput;
   /** Explicit bitmask flags (OR-ed with flags inferred from sl/tp/price/stopLimitPrice/expiration/partialClose/clearSl/clearTp). */
   flags?: number;
-  /** Target position ticket (actions 2, 3) or pending order ticket (actions 5, 6). */
+  /** Target position ticket (actions 2, 3, 8) or pending order ticket (actions 5, 6). */
   ticket?: number;
+  /** Counterpart position ticket for Close-By (action 8); encoded into expiration [64..72]. */
+  otherTicket?: number;
   symbol?: string;
   volume?: number;
   price?: number;
@@ -192,6 +213,16 @@ export interface BinaryTcpOrderParams {
   partialClose?: boolean;
   clearSl?: boolean;
   clearTp?: boolean;
+  /** Optional UTF-8 order comment (1..64 UTF-8 bytes, no NUL; encoded in TLV extras tag 0x01 for actions 1, 4, 5). */
+  comment?: string | null;
+  /** Optional non-zero int64 order magic number (encoded in TLV extras tag 0x02 for actions 1, 4, 5). */
+  magic?: number | bigint | null;
+  /** Optional trailing stop distance in points (0..100000; encoded in TLV extras tag 0x03 for actions 1, 3, 4, 5). */
+  trailingStop?: number | null;
+  /** Optional trailing step distance in points (0..100000; encoded in TLV extras tag 0x04 for actions 1, 3, 4, 5). */
+  trailingStep?: number | null;
+  /** Explicitly clears trailing stop on modify actions (sets CLEAR_TRAILING 0x0200 and TLV 0x03=0). */
+  clearTrailing?: boolean;
   /** Idempotent client order ID (max 40 ASCII bytes; UUID v4 generated automatically if omitted). */
   clientOrderId?: string;
   /** Bearer/JWT token override (defaults to `getAccessToken()` from `brokerSession`). */
@@ -623,6 +654,7 @@ interface ValidatedBinaryOrderReq {
   clientOrderId: string;
   resolvedToken: string;
   hasExplicitTokenOverride: boolean;
+  extrasBytes: Uint8Array;
 }
 
 interface PendingWsOrderEntry {
@@ -979,7 +1011,7 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   const action = params.action;
   const clientOrderId = (params.clientOrderId ?? '').trim() || createFastBinaryClientOrderId();
 
-  if (!Number.isInteger(action) || action < 1 || action > 7) {
+  if (!Number.isInteger(action) || action < 1 || action > 8) {
     throw new BinaryTcpOrderError(`Unsupported binary order action: ${String(action)}`, {
       status: 400,
       code: 'INVALID_ACTION',
@@ -1031,13 +1063,24 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   const rawSl = normalizeFiniteFloat(params.sl, 'sl', clientOrderId, action);
   const rawTp = normalizeFiniteFloat(params.tp, 'tp', clientOrderId, action);
 
-  const rawExpInput = params.expiration !== undefined ? params.expiration : params.expiry;
-  const rawExp = normalizeFiniteFloat(rawExpInput, 'expiration', clientOrderId, action);
-  const expiration = rawExp > UNIX_MS_THRESHOLD
-    ? Math.floor(rawExp / 1000)
-    : rawExp > 0
-      ? Math.trunc(rawExp)
-      : 0;
+  let expiration = 0;
+  if (action === BINARY_ORDER_ACTION_CLOSE_BY) {
+    const rawOtherInput = params.otherTicket !== undefined
+      ? params.otherTicket
+      : params.expiration !== undefined
+        ? params.expiration
+        : params.expiry;
+    const rawOther = normalizeFiniteFloat(rawOtherInput, 'otherTicket', clientOrderId, action);
+    expiration = rawOther > 0 ? Math.trunc(rawOther) : 0;
+  } else {
+    const rawExpInput = params.expiration !== undefined ? params.expiration : params.expiry;
+    const rawExp = normalizeFiniteFloat(rawExpInput, 'expiration', clientOrderId, action);
+    expiration = rawExp > UNIX_MS_THRESHOLD
+      ? Math.floor(rawExp / 1000)
+      : rawExp > 0
+        ? Math.trunc(rawExp)
+        : 0;
+  }
 
   const isModifyAction =
     action === BINARY_ORDER_ACTION_MODIFY_POSITION || action === BINARY_ORDER_ACTION_MODIFY_PENDING;
@@ -1293,6 +1336,143 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
       }
       break;
     }
+    case BINARY_ORDER_ACTION_CLOSE_BY: {
+      if (ticket <= 0) {
+        throw new BinaryTcpOrderError('Missing primary position ticket for close-by', {
+          status: 400,
+          code: 'INVALID_TICKET',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (expiration <= 0) {
+        throw new BinaryTcpOrderError('Missing counterpart position ticket for close-by', {
+          status: 400,
+          code: 'INVALID_COUNTER_TICKET',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (ticket === expiration) {
+        throw new BinaryTcpOrderError('Close-by tickets must be distinct', {
+          status: 400,
+          code: 'CLOSE_BY_SAME_TICKET',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      break;
+    }
+  }
+
+  let extrasBytes = EMPTY_BYTES;
+  if (
+    (flags & (BINARY_ORDER_FLAG_HAS_EXTRAS | BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) !== 0
+    || params.comment !== undefined
+    || params.magic !== undefined
+    || params.trailingStop !== undefined
+    || params.trailingStep !== undefined
+    || params.clearTrailing === true
+  ) {
+    if ((flags & (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) === (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) {
+      throw new BinaryTcpOrderError('HAS_TRAILING and CLEAR_TRAILING cannot both be set', {
+        status: 400,
+        code: 'INVALID_STOPS',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+    const canCarryCommentMagic =
+      action === BINARY_ORDER_ACTION_PLACE_MARKET
+      || action === BINARY_ORDER_ACTION_PLACE_PENDING
+      || action === BINARY_ORDER_ACTION_MODIFY_PENDING;
+    const canCarryTrailing =
+      canCarryCommentMagic || action === BINARY_ORDER_ACTION_MODIFY_POSITION;
+
+    let tlvTrailingStop: number | null | undefined;
+    let tlvTrailingStep: number | null | undefined;
+    if (canCarryTrailing && (params.trailingStop !== undefined || params.trailingStep !== undefined || params.clearTrailing === true)) {
+      const wantsClear =
+        params.clearTrailing === true
+        || (isModifyAction && (params.trailingStop === null || params.trailingStop === 0));
+      if (wantsClear) {
+        if (params.trailingStep !== undefined && params.trailingStep !== null && Number(params.trailingStep) > 0) {
+          throw new BinaryTcpOrderError('trailing_step requires trailing_stop > 0', {
+            status: 400,
+            code: 'INVALID_STOPS',
+            retryable: false,
+            clientOrderId,
+            action,
+          });
+        }
+        flags |= BINARY_ORDER_FLAG_CLEAR_TRAILING;
+        flags &= ~BINARY_ORDER_FLAG_HAS_TRAILING;
+        tlvTrailingStop = 0;
+        if (params.trailingStep === 0 || params.trailingStep === null) {
+          tlvTrailingStep = 0;
+        }
+      } else {
+        if (params.trailingStop !== undefined && params.trailingStop !== null) {
+          const parsedStop = Number(params.trailingStop);
+          if (!Number.isInteger(parsedStop) || parsedStop < 0 || parsedStop > BINARY_ORDER_TRAILING_MAX_POINTS) {
+            throw new BinaryTcpOrderError(`trailing_stop must be an integer in 0..${BINARY_ORDER_TRAILING_MAX_POINTS}`, {
+              status: 400,
+              code: 'INVALID_STOPS',
+              retryable: false,
+              clientOrderId,
+              action,
+            });
+          }
+          if (parsedStop > 0) {
+            flags |= BINARY_ORDER_FLAG_HAS_TRAILING;
+            flags &= ~BINARY_ORDER_FLAG_CLEAR_TRAILING;
+            tlvTrailingStop = parsedStop;
+          }
+        }
+        if (params.trailingStep !== undefined && params.trailingStep !== null) {
+          const parsedStep = Number(params.trailingStep);
+          if (!Number.isInteger(parsedStep) || parsedStep < 0 || parsedStep > BINARY_ORDER_TRAILING_MAX_POINTS) {
+            throw new BinaryTcpOrderError(`trailing_step must be an integer in 0..${BINARY_ORDER_TRAILING_MAX_POINTS}`, {
+              status: 400,
+              code: 'INVALID_STOPS',
+              retryable: false,
+              clientOrderId,
+              action,
+            });
+          }
+          if (parsedStep > 0 && (tlvTrailingStop === undefined || tlvTrailingStop <= 0)) {
+            throw new BinaryTcpOrderError('trailing_step requires trailing_stop > 0', {
+              status: 400,
+              code: 'INVALID_STOPS',
+              retryable: false,
+              clientOrderId,
+              action,
+            });
+          }
+          if (parsedStep > 0 || tlvTrailingStop !== undefined) {
+            tlvTrailingStep = parsedStep;
+          }
+        }
+      }
+    }
+
+    extrasBytes = encodeBinaryOrderExtrasTlv(
+      canCarryCommentMagic ? params.comment : undefined,
+      canCarryCommentMagic ? params.magic : undefined,
+      clientOrderId,
+      action,
+      tlvTrailingStop,
+      tlvTrailingStep,
+    );
+  }
+  if (extrasBytes.byteLength > 0) {
+    flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
+  } else {
+    flags &= ~BINARY_ORDER_FLAG_HAS_EXTRAS;
   }
 
   const hasExplicitTokenOverride = params.authToken !== undefined;
@@ -1317,7 +1497,209 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     clientOrderId,
     resolvedToken,
     hasExplicitTokenOverride,
+    extrasBytes,
   };
+}
+
+/**
+ * Validates and encodes optional `comment` (`0x01`, UTF-8 1..64 bytes, no NUL) and
+ * `magic` (`0x02`, non-zero int64 LE, 8 bytes) into TLV bytes (without the outer `u16_le` length prefix).
+ * Returns `EMPTY_BYTES` (0-alloc singleton) when neither entry is present.
+ */
+export function encodeBinaryOrderExtrasTlv(
+  rawComment?: string | null,
+  rawMagic?: number | bigint | null,
+  clientOrderId = '',
+  action = 0,
+  rawTrailingStop?: number | null,
+  rawTrailingStep?: number | null,
+): Uint8Array {
+  let commentBytes: Uint8Array = EMPTY_BYTES;
+  if (rawComment !== undefined && rawComment !== null) {
+    if (typeof rawComment !== 'string') {
+      throw new BinaryTcpOrderError('Order comment must be a string', {
+        status: 400,
+        code: 'INVALID_COMMENT',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+    const trimmed = rawComment.trim();
+    if (trimmed.length > 0) {
+      if (trimmed.indexOf('\0') !== -1) {
+        throw new BinaryTcpOrderError('Order comment must not contain NUL bytes', {
+          status: 400,
+          code: 'INVALID_COMMENT',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      for (let i = 0; i < trimmed.length; i++) {
+        const code = trimmed.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdfff) {
+          if (code <= 0xdbff && i + 1 < trimmed.length) {
+            const next = trimmed.charCodeAt(i + 1);
+            if (next >= 0xdc00 && next <= 0xdfff) {
+              i++;
+              continue;
+            }
+          }
+          throw new BinaryTcpOrderError('Order comment contains invalid UTF-8 surrogate', {
+            status: 400,
+            code: 'INVALID_COMMENT',
+            retryable: false,
+            clientOrderId,
+            action,
+          });
+        }
+      }
+      commentBytes = utf8Encoder.encode(trimmed);
+      if (commentBytes.byteLength > BINARY_ORDER_COMMENT_MAX_BYTES) {
+        throw new BinaryTcpOrderError(
+          `Order comment exceeds maximum length of ${BINARY_ORDER_COMMENT_MAX_BYTES} UTF-8 bytes (got ${commentBytes.byteLength})`,
+          {
+            status: 400,
+            code: 'INVALID_COMMENT',
+            retryable: false,
+            clientOrderId,
+            action,
+          },
+        );
+      }
+    }
+  }
+
+  let magicBig: bigint | null = null;
+  if (rawMagic !== undefined && rawMagic !== null) {
+    if (typeof rawMagic === 'bigint') {
+      if (rawMagic < -9223372036854775808n || rawMagic > 9223372036854775807n) {
+        throw new BinaryTcpOrderError('Order magic number out of int64 range', {
+          status: 400,
+          code: 'INVALID_MAGIC',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (rawMagic !== 0n) {
+        magicBig = rawMagic;
+      }
+    } else if (typeof rawMagic === 'number') {
+      if (!Number.isFinite(rawMagic) || !Number.isInteger(rawMagic) || !Number.isSafeInteger(rawMagic)) {
+        throw new BinaryTcpOrderError('Order magic number must be a finite safe integer', {
+          status: 400,
+          code: 'INVALID_MAGIC',
+          retryable: false,
+          clientOrderId,
+          action,
+        });
+      }
+      if (rawMagic !== 0) {
+        magicBig = BigInt(rawMagic);
+      }
+    } else {
+      throw new BinaryTcpOrderError('Invalid order magic number', {
+        status: 400,
+        code: 'INVALID_MAGIC',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+  }
+
+  let trailingStopVal: number | null = null;
+  if (rawTrailingStop !== undefined && rawTrailingStop !== null) {
+    if (
+      typeof rawTrailingStop !== 'number'
+      || !Number.isInteger(rawTrailingStop)
+      || rawTrailingStop < 0
+      || rawTrailingStop > BINARY_ORDER_TRAILING_MAX_POINTS
+    ) {
+      throw new BinaryTcpOrderError(`trailing_stop must be an integer in 0..${BINARY_ORDER_TRAILING_MAX_POINTS}`, {
+        status: 400,
+        code: 'INVALID_STOPS',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+    trailingStopVal = rawTrailingStop;
+  }
+
+  let trailingStepVal: number | null = null;
+  if (rawTrailingStep !== undefined && rawTrailingStep !== null) {
+    if (
+      typeof rawTrailingStep !== 'number'
+      || !Number.isInteger(rawTrailingStep)
+      || rawTrailingStep < 0
+      || rawTrailingStep > BINARY_ORDER_TRAILING_MAX_POINTS
+    ) {
+      throw new BinaryTcpOrderError(`trailing_step must be an integer in 0..${BINARY_ORDER_TRAILING_MAX_POINTS}`, {
+        status: 400,
+        code: 'INVALID_STOPS',
+        retryable: false,
+        clientOrderId,
+        action,
+      });
+    }
+    trailingStepVal = rawTrailingStep;
+  }
+
+  const hasComment = commentBytes.byteLength > 0;
+  const hasMagic = magicBig !== null;
+  const hasTrailingStop = trailingStopVal !== null;
+  const hasTrailingStep = trailingStepVal !== null;
+  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep) {
+    return EMPTY_BYTES;
+  }
+
+  const extrasLen =
+    (hasComment ? 2 + commentBytes.byteLength : 0)
+    + (hasMagic ? 2 + BINARY_ORDER_MAGIC_BYTE_LEN : 0)
+    + (hasTrailingStop ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0)
+    + (hasTrailingStep ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0);
+  if (extrasLen > BINARY_ORDER_EXTRAS_MAX_BYTES) {
+    throw new BinaryTcpOrderError(`Order extras TLV exceeds maximum ${BINARY_ORDER_EXTRAS_MAX_BYTES} bytes`, {
+      status: 400,
+      code: 'INVALID_EXTRAS',
+      retryable: false,
+      clientOrderId,
+      action,
+    });
+  }
+
+  const tlv = new Uint8Array(extrasLen);
+  const view = new DataView(tlv.buffer, tlv.byteOffset, tlv.byteLength);
+  let offset = 0;
+  if (hasComment) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_COMMENT;
+    tlv[offset + 1] = commentBytes.byteLength;
+    tlv.set(commentBytes, offset + 2);
+    offset += 2 + commentBytes.byteLength;
+  }
+  if (hasMagic && magicBig !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_MAGIC;
+    tlv[offset + 1] = BINARY_ORDER_MAGIC_BYTE_LEN;
+    view.setBigInt64(offset + 2, magicBig, true);
+    offset += 2 + BINARY_ORDER_MAGIC_BYTE_LEN;
+  }
+  if (hasTrailingStop && trailingStopVal !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_TRAILING_STOP;
+    tlv[offset + 1] = BINARY_ORDER_TRAILING_BYTE_LEN;
+    view.setUint32(offset + 2, trailingStopVal >>> 0, true);
+    offset += 2 + BINARY_ORDER_TRAILING_BYTE_LEN;
+  }
+  if (hasTrailingStep && trailingStepVal !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_TRAILING_STEP;
+    tlv[offset + 1] = BINARY_ORDER_TRAILING_BYTE_LEN;
+    view.setUint32(offset + 2, trailingStepVal >>> 0, true);
+    offset += 2 + BINARY_ORDER_TRAILING_BYTE_LEN;
+  }
+
+  return tlv;
 }
 
 const BINARY_ORDER_ORDER_CLEAR_STOP_LIMIT_MASK = BINARY_ORDER_FLAG_HAS_STOP_LIMIT;
@@ -1353,8 +1735,9 @@ function encodeHttpBinaryOrderReqFromValidated(
 ): { packet: Uint8Array; buffer: ArrayBuffer; clientOrderId: string } {
   const rawTokenBytes = getCachedTokenUtf8Bytes(validated.resolvedToken);
   const tokenByteLength = Math.min(rawTokenBytes.byteLength, 0xffff);
+  const extrasLen = validated.extrasBytes.byteLength;
 
-  const totalBytes = REQ_HEADER_SIZE + 2 + tokenByteLength;
+  const totalBytes = REQ_HEADER_SIZE + 2 + tokenByteLength + (extrasLen > 0 ? 2 + extrasLen : 0);
   const buffer = new ArrayBuffer(totalBytes);
   const packet = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -1365,8 +1748,32 @@ function encodeHttpBinaryOrderReqFromValidated(
   if (tokenByteLength > 0) {
     packet.set(rawTokenBytes.subarray(0, tokenByteLength), 130);
   }
+  if (extrasLen > 0) {
+    const extrasOffset = 130 + tokenByteLength;
+    view.setUint16(extrasOffset, extrasLen, true);
+    packet.set(validated.extrasBytes, extrasOffset + 2);
+  }
 
   return { packet, buffer, clientOrderId: validated.clientOrderId };
+}
+
+function encodeWsModeAOrderFrameFromValidated(
+  reqId: number,
+  validated: ValidatedBinaryOrderReq,
+): Uint8Array {
+  const extrasLen = validated.extrasBytes.byteLength;
+  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + (extrasLen > 0 ? 2 + extrasLen : 0);
+  const buffer = new ArrayBuffer(totalBytes);
+  const packet = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+
+  view.setUint32(0, reqId >>> 0, true);
+  packValidatedBinaryOrderHeader(packet, view, WS_REQ_ID_SIZE, validated);
+  if (extrasLen > 0) {
+    view.setUint16(WS_FAST_ORDER_FRAME_SIZE, extrasLen, true);
+    packet.set(validated.extrasBytes, WS_FAST_ORDER_FRAME_SIZE + 2);
+  }
+  return packet;
 }
 
 function encodeWsInlineTokenOrderFrame(
@@ -1376,7 +1783,8 @@ function encodeWsInlineTokenOrderFrame(
 ): Uint8Array {
   const tokenBytes = getCachedTokenUtf8Bytes(token);
   const tokenLen = Math.min(tokenBytes.byteLength, 0xffff);
-  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen; // 134 + tokenLen
+  const extrasLen = validated.extrasBytes.byteLength;
+  const totalBytes = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen + (extrasLen > 0 ? 2 + extrasLen : 0);
   const buffer = new ArrayBuffer(totalBytes);
   const packet = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -1387,18 +1795,52 @@ function encodeWsInlineTokenOrderFrame(
   if (tokenLen > 0) {
     packet.set(tokenBytes.subarray(0, tokenLen), WS_FAST_ORDER_FRAME_SIZE + 2);
   }
+  if (extrasLen > 0) {
+    const extrasOffset = WS_FAST_ORDER_FRAME_SIZE + 2 + tokenLen;
+    view.setUint16(extrasOffset, extrasLen, true);
+    packet.set(validated.extrasBytes, extrasOffset + 2);
+  }
   return packet;
 }
 
 /**
- * Packs a `BinaryTcpOrderParams` command into the exact `130 + tokenByteLength`
- * Little-Endian wire packet (`REQ_HEADER_SIZE = 128` + `u16_le` token len + UTF-8 token).
+ * Packs a `BinaryTcpOrderParams` command into the canonical HTTP binary packet
+ * (`[128 header][u16 tokenLen][token]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
  */
 export function encodeBinaryOrderReq(
   params: BinaryTcpOrderParams,
 ): { packet: Uint8Array; buffer: ArrayBuffer; clientOrderId: string } {
   const validated = validateBinaryOrderReq(params);
   return encodeHttpBinaryOrderReqFromValidated(validated);
+}
+
+/**
+ * Packs a `BinaryTcpOrderParams` command into a WebSocket Mode A (pre-bound token) frame
+ * (`[u32 reqId][128 header]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
+ */
+export function encodeBinaryOrderWsModeAFrame(
+  reqId: number,
+  params: BinaryTcpOrderParams,
+): Uint8Array {
+  const validated = validateBinaryOrderReq(params);
+  return encodeWsModeAOrderFrameFromValidated(reqId, validated);
+}
+
+/**
+ * Packs a `BinaryTcpOrderParams` command into a WebSocket Mode B (inline token) frame
+ * (`[u32 reqId][128 header][u16 tokenLen][token]` + optional `[u16 extrasLen][TLV]` when `HAS_EXTRAS` is set).
+ */
+export function encodeBinaryOrderWsModeBFrame(
+  reqId: number,
+  params: BinaryTcpOrderParams,
+  tokenOverride?: string,
+): Uint8Array {
+  const validated = validateBinaryOrderReq(params);
+  return encodeWsInlineTokenOrderFrame(
+    reqId,
+    validated,
+    tokenOverride !== undefined ? tokenOverride : validated.resolvedToken,
+  );
 }
 
 /**
@@ -1628,12 +2070,18 @@ function sendBinaryTcpOrderOverOpenWs(
 
     try {
       if (useFast132Frame) {
-        // Ultra-fast 132-byte 0-alloc, 0-JWT-copy frame using pre-allocated scratch buffer.
-        fastWsTxPacket.fill(0);
-        fastWsTxView.setUint32(0, reqId, true);
-        packValidatedBinaryOrderHeader(fastWsTxPacket, fastWsTxView, WS_REQ_ID_SIZE, validated);
-        pendingEntry.sentAtPerfMs = perfNow();
-        socket.send(fastWsTxPacket);
+        if (validated.extrasBytes.byteLength === 0) {
+          // Ultra-fast 132-byte 0-alloc, 0-JWT-copy frame using pre-allocated scratch buffer.
+          fastWsTxPacket.fill(0);
+          fastWsTxView.setUint32(0, reqId, true);
+          packValidatedBinaryOrderHeader(fastWsTxPacket, fastWsTxView, WS_REQ_ID_SIZE, validated);
+          pendingEntry.sentAtPerfMs = perfNow();
+          socket.send(fastWsTxPacket);
+        } else {
+          const modeAWithExtras = encodeWsModeAOrderFrameFromValidated(reqId, validated);
+          pendingEntry.sentAtPerfMs = perfNow();
+          socket.send(modeAWithExtras);
+        }
       } else {
         const inlineFrame = encodeWsInlineTokenOrderFrame(reqId, validated, validated.resolvedToken);
         pendingEntry.sentAtPerfMs = perfNow();
@@ -1873,6 +2321,33 @@ export async function sendBinaryTcpOrder(
   }
 
   return sendBinaryTcpOrderViaHttp(validated, params, timeoutMs);
+}
+
+/**
+ * Convenience helper to close two opposing hedged positions against each other
+ * using Binary TCP Action 8 (`BINARY_ORDER_ACTION_CLOSE_BY`).
+ */
+export async function closeByPositionsBinaryTcp(params: {
+  ticket: number;
+  otherTicket: number;
+  accountLogin?: number;
+  symbol?: string;
+  clientOrderId?: string;
+  authToken?: string | null;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}): Promise<DecodedBinaryOrderResp> {
+  return sendBinaryTcpOrder({
+    action: BINARY_ORDER_ACTION_CLOSE_BY,
+    ticket: params.ticket,
+    otherTicket: params.otherTicket,
+    accountLogin: params.accountLogin,
+    symbol: params.symbol,
+    clientOrderId: params.clientOrderId,
+    authToken: params.authToken,
+    signal: params.signal,
+    timeoutMs: params.timeoutMs,
+  });
 }
 
 /**

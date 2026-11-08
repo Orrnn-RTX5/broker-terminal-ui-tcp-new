@@ -1,6 +1,7 @@
 import { normalizeBrokerTimestampMs, readBrokerTimestampMs } from '../utils/brokerStreamSemantics';
 import { shouldDeferEmptyPositionSnapshot } from './positionSnapshotSafety';
 import { readPositionStateVersion } from './positionStateVersion';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
 
 const toFinite = (v: unknown, fallback = 0): number => {
   // FIX: Partial account packets may carry omitted/null fields or Money-like
@@ -64,11 +65,12 @@ export function normalizePosition(raw: any) {
 
   const id = getPositionId(raw);
   const volume = toFinite(raw.volume_lots ?? raw.volume ?? raw.quantity, 0);
-  const openPrice = toFinite(raw.price_open ?? raw.open_price ?? raw.openPrice ?? raw.price, 0);
-  const currentPrice = toFinite(raw.price_current ?? raw.current_price ?? raw.currentPrice, 0);
+  const openPrice = stripFloatPrecisionNoise(toFinite(raw.price_open ?? raw.open_price ?? raw.openPrice ?? raw.price, 0));
+  const currentPrice = stripFloatPrecisionNoise(toFinite(raw.price_current ?? raw.current_price ?? raw.currentPrice, 0));
   const unrealizedPnL = toFinite(raw.profit ?? raw.unrealized_pl ?? raw.unrealizedPnL, 0);
-  const sl = readProtectionLevel(raw, stopLossAliases) ?? 0;
-  const tp = readProtectionLevel(raw, takeProfitAliases) ?? 0;
+  const sl = stripFloatPrecisionNoise(readProtectionLevel(raw, stopLossAliases) ?? 0);
+  const tp = stripFloatPrecisionNoise(readProtectionLevel(raw, takeProfitAliases) ?? 0);
+  const digits = resolveSpecDigits(raw.digits);
 
   return {
     ...raw,
@@ -81,6 +83,7 @@ export function normalizePosition(raw: any) {
     openPrice,
     currentPrice,
     openTime,
+    ...(digits !== null ? { digits } : {}),
     chartEntryTime: (typeof raw?.chartEntryTime === 'string' && raw.chartEntryTime.trim())
       ? raw.chartEntryTime.trim()
       : (openTime || new Date().toISOString()),
@@ -111,7 +114,7 @@ export function normalizePosition(raw: any) {
 }
 
 export const getPositionId = (raw: any): number => (
-  toFinite(raw?.position_id ?? raw?.ticket ?? raw?.id ?? raw?.position_ticket, 0)
+  toFinite(raw?.position_id ?? raw?.ticket ?? raw?.id ?? raw?.position_ticket ?? raw?.closed_ticket, 0)
 );
 
 export const isClosedPositionRecord = (raw: any): boolean => {
@@ -141,10 +144,11 @@ export const mergePositionRecord = (raw: any, existing?: any): any => {
     // even if a legacy publisher accidentally includes those fields.
     const profit = firstDefined(raw, ['profit', 'unrealized_pl', 'unrealizedPnL']);
     const price = firstDefined(raw, ['price_current', 'current_price', 'currentPrice']);
+    const cleanPrice = price !== undefined ? stripFloatPrecisionNoise(toFinite(price)) : undefined;
     return {
       ...existing,
       pnl_available: true,
-      ...(price !== undefined ? { currentPrice: toFinite(price), current_price: toFinite(price), price_current: toFinite(price), hasBackendCurrentPrice: true } : {}),
+      ...(cleanPrice !== undefined ? { currentPrice: cleanPrice, current_price: cleanPrice, price_current: cleanPrice, hasBackendCurrentPrice: true } : {}),
       ...(profit !== undefined ? { profit: toFinite(profit), unrealizedPnL: toFinite(profit), unrealized_pl: toFinite(profit), hasBackendProfit: true } : {}),
       ...(raw.margin !== undefined ? {
         margin: toFinite(raw.margin),
@@ -182,12 +186,14 @@ export const mergePositionRecord = (raw: any, existing?: any): any => {
     : existing.openTime;
   const hasProfit = hasOwnValue(raw, ['profit', 'unrealized_pl', 'unrealizedPnL']);
   const unrealizedPnL = hasProfit ? normalized.unrealizedPnL : existing.unrealizedPnL;
-  const sl = readProtectionLevel(raw, stopLossAliases) ?? existing.sl;
-  const tp = readProtectionLevel(raw, takeProfitAliases) ?? existing.tp;
+  const sl = stripFloatPrecisionNoise(readProtectionLevel(raw, stopLossAliases) ?? existing.sl);
+  const tp = stripFloatPrecisionNoise(readProtectionLevel(raw, takeProfitAliases) ?? existing.tp);
+  const mergedDigits = resolveSpecDigits(normalized.digits, existing.digits);
 
   return {
     ...existing,
     ...normalized,
+    ...(mergedDigits !== null ? { digits: mergedDigits } : {}),
     pnl_available: duplicatePricedSnapshot ? true : (raw.pnl_available ?? existing.pnl_available),
     state_version: positionVersion(raw) ?? positionVersion(existing),
     state_version_text: positionVersion(raw) ?? positionVersion(existing),
@@ -411,8 +417,13 @@ export const readPositionStreamEvent = (message: any): { event: string; position
   const event = envelopes.flatMap((value) => [value?.event, value?.type, value?.action])
     .map((value) => String(value ?? '').trim().toLowerCase())
     .find((value) => value && value !== 'channel_message') ?? '';
-  const position = envelopes.flatMap((value) => [value?.position, value?.closed_position, value])
-    .find((value) => getPositionId(value) > 0);
+  const allowResult = event.startsWith('position_') || POSITION_CLOSED_EVENTS.has(event);
+  const position = envelopes.flatMap((value) => [
+    value?.position,
+    value?.closed_position,
+    ...(allowResult ? [value?.result] : []),
+    value,
+  ]).find((value) => getPositionId(value) > 0);
   return { event, position };
 };
 

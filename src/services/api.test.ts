@@ -51,31 +51,24 @@ describe('broker server URL normalization', () => {
   });
 });
 
-describe('position close adapter', () => {
+describe('position close adapter (fast binary channel only)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      const parsedBody = init?.body ? JSON.parse(String(init.body)) : {};
-      return Promise.resolve(jsonResponse({
-        status: 'closed',
-        client_order_id: parsedBody.client_order_id,
-        position_id: '900719925474099312345',
-        ticket: '900719925474099312345',
-      }));
-    }));
+    vi.stubGlobal('fetch', vi.fn());
     clearStoredRouting();
   });
 
-  it('preserves a positive decimal ticket and sends the full-close contract', async () => {
+  it('throws Fast order channel is not configured for this Terminal and does not call REST when binary channel is disabled', async () => {
+    await expect(api.positions.closePosition(70001)).rejects.toThrow(
+      'Fast order channel is not configured for this Terminal',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-safe-integer position tickets without falling back to REST', async () => {
     const ticket = '900719925474099312345';
 
-    await api.positions.closePosition(ticket);
-
-    expect(lastFetchCall()).toMatchObject({
-      url: `${API_V2_BASE_URL}/positions/${ticket}/close`,
-      body: expect.objectContaining({
-        client_order_id: expect.any(String),
-      }),
-    });
+    await expect(api.positions.closePosition(ticket)).rejects.toThrow('Invalid position ticket');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -217,112 +210,95 @@ describe('login payload normalization', () => {
   });
 });
 
-describe('pending order payload normalization', () => {
+describe('trailing stop & pending order binary-only enforcement (no REST fallback)', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ok: true })));
     clearStoredRouting();
   });
 
-  it('maps UI pending create fields to backend account_login/sl/tp/expiry names', async () => {
-    await api.orders.placePendingOrder({
-      login: 100001,
-      symbol: 'XAUUSD',
-      side: 'buy',
-      volume: 0.1,
-      type: 'buy_limit',
-      price: 2300,
-      price_sl: 2290,
-      price_tp: 2325,
-      expiration: 1770000000,
-    });
-
-    expect(lastFetchCall()).toMatchObject({
-      url: `${RTX5_API_URL}/api/v2/orders/pending`,
-      body: {
-        account_login: 100001,
+  it('rejects non-trailing pending orders when fast binary channel is not configured (no REST fallback)', async () => {
+    await expect(
+      api.orders.placePendingOrder({
+        login: 100001,
         symbol: 'XAUUSD',
         side: 'buy',
         volume: 0.1,
         type: 'buy_limit',
         price: 2300,
-        sl: 2290,
-        tp: 2325,
-        expiry: 1770000000,
-      },
-    });
+        price_sl: 2290,
+        price_tp: 2325,
+        expiration: 1770000000,
+      }),
+    ).rejects.toThrow('Fast order channel is not configured for this Terminal');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('preserves the pending create expiry alias from the high-level wrapper', async () => {
-    await api.orders.placePendingOrder({
-      login: 100001,
-      symbol: 'XAUUSD',
-      side: 'sell',
-      volume: 0.2,
-      type: 'sell_stop',
-      price: 2285,
-      sl: 2300,
-      tp: 2250,
-      expiry: 1770000600,
-    });
+  it('rejects trailing pending orders, trailing market orders, and trailing modifies when fast binary channel is not configured (no REST fallback)', async () => {
+    await expect(
+      api.orders.placePendingOrder({
+        login: 100001,
+        symbol: 'XAUUSD',
+        side: 'buy',
+        volume: 0.1,
+        type: 'buy_limit',
+        price: 2300,
+        price_sl: 2290,
+        price_tp: 2325,
+        expiration: 1770000000,
+        trailing_stop: 50,
+        trailing_step: 10,
+      }),
+    ).rejects.toThrow('Fast order channel is not configured for this Terminal');
 
-    expect(lastFetchCall()).toMatchObject({
-      url: `${RTX5_API_URL}/api/v2/orders/pending`,
-      body: {
-        account_login: 100001,
+    await expect(
+      api.orders.placeMarketOrder({
+        login: 100001,
+        symbol: 'XAUUSD',
+        side: 'buy',
+        type: 'market',
+        volume: 0.1,
+        trailing_stop: 50,
+      }),
+    ).rejects.toThrow('Fast order channel is not configured for this Terminal');
+
+    await expect(
+      api.positions.modifyPosition(77001, {
+        trailing_stop: 50,
+        trailing_step: 10,
+      }),
+    ).rejects.toThrow('Fast order channel is not configured for this Terminal');
+
+    await expect(
+      api.orders.modifyPendingOrder(112233, {
+        price: 2301,
+        trailing_stop: 50,
+      }),
+    ).rejects.toThrow('Fast order channel is not configured for this Terminal');
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects trailing_step > 0 when trailing_stop is omitted or zero before hitting the wire', async () => {
+    await expect(
+      api.orders.placePendingOrder({
+        login: 100001,
         symbol: 'XAUUSD',
         side: 'sell',
         volume: 0.2,
         type: 'sell_stop',
         price: 2285,
-        sl: 2300,
-        tp: 2250,
-        expiry: 1770000600,
-      },
-    });
-  });
+        trailing_step: 5,
+      }),
+    ).rejects.toThrow('trailing_step requires trailing_stop > 0');
 
-  it('maps UI pending modify fields to backend sl/tp/expiry names', async () => {
-    await api.orders.modifyPendingOrder(112233, {
-      price: 2301,
-      price_sl: 2291,
-      price_tp: 2326,
-      expiration: 1770000900,
-    });
-
-    expect(lastFetchCall()).toMatchObject({
-      url: `${RTX5_API_URL}/api/v2/orders/pending/112233`,
-      body: {
-        price: 2301,
-        sl: 2291,
-        tp: 2326,
-        expiry: 1770000900,
-      },
-    });
-    expect(lastFetchCall().body).not.toHaveProperty('price_sl');
-    expect(lastFetchCall().body).not.toHaveProperty('price_tp');
-    expect(lastFetchCall().body).not.toHaveProperty('expiration');
-  });
-
-  it('preserves pending modify sl/tp/expiry aliases from the high-level wrapper', async () => {
-    await api.orders.modifyPendingOrder(112233, {
-      price: 2302,
-      sl: 2292,
-      tp: 2327,
-      expiry: 1770001200,
-    });
-
-    expect(lastFetchCall()).toMatchObject({
-      url: `${RTX5_API_URL}/api/v2/orders/pending/112233`,
-      body: {
+    await expect(
+      api.orders.modifyPendingOrder(112233, {
         price: 2302,
-        sl: 2292,
-        tp: 2327,
-        expiry: 1770001200,
-      },
-    });
-    expect(lastFetchCall().body).not.toHaveProperty('price_sl');
-    expect(lastFetchCall().body).not.toHaveProperty('price_tp');
-    expect(lastFetchCall().body).not.toHaveProperty('expiration');
+        trailing_step: 5,
+      }),
+    ).rejects.toThrow('trailing_step requires trailing_stop > 0');
+
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

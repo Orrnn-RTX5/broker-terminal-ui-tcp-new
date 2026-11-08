@@ -165,6 +165,19 @@ func (s *WebTerminalServer) serveBinaryOrderHTTP(w http.ResponseWriter, r *http.
 	}
 
 	canonicalLen := rtx5tcp.BinaryOrderFastReqHeaderSize + 2 + len(req.AuthToken)
+	if (req.Flags & rtx5tcp.BinaryOrderFlagHasExtras) != 0 {
+		extrasLen := int(binary.LittleEndian.Uint16(rawReq[canonicalLen : canonicalLen+2]))
+		canonicalLen += 2 + extrasLen
+	}
+	if canonicalLen > rtx5tcp.RTOMaxPayloadBytes {
+		writeBinaryOrderFastResp(w, r, rtx5tcp.BinaryOrderFastResp{
+			Action:    req.Action,
+			Status:    rtx5tcp.BinaryOrderStatusBadRequest,
+			ErrorCode: "INVALID_BINARY_ORDER",
+			Message:   "binary order frame exceeds maximum RTO payload size",
+		})
+		return
+	}
 	payload := rawReq[:canonicalLen]
 	normalizeBinaryOrderHeaderInPlace(payload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req)
 
@@ -220,6 +233,33 @@ func validateBinaryOrderHeaderZeroAlloc(hdr128 []byte, out *rtx5tcp.BinaryOrderF
 		return "INVALID_ORDER_PARAMS", verr
 	}
 	return "", nil
+}
+
+func validateBinaryOrderHeaderAndExtras(hdr128 []byte, extrasBlock []byte, out *rtx5tcp.BinaryOrderFastReq) (errCode string, extrasTotalLen int, err error) {
+	if len(hdr128) < rtx5tcp.BinaryOrderFastReqHeaderSize {
+		return "INVALID_BINARY_ORDER", 0, rtx5tcp.ErrTruncatedBinaryOrderFrame
+	}
+	flags := binary.LittleEndian.Uint16(hdr128[4:6])
+	var stackFrame [rtx5tcp.BinaryOrderFastReqHeaderSize + 2]byte
+	copy(stackFrame[:rtx5tcp.BinaryOrderFastReqHeaderSize], hdr128[:rtx5tcp.BinaryOrderFastReqHeaderSize])
+	binary.LittleEndian.PutUint16(stackFrame[4:6], flags&^rtx5tcp.BinaryOrderFlagHasExtras)
+	if derr := rtx5tcp.DecodeBinaryOrderFastReqInto(stackFrame[:], out); derr != nil {
+		return "INVALID_BINARY_ORDER", 0, derr
+	}
+	out.Flags = flags
+	comment, magic, totalBytes, eerr := rtx5tcp.DecodeBinaryOrderExtrasBlock(extrasBlock)
+	if eerr != nil || len(extrasBlock) != totalBytes {
+		if eerr == nil {
+			eerr = rtx5tcp.ErrInvalidBinaryOrderReq
+		}
+		return "INVALID_BINARY_ORDER", 0, eerr
+	}
+	out.Comment = comment
+	out.Magic = magic
+	if verr := out.Validate(); verr != nil {
+		return "INVALID_ORDER_PARAMS", 0, verr
+	}
+	return "", totalBytes, nil
 }
 
 type wsBinaryOrderJob struct {
@@ -305,7 +345,7 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 		rawResp, serr := s.executeBinaryOrderPayload(job.rawPayload, 15*time.Second)
 		if serr != nil {
 			var req rtx5tcp.BinaryOrderFastReq
-			_, _ = validateBinaryOrderHeaderZeroAlloc(job.rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req)
+			_ = rtx5tcp.DecodeBinaryOrderFastReqInto(job.rawPayload, &req)
 			_ = writeWSErrorResp(job.reqID, rtx5tcp.BinaryOrderFastResp{
 				Action:         req.Action,
 				Status:         504,
@@ -354,22 +394,17 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 		return s.getSessionOrderToken(clientKey)
 	}
 
-	handleTokenlessHeader := func(reqID uint32, hdr128 []byte, poolBuf *[]byte) {
-		tok := resolveToken()
-		if tok == "" {
-			action := hdr128[1]
-			releaseWSFrameBuf(poolBuf)
-			_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
-				Action:    action,
-				Status:    rtx5tcp.BinaryOrderStatusUnauthorized,
-				ErrorCode: "AUTH_TOKEN_REQUIRED",
-				Message:   "missing cached auth token",
-			})
-			return
-		}
-
+	handleTokenlessHeader := func(reqID uint32, hdr128 []byte, extrasBlock []byte, poolBuf *[]byte) {
 		var req rtx5tcp.BinaryOrderFastReq
-		if errCode, verr := validateBinaryOrderHeaderZeroAlloc(hdr128, &req); verr != nil {
+		var errCode string
+		var verr error
+		var extrasTotalLen int
+		if extrasBlock == nil {
+			errCode, verr = validateBinaryOrderHeaderZeroAlloc(hdr128, &req)
+		} else {
+			errCode, extrasTotalLen, verr = validateBinaryOrderHeaderAndExtras(hdr128, extrasBlock, &req)
+		}
+		if verr != nil {
 			action := hdr128[1]
 			releaseWSFrameBuf(poolBuf)
 			if errCode == "INVALID_ORDER_PARAMS" {
@@ -394,8 +429,21 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 			return
 		}
 
+		tok := resolveToken()
+		if tok == "" {
+			action := hdr128[1]
+			releaseWSFrameBuf(poolBuf)
+			_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
+				Action:    action,
+				Status:    rtx5tcp.BinaryOrderStatusUnauthorized,
+				ErrorCode: "AUTH_TOKEN_REQUIRED",
+				Message:   "missing cached auth token",
+			})
+			return
+		}
+
 		tokLen := len(tok)
-		totalLen := rtx5tcp.BinaryOrderFastReqHeaderSize + 2 + tokLen
+		totalLen := rtx5tcp.BinaryOrderFastReqHeaderSize + 2 + tokLen + extrasTotalLen
 		if tokLen > 65535 || totalLen > rtx5tcp.RTOMaxPayloadBytes {
 			releaseWSFrameBuf(poolBuf)
 			_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
@@ -412,15 +460,21 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 		if poolBuf != nil && cap(*poolBuf) >= totalLen {
 			rawPayload = (*poolBuf)[:totalLen]
 			copy(rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], hdr128[:rtx5tcp.BinaryOrderFastReqHeaderSize])
+			if extrasTotalLen > 0 {
+				copy(rawPayload[130+tokLen:totalLen], extrasBlock[:extrasTotalLen])
+			}
 			ownedPool = poolBuf
 		} else {
 			rawPayload = make([]byte, totalLen)
 			copy(rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], hdr128[:rtx5tcp.BinaryOrderFastReqHeaderSize])
+			if extrasTotalLen > 0 {
+				copy(rawPayload[130+tokLen:totalLen], extrasBlock[:extrasTotalLen])
+			}
 			releaseWSFrameBuf(poolBuf)
 		}
 		normalizeBinaryOrderHeaderInPlace(rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req)
 		binary.LittleEndian.PutUint16(rawPayload[128:130], uint16(tokLen))
-		copy(rawPayload[130:], tok)
+		copy(rawPayload[130:130+tokLen], tok)
 
 		dispatchJob(reqID, rawPayload, ownedPool)
 	}
@@ -503,31 +557,76 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 			continue
 		}
 
-		if len(msg) == wsOrderModeALen {
-			handleTokenlessHeader(reqID, msg[4:wsOrderModeALen], pooledPtr)
+		if len(msg) < wsOrderModeALen {
+			var action uint8
+			if len(msg) >= 6 {
+				action = msg[5]
+			}
+			releaseWSFrameBuf(pooledPtr)
+			_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
+				Action:    action,
+				Status:    rtx5tcp.BinaryOrderStatusBadRequest,
+				ErrorCode: "INVALID_BINARY_ORDER",
+				Message:   rtx5tcp.ErrTruncatedBinaryOrderFrame.Error(),
+			})
 			continue
 		}
 
-		if len(msg) >= wsOrderModeBMinLen {
-			tokenLen := int(binary.LittleEndian.Uint16(msg[132:134]))
-			if len(msg) < wsOrderModeBMinLen+tokenLen {
-				action := msg[5]
+		hdr128 := msg[4:wsOrderModeALen]
+		flags := binary.LittleEndian.Uint16(hdr128[4:6])
+		hasExtras := (flags & rtx5tcp.BinaryOrderFlagHasExtras) != 0
+
+		if len(msg) == wsOrderModeALen {
+			if hasExtras {
+				action := hdr128[1]
 				releaseWSFrameBuf(pooledPtr)
 				_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
 					Action:    action,
 					Status:    rtx5tcp.BinaryOrderStatusBadRequest,
 					ErrorCode: "INVALID_BINARY_ORDER",
-					Message:   rtx5tcp.ErrTruncatedBinaryOrderFrame.Error(),
+					Message:   rtx5tcp.ErrInvalidBinaryOrderReq.Error(),
+				})
+				continue
+			}
+			handleTokenlessHeader(reqID, hdr128, nil, pooledPtr)
+			continue
+		}
+
+		if len(msg) >= wsOrderModeBMinLen {
+			n16 := int(binary.LittleEndian.Uint16(msg[132:134]))
+			if hasExtras && (len(msg) == wsOrderModeBMinLen+n16 || (n16 > 0 && msg[wsOrderModeBMinLen] < 0x20)) {
+				handleTokenlessHeader(reqID, hdr128, msg[wsOrderModeALen:], pooledPtr)
+				continue
+			}
+
+			tokenLen := n16
+			afterTokenOff := wsOrderModeBMinLen + tokenLen
+			if len(msg) < afterTokenOff {
+				action := msg[5]
+				releaseWSFrameBuf(pooledPtr)
+				errMsg := rtx5tcp.ErrTruncatedBinaryOrderFrame.Error()
+				if hasExtras {
+					errMsg = rtx5tcp.ErrInvalidBinaryOrderReq.Error()
+				}
+				_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
+					Action:    action,
+					Status:    rtx5tcp.BinaryOrderStatusBadRequest,
+					ErrorCode: "INVALID_BINARY_ORDER",
+					Message:   errMsg,
 				})
 				continue
 			}
 
 			if tokenLen == 0 {
-				handleTokenlessHeader(reqID, msg[4:wsOrderModeALen], pooledPtr)
+				var extrasBlock []byte
+				if hasExtras {
+					extrasBlock = msg[afterTokenOff:]
+				}
+				handleTokenlessHeader(reqID, hdr128, extrasBlock, pooledPtr)
 				continue
 			}
 
-			tokBytes := msg[134 : 134+tokenLen]
+			tokBytes := msg[134:afterTokenOff]
 			curConnTok, _ := connToken.Load().(string)
 			if len(curConnTok) != tokenLen || string(tokBytes) != curConnTok {
 				tok := string(tokBytes)
@@ -535,22 +634,19 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 				s.setSessionOrderToken(clientKey, tok)
 			}
 
-			rawPayload := msg[4 : wsOrderModeBMinLen+tokenLen]
-			if len(rawPayload) > rtx5tcp.RTOMaxPayloadBytes {
-				action := msg[5]
-				releaseWSFrameBuf(pooledPtr)
-				_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
-					Action:    action,
-					Status:    rtx5tcp.BinaryOrderStatusBadRequest,
-					ErrorCode: "INVALID_BINARY_ORDER",
-					Message:   "binary order frame exceeds maximum RTO payload size",
-				})
-				continue
-			}
-
 			var req rtx5tcp.BinaryOrderFastReq
-			if errCode, verr := validateBinaryOrderHeaderZeroAlloc(rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req); verr != nil {
-				action := rawPayload[1]
+			var errCode string
+			var verr error
+			payloadEnd := afterTokenOff
+			if hasExtras {
+				var extrasTotalLen int
+				errCode, extrasTotalLen, verr = validateBinaryOrderHeaderAndExtras(hdr128, msg[afterTokenOff:], &req)
+				payloadEnd = afterTokenOff + extrasTotalLen
+			} else {
+				errCode, verr = validateBinaryOrderHeaderZeroAlloc(hdr128, &req)
+			}
+			if verr != nil {
+				action := hdr128[1]
 				releaseWSFrameBuf(pooledPtr)
 				if errCode == "INVALID_ORDER_PARAMS" {
 					_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
@@ -574,6 +670,19 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 				continue
 			}
 
+			rawPayload := msg[4:payloadEnd]
+			if len(rawPayload) > rtx5tcp.RTOMaxPayloadBytes {
+				action := msg[5]
+				releaseWSFrameBuf(pooledPtr)
+				_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
+					Action:    action,
+					Status:    rtx5tcp.BinaryOrderStatusBadRequest,
+					ErrorCode: "INVALID_BINARY_ORDER",
+					Message:   "binary order frame exceeds maximum RTO payload size",
+				})
+				continue
+			}
+
 			normalizeBinaryOrderHeaderInPlace(rawPayload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req)
 			dispatchJob(reqID, rawPayload[:len(rawPayload):len(rawPayload)], pooledPtr)
 			continue
@@ -584,11 +693,15 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 			action = msg[5]
 		}
 		releaseWSFrameBuf(pooledPtr)
+		errMsg := rtx5tcp.ErrTruncatedBinaryOrderFrame.Error()
+		if hasExtras {
+			errMsg = rtx5tcp.ErrInvalidBinaryOrderReq.Error()
+		}
 		_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
 			Action:    action,
 			Status:    rtx5tcp.BinaryOrderStatusBadRequest,
 			ErrorCode: "INVALID_BINARY_ORDER",
-			Message:   rtx5tcp.ErrTruncatedBinaryOrderFrame.Error(),
+			Message:   errMsg,
 		})
 	}
 }

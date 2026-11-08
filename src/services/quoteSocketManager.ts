@@ -18,6 +18,7 @@ import {
 } from './brokerSession';
 import { isDesktopBackendTarget } from '../config/backendTarget.js';
 import { binaryTcpMarketStream, type DecodedBinaryTick } from './binaryTcpMarketStream';
+import { readRegisteredSymbolPriceSpec } from './dailyChangePriceModeRegistry';
 import { enqueueLiveTick, isLiveMarketDataFrozen, type LiveTick } from './liveTickDispatcher';
 import { useWebSocketStore } from '../store/useWebSocketStore';
 import {
@@ -57,6 +58,7 @@ type QuoteTickCallback = (tick: NormalizedQuoteTick) => void;
 export type QuoteTransport = 'feed' | 'v2';
 
 function toNormalizedQuoteTick(bt: DecodedBinaryTick): NormalizedQuoteTick {
+  const specDigits = readRegisteredSymbolPriceSpec(bt.symbol).digits;
   return {
     symbol: bt.symbol,
     bid: bt.bid,
@@ -65,6 +67,7 @@ function toNormalizedQuoteTick(bt: DecodedBinaryTick): NormalizedQuoteTick {
     timestamp: bt.timestamp,
     sourceTimestamp: bt.sourceTimestamp,
     lp: 'cserver',
+    ...(specDigits !== null ? { digits: specDigits } : {}),
     ...(bt.dailyChange !== undefined ? { dailyChange: bt.dailyChange } : {}),
     ...(bt.high24h !== undefined ? { high24h: bt.high24h, high: bt.high24h } : {}),
     ...(bt.low24h !== undefined ? { low24h: bt.low24h, low: bt.low24h } : {}),

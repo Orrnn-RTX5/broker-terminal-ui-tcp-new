@@ -47,6 +47,19 @@ export function getPipSizeFromDigits(digits: unknown): number | null {
 }
 
 /**
+ * Strips IEEE-754 binary64 arithmetic tail artifacts (e.g. 75755.51000000001
+ * or 75756.12000000001 from float addition) while leaving genuine decimal
+ * values (such as 1.123456789 or 0.000012345) untouched.
+ */
+export function stripFloatPrecisionNoise(price: number): number {
+  if (typeof price !== 'number' || !Number.isFinite(price)) return price;
+  const raw = String(price);
+  if (!/\.\d*?(?:0{6,}|9{6,})\d{1,2}$/.test(raw)) return price;
+  const cleaned = Number(price.toPrecision(12));
+  return Number.isFinite(cleaned) ? cleaned : price;
+}
+
+/**
  * Formats a price value with broker-provided digits. Pass broker digits
  * sources (tick?.digits, position.digits, instrument.digits, ...); the first
  * valid integer 0-8 wins. Renders the raw value (String(price)) when no spec
@@ -57,7 +70,7 @@ export function formatPrice(price: number, ...digitsSources: unknown[]): string 
   if (typeof price !== 'number' || isNaN(price)) return '—';
 
   const digits = resolveSpecDigits(...digitsSources);
-  if (digits === null) return String(price);
+  if (digits === null) return String(stripFloatPrecisionNoise(price));
 
   return price.toFixed(digits);
 }

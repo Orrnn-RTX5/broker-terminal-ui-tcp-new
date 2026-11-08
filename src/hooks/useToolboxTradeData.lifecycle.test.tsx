@@ -49,7 +49,13 @@ vi.mock('../store/useAppStore', async () => {
       },
     },
   );
-  return { useAppStore, beginPositionsRead: () => 1, isConfirmedClosedPosition: () => false, isConfirmedClosedBySnapshot: () => false };
+  return {
+    useAppStore,
+    beginPositionsRead: () => 1,
+    isConfirmedOpenPosition: () => false,
+    isConfirmedClosedPosition: () => false,
+    isConfirmedClosedBySnapshot: () => false,
+  };
 });
 
 vi.mock('../api/tradeGateway', () => ({
@@ -84,6 +90,7 @@ vi.mock('../services/brokerSession', () => ({
     mocks.scopeSubscribers.add(listener);
     return () => { mocks.scopeSubscribers.delete(listener); };
   },
+  onSessionChange: () => () => undefined,
   getServerUrl: () => 'https://test.example.com',
 }));
 

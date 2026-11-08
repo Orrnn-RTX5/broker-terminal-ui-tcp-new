@@ -1,6 +1,7 @@
 import { readRegisteredSymbolPriceSpec } from '../../services/dailyChangePriceModeRegistry';
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { resolveTickFromLookup, useAppStore } from '../../store/useAppStore';
+import { useMarketDataStore } from '../../store/useMarketDataStore';
 import { normalizeSymbolDescriptionText } from '../../utils/symbolDescription';
 import { getInstrumentSymbolName } from '../../utils/symbolEligibility';
 import { formatPrice, resolveSpecDigits } from '../../utils/symbolUtils';
@@ -45,7 +46,7 @@ export const getLatestMarketWatchTimestamp = (...values: unknown[]): number | un
 };
 
 /** Broker quote precision published on one catalog row (normalized field, then raw broker spec). */
-const readCatalogRowPriceDigits = (row: unknown): number | null => {
+export const readCatalogRowPriceDigits = (row: unknown): number | null => {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const record = row as Record<string, unknown>;
   const brokerSpecification = record.brokerSpecification;
@@ -57,6 +58,50 @@ const readCatalogRowPriceDigits = (row: unknown): number | null => {
     ? (nestedSpecification as Record<string, unknown>).digits
     : undefined;
   return resolveSpecDigits(record.digits, specDigits, nestedDigits);
+};
+
+/**
+ * Looks up broker quote precision for a symbol from store instrument catalogs
+ * (useAppStore.getState().symbols and useMarketDataStore.getState().instruments).
+ */
+export const lookupStoreCatalogPriceDigits = (symbol: unknown): number | null => {
+  const normalized = normalizeSymbol(symbol);
+  if (!normalized) return null;
+  const appSymbols = (useAppStore.getState() as { symbols?: readonly unknown[] })?.symbols;
+  const marketInstruments = (useMarketDataStore.getState() as { instruments?: readonly unknown[] })?.instruments;
+  for (const catalog of [appSymbols, marketInstruments]) {
+    if (!Array.isArray(catalog)) continue;
+    for (const row of catalog) {
+      if (normalizeSymbol(getInstrumentSymbolName(row)) !== normalized) continue;
+      const digits = readCatalogRowPriceDigits(row);
+      if (digits !== null) return digits;
+    }
+  }
+  return null;
+};
+
+/**
+ * Resolves broker price digits for a symbol across all authoritative sources:
+ * explicit row digits (e.g. position.digits / order.digits), the scoped
+ * registered symbol catalog, live tick metadata, and store instrument catalogs.
+ */
+export const resolveSymbolPriceDigits = (
+  symbol: unknown,
+  ...extraDigitsSources: unknown[]
+): number | null => {
+  const rawSymbol = String(symbol ?? '').trim();
+  const normalized = normalizeSymbol(symbol);
+  const state = useAppStore.getState();
+  const ticks = (state.ticks ?? {}) as Record<string, { digits?: unknown } | undefined>;
+  const tick = (rawSymbol ? ticks[rawSymbol] : undefined)
+    ?? (normalized ? ticks[normalized] : undefined)
+    ?? (rawSymbol ? resolveTickFromLookup(state.ticks, state.tickLookup, rawSymbol) : undefined);
+  return resolveSpecDigits(
+    ...extraDigitsSources,
+    readRegisteredSymbolPriceSpec(normalized || rawSymbol).digits,
+    tick?.digits,
+    lookupStoreCatalogPriceDigits(normalized || rawSymbol),
+  );
 };
 
 /**

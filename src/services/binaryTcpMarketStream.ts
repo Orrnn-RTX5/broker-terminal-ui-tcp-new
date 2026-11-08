@@ -5,6 +5,7 @@
  * Desktop Client (`GET /__rtx5_binary_stream`, multiplexed over `:4443` AES-256-GCM Binary TCP):
  *   - Frame 0x21 (FrameBinaryTickBatch):   [Count:u16_le][48-byte BinaryTick * Count]
  *   - Frame 0x22 (FrameBinaryCandleBatch): [Count:u16_le][64-byte BinaryCandle * Count]
+ *   - Frame 0x24 (FrameBinaryDepthBatch):  [Count:u16_le][360-byte BinaryDepth * Count]
  *   - Frame 0x3A (FrameBinaryTradeEvent):  [Ver:u8][Kind:u8][Login:i64_le][TsMs:i64_le][ChLen:u16_le][Ch][DataLen:u16_le][Data]
  *
  * Binds authenticated real-time account/trade push events via `POST /__rtx5_binary_account_sub`
@@ -30,11 +31,16 @@ const MAX_BINARY_ORDER_STREAM_DEFER_MS = 250;
 
 export const FRAME_BINARY_TICK_BATCH = 0x21;
 export const FRAME_BINARY_CANDLE_BATCH = 0x22;
+export const FRAME_BINARY_DEPTH_BATCH = 0x24;
 export const FRAME_BINARY_TRADE_EVENT = 0x3A;
 
 export const BINARY_SYMBOL_MAX_BYTES = 16;
 export const BINARY_TICK_RECORD_SIZE = 48;
 export const BINARY_CANDLE_RECORD_SIZE = 64;
+export const BINARY_DEPTH_MAX_LEVELS = 10;
+export const BINARY_DEPTH_HEADER_SIZE = 40;
+export const BINARY_DEPTH_LEVEL_SIZE = 16;
+export const BINARY_DEPTH_RECORD_SIZE = 360;
 export const BINARY_TRADE_EVENT_MIN_SIZE = 22;
 export const CANDLE_FLAG_CLOSED = 0x01;
 
@@ -67,6 +73,21 @@ export interface DecodedBinaryCandle extends OHLCData {
   closed: boolean;
 }
 
+export interface DecodedBinaryDepthLevel {
+  price: number;
+  volume: number;
+  total: number;
+}
+
+export interface DecodedBinaryDepth {
+  symbol: string;
+  timestamp: number;
+  sequence: number;
+  bids: DecodedBinaryDepthLevel[];
+  asks: DecodedBinaryDepthLevel[];
+  spread: number;
+}
+
 export interface DecodedBinaryTradeEvent {
   eventKind: number; // 1=positions, 2=orders, 3=account, 4=metrics, 5=deals, 6=state
   accountLogin: number;
@@ -78,6 +99,7 @@ export interface DecodedBinaryTradeEvent {
 
 type BinaryTickListener = (tick: DecodedBinaryTick) => void;
 type BinaryCandleListener = (candle: DecodedBinaryCandle) => void;
+type BinaryDepthListener = (depth: DecodedBinaryDepth) => void;
 export type BinaryTradeEventListener = (ev: DecodedBinaryTradeEvent) => void;
 type StreamStateListener = (connected: boolean) => void;
 
@@ -378,10 +400,12 @@ class BinaryTcpMarketStream {
   private readonly latestTicks = new Map<string, DecodedBinaryTick>();
   private readonly dayStats = new Map<string, SymbolDayStats>();
   private readonly latestM1Candles = new Map<string, DecodedBinaryCandle>();
+  private readonly latestDepths = new Map<string, DecodedBinaryDepth>();
 
   private readonly tickListeners = new Set<BinaryTickListener>();
   private readonly directChartTickListeners = new Map<string, Set<BinaryTickListener>>();
   private readonly candleListeners = new Map<string, Set<BinaryCandleListener>>();
+  private readonly depthListeners = new Map<string, Set<BinaryDepthListener>>();
   private readonly tradeEventListeners = new Set<BinaryTradeEventListener>();
   private readonly stateListeners = new Set<StreamStateListener>();
 
@@ -390,6 +414,7 @@ class BinaryTcpMarketStream {
   // main thread right when the binary fill response arrives.
   private readonly deferredTicks = new Map<string, DecodedBinaryTick>();
   private readonly deferredCandles = new Map<string, DecodedBinaryCandle>();
+  private readonly deferredDepths = new Map<string, DecodedBinaryDepth>();
   private deferredTradeEvents: DecodedBinaryTradeEvent[] = [];
   private deferredFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private lastTradeEventSig = '';
@@ -410,8 +435,10 @@ class BinaryTcpMarketStream {
           this.latestTicks.clear();
           this.dayStats.clear();
           this.latestM1Candles.clear();
+          this.latestDepths.clear();
           this.deferredTicks.clear();
           this.deferredCandles.clear();
+          this.deferredDepths.clear();
           this.deferredTradeEvents = [];
           this.boundAccountKey = null;
           this.inFlightAccountKey = null;
@@ -526,6 +553,10 @@ class BinaryTcpMarketStream {
     return this.latestM1Candles.get(symbol.trim().toUpperCase());
   }
 
+  public getLatestDepth(symbol: string): DecodedBinaryDepth | undefined {
+    return this.latestDepths.get(symbol.trim().toUpperCase());
+  }
+
   public onTick(listener: BinaryTickListener): () => void {
     this.tickListeners.add(listener);
     this.ensureStarted();
@@ -587,6 +618,34 @@ class BinaryTcpMarketStream {
     };
   }
 
+  public onDepth(symbol: string, listener: BinaryDepthListener): () => void {
+    const key = symbol.trim().toUpperCase();
+    let set = this.depthListeners.get(key);
+    if (!set) {
+      set = new Set();
+      this.depthListeners.set(key, set);
+    }
+    set.add(listener);
+    this.ensureStarted();
+
+    const warm = this.latestDepths.get(key);
+    if (warm) {
+      queueMicrotask(() => {
+        if (set?.has(listener)) {
+          try { listener(warm); } catch { /* ignore */ }
+        }
+      });
+    }
+
+    return () => {
+      const current = this.depthListeners.get(key);
+      if (current) {
+        current.delete(listener);
+        if (current.size === 0) this.depthListeners.delete(key);
+      }
+    };
+  }
+
   public subscribeTradeEvents(listener: BinaryTradeEventListener): () => void {
     const wasEmpty = this.tradeEventListeners.size === 0;
     this.tradeEventListeners.add(listener);
@@ -613,6 +672,7 @@ class BinaryTcpMarketStream {
       this.tickListeners.size > 0
       || this.directChartTickListeners.size > 0
       || this.candleListeners.size > 0
+      || this.depthListeners.size > 0
       || this.tradeEventListeners.size > 0
       || this.stateListeners.size > 0
     );
@@ -731,6 +791,8 @@ class BinaryTcpMarketStream {
         this.decodeTickBatch(buf, view, payloadOffset, payloadLen);
       } else if (frameType === FRAME_BINARY_CANDLE_BATCH && payloadLen >= 2) {
         this.decodeCandleBatch(buf, view, payloadOffset, payloadLen);
+      } else if (frameType === FRAME_BINARY_DEPTH_BATCH && payloadLen >= 2) {
+        this.decodeDepthBatch(buf, view, payloadOffset, payloadLen);
       } else if (frameType === FRAME_BINARY_TRADE_EVENT && payloadLen >= BINARY_TRADE_EVENT_MIN_SIZE) {
         this.decodeTradeEventFrame(buf, payloadOffset, payloadLen);
       }
@@ -772,6 +834,7 @@ class BinaryTcpMarketStream {
       if (
         this.deferredTicks.size > 0
         || this.deferredCandles.size > 0
+        || this.deferredDepths.size > 0
         || this.deferredTradeEvents.length > 0
       ) {
         this.scheduleDeferredFlushSafety();
@@ -807,6 +870,20 @@ class BinaryTcpMarketStream {
         if (listeners && listeners.size > 0) {
           listeners.forEach((cb) => {
             try { cb(candle); } catch { /* ignore */ }
+          });
+        }
+      }
+    }
+
+    if (this.deferredDepths.size > 0) {
+      const pendingDepths = Array.from(this.deferredDepths.values());
+      this.deferredDepths.clear();
+      for (let i = 0; i < pendingDepths.length; i++) {
+        const depth = pendingDepths[i];
+        const listeners = this.depthListeners.get(depth.symbol);
+        if (listeners && listeners.size > 0) {
+          listeners.forEach((cb) => {
+            try { cb(depth); } catch { /* ignore */ }
           });
         }
       }
@@ -1006,6 +1083,90 @@ class BinaryTcpMarketStream {
     }
 
     if (deferUIListeners && this.deferredCandles.size > 0) {
+      this.scheduleDeferredFlushSafety();
+    }
+  }
+
+  private decodeDepthBatch(
+    buf: Uint8Array,
+    view: DataView,
+    payloadOffset: number,
+    payloadLen: number,
+  ): void {
+    const count = view.getUint16(payloadOffset, true);
+    const maxRecords = Math.min(count, Math.floor((payloadLen - 2) / BINARY_DEPTH_RECORD_SIZE));
+    const deferUIListeners = this.shouldDeferForActiveBinaryOrder();
+    let off = payloadOffset + 2;
+
+    for (let i = 0; i < maxRecords; i++, off += BINARY_DEPTH_RECORD_SIZE) {
+      const symbol = decodeFixedAsciiSymbol(buf, off);
+      if (!symbol) continue;
+
+      const rawTsMs = readUint64LE(view, off + 16);
+      const sequence = readUint64LE(view, off + 24);
+      const bidCount = Math.min(buf[off + 32], BINARY_DEPTH_MAX_LEVELS);
+      const askCount = Math.min(buf[off + 33], BINARY_DEPTH_MAX_LEVELS);
+
+      const bids: DecodedBinaryDepthLevel[] = [];
+      let bidTotal = 0;
+      const bidsBase = off + BINARY_DEPTH_HEADER_SIZE;
+      for (let b = 0; b < bidCount; b++) {
+        const levelOff = bidsBase + b * BINARY_DEPTH_LEVEL_SIZE;
+        const price = view.getFloat64(levelOff, true);
+        const volume = view.getFloat64(levelOff + 8, true);
+        if (Number.isFinite(price) && price > 0 && Number.isFinite(volume) && volume > 0) {
+          bidTotal += volume;
+          bids.push({ price, volume, total: bidTotal });
+        }
+      }
+
+      const asks: DecodedBinaryDepthLevel[] = [];
+      let askTotal = 0;
+      const asksBase = off + BINARY_DEPTH_HEADER_SIZE + BINARY_DEPTH_MAX_LEVELS * BINARY_DEPTH_LEVEL_SIZE;
+      for (let a = 0; a < askCount; a++) {
+        const levelOff = asksBase + a * BINARY_DEPTH_LEVEL_SIZE;
+        const price = view.getFloat64(levelOff, true);
+        const volume = view.getFloat64(levelOff + 8, true);
+        if (Number.isFinite(price) && price > 0 && Number.isFinite(volume) && volume > 0) {
+          askTotal += volume;
+          asks.push({ price, volume, total: askTotal });
+        }
+      }
+
+      if (bids.length === 0 && asks.length === 0) continue;
+
+      const bestBid = bids[0]?.price ?? 0;
+      const bestAsk = asks[0]?.price ?? 0;
+      const spread = bestBid > 0 && bestAsk > 0 ? bestAsk - bestBid : 0;
+      const timestamp = rawTsMs > 0 ? rawTsMs : Date.now();
+
+      const decoded: DecodedBinaryDepth = {
+        symbol,
+        timestamp,
+        sequence,
+        bids,
+        asks,
+        spread,
+      };
+
+      this.latestDepths.set(symbol, decoded);
+
+      if (deferUIListeners) {
+        if (this.depthListeners.has(symbol)) {
+          this.deferredDepths.set(symbol, decoded);
+        }
+        continue;
+      }
+
+      const listeners = this.depthListeners.get(symbol);
+      if (listeners && listeners.size > 0) {
+        listeners.forEach((cb) => {
+          try { cb(decoded); } catch { /* ignore */ }
+        });
+      }
+    }
+
+    if (deferUIListeners && this.deferredDepths.size > 0) {
       this.scheduleDeferredFlushSafety();
     }
   }

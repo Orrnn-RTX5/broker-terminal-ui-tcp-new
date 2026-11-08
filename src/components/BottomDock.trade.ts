@@ -30,6 +30,9 @@ export interface TradeProfitInput {
   price_current?: number | string;
   contractSize?: number | string;
   contract_size?: number | string;
+  // Group lot divisor (cent groups = 100): effective lots = volume / lot_divisor, as the engine computes P/L.
+  lot_divisor?: number | string;
+  lotDivisor?: number | string;
   currency_profit?: string;
   profitCurrency?: string;
   swap?: unknown;
@@ -373,7 +376,9 @@ export const calculateLivePositionProfit = (
   // reconstruction (the backend value is shown verbatim).
   const contractSize = explicitContractSize ?? getExposureContractSize(position);
   if (contractSize === null || !(contractSize > 0)) return null;
-  const profit = (currentPrice - openPrice) * direction * volume * contractSize;
+  const lotDivisorRaw = toFiniteNumber(position.lot_divisor ?? position.lotDivisor, 1);
+  const lotDivisor = lotDivisorRaw > 0 ? lotDivisorRaw : 1;
+  const profit = ((currentPrice - openPrice) * direction * volume * contractSize) / lotDivisor;
 
   return Number.isFinite(profit) ? profit : null;
 };

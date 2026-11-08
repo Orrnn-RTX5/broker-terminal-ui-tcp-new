@@ -33,6 +33,20 @@ const (
 	//   [62..63] Reserved      [2]byte
 	BinaryCandleRecordSize = 64
 
+	// BinaryDepthRecordSize is the fixed 360-byte Little-Endian MT5 Binary Market Depth struct:
+	//   [0..15]    Symbol      [16]byte (ASCII uppercase, null-padded)
+	//   [16..23]   TimestampMs int64    (Unix epoch milliseconds)
+	//   [24..31]   Sequence    uint64   (monotonic depth sequence)
+	//   [32]       BidCount    uint8    (0..BinaryDepthMaxLevels)
+	//   [33]       AskCount    uint8    (0..BinaryDepthMaxLevels)
+	//   [34..39]   Reserved    [6]byte
+	//   [40..199]  Bids        [10]BinaryDepthLevel (Price float64 + Volume float64, sorted best-first descending)
+	//   [200..359] Asks        [10]BinaryDepthLevel (Price float64 + Volume float64, sorted best-first ascending)
+	BinaryDepthMaxLevels  = 10
+	BinaryDepthHeaderSize = 40
+	BinaryDepthLevelSize  = 16
+	BinaryDepthRecordSize = BinaryDepthHeaderSize + 2*BinaryDepthMaxLevels*BinaryDepthLevelSize
+
 	CandleFlagForming uint8 = 0x00
 	CandleFlagClosed  uint8 = 0x01
 )
@@ -74,6 +88,21 @@ type BinaryCandle struct {
 	TickVolume    uint32
 	Closed        bool
 	TimeframeCode uint8
+}
+
+// BinaryDepthLevel represents a single price+volume ladder rung in a BinaryDepth record.
+type BinaryDepthLevel struct {
+	Price  float64
+	Volume float64
+}
+
+// BinaryDepth represents a zero-JSON 360-byte fixed-width multi-level order book snapshot.
+type BinaryDepth struct {
+	Symbol      string
+	TimestampMs int64
+	Sequence    uint64
+	Bids        []BinaryDepthLevel
+	Asks        []BinaryDepthLevel
 }
 
 // TimeframeToCode maps canonical timeframe strings to 1-byte binary codes.
@@ -296,3 +325,114 @@ func EncodeRawBinaryCandles(candles []BinaryCandle) []byte {
 	return buf
 }
 
+
+// PutBinaryDepth writes one 360-byte BinaryDepth record at dst[0:360].
+func PutBinaryDepth(dst []byte, d BinaryDepth) {
+	for i := 0; i < BinaryDepthRecordSize; i++ {
+		dst[i] = 0
+	}
+	writeFixedSymbol(dst[0:16], d.Symbol)
+	binary.LittleEndian.PutUint64(dst[16:24], uint64(d.TimestampMs))
+	binary.LittleEndian.PutUint64(dst[24:32], d.Sequence)
+
+	bidCount := len(d.Bids)
+	if bidCount > BinaryDepthMaxLevels {
+		bidCount = BinaryDepthMaxLevels
+	}
+	askCount := len(d.Asks)
+	if askCount > BinaryDepthMaxLevels {
+		askCount = BinaryDepthMaxLevels
+	}
+	dst[32] = uint8(bidCount)
+	dst[33] = uint8(askCount)
+
+	bidBase := BinaryDepthHeaderSize
+	for i := 0; i < bidCount; i++ {
+		off := bidBase + i*BinaryDepthLevelSize
+		binary.LittleEndian.PutUint64(dst[off:off+8], math.Float64bits(d.Bids[i].Price))
+		binary.LittleEndian.PutUint64(dst[off+8:off+16], math.Float64bits(d.Bids[i].Volume))
+	}
+
+	askBase := BinaryDepthHeaderSize + BinaryDepthMaxLevels*BinaryDepthLevelSize
+	for i := 0; i < askCount; i++ {
+		off := askBase + i*BinaryDepthLevelSize
+		binary.LittleEndian.PutUint64(dst[off:off+8], math.Float64bits(d.Asks[i].Price))
+		binary.LittleEndian.PutUint64(dst[off+8:off+16], math.Float64bits(d.Asks[i].Volume))
+	}
+}
+
+// ReadBinaryDepth decodes one 360-byte BinaryDepth record from src[0:360].
+func ReadBinaryDepth(src []byte) BinaryDepth {
+	bidCount := int(src[32])
+	if bidCount > BinaryDepthMaxLevels {
+		bidCount = BinaryDepthMaxLevels
+	}
+	askCount := int(src[33])
+	if askCount > BinaryDepthMaxLevels {
+		askCount = BinaryDepthMaxLevels
+	}
+
+	bids := make([]BinaryDepthLevel, 0, bidCount)
+	bidBase := BinaryDepthHeaderSize
+	for i := 0; i < bidCount; i++ {
+		off := bidBase + i*BinaryDepthLevelSize
+		p := math.Float64frombits(binary.LittleEndian.Uint64(src[off : off+8]))
+		v := math.Float64frombits(binary.LittleEndian.Uint64(src[off+8 : off+16]))
+		if p > 0 && v > 0 && !math.IsNaN(p) && !math.IsInf(p, 0) && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			bids = append(bids, BinaryDepthLevel{Price: p, Volume: v})
+		}
+	}
+
+	asks := make([]BinaryDepthLevel, 0, askCount)
+	askBase := BinaryDepthHeaderSize + BinaryDepthMaxLevels*BinaryDepthLevelSize
+	for i := 0; i < askCount; i++ {
+		off := askBase + i*BinaryDepthLevelSize
+		p := math.Float64frombits(binary.LittleEndian.Uint64(src[off : off+8]))
+		v := math.Float64frombits(binary.LittleEndian.Uint64(src[off+8 : off+16]))
+		if p > 0 && v > 0 && !math.IsNaN(p) && !math.IsInf(p, 0) && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			asks = append(asks, BinaryDepthLevel{Price: p, Volume: v})
+		}
+	}
+
+	return BinaryDepth{
+		Symbol:      readFixedSymbol(src[0:16]),
+		TimestampMs: int64(binary.LittleEndian.Uint64(src[16:24])),
+		Sequence:    binary.LittleEndian.Uint64(src[24:32]),
+		Bids:        bids,
+		Asks:        asks,
+	}
+}
+
+// EncodeBinaryDepthBatch packs up to 65535 BinaryDepth records into [Count:u16_le][Depth0:360B]...[DepthN:360B].
+func EncodeBinaryDepthBatch(depths []BinaryDepth) []byte {
+	count := len(depths)
+	if count > 65535 {
+		count = 65535
+	}
+	buf := make([]byte, 2+count*BinaryDepthRecordSize)
+	binary.LittleEndian.PutUint16(buf[0:2], uint16(count))
+	off := 2
+	for i := 0; i < count; i++ {
+		PutBinaryDepth(buf[off:off+BinaryDepthRecordSize], depths[i])
+		off += BinaryDepthRecordSize
+	}
+	return buf
+}
+
+// DecodeBinaryDepthBatch unpacks [Count:u16_le][Depth0:360B]...[DepthN:360B].
+func DecodeBinaryDepthBatch(payload []byte) ([]BinaryDepth, error) {
+	if len(payload) < 2 {
+		return nil, ErrTruncatedBinaryBatch
+	}
+	count := int(binary.LittleEndian.Uint16(payload[0:2]))
+	if len(payload) < 2+count*BinaryDepthRecordSize {
+		return nil, ErrTruncatedBinaryBatch
+	}
+	out := make([]BinaryDepth, count)
+	off := 2
+	for i := 0; i < count; i++ {
+		out[i] = ReadBinaryDepth(payload[off : off+BinaryDepthRecordSize])
+		off += BinaryDepthRecordSize
+	}
+	return out, nil
+}
