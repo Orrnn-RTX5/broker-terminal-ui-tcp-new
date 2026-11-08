@@ -1,7 +1,7 @@
 import BugReportHost from './components/BugReportHost';
 import { useUiTranslation } from './hooks/useUiTranslation';
 import { useCallback, useEffect, useState } from 'react';
-import { getPublicBackendTarget, isDesktopBackendTarget, isElectronRuntime } from './config/backendTarget.js';
+import { getPublicBackendTarget } from './config/backendTarget.js';
 import { preloadPublicMarketCatalog } from './services/publicMarketCatalog';
 import { preloadPublicStartupHistory } from './startup/publicHistoryPrefetch';
 import { WelcomeTerminal } from './startup/WelcomeTerminalEntry';
@@ -51,10 +51,8 @@ export const preloadAuthenticatedTerminal = (): Promise<AppModule> => {
   if (!appModulePromise) {
     // Begin public market discovery while the terminal modules download. The
     // mounted catalog and guest quote consumers join this in-flight request.
-    if (!isDesktopBackendTarget()) {
-      void preloadPublicMarketCatalog(getPublicBackendTarget()).catch(() => undefined);
-      preloadPublicStartupHistory();
-    }
+    void preloadPublicMarketCatalog(getPublicBackendTarget()).catch(() => undefined);
+    preloadPublicStartupHistory();
     // TradingChart is the largest first-viewport dependency. Warm it beside
     // the shell, but do not make authentication handoff wait for it.
     void preloadTradingChartRuntime().catch(() => undefined);
@@ -232,9 +230,11 @@ interface AppShellProps {
 export default function AppShell({
   loadStoredSessionTerminal = preloadAuthenticatedTerminal,
 }: AppShellProps = {}) {
+  // The desktop app opens the public workspace like the web terminal; login stays one click away.
+  // ensureConfiguredWebSession still runs first so another broker's stored session is discarded.
   const [shouldMountTerminal, setShouldMountTerminal] = useState(() => {
-    const storedSessionCandidate = hasStoredSessionCandidate();
-    return !isElectronRuntime() || storedSessionCandidate;
+    ensureConfiguredWebSession();
+    return true;
   });
   const [sessionGeneration, setSessionGeneration] = useState(0);
   const [initialSessionHandoff, setInitialSessionHandoff] = useState<AuthenticatedSessionHandoff | null>(null);
@@ -251,7 +251,7 @@ export default function AppShell({
   }, []);
   const handleSessionEnded = useCallback(() => {
     setInitialSessionHandoff(null);
-    setShouldMountTerminal(!isElectronRuntime());
+    setShouldMountTerminal(true);
     // Web keeps the public workspace open, but account-owned component state
     // and effects must end just as they do when the desktop opens login. The
     // generation key remounts the terminal so a guest session starts clean.
