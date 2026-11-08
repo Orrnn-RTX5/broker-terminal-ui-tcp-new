@@ -15,16 +15,7 @@ import type { BrokerServer } from '../types/api';
 // constant cannot read runtime config, so the fallback itself stays neutral.
 // 'Broker' matches the existing neutral label brokerDisplayName() already uses
 // for unknown/URL-like servers.
-const resolveRuntimeDefaultServer = (): string => {
-  if (typeof window !== 'undefined') {
-    const cfg = (window as unknown as { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__;
-    const display = String(cfg?.DISPLAY_SERVER || cfg?.DEFAULT_MT5_SERVER || cfg?.BROKER_NAME || '').trim();
-    if (display) return display;
-  }
-  return 'FXTrust-TCP-Live';
-};
-
-export const DEFAULT_BROKER_SERVER = resolveRuntimeDefaultServer();
+export const DEFAULT_BROKER_SERVER = 'Broker';
 export const BROKER_SERVER_STORAGE_KEY = 'rtx_broker_server';
 
 // Broker-neutral stored-server rule (white-label): session-anchored storage
@@ -92,20 +83,19 @@ export const getRawStoredBrokerServer = (): string => {
 export const getStoredBrokerServer = (): string => {
   if (typeof window === 'undefined') return DEFAULT_BROKER_SERVER;
   const stored = normalizeServerName(localStorage.getItem(BROKER_SERVER_STORAGE_KEY));
-  if (!stored || stored.startsWith('http://127.0.0.1') || stored.startsWith('http://localhost') || isDefaultBrokerServerValue(stored)) {
-    return resolveRuntimeDefaultServer();
-  }
+  if (!stored || isDefaultBrokerServerValue(stored)) return DEFAULT_BROKER_SERVER;
   const configured = getConfiguredBrokerServers();
+  // Strictly enforced: unlisted values are discarded; the first configured
+  // server is used, or neutral when nothing is configured (fail-closed).
+  // Ownership/bookmark paths use getRawStoredBrokerServer() instead, so
+  // scope matching keeps working exactly as before.
   if (isConfiguredBrokerServer(stored)) return stored;
-  return configured[0] || stored || resolveRuntimeDefaultServer();
+  return configured[0] || DEFAULT_BROKER_SERVER;
 };
 
 export const persistBrokerServer = (server: string): string => {
   const normalized = normalizeBrokerInfoForTarget({ server_url: server, server });
-  const candidate = normalizeServerName(normalized.broker_server || normalized.server_url || server);
-  const resolvedServer = (!candidate || candidate.startsWith('http://127.0.0.1') || candidate.startsWith('http://localhost'))
-    ? resolveRuntimeDefaultServer()
-    : candidate;
+  const resolvedServer = normalizeServerName(normalized.broker_server || normalized.server_url || server) || DEFAULT_BROKER_SERVER;
   if (typeof window !== 'undefined') {
     localStorage.setItem(BROKER_SERVER_STORAGE_KEY, resolvedServer);
     if (normalized.server_url) localStorage.setItem('server_url', normalized.server_url);
