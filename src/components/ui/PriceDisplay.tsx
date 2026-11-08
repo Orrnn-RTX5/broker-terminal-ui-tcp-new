@@ -4,7 +4,7 @@
  * matching standard MT5 terminal style.
  */
 import React from 'react';
-import { resolveSpecDigits } from '../../utils/symbolUtils';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from '../../utils/symbolUtils';
 
 
 
@@ -45,7 +45,7 @@ export const PriceDisplay: React.FC<PriceDisplayProps> = ({
     // Spec digits only (explicit override); unknown precision renders raw.
     const d = resolveSpecDigits(explicitDigits);
     if (d === null) {
-        return <span className={`price-display ${className} whitespace-nowrap`}>{String(price)}</span>;
+        return <span className={`price-display ${className} whitespace-nowrap`}>{String(stripFloatPrecisionNoise(price))}</span>;
     }
     const full = price.toFixed(d);
 
@@ -88,7 +88,7 @@ export function formatPriceParts(price: number, symbol: string, explicitDigits?:
     void symbol;
     const d = resolveSpecDigits(explicitDigits);
     if (!Number.isFinite(price) || price === 0) return { small: '-', big: '' };
-    if (d === null) return { small: String(price), big: '' };
+    if (d === null) return { small: String(stripFloatPrecisionNoise(price)), big: '' };
     const full = price.toFixed(d);
     if (d <= 1) return { small: full, big: '' };
     if (d === 2) {

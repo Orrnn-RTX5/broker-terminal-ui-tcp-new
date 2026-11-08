@@ -787,18 +787,18 @@ export const marketApi = {
 
 export const notificationsApi = {
   getNotifications: (params?: { unreadOnly?: boolean; limit?: number; offset?: number }) =>
-    apiClient.get<{ notifications: Notification[]; total: number; unreadCount: number }>('/notifications', {
+    apiClient.get<{ notifications: Notification[]; total: number; unreadCount: number }>('/api/v2/notifications', {
       headers: params ? { 'X-Query-Params': JSON.stringify(params) } : undefined,
     }),
 
   markAsRead: (notificationId: string) =>
-    apiClient.patch<void>(`/notifications/${notificationId}/read`, {}),
+    apiClient.post<void>(`/api/v2/notifications/${notificationId}/read`, {}),
 
   markAllAsRead: () =>
-    apiClient.post<void>('/notifications/read-all', {}),
+    apiClient.post<void>('/api/v2/notifications/read-all', {}),
 
   deleteNotification: (notificationId: string) =>
-    apiClient.delete<void>(`/notifications/${notificationId}`),
+    apiClient.delete<void>(`/api/v2/notifications/${notificationId}`),
 };
 
 // ====================

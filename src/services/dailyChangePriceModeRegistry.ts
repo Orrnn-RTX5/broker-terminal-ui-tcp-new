@@ -174,8 +174,13 @@ export const registerDailyChangePriceModes = (
     const mode = readCatalogMode(row);
     if (symbol && mode) next.set(symbol, mode);
     const specification = asRecord(row.brokerSpecification) ?? asRecord(row.specification) ?? asRecord(row);
-    const digits = specification?.digits ?? asRecord(specification?.specification)?.digits;
-    if (symbol && typeof digits === 'number' && Number.isInteger(digits) && digits >= 0 && digits <= 12) nextDigits.set(symbol, digits);
+    const rawDigits = specification?.digits ?? asRecord(specification?.specification)?.digits ?? row.digits;
+    const digits = typeof rawDigits === 'number'
+      ? rawDigits
+      : typeof rawDigits === 'string' && rawDigits.trim() !== ''
+        ? Number(rawDigits)
+        : Number.NaN;
+    if (symbol && Number.isInteger(digits) && digits >= 0 && digits <= 12) nextDigits.set(symbol, digits);
     const tickSize = readCatalogTickSize(row, specification);
     if (symbol && tickSize !== null) nextTickSizes.set(symbol, tickSize);
     const stopsLevel = readCatalogStopsLevel(row, specification);

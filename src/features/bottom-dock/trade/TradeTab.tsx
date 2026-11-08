@@ -7,7 +7,8 @@ import { useLiveAccountMetrics } from '../../../hooks/useLiveAccountMetrics';
 import type { ToolboxTradePosition } from '../../../hooks/useToolboxTradeData';
 import { ContextMenu, type ContextMenuItemConfig } from '../../../components/ui/ContextMenu';
 import { Icon } from '../../../components/ui/Icon';
-import { formatPrice, resolveSpecDigits } from '../../../utils/symbolUtils';
+import { resolveSymbolPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
+import { formatPrice } from '../../../utils/symbolUtils';
 import { rememberTradeHistoryPositionLevels } from '../../../utils/tradeHistoryLevelCache';
 import {
   resolveTradeProfit,
@@ -158,6 +159,7 @@ export const TradeTab = memo(function TradeTab({
             openPrice: order.price,
             sl: order.sl,
             tp: order.tp,
+            ...(order.digits !== undefined ? { digits: order.digits } : {}),
         } as ToolboxTradePosition;
         setModifyPositionContext({
             position,
@@ -440,21 +442,19 @@ export const TradeTab = memo(function TradeTab({
         return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }, []);
 
-    // Spec digits only (live tick); unknown renders raw (never guessed).
-    const lookupTradeTickDigits = useCallback((symbol: string): number | null => {
-        const ticks = (useAppStore.getState().ticks ?? {}) as Record<string, { digits?: unknown } | undefined>;
-        const tick = ticks[symbol] ?? ticks[symbol.toUpperCase()];
-        return resolveSpecDigits(tick?.digits);
+    // Spec digits only (position, registered catalog, live tick, store catalog); unknown renders raw (never guessed).
+    const lookupTradeTickDigits = useCallback((symbol: string, positionDigits?: unknown): number | null => {
+        return resolveSymbolPriceDigits(symbol, positionDigits);
     }, []);
 
-    const formatTradePrice = useCallback((value: unknown, symbol: string) => {
+    const formatTradePrice = useCallback((value: unknown, symbol: string, positionDigits?: unknown) => {
         const price = Number(value);
-        return Number.isFinite(price) && price > 0 ? formatPrice(price, lookupTradeTickDigits(symbol) ?? undefined) : '-';
+        return Number.isFinite(price) && price > 0 ? formatPrice(price, lookupTradeTickDigits(symbol, positionDigits) ?? undefined) : '-';
     }, [lookupTradeTickDigits]);
 
-    const formatTradeLevel = useCallback((value: unknown, symbol: string) => {
+    const formatTradeLevel = useCallback((value: unknown, symbol: string, positionDigits?: unknown) => {
         const price = Number(value);
-        return Number.isFinite(price) && price > 0 ? formatPrice(price, lookupTradeTickDigits(symbol) ?? undefined) : '0.00';
+        return Number.isFinite(price) && price > 0 ? formatPrice(price, lookupTradeTickDigits(symbol, positionDigits) ?? undefined) : '0.00';
     }, [lookupTradeTickDigits]);
 
     const getTradeTimeValue = useCallback((value?: number | string | null) => {
@@ -718,21 +718,16 @@ export const TradeTab = memo(function TradeTab({
         const openPrice = Number(pos.price_open ?? pos.open_price ?? pos.openPrice ?? pos.entryPrice ?? pos.price);
         const currentPrice = Number(pos.price_current ?? pos.current_price ?? pos.currentPrice ?? pos.livePrice);
         if (pos.hasBackendCurrentPrice === false || !Number.isFinite(openPrice) || !Number.isFinite(currentPrice) || openPrice <= 0 || currentPrice <= 0) return null;
-        // Spec digits only (position, then live tick); unknown precision
+        // Spec digits only (position, registered catalog, live tick); unknown precision
         // cannot express points — return null (renders METRIC_UNAVAILABLE).
-        const ticks = (useAppStore.getState().ticks ?? {}) as Record<string, { digits?: unknown } | undefined>;
         const symbol = pos.symbol ?? '';
-        const tick = ticks[symbol] ?? ticks[symbol.toUpperCase()];
-        const specDigits = resolveSpecDigits(
-          (pos as { digits?: unknown })?.digits,
-          tick?.digits,
-        );
+        const specDigits = lookupTradeTickDigits(symbol, (pos as { digits?: unknown })?.digits);
         if (specDigits === null) return null;
         const pointSize = Math.pow(10, -specDigits);
         const direction = String(pos.side).toUpperCase() === 'BUY' ? 1 : -1;
         const points = ((currentPrice - openPrice) / pointSize) * direction;
         return Number.isFinite(points) ? points : null;
-    }, []);
+    }, [lookupTradeTickDigits]);
 
     const formatTradePoints = useCallback((pos: ToolboxTradePosition) => {
         const points = getTradePointsValue(pos);
@@ -768,10 +763,10 @@ export const TradeTab = memo(function TradeTab({
         if (isColumnVisible('time')) columns.push({ label: 'Time', value: pos => formatTradeTime(pos.time_create ?? pos.openTime ?? pos.open_time ?? pos.time) });
         if (isColumnVisible('side')) columns.push({ label: 'Type', value: pos => String(pos.side ?? '').toLowerCase() || '-' });
         if (isColumnVisible('volume')) columns.push({ label: 'Volume', value: pos => formatTradeVolume(pos) });
-        if (isColumnVisible('priceOpen')) columns.push({ label: 'Price Open', value: pos => formatTradePrice(pos.price_open ?? pos.open_price ?? pos.openPrice, pos.symbol ?? '') });
-        if (isColumnVisible('sl')) columns.push({ label: 'S / L', value: pos => formatTradeLevel(pos.price_sl ?? pos.sl, pos.symbol ?? '') });
-        if (isColumnVisible('tp')) columns.push({ label: 'T / P', value: pos => formatTradeLevel(pos.price_tp ?? pos.tp, pos.symbol ?? '') });
-        if (isColumnVisible('priceCurrent')) columns.push({ label: 'Current Price', value: pos => formatTradePrice(pos.price_current ?? pos.current_price ?? pos.currentPrice ?? pos.livePrice, pos.symbol ?? '') });
+        if (isColumnVisible('priceOpen')) columns.push({ label: 'Price Open', value: pos => formatTradePrice(pos.price_open ?? pos.open_price ?? pos.openPrice, pos.symbol ?? '', pos.digits) });
+        if (isColumnVisible('sl')) columns.push({ label: 'S / L', value: pos => formatTradeLevel(pos.price_sl ?? pos.sl, pos.symbol ?? '', pos.digits) });
+        if (isColumnVisible('tp')) columns.push({ label: 'T / P', value: pos => formatTradeLevel(pos.price_tp ?? pos.tp, pos.symbol ?? '', pos.digits) });
+        if (isColumnVisible('priceCurrent')) columns.push({ label: 'Current Price', value: pos => formatTradePrice(pos.price_current ?? pos.current_price ?? pos.currentPrice ?? pos.livePrice, pos.symbol ?? '', pos.digits) });
         if (isColumnVisible('swap')) columns.push({ label: 'Swap', value: pos => formatMoney(pos.swap) });
         if (isColumnVisible('accountLogin')) columns.push({ label: 'Account Login', value: pos => pos.account_login ?? '-' });
         if (isColumnVisible('timeUpdate')) columns.push({ label: 'Time Update', value: pos => formatTradeTime(pos.time_update) });
@@ -991,15 +986,70 @@ ${rows}
             { divider: true },
             {
                 label: 'Trailing Stop',
-                submenu: [
-                    { label: 'Delete All', disabled: true },
-                    { label: 'None', checked: true, disabled: true },
-                    { divider: true },
-                    ...[50, 55, 60, 65, 70, 75, 80, 85, 90, 95].map(points => ({
-                        label: `${points} points`,
-                        disabled: true,
-                    })),
-                ],
+                submenu: (() => {
+                    const currentTrail = Number(
+                        (position as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                        ?? (position as { trailingStop?: unknown }).trailingStop
+                        ?? 0,
+                    );
+                    const hasAnyTrail = positions.some(
+                        (p) => Number(
+                            (p as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                            ?? (p as { trailingStop?: unknown }).trailingStop
+                            ?? 0,
+                        ) > 0,
+                    );
+                    const setPosTrailing = async (points: number) => {
+                        try {
+                            await api.positions.modifyPosition(position.id, {
+                                trailing_stop: points,
+                                trailing_step: 0,
+                            });
+                            window.dispatchEvent(new Event('rtx:force-refresh-positions'));
+                        } catch (err) {
+                            publishOrderFeedback(
+                                [feedbackLabel('Trailing Stop'), feedbackValue(` #${position.id}: `), feedbackLabel('Failed'), feedbackValue(` — ${formatOrderError(err)}`)],
+                                'error',
+                            );
+                        }
+                    };
+                    return [
+                        {
+                            label: 'Delete All',
+                            disabled: !hasAnyTrail,
+                            action: () => {
+                                void (async () => {
+                                    for (const p of positions) {
+                                        const t = Number(
+                                            (p as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                                            ?? (p as { trailingStop?: unknown }).trailingStop
+                                            ?? 0,
+                                        );
+                                        if (t > 0) {
+                                            try {
+                                                await api.positions.modifyPosition(p.id, { trailing_stop: 0, trailing_step: 0 });
+                                            } catch {
+                                                // best-effort clear across positions
+                                            }
+                                        }
+                                    }
+                                    window.dispatchEvent(new Event('rtx:force-refresh-positions'));
+                                })();
+                            },
+                        },
+                        {
+                            label: 'None',
+                            checked: !Number.isFinite(currentTrail) || currentTrail <= 0,
+                            action: () => void setPosTrailing(0),
+                        },
+                        { divider: true },
+                        ...[50, 55, 60, 65, 70, 75, 80, 85, 90, 95].map(points => ({
+                            label: `${points} points`,
+                            checked: currentTrail === points,
+                            action: () => void setPosTrailing(points),
+                        })),
+                    ];
+                })(),
             },
             {
                 label: 'Volumes',

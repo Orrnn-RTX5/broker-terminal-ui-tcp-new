@@ -4,7 +4,8 @@ import api from '../../../services/api';
 import { useAppStore } from '../../../store/useAppStore';
 import { useConfirmStore } from '../../../store/useConfirmStore';
 import { useUiTranslation } from '../../../hooks/useUiTranslation';
-import { formatPrice, resolveSpecDigits } from '../../../utils/symbolUtils';
+import { resolveSymbolPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
+import { formatPrice, resolveSpecDigits, stripFloatPrecisionNoise } from '../../../utils/symbolUtils';
 
 export type PendingOrderView = {
   ticket: number;
@@ -16,6 +17,7 @@ export type PendingOrderView = {
   limitPrice?: number | null;
   sl: number;
   tp: number;
+  digits?: number;
   expiry: number | null;
   timeInForce?: 'GTC' | 'DAY' | 'GTD';
   comment?: string;
@@ -41,10 +43,12 @@ export const toPendingOrderView = (row: Record<string, any>): PendingOrderView |
   const lowerType = orderType.toLowerCase();
   const side: 'BUY' | 'SELL' = lowerType.startsWith('sell') ? 'SELL' : 'BUY';
   const volume = toFiniteNumber(row.volume ?? row.quantity) ?? 0;
-  const price = toFiniteNumber(row.price ?? row.price_trigger ?? row.price_decimal) ?? 0;
-  const limitPrice = toFiniteNumber(row.price_limit ?? row.limitPrice);
-  const sl = toFiniteNumber(row.price_sl ?? row.sl ?? row.sl_decimal) ?? 0;
-  const tp = toFiniteNumber(row.price_tp ?? row.tp ?? row.tp_decimal) ?? 0;
+  const price = stripFloatPrecisionNoise(toFiniteNumber(row.price ?? row.price_trigger ?? row.price_decimal) ?? 0);
+  const rawLimitPrice = toFiniteNumber(row.price_limit ?? row.limitPrice);
+  const limitPrice = rawLimitPrice !== null ? stripFloatPrecisionNoise(rawLimitPrice) : null;
+  const sl = stripFloatPrecisionNoise(toFiniteNumber(row.price_sl ?? row.sl ?? row.sl_decimal) ?? 0);
+  const tp = stripFloatPrecisionNoise(toFiniteNumber(row.price_tp ?? row.tp ?? row.tp_decimal) ?? 0);
+  const digits = resolveSpecDigits(row.digits) ?? undefined;
   const expiry = toFiniteNumber(row.time_expiry ?? row.expiry ?? row.expiration);
   const rawTif = String(row.time_in_force ?? '').trim().toUpperCase();
   const timeInForce: 'GTC' | 'DAY' | 'GTD' = rawTif === 'DAY' ? 'DAY' : rawTif === 'GTD' || (expiry && expiry > 0) ? 'GTD' : 'GTC';
@@ -61,6 +65,7 @@ export const toPendingOrderView = (row: Record<string, any>): PendingOrderView |
     limitPrice,
     sl,
     tp,
+    ...(digits !== undefined ? { digits } : {}),
     expiry,
     timeInForce,
     comment,
@@ -266,10 +271,10 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
           </thead>
           <tbody>
             {orders.map((order) => {
-              // Spec digits only (live tick); unknown renders raw downstream.
+              // Spec digits only (order row, registered catalog, live tick, store catalog); unknown renders raw downstream.
               const orderTick = (storeTicks ?? {})[order.symbol]
                 ?? (storeTicks ?? {})[order.symbol.toUpperCase()];
-              const digits = resolveSpecDigits(orderTick?.digits);
+              const digits = resolveSymbolPriceDigits(order.symbol, order.digits, orderTick?.digits);
               return (
                 <tr key={order.ticket} className="rtx-pending-order-row border-b border-zinc-800 hover:bg-zinc-800/40" data-ticket={order.ticket}>
                   <td className="py-1 pl-4 pr-2 text-left text-zinc-300 whitespace-nowrap">{order.ticket}</td>

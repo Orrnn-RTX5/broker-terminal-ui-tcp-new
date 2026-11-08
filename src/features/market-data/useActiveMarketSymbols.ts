@@ -76,23 +76,18 @@ const extractSymbolList = (value: unknown): string[] => {
 
 const hasPositiveQuoteValue = (value: unknown): boolean => toNumber(value) > 0;
 
-const DEAD_QUOTE_STATES = new Set([
+const STALE_QUOTE_STATES = new Set([
+  'stale',
+  'silent',
   'no_data',
   'no_quote',
+  'quote_stale',
   'unavailable',
 ]);
 
 const normalizeStatusValue = (value: unknown): string =>
   typeof value === 'string' ? value.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
 
-/**
- * MT5-accurate standing-quote detection:
- * On FIX 4.4 cServer liquidity feeds, a quiet symbol keeps its standing top-of-book
- * bid/ask without emitting synthetic ticks every 2 seconds. Treat a symbol as having
- * live market data whenever the bridge has received a quote (`has_data !== false` and
- * server `last_tick_age_sec >= 0 && <= 3600`), while tolerating up to 120s of client
- * Windows clock skew relative to the Broker Server.
- */
 const rowHasLiveMarketData = (row: Record<string, unknown>): boolean => {
   const hasData = parseBooleanish(row?.has_data ?? row?.hasData);
   if (hasData === false) return false;
@@ -100,32 +95,39 @@ const rowHasLiveMarketData = (row: Record<string, unknown>): boolean => {
   const hasQuote = parseBooleanish(row?.has_quote ?? row?.hasQuote);
   if (hasQuote === false) return false;
 
+  const fresh = parseBooleanish(row?.fresh ?? row?.is_fresh ?? row?.isFresh);
+  if (fresh === false) return false;
+
+  const stale = parseBooleanish(row?.stale ?? row?.is_stale ?? row?.isStale);
+  if (stale === true) return false;
+
   const quoteStatus = normalizeStatusValue(
     row?.quote_status ?? row?.quoteStatus ?? row?.feed_status ?? row?.feedStatus ?? row?.status
   );
-  if (DEAD_QUOTE_STATES.has(quoteStatus)) return false;
+  if (STALE_QUOTE_STATES.has(quoteStatus)) return false;
 
-  // Server-computed age: -1 means the symbol has NEVER received a tick.
   const age = toOptionalNumber(row?.last_tick_age_sec ?? row?.lastTickAgeSec ?? row?.age_sec ?? row?.ageSec);
-  if (age !== undefined) return age >= 0 && age <= 3600;
+  if (age !== undefined) return age >= 0 && age <= 90;
 
-  // Client-computed age fallback: tolerate minor client/server clock skew (-120s).
+  // Respect fresh ticks from WS data by checking timestamp age
+  // FIX: Feed-status freshness uses the same gateway timestamp vocabulary as
+  // quote ingestion, including millisecond and server-time aliases.
   const tickTimestamp = readSourceTimestamp({
     ...row,
     timestamp: row?.timestamp ?? row?.last_tick_time ?? row?.lastTickTime,
   });
   if (tickTimestamp !== undefined) {
     const tickAge = (Date.now() - tickTimestamp) / 1000;
-    if (tickAge > 3600 || tickAge < -120) return false;
+    if (tickAge > 300 || tickAge < 0) return false;
   }
+
+  const silent = parseBooleanish(row?.silent);
+  if (silent !== undefined) return silent === false;
 
   const time = toOptionalNumber(row?.time ?? row?.timestamp ?? row?.last_tick_time ?? row?.lastTickTime);
   if (time !== undefined && time <= 0) return false;
 
-  if (hasData === true || hasQuote === true) return true;
-  const silent = parseBooleanish(row?.silent);
-  if (silent !== undefined) return silent === false;
-
+  if (hasQuote === true) return true;
   return hasPositiveQuoteValue(row?.bid) || hasPositiveQuoteValue(row?.ask);
 };
 
@@ -151,6 +153,9 @@ export const extractActiveMarketSymbols = (response: unknown): string[] => {
     })
     .map((row) => row.symbol ?? row.name ?? row.id));
 
+  // Per-symbol rows are the canonical freshness source. An empty result is an
+  // authoritative "zero fresh symbols" response and must never fall through
+  // to a broader availability list that can contain stale quotes.
   if (hasStatusRows) {
     return activeFromStatus;
   }
@@ -194,7 +199,7 @@ const writeCachedActiveMarketSymbols = (cache: ActiveMarketSymbolsCache, scope?:
       symbols: uniqueSymbols(cache.symbols),
     }));
   } catch {
-    // Ignore storage quota errors
+    // Browser storage can be unavailable or full; live status still drives this session.
   }
 };
 
@@ -215,7 +220,10 @@ export const getLiveQuoteRestBatches = (
   return batches;
 };
 
+
 export function useActiveMarketSymbols() {
+  // Do not paint a cached symbol before its current feed freshness has been
+  // verified. The cache remains a network-failure fallback only.
   const [symbols, setSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [settled, setSettled] = useState(false);
@@ -224,7 +232,8 @@ export function useActiveMarketSymbols() {
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const sessionRevision = useBrokerSessionRevision();
-
+  // FIX: Capture routing/cache ownership per broker session so an old request
+  // cannot commit into a newly selected broker after dynamic URLs change.
   const apiRootBaseUrl = useMemo(() => {
     void sessionRevision;
     return getApiRootBaseUrl();
@@ -297,7 +306,7 @@ export function useActiveMarketSymbols() {
 
       if (staleSymbols.length > 0) {
         const staleSet = new Set(staleSymbols);
-        setSymbols((prev) => prev.filter((symbol) => !staleSet.has(symbol)));
+        setSymbols((current) => current.filter((symbol) => !staleSet.has(symbol)));
         const cached = readCachedActiveMarketSymbols(storageScope);
         writeCachedActiveMarketSymbols({
           ...cached,
@@ -332,4 +341,3 @@ export function useActiveMarketSymbols() {
   return useMemo(() => ({ symbols, loading, settled, current, error, reload }),
     [symbols, loading, settled, current, error, reload]);
 }
-

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"unicode/utf8"
 )
 
 // Compile-time assertion that BinarySymbolMaxBytes (declared in binary_ticks.go) is 16.
@@ -20,7 +21,7 @@ const (
 	// BinaryOrderFastReqHeaderSize is the fixed 128-byte (exact 2 CPU L1 cache lines) Little-Endian
 	// request header before the uint16 TokenLen + UTF-8 AuthToken trailer:
 	//   [0]               Version        uint8    (BinaryOrderCodecVersion = 1)
-	//   [1]               Action         uint8    (1..6 MT5 trading actions)
+	//   [1]               Action         uint8    (1..8 MT5 trading actions)
 	//   [2]               Side           uint8    (0 = None, 1 = Buy, 2 = Sell)
 	//   [3]               OrderSubType   uint8    (0 = Market, 1..6 = Pending subtypes)
 	//   [4..5]            Flags          uint16   (bitmask, LE)
@@ -37,6 +38,8 @@ const (
 	//   [88..127]         ClientOrderID  [40]byte (ASCII/UTF-8, null-padded)
 	//   [128..129]        TokenLen       uint16   (byte length of trailing UTF-8 AuthToken, LE)
 	//   [130..130+Len]    AuthToken      []byte   (UTF-8 AuthToken bytes)
+	//   [optional]        ExtrasLen      uint16   (present when BinaryOrderFlagHasExtras is set, LE)
+	//   [optional]        ExtrasTLV      []byte   (TLV entries: 0x01 Comment UTF-8 1..64B, 0x02 Magic i64 LE 8B)
 	BinaryOrderFastReqHeaderSize = 128
 
 	// BinaryOrderFastRespHeaderSize is the fixed 136-byte Little-Endian response header
@@ -62,7 +65,7 @@ const (
 	//   [140+ELen..+MLen] Message        []byte   (UTF-8 Message bytes)
 	BinaryOrderFastRespHeaderSize = 136
 
-	// Binary Order Actions (all 7 MT5 production trading actions)
+	// Binary Order Actions (all 8 MT5 production trading actions)
 	BinaryOrderActionPlaceMarket    uint8 = 1
 	BinaryOrderActionClosePosition  uint8 = 2
 	BinaryOrderActionModifyPosition uint8 = 3
@@ -70,6 +73,7 @@ const (
 	BinaryOrderActionModifyPending  uint8 = 5
 	BinaryOrderActionCancelPending  uint8 = 6
 	BinaryOrderActionCloseBulk      uint8 = 7
+	BinaryOrderActionCloseBy        uint8 = 8
 
 	// Bulk Close Filter SubTypes (OrderSubType when Action == BinaryOrderActionCloseBulk)
 	BinaryCloseBulkAll      uint8 = 0
@@ -102,6 +106,17 @@ const (
 	BinaryOrderFlagHasPrice      uint16 = 0x0020
 	BinaryOrderFlagHasStopLimit  uint16 = 0x0040
 	BinaryOrderFlagHasExpiration uint16 = 0x0080
+	BinaryOrderFlagHasTrailing   uint16 = 0x0100
+	BinaryOrderFlagClearTrailing uint16 = 0x0200
+	BinaryOrderFlagHasExtras     uint16 = 0x0400
+
+	// Binary Order Extras TLV tags and limits (present after AuthToken when BinaryOrderFlagHasExtras is set)
+	BinaryOrderExtraTagComment uint8 = 0x01
+	BinaryOrderExtraTagMagic   uint8 = 0x02
+
+	BinaryOrderCommentMaxBytes = 64
+	BinaryOrderMagicByteLen    = 8
+	BinaryOrderExtrasMaxBytes  = 512
 
 	// Binary Order Response Statuses (HTTP-aligned)
 	BinaryOrderStatusOK           uint16 = 200
@@ -120,7 +135,7 @@ var (
 	ErrInvalidBinaryOrderReq     = errors.New("rtx5tcp: invalid binary order fastlane request parameters")
 )
 
-// BinaryOrderFastReq is the zero-JSON native Binary TCP trading request supporting all 6 MT5 production actions.
+// BinaryOrderFastReq is the zero-JSON native Binary TCP trading request supporting all MT5 production actions.
 type BinaryOrderFastReq struct {
 	Action         uint8
 	Side           uint8
@@ -137,9 +152,11 @@ type BinaryOrderFastReq struct {
 	Symbol         [BinarySymbolMaxBytes]byte
 	ClientOrderID  [BinaryClientOrderIDMaxBytes]byte
 	AuthToken      string
+	Comment        string
+	Magic          int64
 }
 
-// BinaryOrderFastResp is the zero-JSON native Binary TCP trading response for all 6 MT5 production actions.
+// BinaryOrderFastResp is the zero-JSON native Binary TCP trading response for all MT5 production actions.
 type BinaryOrderFastResp struct {
 	Action         uint8
 	Status         uint16
@@ -244,8 +261,32 @@ func (r *BinaryOrderFastResp) SetClientOrderID(id string) { r.ClientOrderID = Pa
 func (r BinaryOrderFastResp) ClientOrderIDString() string { return UnpackBinaryClientOrderID(r.ClientOrderID) }
 func (r BinaryOrderFastResp) IsOK() bool                  { return r.Status >= 200 && r.Status < 300 }
 
+func isValidBinaryOrderCommentBytes(b []byte) bool {
+	if len(b) == 0 || len(b) > BinaryOrderCommentMaxBytes {
+		return false
+	}
+	for i := 0; i < len(b); i++ {
+		if b[i] == 0 {
+			return false
+		}
+	}
+	return utf8.Valid(b)
+}
+
+func isValidBinaryOrderCommentString(s string) bool {
+	if len(s) == 0 || len(s) > BinaryOrderCommentMaxBytes {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0 {
+			return false
+		}
+	}
+	return utf8.ValidString(s)
+}
+
 // Validate performs fast zero-allocation domain sanity checks on a decoded BinaryOrderFastReq
-// across all 6 MT5 production trading actions.
+// across all MT5 production trading actions.
 func (r BinaryOrderFastReq) Validate() error {
 	if math.IsNaN(r.Volume) || math.IsInf(r.Volume, 0) || r.Volume < 0 ||
 		math.IsNaN(r.Price) || math.IsInf(r.Price, 0) || r.Price < 0 ||
@@ -257,6 +298,9 @@ func (r BinaryOrderFastReq) Validate() error {
 	}
 	if ((r.Flags&BinaryOrderFlagHasSL) != 0 && (r.Flags&BinaryOrderFlagClearSL) != 0) ||
 		((r.Flags&BinaryOrderFlagHasTP) != 0 && (r.Flags&BinaryOrderFlagClearTP) != 0) {
+		return ErrInvalidBinaryOrderReq
+	}
+	if len(r.Comment) != 0 && !isValidBinaryOrderCommentString(r.Comment) {
 		return ErrInvalidBinaryOrderReq
 	}
 
@@ -337,19 +381,27 @@ func (r BinaryOrderFastReq) Validate() error {
 		}
 		return nil
 
+	case BinaryOrderActionCloseBy:
+		otherTicket := r.Expiration
+		if otherTicket <= 0 && r.Price > 0 {
+			otherTicket = int64(math.Round(r.Price))
+		}
+		if r.Ticket <= 0 || otherTicket <= 0 || r.Ticket == otherTicket {
+			return ErrInvalidBinaryOrderReq
+		}
+		return nil
+
 	default:
 		return ErrInvalidBinaryOrderReq
 	}
 }
 
 func putNormalizedFixedSymbol(dst []byte, src [BinarySymbolMaxBytes]byte) {
-	zeroFill := false
+	clear(dst[:BinarySymbolMaxBytes])
 	for i := 0; i < BinarySymbolMaxBytes; i++ {
 		c := src[i]
-		if zeroFill || c == 0 {
-			zeroFill = true
-			dst[i] = 0
-			continue
+		if c == 0 {
+			return
 		}
 		if c >= 'a' && c <= 'z' {
 			c -= 32
@@ -359,13 +411,12 @@ func putNormalizedFixedSymbol(dst []byte, src [BinarySymbolMaxBytes]byte) {
 }
 
 func readNormalizedFixedSymbol(dst *[BinarySymbolMaxBytes]byte, src []byte) {
-	zeroFill := false
+	_ = src[BinarySymbolMaxBytes-1]
+	*dst = [BinarySymbolMaxBytes]byte{}
 	for i := 0; i < BinarySymbolMaxBytes; i++ {
 		c := src[i]
-		if zeroFill || c == 0 {
-			zeroFill = true
-			dst[i] = 0
-			continue
+		if c == 0 {
+			return
 		}
 		if c >= 'a' && c <= 'z' {
 			c -= 32
@@ -375,34 +426,195 @@ func readNormalizedFixedSymbol(dst *[BinarySymbolMaxBytes]byte, src []byte) {
 }
 
 func putNormalizedFixedBytes40(dst []byte, src [BinaryClientOrderIDMaxBytes]byte) {
-	zeroFill := false
+	clear(dst[:BinaryClientOrderIDMaxBytes])
 	for i := 0; i < BinaryClientOrderIDMaxBytes; i++ {
 		c := src[i]
-		if zeroFill || c == 0 {
-			zeroFill = true
-			dst[i] = 0
-			continue
+		if c == 0 {
+			return
 		}
 		dst[i] = c
 	}
 }
 
 func readNormalizedFixedBytes40(dst *[BinaryClientOrderIDMaxBytes]byte, src []byte) {
-	zeroFill := false
+	_ = src[BinaryClientOrderIDMaxBytes-1]
+	*dst = [BinaryClientOrderIDMaxBytes]byte{}
 	for i := 0; i < BinaryClientOrderIDMaxBytes; i++ {
 		c := src[i]
-		if zeroFill || c == 0 {
-			zeroFill = true
-			dst[i] = 0
-			continue
+		if c == 0 {
+			return
 		}
 		dst[i] = c
 	}
 }
 
+// BinaryOrderExtrasOffset returns the byte offset of the [u16 LE extrasLen][TLV] block
+// within a canonical BinaryOrderFastReq payload when BinaryOrderFlagHasExtras is set,
+// or (-1, nil) when the flag is clear.
+func BinaryOrderExtrasOffset(payload []byte) (int, error) {
+	if len(payload) < BinaryOrderFastReqHeaderSize {
+		return -1, ErrTruncatedBinaryOrderFrame
+	}
+	if payload[0] != BinaryOrderCodecVersion {
+		return -1, ErrUnsupportedBinaryOrderVer
+	}
+	if len(payload) < BinaryOrderFastReqHeaderSize+2 {
+		return -1, ErrTruncatedBinaryOrderFrame
+	}
+	tokenLen := int(binary.LittleEndian.Uint16(payload[128:130]))
+	off := BinaryOrderFastReqHeaderSize + 2 + tokenLen
+	if len(payload) < off {
+		return -1, ErrTruncatedBinaryOrderFrame
+	}
+	flags := binary.LittleEndian.Uint16(payload[4:6])
+	if (flags & BinaryOrderFlagHasExtras) == 0 {
+		return -1, nil
+	}
+	if len(payload) < off+2 {
+		return -1, ErrInvalidBinaryOrderReq
+	}
+	return off, nil
+}
+
+// DecodeBinaryOrderExtrasBlock parses and strictly validates a [u16 LE extrasLen][TLV bytes] extras block.
+// Unknown tags are skipped (forward compatible); duplicate tags, bad lengths, NUL/invalid UTF-8 comments,
+// or zero/non-8-byte magic values return ErrInvalidBinaryOrderReq.
+func DecodeBinaryOrderExtrasBlock(block []byte) (comment string, magic int64, totalBytes int, err error) {
+	if len(block) < 2 {
+		return "", 0, 0, ErrInvalidBinaryOrderReq
+	}
+	extrasLen := int(binary.LittleEndian.Uint16(block[0:2]))
+	if extrasLen <= 0 || extrasLen > BinaryOrderExtrasMaxBytes {
+		return "", 0, 0, ErrInvalidBinaryOrderReq
+	}
+	totalBytes = 2 + extrasLen
+	if len(block) < totalBytes {
+		return "", 0, 0, ErrInvalidBinaryOrderReq
+	}
+
+	tlv := block[2:totalBytes]
+	var seenTags [4]uint64
+	pos := 0
+	for pos < len(tlv) {
+		if pos+2 > len(tlv) {
+			return "", 0, 0, ErrInvalidBinaryOrderReq
+		}
+		tag := tlv[pos]
+		entryLen := int(tlv[pos+1])
+		valStart := pos + 2
+		valEnd := valStart + entryLen
+		if valEnd > len(tlv) {
+			return "", 0, 0, ErrInvalidBinaryOrderReq
+		}
+
+		word := tag >> 6
+		bit := uint64(1) << (tag & 63)
+		if (seenTags[word] & bit) != 0 {
+			return "", 0, 0, ErrInvalidBinaryOrderReq
+		}
+		seenTags[word] |= bit
+
+		switch tag {
+		case BinaryOrderExtraTagComment:
+			val := tlv[valStart:valEnd]
+			if !isValidBinaryOrderCommentBytes(val) {
+				return "", 0, 0, ErrInvalidBinaryOrderReq
+			}
+			comment = string(val)
+
+		case BinaryOrderExtraTagMagic:
+			if entryLen != BinaryOrderMagicByteLen {
+				return "", 0, 0, ErrInvalidBinaryOrderReq
+			}
+			m := int64(binary.LittleEndian.Uint64(tlv[valStart:valEnd]))
+			if m == 0 {
+				return "", 0, 0, ErrInvalidBinaryOrderReq
+			}
+			magic = m
+
+		default:
+			// Unknown tag: skip for forward compatibility.
+		}
+
+		pos = valEnd
+	}
+	return comment, magic, totalBytes, nil
+}
+
+func appendBinaryOrderFastReqWithExtras(dst []byte, req BinaryOrderFastReq) []byte {
+	tokenLen := len(req.AuthToken)
+	if tokenLen > 65535 {
+		tokenLen = 65535
+	}
+	commentLen := len(req.Comment)
+	if commentLen > 255 {
+		commentLen = 255
+	}
+	hasComment := commentLen > 0
+	hasMagic := req.Magic != 0
+
+	extrasPayloadLen := 0
+	if hasComment {
+		extrasPayloadLen += 2 + commentLen
+	}
+	if hasMagic {
+		extrasPayloadLen += 2 + BinaryOrderMagicByteLen
+	}
+
+	needed := BinaryOrderFastReqHeaderSize + 2 + tokenLen + 2 + extrasPayloadLen
+	off := len(dst)
+	if cap(dst)-off >= needed {
+		dst = dst[:off+needed]
+	} else {
+		grown := make([]byte, off+needed)
+		copy(grown, dst)
+		dst = grown
+	}
+	b := dst[off : off+needed]
+
+	b[0] = BinaryOrderCodecVersion
+	b[1] = req.Action
+	b[2] = req.Side
+	b[3] = req.OrderSubType
+	binary.LittleEndian.PutUint16(b[4:6], req.Flags|BinaryOrderFlagHasExtras)
+	binary.LittleEndian.PutUint16(b[6:8], 0)
+	binary.LittleEndian.PutUint64(b[8:16], uint64(req.AccountLogin))
+	binary.LittleEndian.PutUint64(b[16:24], uint64(req.Ticket))
+	binary.LittleEndian.PutUint64(b[24:32], math.Float64bits(req.Volume))
+	binary.LittleEndian.PutUint64(b[32:40], math.Float64bits(req.Price))
+	binary.LittleEndian.PutUint64(b[40:48], math.Float64bits(req.StopLimitPrice))
+	binary.LittleEndian.PutUint64(b[48:56], math.Float64bits(req.SL))
+	binary.LittleEndian.PutUint64(b[56:64], math.Float64bits(req.TP))
+	binary.LittleEndian.PutUint64(b[64:72], uint64(req.Expiration))
+	putNormalizedFixedSymbol(b[72:88], req.Symbol)
+	putNormalizedFixedBytes40(b[88:128], req.ClientOrderID)
+	binary.LittleEndian.PutUint16(b[128:130], uint16(tokenLen))
+	if tokenLen > 0 {
+		copy(b[130:130+tokenLen], req.AuthToken[:tokenLen])
+	}
+	extOff := 130 + tokenLen
+	binary.LittleEndian.PutUint16(b[extOff:extOff+2], uint16(extrasPayloadLen))
+	pos := extOff + 2
+	if hasComment {
+		b[pos] = BinaryOrderExtraTagComment
+		b[pos+1] = uint8(commentLen)
+		copy(b[pos+2:pos+2+commentLen], req.Comment[:commentLen])
+		pos += 2 + commentLen
+	}
+	if hasMagic {
+		b[pos] = BinaryOrderExtraTagMagic
+		b[pos+1] = BinaryOrderMagicByteLen
+		binary.LittleEndian.PutUint64(b[pos+2:pos+2+BinaryOrderMagicByteLen], uint64(req.Magic))
+	}
+	return dst
+}
+
 // AppendBinaryOrderFastReq appends the 128-byte fixed Little-Endian header + uint16 TokenLen + UTF-8 AuthToken
-// onto dst (0 allocs when cap(dst) suffices).
+// (+ [u16 LE extrasLen][TLV] when Comment != "" or Magic != 0) onto dst (0 allocs when cap(dst) suffices).
 func AppendBinaryOrderFastReq(dst []byte, req BinaryOrderFastReq) []byte {
+	if len(req.Comment) != 0 || req.Magic != 0 {
+		return appendBinaryOrderFastReqWithExtras(dst, req)
+	}
 	tokenLen := len(req.AuthToken)
 	if tokenLen > 65535 {
 		tokenLen = 65535
@@ -422,7 +634,7 @@ func AppendBinaryOrderFastReq(dst []byte, req BinaryOrderFastReq) []byte {
 	b[1] = req.Action
 	b[2] = req.Side
 	b[3] = req.OrderSubType
-	binary.LittleEndian.PutUint16(b[4:6], req.Flags)
+	binary.LittleEndian.PutUint16(b[4:6], req.Flags&^BinaryOrderFlagHasExtras)
 	binary.LittleEndian.PutUint16(b[6:8], 0)
 	binary.LittleEndian.PutUint64(b[8:16], uint64(req.AccountLogin))
 	binary.LittleEndian.PutUint64(b[16:24], uint64(req.Ticket))
@@ -447,8 +659,34 @@ func EncodeBinaryOrderFastReq(req BinaryOrderFastReq) []byte {
 	if tokenLen > 65535 {
 		tokenLen = 65535
 	}
-	buf := make([]byte, 0, BinaryOrderFastReqHeaderSize+2+tokenLen)
-	return AppendBinaryOrderFastReq(buf, req)
+	if len(req.Comment) == 0 && req.Magic == 0 {
+		buf := make([]byte, 0, BinaryOrderFastReqHeaderSize+2+tokenLen)
+		return AppendBinaryOrderFastReq(buf, req)
+	}
+	commentLen := len(req.Comment)
+	if commentLen > 255 {
+		commentLen = 255
+	}
+	extrasTotal := 2
+	if commentLen > 0 {
+		extrasTotal += 2 + commentLen
+	}
+	if req.Magic != 0 {
+		extrasTotal += 2 + BinaryOrderMagicByteLen
+	}
+	buf := make([]byte, 0, BinaryOrderFastReqHeaderSize+2+tokenLen+extrasTotal)
+	return appendBinaryOrderFastReqWithExtras(buf, req)
+}
+
+func decodeBinaryOrderExtrasInto(block []byte, out *BinaryOrderFastReq) error {
+	comment, magic, _, err := DecodeBinaryOrderExtrasBlock(block)
+	if err != nil {
+		*out = BinaryOrderFastReq{}
+		return err
+	}
+	out.Comment = comment
+	out.Magic = magic
+	return nil
 }
 
 // DecodeBinaryOrderFastReqInto decodes payload into out without heap-allocating the struct.
@@ -466,7 +704,8 @@ func DecodeBinaryOrderFastReqInto(payload []byte, out *BinaryOrderFastReq) error
 		return ErrTruncatedBinaryOrderFrame
 	}
 	tokenLen := int(binary.LittleEndian.Uint16(payload[128:130]))
-	if len(payload) < BinaryOrderFastReqHeaderSize+2+tokenLen {
+	afterToken := BinaryOrderFastReqHeaderSize + 2 + tokenLen
+	if len(payload) < afterToken {
 		return ErrTruncatedBinaryOrderFrame
 	}
 
@@ -485,9 +724,15 @@ func DecodeBinaryOrderFastReqInto(payload []byte, out *BinaryOrderFastReq) error
 	readNormalizedFixedSymbol(&out.Symbol, payload[72:88])
 	readNormalizedFixedBytes40(&out.ClientOrderID, payload[88:128])
 	if tokenLen > 0 {
-		out.AuthToken = string(payload[130 : 130+tokenLen])
+		out.AuthToken = string(payload[130:afterToken])
 	} else {
 		out.AuthToken = ""
+	}
+	out.Comment = ""
+	out.Magic = 0
+
+	if (out.Flags & BinaryOrderFlagHasExtras) != 0 {
+		return decodeBinaryOrderExtrasInto(payload[afterToken:], out)
 	}
 	return nil
 }

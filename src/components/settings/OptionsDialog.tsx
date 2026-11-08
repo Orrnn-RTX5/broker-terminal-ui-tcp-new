@@ -130,7 +130,7 @@ function OpenOptionsDialog({ onClose, activeTab, setActiveTab }: {
 }
 
 function resolveDisplayTcpServer(fallbackServerName: string): string {
-    if (typeof window === 'undefined') return fallbackServerName || 'FXTrust-TCP-Live';
+    if (typeof window === 'undefined') return fallbackServerName || NEUTRAL_TERMINAL_TITLE;
     const win = window as unknown as {
         __RTX5_TCP_STATUS__?: { broker_name?: string; target_tcp?: string };
         __RTX_RUNTIME_CONFIG__?: Record<string, string>;
@@ -150,7 +150,7 @@ function resolveDisplayTcpServer(fallbackServerName: string): string {
     if (fallbackServerName && !/Web\s*Terminal/i.test(fallbackServerName) && fallbackServerName !== NEUTRAL_TERMINAL_TITLE) {
         return fallbackServerName;
     }
-    return cfg?.BROKER_NAME || 'FXTrust-TCP-Live';
+    return cfg?.BROKER_NAME || NEUTRAL_TERMINAL_TITLE;
 }
 
 function ServerTab() {
@@ -171,20 +171,21 @@ function ServerTab() {
     };
 
     return <div className="options-stack">
-        <SettingsSection title="Broker TCP connection" action={<span className="options-badge">Binary TCP :4443 · AES-256-GCM</span>}>
+        <SettingsSection title="Account details" action={<span className="options-badge">{tr('Read only')}</span>}>
+            <div className="options-field-grid">
+                <SettingsField label="Server" htmlFor="options-server"><input id="options-server" className="options-control" value={server.serverName || NEUTRAL_TERMINAL_TITLE} readOnly /></SettingsField>
+                <SettingsField label="Login" htmlFor="options-login"><input id="options-login" className="options-control" value={accountId || tr('Guest')} readOnly /></SettingsField>
+            </div>
+            <div className="options-field"><label htmlFor="options-password">{tr('Password')}</label><div className="options-input-action"><input id="options-password" className="options-control" value="••••••••" readOnly /><button className="options-button options-button--secondary" disabled>{tr('Change')}</button></div><p className="options-field-hint">{tr('Password changes are not available in this window.')}</p></div>
             <div className="options-field">
-                <label htmlFor="options-server">{tr('Broker Server')}</label>
+                <label htmlFor="options-tcp-server">TCP Access Server (:4443)</label>
                 <div className="options-input-action">
-                    <input id="options-server" className="options-control" value={displayServer} readOnly />
+                    <input id="options-tcp-server" className="options-control" value={displayServer} readOnly />
                     <button type="button" className="options-button options-button--secondary" onClick={openTcpDialog}>
                         TCP Server (:4443)...
                     </button>
                 </div>
             </div>
-            <SettingsField label="Login" htmlFor="options-login">
-                <input id="options-login" className="options-control" value={accountId || tr('Not signed in')} readOnly />
-            </SettingsField>
-            <div className="options-field"><label htmlFor="options-password">{tr('Password')}</label><div className="options-input-action"><input id="options-password" className="options-control" value="••••••••" readOnly /><button className="options-button options-button--secondary" disabled>{tr('Change')}</button></div><p className="options-field-hint">{tr('Password changes are not available in this window.')}</p></div>
         </SettingsSection>
         <SettingsSection title="Connection & startup">
             <SettingsToggle label="Enable proxy server" description="Use a proxy for the terminal connection." checked={server.proxyEnabled} onChange={(proxyEnabled) => update({ proxyEnabled })} />

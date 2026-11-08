@@ -80,34 +80,12 @@ export const decodeTradeShare = (encoded: string): SharedChartTrade | null => {
   }
 };
 
-/**
- * In pure Binary TCP desktop mode (loopback bridge), formats a clean shareable
- * trade summary string instead of a dead http://127.0.0.1:18403/#share=... URL.
- */
+/** Builds the share URL on top of the current page location (hash replaced). */
 export const buildTradeShareUrl = (
   trade: SharedChartTrade,
   baseHref?: string,
 ): string => {
   const href = String(baseHref ?? (typeof window !== 'undefined' ? window.location.href : '')).trim();
-  let isLoopback = false;
-  try {
-    const parsed = new URL(href);
-    const host = parsed.hostname.toLowerCase();
-    isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host.endsWith('.localhost');
-  } catch {
-    isLoopback = !href;
-  }
-
-  if (isLoopback && !baseHref) {
-    const parts = [
-      `RTX5 Trade${trade.ticket > 0 ? ` #${trade.ticket}` : ''}: ${trade.side} ${trade.volume} ${trade.symbol} @ ${trade.entryPrice}`,
-    ];
-    if (trade.timeframe) parts.push(`TF: ${trade.timeframe}`);
-    if (trade.sl > 0) parts.push(`SL: ${trade.sl}`);
-    if (trade.tp > 0) parts.push(`TP: ${trade.tp}`);
-    return parts.join(' | ');
-  }
-
   const withoutHash = href.split('#')[0] || '';
   return `${withoutHash}#${TRADE_SHARE_HASH_PARAM}=${encodeTradeShare(trade)}`;
 };

@@ -13,7 +13,13 @@ import {
   getCommittedBrokerAccountSessionScopeKey,
   getServerUrl,
 } from '../services/brokerSession';
-import { beginPositionsRead, isConfirmedClosedBySnapshot, isConfirmedClosedPosition, useAppStore } from '../store/useAppStore';
+import {
+  beginPositionsRead,
+  isConfirmedClosedBySnapshot,
+  isConfirmedClosedPosition,
+  isConfirmedOpenPosition,
+  useAppStore,
+} from '../store/useAppStore';
 import { TRADE_OVERLAY_CLOSE_STATE_EVENT } from '../services/tradeOverlayHistory';
 import {
   requestPositionSnapshotRevalidation,
@@ -28,14 +34,17 @@ import {
 import { resolvePositionOpenTime } from '../services/tradePositionTime';
 import { readBackendNumber } from '../services/backendAccountMetrics';
 import { isConfiguredBrokerEndpoint } from '../config/backendTarget.js';
+import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
 
 type TradeWsState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
 export type ToolboxTradePosition = Omit<Position, 'time_create' | 'time_update'> & {
   account_login?: number;
   ticket?: number;
+  digits?: number;
   contractSize?: number;
   contract_size?: number;
+  lot_divisor?: number;
   margin?: number;
   used_margin?: number;
   margin_available?: boolean;
@@ -137,7 +146,7 @@ const pickPositiveToolboxPrice = (...values: unknown[]): number => {
 export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
   const normalized = normalizePosition(raw) as ToolboxTradePosition;
   const ticket = getPositionTicket(raw) || normalized.id;
-  const openPrice = pickPositiveToolboxPrice(
+  const openPrice = stripFloatPrecisionNoise(pickPositiveToolboxPrice(
     raw?.price_open,
     raw?.open_price,
     raw?.openPrice,
@@ -146,12 +155,12 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
     raw?.price,
     raw?.chartEntryPrice,
     normalized.openPrice,
-  );
+  ));
   const rawCurrentPrice = readBackendNumber(
     raw?.price_current ?? raw?.current_price ?? raw?.currentPrice,
   );
   const hasBackendCurrentPrice = raw?.hasBackendCurrentPrice !== false && rawCurrentPrice !== undefined;
-  const priceCurrent = hasBackendCurrentPrice ? rawCurrentPrice! : 0;
+  const priceCurrent = hasBackendCurrentPrice ? stripFloatPrecisionNoise(rawCurrentPrice!) : 0;
   const rawProfit = raw?.profit ?? raw?.unrealized_pl ?? raw?.unrealizedPnL;
   const backendProfit = readBackendNumber(rawProfit);
   const hasBackendProfit = raw?.pnl_available !== false && raw?.hasBackendProfit !== false && backendProfit !== undefined;
@@ -166,19 +175,25 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
     : (typeof normalized.chartEntryTime === 'string' && normalized.chartEntryTime.trim()
       ? normalized.chartEntryTime.trim()
       : undefined);
-  const chartEntryPrice = pickPositiveToolboxPrice(raw?.chartEntryPrice, normalized.chartEntryPrice) || undefined;
+  const rawChartEntryPrice = pickPositiveToolboxPrice(raw?.chartEntryPrice, normalized.chartEntryPrice);
+  const chartEntryPrice = rawChartEntryPrice > 0 ? stripFloatPrecisionNoise(rawChartEntryPrice) : undefined;
   const openTime = resolvePositionOpenTime(
     raw,
     chartEntryTime || normalized.openTime || (typeof normalized.time_create === 'string' ? normalized.time_create : undefined),
   );
+  const digits = resolveSpecDigits(raw?.digits, normalized.digits);
+  const sl = stripFloatPrecisionNoise(toNumber(raw?.price_sl ?? raw?.sl ?? normalized.sl, normalized.sl));
+  const tp = stripFloatPrecisionNoise(toNumber(raw?.price_tp ?? raw?.tp ?? normalized.tp, normalized.tp));
 
   return {
     ...normalized,
     id: ticket,
     ticket,
     account_login: raw?.account_login ?? raw?.login ?? normalized.account_login,
+    ...(digits !== null ? { digits } : {}),
     contractSize: toNumber(raw?.contractSize ?? raw?.contract_size ?? normalized.contractSize, 0) || undefined,
     contract_size: toNumber(raw?.contract_size ?? raw?.contractSize ?? normalized.contract_size, 0) || undefined,
+    lot_divisor: toNumber(raw?.lot_divisor ?? raw?.lotDivisor ?? (normalized as { lot_divisor?: unknown }).lot_divisor, 0) || undefined,
     openPrice,
     price_open: openPrice,
     open_price: openPrice,
@@ -201,8 +216,10 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
     time_create: raw?.time_create ?? normalized.time_create ?? openTime,
     open_time: raw?.open_time ?? openTime,
     time: raw?.time ?? openTime,
-    price_sl: toNumber(raw?.price_sl ?? raw?.sl ?? normalized.sl, normalized.sl),
-    price_tp: toNumber(raw?.price_tp ?? raw?.tp ?? normalized.tp, normalized.tp),
+    sl,
+    tp,
+    price_sl: sl,
+    price_tp: tp,
     profit,
     unrealizedPnL: profit,
     hasBackendProfit,
@@ -223,7 +240,9 @@ const positionSignature = (position: ToolboxTradePosition): string => [
   position.symbol,
   position.side,
   position.volume,
+  position.digits ?? '',
   position.contractSize ?? position.contract_size ?? '',
+  position.lot_divisor ?? '',
   position.margin ?? position.used_margin ?? '',
   position.hasBackendMargin ?? '',
   position.margin_available ?? '',
@@ -920,7 +939,13 @@ export function useToolboxTradeData() {
       const snapshot = replaceToolboxPositions(positionsRef.current, visibleRawPositions);
       const snapshotTickets = new Set(snapshot.map((position) => position.id));
       retainedImmediatePositionsRef.current.forEach(({ expiresAt }, ticket) => {
-        if (expiresAt <= now || snapshotTickets.has(ticket) || isConfirmedClosedBySnapshot(ticket)) {
+        if (
+          expiresAt <= now
+          || snapshotTickets.has(ticket)
+          || isConfirmedOpenPosition(ticket)
+          || isConfirmedClosedPosition(ticket)
+          || isConfirmedClosedBySnapshot(ticket)
+        ) {
           retainedImmediatePositionsRef.current.delete(ticket);
         }
       });
@@ -1078,6 +1103,17 @@ export function useToolboxTradeData() {
       }
       let deferSnapshot = false;
       if (positionsChanged) {
+        const now = Date.now();
+        retainedImmediatePositionsRef.current.forEach(({ expiresAt }, ticket) => {
+          if (
+            expiresAt <= now
+            || isConfirmedOpenPosition(ticket)
+            || isConfirmedClosedPosition(ticket)
+            || isConfirmedClosedBySnapshot(ticket)
+          ) {
+            retainedImmediatePositionsRef.current.delete(ticket);
+          }
+        });
         const nextPositions = mergeRetainedImmediateToolboxPositions(
           replaceToolboxPositions(
             positionsRef.current,
@@ -1089,7 +1125,7 @@ export function useToolboxTradeData() {
           && !isConfirmedClosedBySnapshot(position.id)
         ));
         deferSnapshot = shouldDeferEmptyPositionSnapshot(
-          positionsRef.current.filter((position) => !isConfirmedClosedPosition(position.id)),
+          positionsRef.current.filter((position) => !isConfirmedClosedPosition(position.id) && !isConfirmedClosedBySnapshot(position.id)),
           nextPositions,
         );
         if (deferSnapshot) {

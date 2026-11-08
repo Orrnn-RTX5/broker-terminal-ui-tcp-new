@@ -17,7 +17,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../hooks/useUiTranslation', () => ({ useUiTranslation: () => (text: string) => text }));
 vi.mock('../hooks/useBrokerLoginPolicy', () => ({ useBrokerLoginPolicy: mocks.webPolicy }));
 vi.mock('../api/trade', () => ({ authV2Api: { login: mocks.login } }));
-vi.mock('../api/demoRegistration', () => ({ registerRuntimeBrokerDemoAccount: vi.fn() }));
+vi.mock('../api/demoRegistration', () => ({
+  registerRuntimeBrokerDemoAccount: vi.fn(),
+  loadDemoRegistrationModes: vi.fn().mockResolvedValue({ hedging: null, netting: false }),
+}));
 vi.mock('../api/client', () => ({
   setToken: mocks.setToken,
   setRefreshToken: vi.fn(),
@@ -98,7 +101,7 @@ describe('desktop trading authentication', () => {
     expect(screen.queryByText('Account required to trade')).not.toBeInTheDocument();
     expect(screen.queryByText(/terminal deployment URL/)).not.toBeInTheDocument();
     await screen.findByText('Server online');
-    const server = screen.getByRole('combobox', { name: 'Server' });
+    const server = screen.getByRole('combobox', { name: /Server/i });
     expect(server).toBeEnabled();
     expect(server).toHaveValue('Nexa');
     expect(screen.getByRole('option', { name: 'Achiever Financials' })).toBeEnabled();
@@ -113,7 +116,7 @@ describe('desktop trading authentication', () => {
     render(<TradeAuthDialog isOpen intent={intent} onClose={onClose} onAuthenticated={onAuthenticated} />);
     await screen.findByText('Server online');
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Server' }), { target: { value: 'achiever' } });
+    fireEvent.change(screen.getByRole('combobox', { name: /Server/i }), { target: { value: 'achiever' } });
     await screen.findByText('Server online');
     fireEvent.change(screen.getByLabelText('Password', { exact: true }), { target: { value: 'test-password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));

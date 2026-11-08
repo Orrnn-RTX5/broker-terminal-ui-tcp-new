@@ -49,9 +49,9 @@ type TradeTableProps = {
   footerMetricMenuOpen: boolean;
   footerProfitColumnWidth: string;
   formatMoney: (value: number | null | undefined) => string;
-  formatTradeLevel: (value: unknown, symbol: string) => string;
+  formatTradeLevel: (value: unknown, symbol: string, positionDigits?: unknown) => string;
   formatTradePoints: (position: ToolboxTradePosition) => string;
-  formatTradePrice: (value: unknown, symbol: string) => string;
+  formatTradePrice: (value: unknown, symbol: string, positionDigits?: unknown) => string;
   formatTradeTime: (value?: number | string | null) => string;
   formatTradeVolume: (position: ToolboxTradePosition) => number | string;
   getFooterMetricComment: (key: TradeFooterMetricKey) => string;
@@ -148,6 +148,7 @@ const TradeTableRow = memo(function TradeTableRow({
   );
   const rawStopLoss = position.price_sl ?? position.sl;
   const rawTakeProfit = position.price_tp ?? position.tp;
+  const positionDigits = (position as { digits?: unknown }).digits;
   const accountLoginLabel = String(position.account_login ?? '-');
   const placementError = [position.placementErrorCode, position.placementErrorMessage].filter(Boolean).join(': ');
   const commentLabel = String(placementError || position.comment || '-');
@@ -170,9 +171,9 @@ const TradeTableRow = memo(function TradeTableRow({
           : placementState === 'expired' ? tr('Expired') : '--';
     const ticketLabel = isPendingPlacement ? placementLabel : String(ticket ?? '-');
     const timeLabel = formatTradeTime(openTime);
-    const openPriceLabel = isPendingPlacement ? placementPlaceholder : formatTradePrice(rawOpenPrice, symbolLabel);
-    const stopLossLabel = formatTradeLevel(rawStopLoss, symbolLabel);
-    const takeProfitLabel = formatTradeLevel(rawTakeProfit, symbolLabel);
+    const openPriceLabel = isPendingPlacement ? placementPlaceholder : formatTradePrice(rawOpenPrice, symbolLabel, positionDigits);
+    const stopLossLabel = formatTradeLevel(rawStopLoss, symbolLabel, positionDigits);
+    const takeProfitLabel = formatTradeLevel(rawTakeProfit, symbolLabel, positionDigits);
     const rowSummary = [symbolLabel, tr(sideLabel), tr('{{value0}} lots', { value0: volumeLabel })].join(' · ');
     const placementSummary = `${placementLabel} · ${rowSummary}${isTerminalPlacementFailure ? `: ${placementError || tr('Order failed')}` : ''}`;
     const rowComment = isPendingPlacement
@@ -201,7 +202,7 @@ const TradeTableRow = memo(function TradeTableRow({
   }, [
     contextMenuLabel, formatTradeLevel, formatTradePrice, formatTradeTime, isPendingPlacement,
     isTerminalPlacementFailure, modifyPositionLabel, normalizedSide, openTime, placementError, placementPlaceholder,
-    placementState, positionId, rawOpenPrice, rawStopLoss, rawTakeProfit, sideLabel, symbolLabel, ticket, tr, volumeLabel,
+    placementState, positionDigits, positionId, rawOpenPrice, rawStopLoss, rawTakeProfit, sideLabel, symbolLabel, ticket, tr, volumeLabel,
   ]);
 
   const profitValue = resolveTradeProfit(position).value as number | null;
@@ -212,7 +213,7 @@ const TradeTableRow = memo(function TradeTableRow({
   const rawCurrentPrice = position.hasBackendCurrentPrice === false
     ? null : toBackendFinancialNumber(position.price_current ?? position.current_price ?? position.currentPrice);
   const currentPriceLabel = isPendingPlacement ? placementPlaceholder
-    : rawCurrentPrice === null ? METRIC_UNAVAILABLE : formatTradePrice(rawCurrentPrice, symbolLabel);
+    : rawCurrentPrice === null ? METRIC_UNAVAILABLE : formatTradePrice(rawCurrentPrice, symbolLabel, positionDigits);
   const profitLabel = isPendingPlacement ? placementPlaceholder
     : profitMode === 'points' ? formatTradePoints(position)
       : profitValue === null || Number.isNaN(profitValue) ? METRIC_UNAVAILABLE : formatMoney(profitValue);

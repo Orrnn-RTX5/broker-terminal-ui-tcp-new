@@ -2,7 +2,7 @@ import { useUiTranslation } from '../hooks/useUiTranslation';
 import { lazy, useState, useRef, useEffect } from 'react';
 import { useWebSocketStore } from '../store/useWebSocketStore';
 import { useAppStore } from '../store/useAppStore';
-import { Wifi, RefreshCw, WifiOff, AlertTriangle, LogIn, Globe, Server, Download } from 'lucide-react';
+import { Wifi, RefreshCw, WifiOff, AlertTriangle, LogIn, Globe, Zap, Server, Download } from 'lucide-react';
 import { RetainedLazyFeature } from '../startup/RetainedLazyFeature';
 
 const LoginDialog = lazy(() => import('./LoginDialog').then(module => ({ default: module.LoginDialog })));
@@ -55,7 +55,7 @@ export function ConnectionStatus({ reconnectCallback }: ConnectionStatusProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 2000);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -211,6 +211,14 @@ export function ConnectionStatus({ reconnectCallback }: ConnectionStatusProps) {
               <span>{tr("Network Rescan")}</span>
             </button>
 
+            <div className="flex items-center justify-between px-3 py-[7px] hover:bg-[#2a3040] transition-colors cursor-default">
+              <div className="flex items-center gap-2.5">
+                <Zap size={14} className="text-yellow-400" />
+                <span>{tr("VPS Hosting Speed Up")}</span>
+              </div>
+              <span className="text-zinc-400 text-[10px]">Unavailable</span>
+            </div>
+
             <button
               onClick={handleOpenTcpServerDialog}
               className="w-full flex items-center justify-between gap-2.5 px-3 py-[7px] hover:bg-[#2a3040] transition-colors text-left"
@@ -239,7 +247,7 @@ export function ConnectionStatus({ reconnectCallback }: ConnectionStatusProps) {
             <div className="flex items-center justify-between px-3 py-[7px] hover:bg-[#2a3040] transition-colors cursor-default">
               <div className="flex items-center gap-2.5">
                 <Server size={14} className="text-zinc-400" />
-                <span>TCP Gateway</span>
+                <span>{tr("Trade API")}</span>
               </div>
               <span
                 className={`text-[10px] font-mono ${tradeApiColor}`}
@@ -262,8 +270,8 @@ export function ConnectionStatus({ reconnectCallback }: ConnectionStatusProps) {
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#161921]">
             <div className="flex items-center gap-2">
               <Server size={12} className="text-zinc-500" />
-              <span className={`font-mono text-[10px] ${latencyMs !== null && latencyMs < 50 ? 'text-green-400' : 'text-yellow-400'}`}>
-                {latencyMs !== null ? `Wire RTT ${latencyMs.toFixed(2)} ms` : 'Binary TCP AES-256-GCM'}
+              <span className={`font-mono text-[10px] ${latencyMs && latencyMs < 200 ? 'text-green-400' : 'text-yellow-400'}`}>
+                {latencyMs !== null ? `RTT ${latencyMs.toFixed(2)} ms` : 'RTT unavailable'}
               </span>
             </div>
             {tcpStatus.ota?.up_to_date && (

@@ -1,57 +1,75 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BINARY_ORDER_ACTION_MODIFY_PENDING,
+  BINARY_ORDER_ACTION_PLACE_PENDING,
+  BINARY_ORDER_CODEC_VERSION,
+  BINARY_ORDER_EXTRA_TAG_COMMENT,
+  BINARY_ORDER_FLAG_HAS_EXPIRATION,
+  BINARY_ORDER_FLAG_HAS_EXTRAS,
+  BINARY_ORDER_FLAG_HAS_PRICE,
+  BINARY_ORDER_FLAG_HAS_SL,
+  BINARY_ORDER_FLAG_HAS_STOP_LIMIT,
+  BINARY_ORDER_FLAG_HAS_TP,
+  BINARY_ORDER_SUBTYPE_BUY_STOP_LIMIT,
+  type BinaryTcpOrderParams,
+  type DecodedBinaryOrderResp,
+} from './binaryTcpOrderClient';
 
-import { RTX5_API_URL, updateDynamicUrls } from '../config/api';
-import { api } from './api';
+const mocks = vi.hoisted(() => ({
+  isBinaryTcpOrderEnabled: vi.fn<() => boolean>(),
+  sendBinaryTcpOrder: vi.fn<(params: BinaryTcpOrderParams) => Promise<DecodedBinaryOrderResp>>(),
+}));
 
-const jsonResponse = (body: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(body), {
-    status: init.status ?? 200,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  });
-
-const lastFetchCall = () => {
-  const call = vi.mocked(fetch).mock.calls.at(-1);
-  if (!call) throw new Error('Expected fetch to be called');
+vi.mock('./binaryTcpOrderClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./binaryTcpOrderClient')>();
   return {
-    url: String(call[0]),
-    init: call[1] as RequestInit,
-    body: call[1]?.body ? JSON.parse(String(call[1].body)) : undefined,
-    headers: call[1]?.headers as Record<string, string>,
+    ...actual,
+    isBinaryTcpOrderEnabled: mocks.isBinaryTcpOrderEnabled,
+    sendBinaryTcpOrder: mocks.sendBinaryTcpOrder,
   };
-};
+});
 
-const originalWindowLocation = window.location;
+import { api } from './api';
+import { encodeBinaryOrderWsModeAFrame } from './binaryTcpOrderClient';
 
-const clearStoredRouting = () => {
-  delete (window as Window & { electronAPI?: unknown }).electronAPI;
-  delete (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__;
-  Object.defineProperty(window, 'location', {
-    value: originalWindowLocation,
-    configurable: true,
-  });
-  localStorage.clear();
-  (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__ = {
-    BACKEND_TARGET: 'desktop', API_HOST: 'https://broker.example', WS_HOST: 'wss://broker.example',
-    BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live',
+function buildPendingResp(action: number, clientOrderId: string): DecodedBinaryOrderResp {
+  return {
+    version: BINARY_ORDER_CODEC_VERSION,
+    action,
+    status: 200,
+    ok: true,
+    execMicros: 210,
+    orderTicket: 112233,
+    positionTicket: 0,
+    dealTicket: 0,
+    fillPrice: 4170,
+    volume: 0.1,
+    profit: 0,
+    commission: 0,
+    sl: 4160,
+    tp: 4185,
+    symbol: 'XAUUSD',
+    clientOrderId,
+    errorCode: '',
+    message: '',
   };
-  localStorage.setItem('server_url', 'https://broker.example');
-  localStorage.setItem('broker_id', 'Fixture');
-  updateDynamicUrls();
-};
+}
 
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-describe('pending order sweep wire (stop-limit / expiry / comment, never fill policy)', () => {
+describe('pending order sweep wire (binary channel stop-limit / expiry / comment TLV, never REST fallback)', () => {
   beforeEach(() => {
-    // Fresh Response per call: a Response body can only be read once.
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ ok: true }))));
-    clearStoredRouting();
+    vi.clearAllMocks();
+    mocks.isBinaryTcpOrderEnabled.mockReturnValue(true);
+    mocks.sendBinaryTcpOrder.mockImplementation(async (params) =>
+      buildPendingResp(params.action, params.clientOrderId || 'bo-test-1'),
+    );
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Unexpected REST call on pending order path'))));
   });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('sends a stop-limit place with type, stop-limit price, epoch int expiry, comment and UUID idempotency key (no fill policy)', async () => {
+  it('sends a stop-limit place over binary channel with stopLimitPrice, epoch int expiration, and HAS_EXTRAS comment TLV', async () => {
     await api.orders.placePendingOrder({
       login: 100001,
       symbol: 'XAUUSD',
@@ -66,65 +84,92 @@ describe('pending order sweep wire (stop-limit / expiry / comment, never fill po
       comment: 'sweep-stop-limit',
     });
 
-    const call = lastFetchCall();
-    expect(call.url).toBe(`${RTX5_API_URL}/api/v2/orders/pending`);
-    expect(String(call.body.client_order_id)).toMatch(UUID_V4);
-    expect(call.body).toMatchObject({
-      account_login: 100001,
+    expect(mocks.sendBinaryTcpOrder).toHaveBeenCalledTimes(1);
+    const params = mocks.sendBinaryTcpOrder.mock.calls[0][0];
+    expect(params).toMatchObject({
+      action: BINARY_ORDER_ACTION_PLACE_PENDING,
+      accountLogin: 100001,
+      symbol: 'XAUUSD',
+      orderSubType: BINARY_ORDER_SUBTYPE_BUY_STOP_LIMIT,
+      volume: 0.1,
+      price: 4170,
+      stopLimitPrice: 4171,
+      sl: 4160,
+      tp: 4185,
+      expiration: 1770000000,
+      comment: 'sweep-stop-limit',
+    });
+    expect(params.flags).toBe(
+      BINARY_ORDER_FLAG_HAS_PRICE
+      | BINARY_ORDER_FLAG_HAS_STOP_LIMIT
+      | BINARY_ORDER_FLAG_HAS_SL
+      | BINARY_ORDER_FLAG_HAS_TP
+      | BINARY_ORDER_FLAG_HAS_EXPIRATION
+      | BINARY_ORDER_FLAG_HAS_EXTRAS,
+    );
+
+    // Verify wire TLV bytes for the comment
+    const modeAFrame = encodeBinaryOrderWsModeAFrame(1, params);
+    const commentBytes = Array.from(new TextEncoder().encode('sweep-stop-limit'));
+    expect(Array.from(modeAFrame.subarray(132))).toEqual([
+      commentBytes.length + 2, 0,
+      BINARY_ORDER_EXTRA_TAG_COMMENT, commentBytes.length,
+      ...commentBytes,
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown pending types and stop-limit orders without a stop-limit price', async () => {
+    await expect(api.orders.placePendingOrder({
+      login: 100001,
       symbol: 'XAUUSD',
       side: 'buy',
       volume: 0.1,
       type: 'buy_stop_limit',
       price: 4170,
-      // Backend wire name is price_limit (gateway placePendingOrderWireRequest).
-      price_limit: 4171,
-      sl: 4160,
-      tp: 4185,
-      expiry: 1770000000,
-      comment: 'sweep-stop-limit',
-    });
-    // No fill_policy wire field exists on the gateway REST decoder.
-    expect(call.body).not.toHaveProperty('fill_policy');
-    expect(Number.isInteger(call.body.expiry)).toBe(true);
-  });
-
-  it('rejects unknown pending types and stop-limit orders without a stop-limit price', async () => {
-    await expect(api.orders.placePendingOrder({
-      login: 100001, symbol: 'XAUUSD', side: 'buy', volume: 0.1,
-      type: 'buy_stop_limit', price: 4170,
-    })).rejects.toThrow('Stop limit price must be a positive number for stop limit orders');
+    })).rejects.toThrow('Pending order stop-limit price must be greater than zero');
 
     await expect(api.orders.placePendingOrder({
-      login: 100001, symbol: 'XAUUSD', side: 'buy', volume: 0.1,
-      type: 'buy_take_profit' as unknown as 'buy_limit', price: 4170,
+      login: 100001,
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: 0.1,
+      type: 'buy_take_profit' as unknown as 'buy_limit',
+      price: 4170,
     })).rejects.toThrow('Pending order type must be');
   });
 
-  it('omits expiry for empty/invalid expiration input — never 0 or NaN', async () => {
-    await api.orders.placePendingOrder({
-      login: 100001, symbol: 'XAUUSD', side: 'buy', volume: 0.1,
-      type: 'buy_limit', price: 4170,
+  it('rejects non-date/non-numeric expiration strings like GTC', async () => {
+    await expect(api.orders.placePendingOrder({
+      login: 100001,
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: 0.1,
+      type: 'buy_limit',
+      price: 4170,
       expiration: 'GTC' as unknown as number,
-    });
-    const call = lastFetchCall();
-    expect(call.body.expiry).toBeUndefined();
-    expect(call.body).not.toHaveProperty('expiration');
-    expect(call.body.expiry).not.toBe(0);
+    })).rejects.toThrow('Invalid pending order expiration');
   });
 
-  it('never sends comment or fill policy on modify', async () => {
+  it('sends pending order modify with comment over the binary channel using HAS_EXTRAS (0x0400) and never calls REST', async () => {
     await api.orders.modifyPendingOrder(112233, {
       price: 2301,
       price_sl: 2291,
       price_tp: 2326,
-      comment: 'must not be sent',
-      fill_policy: 'Fill or Kill',
-    } as never);
+      comment: 'updated-pending-comment',
+    });
 
-    const call = lastFetchCall();
-    expect(call.url).toBe(`${RTX5_API_URL}/api/v2/orders/pending/112233`);
-    expect(call.body).toMatchObject({ price: 2301, sl: 2291, tp: 2326 });
-    expect(call.body).not.toHaveProperty('comment');
-    expect(call.body).not.toHaveProperty('fill_policy');
+    expect(mocks.sendBinaryTcpOrder).toHaveBeenCalledTimes(1);
+    const params = mocks.sendBinaryTcpOrder.mock.calls[0][0];
+    expect(params).toMatchObject({
+      action: BINARY_ORDER_ACTION_MODIFY_PENDING,
+      ticket: 112233,
+      price: 2301,
+      sl: 2291,
+      tp: 2326,
+      comment: 'updated-pending-comment',
+    });
+    expect((params.flags ?? 0) & BINARY_ORDER_FLAG_HAS_EXTRAS).toBe(BINARY_ORDER_FLAG_HAS_EXTRAS);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

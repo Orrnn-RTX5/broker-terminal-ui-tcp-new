@@ -108,6 +108,7 @@ export interface Position {
   price_time_msc?: string | number;
   pnl_available?: boolean;
   comment?: string;
+  digits?: number;
   // Backend wire-format aliases (snake_case). Optional — preserves existing defensive fallback logic.
   open_price?: number;
   price_open?: number;
@@ -223,6 +224,9 @@ export const beginPositionsRead = (): number => nextPositionsClock();
 // a stream or local write touched the ticket after that read started. Recent-open
 // retention protects only fills that no read has confirmed yet (the fast-fill gap).
 const confirmedAt = new Map<number, number>();
+export const isConfirmedOpenPosition = (ticket: unknown): boolean => (
+  confirmedAt.has(Number(ticket))
+);
 // Ticket -> stamp of the last stream or local write that touched it.
 const touchedAt = new Map<number, number>();
 // Start stamp of the newest committed complete read. Older complete reads are discarded.
@@ -324,6 +328,7 @@ export interface Trade {
   magicNumber?: number;
   comment?: string;
   contractSize?: number;
+  digits?: number;
   historySource?: 'closed-position' | 'deal' | 'order';
 }
 
