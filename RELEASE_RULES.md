@@ -42,6 +42,9 @@ services.
    production.
 5. Keep the branch up to date with `main` (rebase or merge `origin/main`) until
    the release owner merges it.
+6. Merge with `gh pr merge <number> --merge --delete-branch`: the merged branch is deleted
+   at once. The repository also has "Automatically delete head branches"
+   (`delete_branch_on_merge`) turned on, so no merged branch is ever left behind.
 
 Pushing a branch or opening a pull request does **not** deploy anything.
 

@@ -68,3 +68,9 @@ Always read **[`PROJECT_MEMORY.md`](./PROJECT_MEMORY.md)**, **[`ENGINEERING_RULE
 7. **Keep Package Folders Clean of `.running_old` / `.old` / Obsolete Binaries**:
    - Never leave `*.running_old`, `*.old`, `rtx5-fix-receiver`, or `rtx5-webterminal` inside `3-EXE-Packages-To-Run-And-Share\`.
    - For `web-terminal-linux.zip`, the Linux Web Terminal source directory is strictly `2-TCP-Codebase\web-terminal-tcp\server` (never `desktop-clients\cmd\rtx5-web-terminal-server`).
+
+## Merging pull requests
+
+Whenever a pull request is merged into `main`, delete its branch at once:
+`gh pr merge <number> --merge --delete-branch`. The repository has `delete_branch_on_merge`
+enabled, so no stale merged branches remain (RELEASE_RULES.md, section 3).
