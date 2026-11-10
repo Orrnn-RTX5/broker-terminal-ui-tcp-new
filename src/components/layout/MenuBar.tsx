@@ -1440,7 +1440,7 @@ const MenuItem = ({
     const tr = useUiTranslation();
     const submenuRef = useRef<HTMLDivElement>(null);
     const anchorRef = useRef<HTMLDivElement>(null);
-    const desktop = Boolean(window.electron?.window);
+    const desktop = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const [position, setPosition] = useState({ left: 0, top: 0 });
     useLayoutEffect(() => {
         if (!desktop || !isSubmenuOpen) return;

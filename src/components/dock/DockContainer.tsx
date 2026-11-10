@@ -514,7 +514,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
         data-dock-container-direction={currentContainer.direction}
         data-dock-container-has-focus-chart={hasChartFocusPanel ? 'true' : 'false'}
         className={cn(
-          'flex h-full overflow-hidden',
+          'flex w-full h-full overflow-hidden',
           isHorizontal ? 'flex-row' : 'flex-col',
           className
         )}
@@ -618,7 +618,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
         data-dock-container={currentContainer.id || undefined}
         data-dock-container-kind="tabs"
         data-dock-container-has-focus-chart={hasChartFocusPanel ? 'true' : 'false'}
-        className={cn('flex flex-col h-full bg-[#131316] border border-zinc-700/30 overflow-hidden', className)}
+        className={cn('flex flex-col w-full h-full bg-[#131316] border border-zinc-700/30 overflow-hidden', className)}
         style={style}
       >
         {/* Tab Bar */}
@@ -746,7 +746,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
       data-dock-container={currentContainer.id || undefined}
       data-dock-container-kind={currentContainer.type}
       data-dock-container-has-focus-chart={containerHasChartFocusPanel(currentContainer) ? 'true' : 'false'}
-      className={cn('flex flex-col h-full', className)}
+      className={cn('flex flex-col w-full h-full', className)}
       style={style}
     >
       {currentContainer.children.length === 0 ? (

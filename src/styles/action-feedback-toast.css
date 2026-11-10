@@ -331,9 +331,9 @@ html.rtx-skin-untitled-light .rtx-action-feedback--warning {
   line-height: 18px;
   letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .rtx-action-feedback-region--notice-center .rtx-action-feedback__title {

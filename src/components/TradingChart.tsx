@@ -90,7 +90,7 @@ import { useTradingChartContextMenuController, useTradingChartContextMenuState }
 import { useTradingChartViewportReset } from '../features/trading-chart/runtime/useTradingChartViewportReset';
 import { TRADING_VIEW_HANDLE_SCALE, TRADING_VIEW_HANDLE_SCROLL } from '../features/trading-chart/runtime/chartInteractionOptions';
 import { useTradingChartTradeRuntime, type ActiveTradeSnapshot } from '../features/trading-chart/runtime/useTradingChartTradeRuntime';
-import { buildChartTheme, CHART_AXIS_FONT_FAMILY, isLightChartBackground, LIGHT_CHART_AXIS_FONT_FAMILY, MINUTE_SEPARATOR_PIXEL_DEDUP_DISTANCE, readChartAxisFontSize } from '../features/trading-chart/presentation/chartTheme';
+import { buildChartTheme, CHART_AXIS_FONT_FAMILY, isLightChartBackground, LIGHT_CHART_AXIS_FONT_FAMILY, MINUTE_SEPARATOR_PIXEL_DEDUP_DISTANCE, readChartAxisFontSize, readChartPriceScaleMinWidth } from '../features/trading-chart/presentation/chartTheme';
 import { TradingChartView } from '../features/trading-chart/presentation/TradingChartView';
 import { useTradingChartLivePriceOverlay } from '../features/trading-chart/presentation/useTradingChartLivePriceOverlay';
 import { useTradingChartLoadingPresentation } from '../features/trading-chart/presentation/useTradingChartLoadingPresentation';
@@ -1059,9 +1059,11 @@ export const TradingChart = React.memo(function TradingChart({
     const observer = new MutationObserver(syncSkinState);
     observer.observe(root, { attributes: true, attributeFilter: ['class', 'style', 'data-rtx-theme-preset', 'data-rtx-contrast'] });
     window.addEventListener(RTX_ADVANCED_VIEW_CHANGE_EVENT, handleAdvancedViewChange);
+    window.addEventListener('resize', syncSkinState);
     return () => {
       observer.disconnect();
       window.removeEventListener(RTX_ADVANCED_VIEW_CHANGE_EVENT, handleAdvancedViewChange);
+      window.removeEventListener('resize', syncSkinState);
     };
   }, []);
 
@@ -1742,8 +1744,15 @@ export const TradingChart = React.memo(function TradingChart({
       schedulePeriodSeparatorRender();
 
       const totalBars = seriesData.length;
+      const defaultVisibleBars = getTradingChartDefaultVisibleBars(activeTimeframe);
+      const previousRenderedBarCount = lastRenderedCandlesRef.current.length;
+      const isExpandingSparseBaseline = !pending.suppressGlobalVisibleRangeReset
+        && visibleRangeBeforeRender !== null
+        && visibleRangeBeforeRender.from < 0
+        && previousRenderedBarCount < defaultVisibleBars
+        && totalBars > previousRenderedBarCount;
       const shouldResetVisibleRange = shouldApplyVisibleRangeResetForRender({
-        resetVisibleRange: pending.resetVisibleRange,
+        resetVisibleRange: pending.resetVisibleRange || isExpandingSparseBaseline,
         resetVisibleRangeOnNextData: resetVisibleRangeOnNextDataRef.current,
         suppressGlobalVisibleRangeReset: pending.suppressGlobalVisibleRangeReset,
       });
@@ -1753,10 +1762,17 @@ export const TradingChart = React.memo(function TradingChart({
         rememberVisibleLogicalRange(timeScale.getVisibleLogicalRange() as LogicalRangeLike | null);
       } else if (totalBars > 0 && shouldResetVisibleRange) {
         series.priceScale().applyOptions({ autoScale: true });
-        resetVisibleRangeOnNextDataRef.current = !applyInitialVisibleLogicalRange(
+        const appliedInitialRange = applyInitialVisibleLogicalRange(
           chart,
           totalBars,
           activeTimeframe,
+        );
+        // Do not let a 1–2 bar live baseline consume the initial viewport reset
+        // while authoritative history is still loading or before a full viewport
+        // of candles has been painted.
+        resetVisibleRangeOnNextDataRef.current = !(
+          appliedInitialRange
+          && (!initialHistoryLoadPendingRef.current || totalBars >= defaultVisibleBars)
         );
       } else {
         const renderedPrependedBars = getRenderedPrependedBarCount(
@@ -1779,6 +1795,7 @@ export const TradingChart = React.memo(function TradingChart({
             wasFollowing: wasFollowingRealtimeBeforeRender,
             previousLatestTime: previousLatestRenderedTime,
             rightOffset: liveRightOffset,
+            previousCandleCount: previousRenderedBarCount,
           },
         );
         const nextVisibleRange = timeAnchoredRange ?? preservedRange;
@@ -1812,7 +1829,7 @@ export const TradingChart = React.memo(function TradingChart({
       if (latestRenderedCandle) {
         repaintLivePriceOverlayFromCurrentPrice(latestRenderedCandle);
       }
-      if (seriesData.length > 1) {
+      if (seriesData.length >= defaultVisibleBars || (!initialHistoryLoadPendingRef.current && seriesData.length > 1)) {
         hasDisplayedHistoryRef.current = true;
         if (candlesForRender.length >= protectedDisplayedHistoryRef.current.length) {
           protectedDisplayedHistoryRef.current = candlesForRender;
@@ -1875,12 +1892,15 @@ export const TradingChart = React.memo(function TradingChart({
     const selectionKey = chartSelectionPresentationRef.current.selectionKey;
     const pending = pendingChartRenderRef.current;
     const existing = pending?.selectionKey === selectionKey ? pending : null;
+    const nextResetVisibleRange = request.resetVisibleRange === true || existing?.resetVisibleRange === true;
     pendingChartRenderRef.current = {
       selectionKey,
       chartType: request.chartType ?? existing?.chartType,
       prependedBars: (existing?.prependedBars ?? 0) + Math.max(0, request.prependedBars ?? 0),
-      resetVisibleRange: request.resetVisibleRange === true || existing?.resetVisibleRange === true,
-      suppressGlobalVisibleRangeReset: request.suppressGlobalVisibleRangeReset ?? existing?.suppressGlobalVisibleRangeReset ?? false,
+      resetVisibleRange: nextResetVisibleRange,
+      suppressGlobalVisibleRangeReset: request.resetVisibleRange === true
+        ? (request.suppressGlobalVisibleRangeReset ?? false)
+        : (request.suppressGlobalVisibleRangeReset ?? existing?.suppressGlobalVisibleRangeReset ?? false),
       releaseLivePaintAfterRender: request.releaseLivePaintAfterRender === true || existing?.releaseLivePaintAfterRender === true,
       finishLoadingAfterRender: request.finishLoadingAfterRender === true || existing?.finishLoadingAfterRender === true,
       cachedBaseline: request.cachedBaseline === true || existing?.cachedBaseline === true,
@@ -2729,7 +2749,7 @@ useTradingChartInitialization({
       rightPriceScale: {
         borderVisible: true,
         ticksVisible: !gridRenderingOptions.squareVisible,
-        minimumWidth: 72,
+        minimumWidth: readChartPriceScaleMinWidth(),
         borderColor: chartTheme.scaleBorder,
         textColor: currentSettings.showGrid && currentSettings.gridType === 'mt5' ? 'transparent' : chartTheme.axisText,
         alignLabels: false,
@@ -2740,6 +2760,9 @@ useTradingChartInitialization({
         borderColor: chartTheme.scaleBorder,
       },
     });
+    if (seriesRef.current) {
+      applyLivePriceHorizontalGeometry(seriesRef.current.priceScale().width());
+    }
 
     if (
       squareGridPrimitiveRef.current
@@ -3045,12 +3068,22 @@ useTradingChartLiveCandleRuntime({
             if (offsetWidth > 0 && offsetHeight > 0) {
               refreshLightweightChartSurface(chartRef.current, offsetWidth, offsetHeight, { forceRepaint: false });
               if (resetVisibleRangeOnNextDataRef.current) {
-                const totalBars = getCandlesForFullRender().length;
-                resetVisibleRangeOnNextDataRef.current = !applyInitialVisibleLogicalRange(
+                const activeTf = prevTimeframeRef.current || timeframe;
+                const totalBars = lastRenderedCandlesRef.current.length;
+                const appliedInitialRange = applyInitialVisibleLogicalRange(
                   chartRef.current,
                   totalBars,
-                  prevTimeframeRef.current,
+                  activeTf,
                 );
+                if (
+                  appliedInitialRange
+                  && (
+                    !initialHistoryLoadPendingRef.current
+                    || totalBars >= getTradingChartDefaultVisibleBars(activeTf)
+                  )
+                ) {
+                  resetVisibleRangeOnNextDataRef.current = false;
+                }
               }
               console.log(`[TradingChart] Tab became visible — resized to ${offsetWidth}x${offsetHeight}`);
               refreshTradeOverlayGeometry();

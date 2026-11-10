@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type Dispatch,
@@ -11,6 +12,71 @@ type Point = { x: number; y: number };
 type Size = { w: number; h: number };
 export type ResizeMode = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
+const DOM_EDGE_GAP = 8;
+
+const resolveChartPanelRect = (): DOMRect | null => {
+  if (typeof document === 'undefined') return null;
+  const chartHost = document.querySelector<HTMLElement>('.rtx-chart-panel[data-chart-panel-active="true"]')
+    ?? document.querySelector<HTMLElement>('.rtx-chart-panel');
+  const rect = chartHost?.getBoundingClientRect();
+  return rect && rect.width > 160 && rect.height > 160 ? rect : null;
+};
+
+const resolveDefaultDomSize = (): Size => {
+  if (typeof window === 'undefined') return { w: 520, h: 540 };
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const isLaptop = vw <= 1720 || vh <= 920;
+  if (!isLaptop) {
+    return { w: 520, h: 540 };
+  }
+  const compactLaptop = vw <= 1440 || vh <= 780;
+  const targetW = compactLaptop ? 452 : 476;
+  const targetH = compactLaptop ? 368 : 416;
+  const chartRect = resolveChartPanelRect();
+  if (chartRect) {
+    return {
+      w: Math.min(targetW, Math.max(360, Math.floor(chartRect.width - 24))),
+      h: Math.min(targetH, Math.max(260, Math.floor(chartRect.height - 16))),
+    };
+  }
+  return {
+    w: Math.min(targetW, Math.max(360, vw - 24)),
+    h: Math.min(targetH, Math.max(260, vh - 96)),
+  };
+};
+
+const clampDomPosition = (pos: Point, size: Size): Point => {
+  if (typeof window === 'undefined') return pos;
+  const maxX = Math.max(DOM_EDGE_GAP, window.innerWidth - size.w - DOM_EDGE_GAP);
+  const maxY = Math.max(DOM_EDGE_GAP, window.innerHeight - size.h - DOM_EDGE_GAP);
+  return {
+    x: Math.round(Math.max(DOM_EDGE_GAP, Math.min(maxX, pos.x))),
+    y: Math.round(Math.max(DOM_EDGE_GAP, Math.min(maxY, pos.y))),
+  };
+};
+
+const resolveDefaultDomPosition = (size: Size): Point => {
+  if (typeof window === 'undefined') return { x: 620, y: 56 };
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const isLaptop = vw <= 1720 || vh <= 920;
+  const chartRect = resolveChartPanelRect();
+  if (chartRect) {
+    return clampDomPosition({
+      x: chartRect.left + (chartRect.width - size.w) / 2,
+      y: chartRect.top + (chartRect.height - size.h) / 2,
+    }, size);
+  }
+  if (!isLaptop) {
+    return clampDomPosition({ x: 620, y: 92 }, size);
+  }
+  return clampDomPosition({
+    x: (vw - size.w) / 2,
+    y: Math.max(48, (vh - size.h) * 0.36),
+  }, size);
+};
+
 export interface FloatingTerminalPanelsController {
   showDOM: boolean;
   setShowDOM: Dispatch<SetStateAction<boolean>>;
@@ -19,7 +85,7 @@ export interface FloatingTerminalPanelsController {
   domPos: Point;
   domSize: Size;
   handleDomMouseDown: (event: ReactMouseEvent) => void;
-  handleDomResizeMouseDown: (event: ReactMouseEvent, mode: 'e' | 's' | 'se') => void;
+  handleDomResizeMouseDown: (event: ReactMouseEvent, mode: ResizeMode) => void;
   showDataWindow: boolean;
   setShowDataWindow: Dispatch<SetStateAction<boolean>>;
   dataWindowPos: Point;
@@ -31,14 +97,25 @@ export interface FloatingTerminalPanelsController {
 export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTerminalPanelsController => {
   const [showDOM, setShowDOM] = useState(false);
   const [domSymbol, setDomSymbol] = useState(initialSymbol);
-  const [domPos, setDomPos] = useState<Point>({ x: 620, y: 56 });
-  const [domSize, setDomSize] = useState<Size>({ w: 520, h: 540 });
+  const [domSize, setDomSize] = useState<Size>(() => resolveDefaultDomSize());
+  const [domPos, setDomPos] = useState<Point>(() => resolveDefaultDomPosition(resolveDefaultDomSize()));
   const [showDataWindow, setShowDataWindow] = useState(false);
   const [dataWindowPos, setDataWindowPos] = useState<Point>({ x: 620, y: 56 });
   const [dataWindowSize, setDataWindowSize] = useState<Size>({ w: 248, h: 306 });
 
+  const domHasDraggedOrResizedRef = useRef(false);
+  const domSizeRef = useRef(domSize);
+  domSizeRef.current = domSize;
   const domDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const domResizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; mode: string } | null>(null);
+  const domResizeRef = useRef<{
+    startX: number;
+    startY: number;
+    origW: number;
+    origH: number;
+    origX: number;
+    origY: number;
+    mode: ResizeMode;
+  } | null>(null);
   const dataWindowDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const dataWindowResizeRef = useRef<{
     startX: number;
@@ -50,8 +127,30 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
     mode: ResizeMode;
   } | null>(null);
 
+  useEffect(() => {
+    if (!showDOM || typeof window === 'undefined') return;
+    if (!domHasDraggedOrResizedRef.current) {
+      const nextSize = resolveDefaultDomSize();
+      setDomSize(nextSize);
+      setDomPos(resolveDefaultDomPosition(nextSize));
+    }
+    const handleViewportResize = () => {
+      if (!domHasDraggedOrResizedRef.current) {
+        const nextSize = resolveDefaultDomSize();
+        setDomSize(nextSize);
+        setDomPos(resolveDefaultDomPosition(nextSize));
+      } else {
+        setDomPos((prev) => clampDomPosition(prev, domSizeRef.current));
+      }
+    };
+    window.addEventListener('resize', handleViewportResize);
+    return () => window.removeEventListener('resize', handleViewportResize);
+  }, [showDOM]);
+
   const handleDomMouseDown = useCallback((event: ReactMouseEvent) => {
+    if (event.button !== 0) return;
     event.preventDefault();
+    domHasDraggedOrResizedRef.current = true;
     domDragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -61,10 +160,10 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
     const onMove = (moveEvent: MouseEvent) => {
       const drag = domDragRef.current;
       if (!drag) return;
-      setDomPos({
+      setDomPos(clampDomPosition({
         x: drag.origX + moveEvent.clientX - drag.startX,
         y: drag.origY + moveEvent.clientY - drag.startY,
-      });
+      }, domSizeRef.current));
     };
     const onUp = () => {
       domDragRef.current = null;
@@ -76,19 +175,25 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
   }, [domPos]);
 
   const openDOM = useCallback((symbol: string) => {
+    domHasDraggedOrResizedRef.current = false;
+    const nextSize = resolveDefaultDomSize();
     setDomSymbol(symbol);
-    setDomPos({ x: 620, y: 56 });
+    setDomSize(nextSize);
+    setDomPos(resolveDefaultDomPosition(nextSize));
     setShowDOM(true);
   }, []);
 
-  const handleDomResizeMouseDown = useCallback((event: ReactMouseEvent, mode: 'e' | 's' | 'se') => {
+  const handleDomResizeMouseDown = useCallback((event: ReactMouseEvent, mode: ResizeMode) => {
     event.preventDefault();
     event.stopPropagation();
+    domHasDraggedOrResizedRef.current = true;
     domResizeRef.current = {
       startX: event.clientX,
       startY: event.clientY,
       origW: domSize.w,
       origH: domSize.h,
+      origX: domPos.x,
+      origY: domPos.y,
       mode,
     };
     const onMove = (moveEvent: MouseEvent) => {
@@ -97,11 +202,25 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
       const dx = moveEvent.clientX - resize.startX;
       const dy = moveEvent.clientY - resize.startY;
       // Capture values synchronously; the ref may be cleared before React runs the state updater.
-      const { mode: resizeMode, origW, origH } = resize;
+      const { mode: resizeMode, origW, origH, origX, origY } = resize;
       setDomSize((previous) => ({
-        w: resizeMode !== 's' ? Math.max(360, origW + dx) : previous.w,
-        h: resizeMode !== 'e' ? Math.max(200, origH + dy) : previous.h,
+        w: resizeMode.includes('e')
+          ? Math.max(360, origW + dx)
+          : resizeMode.includes('w')
+            ? Math.max(360, origW - dx)
+            : previous.w,
+        h: resizeMode.includes('s')
+          ? Math.max(200, origH + dy)
+          : resizeMode.includes('n')
+            ? Math.max(200, origH - dy)
+            : previous.h,
       }));
+      if (resizeMode.includes('w') || resizeMode.includes('n')) {
+        setDomPos((previous) => ({
+          x: resizeMode.includes('w') ? Math.max(DOM_EDGE_GAP, origX + Math.min(dx, origW - 360)) : previous.x,
+          y: resizeMode.includes('n') ? Math.max(DOM_EDGE_GAP, origY + Math.min(dy, origH - 200)) : previous.y,
+        }));
+      }
     };
     const onUp = () => {
       domResizeRef.current = null;
@@ -110,7 +229,7 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [domSize]);
+  }, [domPos, domSize]);
 
   const handleDataWindowMouseDown = useCallback((event: ReactMouseEvent) => {
     event.preventDefault();

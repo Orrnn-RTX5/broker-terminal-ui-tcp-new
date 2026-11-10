@@ -709,7 +709,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     buttonGroup.prepend(secondaryGroup);
     const brackets = document.createElement('span');
     brackets.className = 'rtx-trade-brackets';
-    brackets.style.cssText = `display:inline-flex;align-items:center;gap:3px;height:18px;box-sizing:border-box;border:1px solid transparent;background-color:${plainBackground};padding:0 2px 0 1px;flex:0 0 auto;`;
+    brackets.style.cssText = `display:inline-flex;align-items:center;gap:1px;height:18px;box-sizing:border-box;border:1px solid transparent;background-color:${plainBackground};padding:0 2px 0 1px;flex:0 0 auto;`;
     buttonGroup.appendChild(brackets);
     closeButton.style.borderLeft = `1px solid ${isLightSurface ? LIGHT_CHART_TRADE_COLORS.divider : DARK_CHART_TRADE_COLORS.divider}`;
     chipGroup.appendChild(closeButton);
@@ -725,9 +725,16 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     double: () => `${tr('New Order')}: ${tr(side)} ${tr('{{value0}} lots', { value0: formatVolumeLots(volume) })}`,
     close: () => tr('Close position'),
   };
+  const compactActionHints = {
+    share: () => tr('Copy trade URL'),
+    reverse: () => tr('Reverse position'),
+    double: () => tr('Double position'),
+    close: () => tr(options.kind === 'pending' ? 'Cancel order' : 'Close position'),
+  };
   const useCustomEntryTooltip = Boolean(options.plainLabel && options.hoverDetails);
   for (const [action, getTitle] of Object.entries(actionTitles)) {
     const button = root.querySelector<HTMLButtonElement>(`.rtx-trade-control-btn--${action}`);
+    const getCompactHint = compactActionHints[action as keyof typeof compactActionHints];
     if (button) bindChartUiTranslation(button, () => {
       const labelText = getTitle();
       if (useCustomEntryTooltip) {
@@ -736,7 +743,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
         button.title = labelText;
       }
       button.setAttribute('aria-label', labelText);
-      button.dataset.hoverHint = labelText;
+      button.dataset.hoverHint = useCustomEntryTooltip && getCompactHint ? getCompactHint() : labelText;
     });
   }
 
@@ -821,18 +828,35 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       hintText.textContent = activeCustomHint ?? defaultHintText();
     });
 
+    const compactTooltipBg = isLightSurface ? '#ffffff' : '#303030';
     const applyTooltipMode = (compact: boolean, accentColor: string) => {
       isCompactTooltip = compact;
       activeAccentColor = accentColor;
       summary.style.display = compact ? 'none' : 'block';
       tooltip.style.minWidth = compact ? '0' : '224px';
-      tooltip.style.borderTop = `2px solid ${accentColor}`;
+      tooltip.style.backgroundColor = compact ? compactTooltipBg : tooltipBg;
+      tooltip.style.border = compact
+        ? (isLightSurface ? `1px solid ${tooltipBorder}` : '0')
+        : `1px solid ${tooltipBorder}`;
+      tooltip.style.borderTop = compact
+        ? (isLightSurface ? `1px solid ${tooltipBorder}` : '0')
+        : `2px solid ${accentColor}`;
+      tooltip.style.borderRadius = compact ? '4px' : '6px';
+      tooltip.style.boxShadow = compact
+        ? (isLightSurface ? '0 2px 8px rgba(15, 23, 42, 0.14)' : '0 2px 6px rgba(0, 0, 0, 0.45)')
+        : tooltipShadow;
       hint.style.borderTop = compact ? '0' : `1px solid ${tooltipDivider}`;
-      hint.style.borderTopLeftRadius = compact ? '5px' : '0';
-      hint.style.borderTopRightRadius = compact ? '5px' : '0';
-      hint.style.background = compact ? tooltipBg : tooltipFooterBg;
-      hint.style.color = compact ? tooltipPrimaryColor : tooltipSecondaryColor;
-      hint.style.fontWeight = compact ? '600' : '500';
+      hint.style.borderTopLeftRadius = compact ? '4px' : '0';
+      hint.style.borderTopRightRadius = compact ? '4px' : '0';
+      hint.style.borderBottomLeftRadius = compact ? '4px' : '5px';
+      hint.style.borderBottomRightRadius = compact ? '4px' : '5px';
+      hint.style.background = compact ? compactTooltipBg : tooltipFooterBg;
+      hint.style.color = compact ? (isLightSurface ? '#0f172a' : '#f0f3fa') : tooltipSecondaryColor;
+      hint.style.fontWeight = compact ? '400' : '500';
+      hint.style.fontSize = compact ? '12px' : '11px';
+      hint.style.lineHeight = compact ? '16px' : '15px';
+      hint.style.padding = compact ? '4px 8px' : '5px 10px';
+      hintIcon.style.display = compact ? 'none' : 'inline-flex';
       hintIcon.style.color = accentColor;
     };
 
@@ -846,9 +870,9 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       options.onHoverChange?.(false);
     };
     const positionTooltip = (event?: Event) => {
-      const bottomArrowColor = isCompactTooltip ? tooltipBg : tooltipFooterBg;
+      const bottomArrowColor = isCompactTooltip ? compactTooltipBg : tooltipFooterBg;
       tooltip.style.left = '0';
-      tooltip.style.bottom = 'calc(100% + 9px)';
+      tooltip.style.bottom = isCompactTooltip ? 'calc(100% + 5px)' : 'calc(100% + 9px)';
       tooltip.style.top = 'auto';
       arrow.style.left = '18px';
       arrow.style.top = '100%';
@@ -871,8 +895,8 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
         const relativeLeft = desiredLeftInHost - (rootRect.left - bounds.left);
         tooltip.style.left = `${Math.round(relativeLeft)}px`;
         const arrowLeft = Math.min(
-          Math.max(10, targetCenterX - (rootRect.left + relativeLeft) - 5),
-          Math.max(10, rect.width - 14),
+          Math.max(6, targetCenterX - (rootRect.left + relativeLeft) - 5),
+          Math.max(6, rect.width - 12),
         );
         arrow.style.left = `${Math.round(arrowLeft)}px`;
       } else if (bounds && rect.right > bounds.right - 8) {
@@ -885,7 +909,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
         arrow.style.top = 'auto';
         arrow.style.bottom = '100%';
         arrow.style.borderTopColor = 'transparent';
-        arrow.style.borderBottomColor = activeAccentColor;
+        arrow.style.borderBottomColor = isCompactTooltip ? compactTooltipBg : activeAccentColor;
       }
     };
     const showTooltip = (
@@ -903,13 +927,38 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       positionTooltip(event);
     };
 
-    for (const primaryChip of [volumeChip, money.chip]) {
-      primaryChip.addEventListener('mouseenter', (e) => showTooltip(e));
-      primaryChip.addEventListener('mousemove', (e) => showTooltip(e));
-      primaryChip.addEventListener('mouseleave', hideTooltip);
-    }
+    const getVolumeHint = () => `${tr(options.orderTypeLabel || side)} ${tr('{{value0}} lots', { value0: formatVolumeLots(volume) })} · #${normalizedTicket}`;
+    const getMoneyHint = () => {
+      if (isPending) return tr('Modify order');
+      const moneyVal = (money.valueEl.textContent || '0.00').trim();
+      return `${tr('Profit / Loss')}: ${moneyVal} ${currencyLabel}`;
+    };
+    const showVolumeTooltip = (e: Event) => showTooltip(e, getVolumeHint(), {
+      compact: true,
+      accentColor: plainSideColor,
+      anchorEl: volumeChip,
+    });
+    volumeChip.addEventListener('mouseenter', showVolumeTooltip);
+    volumeChip.addEventListener('mousemove', showVolumeTooltip);
+    volumeChip.addEventListener('mouseleave', hideTooltip);
+
+    const showMoneyTooltip = (e: Event) => showTooltip(e, getMoneyHint(), {
+      compact: true,
+      accentColor: plainSideColor,
+      anchorEl: money.chip,
+    });
+    money.chip.addEventListener('mouseenter', showMoneyTooltip);
+    money.chip.addEventListener('mousemove', showMoneyTooltip);
+    money.chip.addEventListener('mouseleave', hideTooltip);
+
     for (const btn of Array.from(root.querySelectorAll<HTMLElement>('.rtx-trade-control-btn'))) {
-      btn.addEventListener('mouseenter', (e) => showTooltip(e, btn.dataset.hoverHint || btn.getAttribute('aria-label') || undefined));
+      const showBtnTooltip = (e: Event) => showTooltip(
+        e,
+        btn.dataset.hoverHint || btn.getAttribute('aria-label') || undefined,
+        { compact: true, accentColor: plainSideColor, anchorEl: btn },
+      );
+      btn.addEventListener('mouseenter', showBtnTooltip);
+      btn.addEventListener('mousemove', showBtnTooltip);
       btn.addEventListener('mouseleave', hideTooltip);
     }
     const handleDockChipHover = (e: Event) => {
@@ -920,7 +969,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       const roleAccent = isSl
         ? (isLightSurface ? LIGHT_CHART_TRADE_COLORS.sl : DARK_CHART_TRADE_COLORS.sl)
         : (isLightSurface ? LIGHT_CHART_TRADE_COLORS.tp : DARK_CHART_TRADE_COLORS.tp);
-      showTooltip(e, isSl ? 'Drag to add SL' : 'Drag to add TP', {
+      showTooltip(e, isSl ? tr('Drag to add stop loss') : tr('Drag to add profit'), {
         compact: true,
         accentColor: roleAccent,
         anchorEl: dockChip,
@@ -936,12 +985,15 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     });
     root.addEventListener('mouseleave', hideTooltip);
     root.addEventListener('focusin', (event) => {
-      if (event.target === root) showTooltip(event);
+      if (event.target === root) showTooltip(event, getVolumeHint(), { compact: true, accentColor: plainSideColor, anchorEl: volumeChip });
     });
     root.addEventListener('focusout', hideTooltip);
     root.addEventListener('pointerdown', hideTooltip);
     root.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); });
-    tradeLevelHoverBindings.set(root, { show: (event) => showTooltip(event), hide: hideTooltip });
+    tradeLevelHoverBindings.set(root, {
+      show: (event) => showTooltip(event, getVolumeHint(), { compact: true, accentColor: plainSideColor, anchorEl: volumeChip }),
+      hide: hideTooltip,
+    });
   }
 
   let lastPipsText = '';

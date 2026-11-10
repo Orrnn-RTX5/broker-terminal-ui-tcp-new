@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getStoredAccountLogin } from '../../../api/tradeGateway';
 import { ContextMenu, type ContextMenuItemConfig } from '../../../components/ui/ContextMenu';
 import { Icon } from '../../../components/ui/Icon';
@@ -160,8 +160,14 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
     }, [showOnChartsAutoUpdate]);
 
     const historyRows = useMemo(() => {
+        const rejectedSessionOrders = historyData.orders.filter(
+            (order) => Boolean(
+                (order.clientOrderId || order.placementErrorCode || order.placementErrorMessage)
+                && (resolveHistoryRowStatus(order) === 'REJECTED' || resolveHistoryRowStatus(order) === 'EXPIRED'),
+            ),
+        );
         const rows = historyView === 'positions'
-            ? historyData.positions
+            ? [...rejectedSessionOrders, ...historyData.positions]
             : historyView === 'deals'
                 ? historyData.deals
                 : historyView === 'orders'
@@ -829,7 +835,6 @@ ${rows}
                             const sideLabel = String(order.orderType || order.side || order.type || '-').toLowerCase();
                             const tradeKey = getTradeKey(order);
                             const isSelected = tradeKey === selectedTradeKey;
-                            const ticket = getHistoryTicket(order);
                             const volumeLabel = formatHistoryVolume(order);
                             const marketValue = getHistoryMarketValue(order);
                             const marketValueLabel = marketValue === null ? '\u2014' : formatGroupedNumber(marketValue, 2, 2);
@@ -837,47 +842,73 @@ ${rows}
                             const changePercentLabel = formatHistoryPercent(order);
                             const profitLabel = formatMoney(order.profit);
                             const rowStatus = resolveHistoryRowStatus(order);
+                            const isRejectedOrExpired = rowStatus === 'REJECTED' || rowStatus === 'EXPIRED';
+                            const placementLabel = rowStatus === 'EXPIRED' ? tr('Expired') : tr('Rejected');
+                            const rawTicket = getHistoryTicket(order);
+                            const ticket = isRejectedOrExpired && typeof rawTicket === 'number' && rawTicket < 0
+                                ? placementLabel
+                                : rawTicket;
+                            const placementError = [order.placementErrorCode, order.placementErrorMessage].filter(Boolean).join(': ')
+                                || (isRejectedOrExpired && order.comment ? order.comment : '');
+                            const rejectionSummary = isRejectedOrExpired && (placementError || order.clientOrderId)
+                                ? `${placementLabel} · ${[order.symbol || '-', tr(sideLabel), tr('{{value0}} lots', { value0: volumeLabel })].join(' · ')}: ${placementError || tr('Order failed')}`
+                                : null;
                             const closePriceCellLabel = rowStatus !== 'FILLED' && !(Number(order.closePrice) > 0)
                                 ? '—'
                                 : formatPriceCell(order.closePrice, order.symbol, order.digits);
                             return (
-                                <tr
-                                    key={`${tradeKey}-${index}`}
-                                    aria-selected={isSelected}
-                                    className={`rtx-trade-row rtx-history-row h-[30px] transition-colors cursor-default ${isSelected ? 'rtx-trade-row--selected' : ''}`}
-                                    onClick={() => setSelectedTradeKey(tradeKey)}
-                                    onContextMenu={(event) => handleHistoryContextMenu(event, order)}
-                                >
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Open time: {{value0}}", { value0: formatTs(order.openTime) })}>{formatTs(order.openTime)}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 whitespace-nowrap`} title={tr("Symbol: {{value0}}", { value0: order.symbol || '-' })}>{order.symbol || '-'}</td>
-                                    {isColumnVisible('ticket') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Ticket: {{value0}}", { value0: ticket })}>{ticket}</td>}
-                                    <td className={`text-zinc-100 px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-[13px]`} title={tr("Type: {{value0}}", { value0: tr(sideLabel) })}>
-                                        <div className="flex items-center justify-center"><span>{tr(sideLabel)}</span></div>
-                                    </td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 tabular-nums`} title={tr(volumeMode === 'lots' ? "Volume: {{value0}}" : "Amount: {{value0}}", { value0: volumeLabel })}>{volumeLabel}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Open price: {{value0}}", { value0: formatPriceCell(order.openPrice, order.symbol, order.digits) })}>{formatPriceCell(order.openPrice, order.symbol, order.digits)}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Stop Loss: {{value0}}", { value0: formatLevelCell(order.sl, order.symbol, order.digits) })}>
-                                        <span className={(order.sl ?? 0) > 0 ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.sl, order.symbol, order.digits)}</span>
-                                    </td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Take Profit: {{value0}}", { value0: formatLevelCell(order.tp, order.symbol, order.digits) })}>
-                                        <span className={(order.tp ?? 0) > 0 ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.tp, order.symbol, order.digits)}</span>
-                                    </td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Close time: {{value0}}", { value0: formatTs(order.closeTime) })}>{formatTs(order.closeTime)}</td>
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Close price: {{value0}}", { value0: closePriceCellLabel })}>{closePriceCellLabel}</td>
-                                    {isColumnVisible('status') && (
-                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center whitespace-nowrap`} data-testid={`history-row-status-${order.id}`} title={tr("Status: {{value0}}", { value0: tr(rowStatus) })}>
-                                            <span className={getHistoryStatusBadgeClass(rowStatus)}>{tr(rowStatus)}</span>
+                                <Fragment key={`${tradeKey}-${index}`}>
+                                    <tr
+                                        aria-selected={isSelected}
+                                        className={`rtx-trade-row rtx-history-row h-[30px] transition-colors cursor-default ${isSelected ? 'rtx-trade-row--selected' : ''}`}
+                                        onClick={() => setSelectedTradeKey(tradeKey)}
+                                        onContextMenu={(event) => handleHistoryContextMenu(event, order)}
+                                    >
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Open time: {{value0}}", { value0: formatTs(order.openTime) })}>{formatTs(order.openTime)}</td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 whitespace-nowrap`} title={tr("Symbol: {{value0}}", { value0: order.symbol || '-' })}>{order.symbol || '-'}</td>
+                                        {isColumnVisible('ticket') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={rejectionSummary || tr("Ticket: {{value0}}", { value0: ticket })}>{ticket}</td>}
+                                        <td className={`text-zinc-100 px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-[13px]`} title={tr("Type: {{value0}}", { value0: tr(sideLabel) })}>
+                                            <div className="flex items-center justify-center"><span>{tr(sideLabel)}</span></div>
                                         </td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 tabular-nums`} title={tr(volumeMode === 'lots' ? "Volume: {{value0}}" : "Amount: {{value0}}", { value0: volumeLabel })}>{volumeLabel}</td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Open price: {{value0}}", { value0: formatPriceCell(order.openPrice, order.symbol, order.digits) })}>{formatPriceCell(order.openPrice, order.symbol, order.digits)}</td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Stop Loss: {{value0}}", { value0: formatLevelCell(order.sl, order.symbol, order.digits) })}>
+                                            <span className={(order.sl ?? 0) > 0 ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.sl, order.symbol, order.digits)}</span>
+                                        </td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Take Profit: {{value0}}", { value0: formatLevelCell(order.tp, order.symbol, order.digits) })}>
+                                            <span className={(order.tp ?? 0) > 0 ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.tp, order.symbol, order.digits)}</span>
+                                        </td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Close time: {{value0}}", { value0: formatTs(order.closeTime) })}>{formatTs(order.closeTime)}</td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Close price: {{value0}}", { value0: closePriceCellLabel })}>{closePriceCellLabel}</td>
+                                        {isColumnVisible('status') && (
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center whitespace-nowrap`} data-testid={`history-row-status-${order.id}`} title={tr("Status: {{value0}}", { value0: tr(rowStatus) })}>
+                                                <span className={getHistoryStatusBadgeClass(rowStatus)}>{tr(rowStatus)}</span>
+                                            </td>
+                                        )}
+                                        {isColumnVisible('marketValue') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Market Value: {{value0}}", { value0: marketValueLabel })}>{marketValueLabel}</td>}
+                                        {isColumnVisible('commission') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.commission)}`} title={tr("Commission: {{value0}}", { value0: formatMoney(order.commission) })}>{formatMoney(order.commission)}</td>}
+                                        {isColumnVisible('swap') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.swap)}`} title={tr("Swap: {{value0}}", { value0: formatMoney(order.swap) })}>{formatMoney(order.swap)}</td>}
+                                        {isColumnVisible('fee') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.fee)}`} title={tr("Fee: {{value0}}", { value0: formatMoney(order.fee) })}>{formatMoney(order.fee)}</td>}
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal tabular-nums ${moneyColor(order.profit)}`} title={tr("Profit: {{value0}}", { value0: profitLabel })}>{profitLabel}</td>
+                                        {isColumnVisible('changePercent') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(changePercent)}`} title={tr("Change %: {{value0}}", { value0: changePercentLabel })}>{changePercentLabel}</td>}
+                                        {isColumnVisible('magicNumber') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Magic Number: {{value0}}", { value0: order.magicNumber ?? '-' })}>{order.magicNumber ?? '-'}</td>}
+                                        {isColumnVisible('comment') && <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap" title={tr("Comment: {{value0}}", { value0: order.comment || '-' })}>{order.comment || '-'}</td>}
+                                    </tr>
+                                    {rejectionSummary && (
+                                        <tr className="rtx-history-placement-message text-loss" data-placement-state={rowStatus.toLowerCase()}>
+                                            <td colSpan={Math.max(1, visibleColumnCount)} className="px-1.5 py-[2px] text-left">
+                                                <div
+                                                    role="status"
+                                                    className="truncate font-normal"
+                                                    style={{ '--rtx-type-size': '13px', '--rtx-type-weight': 400 } as CSSProperties}
+                                                    title={rejectionSummary}
+                                                >
+                                                    {rejectionSummary}
+                                                </div>
+                                            </td>
+                                        </tr>
                                     )}
-                                    {isColumnVisible('marketValue') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Market Value: {{value0}}", { value0: marketValueLabel })}>{marketValueLabel}</td>}
-                                    {isColumnVisible('commission') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.commission)}`} title={tr("Commission: {{value0}}", { value0: formatMoney(order.commission) })}>{formatMoney(order.commission)}</td>}
-                                    {isColumnVisible('swap') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.swap)}`} title={tr("Swap: {{value0}}", { value0: formatMoney(order.swap) })}>{formatMoney(order.swap)}</td>}
-                                    {isColumnVisible('fee') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.fee)}`} title={tr("Fee: {{value0}}", { value0: formatMoney(order.fee) })}>{formatMoney(order.fee)}</td>}
-                                    <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal tabular-nums ${moneyColor(order.profit)}`} title={tr("Profit: {{value0}}", { value0: profitLabel })}>{profitLabel}</td>
-                                    {isColumnVisible('changePercent') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(changePercent)}`} title={tr("Change %: {{value0}}", { value0: changePercentLabel })}>{changePercentLabel}</td>}
-                                    {isColumnVisible('magicNumber') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Magic Number: {{value0}}", { value0: order.magicNumber ?? '-' })}>{order.magicNumber ?? '-'}</td>}
-                                    {isColumnVisible('comment') && <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap" title={tr("Comment: {{value0}}", { value0: order.comment || '-' })}>{order.comment || '-'}</td>}
-                                </tr>
+                                </Fragment>
                             );
                         })}
                         {historyVirtualWindow.bottomSpacerHeight > 0 && (

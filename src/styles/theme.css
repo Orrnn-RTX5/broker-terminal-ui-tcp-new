@@ -479,6 +479,494 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   border-color: var(--border-tertiary);
 }
 
+/* === Laptop & Responsive Full-Row Visibility (No Clipping / No Scrollbar) === */
+.rtx-chart-toolbar-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+}
+
+.rtx-chart-toolbar-scroll::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-menu-launcher .rtx-application-menu-trigger {
+  width: 48px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster {
+  --rtx-toolbar-control-width: 32px;
+  --rtx-toolbar-item-gap: 6.5px;
+  --rtx-toolbar-group-gap: 8px;
+  padding-inline: 8px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster .rtx-toolbar-action {
+  padding: 0 8px;
+  font-size: 12.5px;
+  gap: 5.5px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+  gap: 6px;
+  padding-inline: 7px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-timeframe-strip .rtx-timeframe-option {
+  min-width: 28px;
+  padding-inline: 6px;
+  font-size: 12.5px;
+}
+
+:is(
+  [data-terminal-resolution="1600x900"],
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-report-bug-button {
+  margin-inline: 6px;
+  padding-inline: 8px;
+  gap: 5.5px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 1720px), (max-height: 920px) {
+  .rtx-menu-launcher .rtx-application-menu-trigger {
+    width: clamp(40px, 2.75vw, 52px);
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
+    flex: 0 0 0px !important;
+    width: 0 !important;
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(27px, 2vw, 33px);
+    --rtx-toolbar-item-gap: clamp(6.5px, 0.56vw, 9.5px);
+    --rtx-toolbar-group-gap: clamp(9px, 0.78vw, 14px);
+    padding-inline: clamp(6px, 0.55vw, 10px) clamp(8px, 0.7vw, 12px);
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 clamp(6px, 0.5vw, 9px);
+    font-size: clamp(11.5px, 0.8vw, 12.5px);
+    gap: clamp(4.5px, 0.36vw, 6px);
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: clamp(5px, 0.4vw, 6.5px);
+    padding-inline: clamp(6px, 0.48vw, 8px);
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: clamp(22px, 1.6vw, 26px);
+    height: clamp(22px, 1.6vw, 26px);
+    flex: 0 0 clamp(22px, 1.6vw, 26px);
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: clamp(25px, 1.85vw, 30px);
+    padding-inline: clamp(5.5px, 0.44vw, 7.5px);
+    font-size: clamp(11.5px, 0.8vw, 12.5px);
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: clamp(3px, 0.34vw, 7px);
+    padding-inline: clamp(5px, 0.42vw, 7.5px);
+    gap: clamp(4px, 0.32vw, 5.5px);
+    font-size: clamp(11.5px, 0.8vw, 12.5px);
+  }
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-menu-launcher .rtx-application-menu-trigger {
+  width: 40px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
+  flex: 1 1 auto;
+  justify-content: space-between;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
+  flex: 0 0 0px !important;
+  width: 0 !important;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster {
+  --rtx-toolbar-control-width: 28px;
+  --rtx-toolbar-item-gap: 7.5px;
+  --rtx-toolbar-group-gap: 11px;
+  padding-inline: 8px 10px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster .rtx-toolbar-action {
+  padding: 0 7px;
+  font-size: 11.5px;
+  gap: 5px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+  gap: 5.5px;
+  padding-inline: 6.5px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-symbol-badge {
+  min-width: 34px;
+  padding: 0 4px;
+  font-size: 9.5px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-timeframe-strip .rtx-timeframe-option {
+  min-width: 26px;
+  padding-inline: 6px;
+  font-size: 11.5px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-report-bug-button {
+  margin-inline: 3px;
+  padding-inline: 5.5px;
+  gap: 4px;
+  font-size: 11.5px;
+}
+
+@media (max-width: 1500px) {
+  .rtx-menu-launcher .rtx-application-menu-trigger {
+    width: clamp(36px, 2.7vw, 42px);
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(26px, 1.98vw, 29px);
+    --rtx-toolbar-item-gap: clamp(6px, 0.55vw, 8.5px);
+    --rtx-toolbar-group-gap: clamp(8.5px, 0.78vw, 12px);
+    padding-inline: clamp(6px, 0.55vw, 9px) clamp(8px, 0.7vw, 11px);
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 clamp(6px, 0.5vw, 7.5px);
+    font-size: 11.5px;
+    gap: 4.5px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: 5px;
+    padding-inline: 6px;
+  }
+
+  .rtx-toolbar-symbol-badge {
+    min-width: 34px;
+    padding: 0 4px;
+    font-size: 9px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: clamp(21px, 1.58vw, 23px);
+    height: clamp(21px, 1.58vw, 23px);
+    flex: 0 0 clamp(21px, 1.58vw, 23px);
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: clamp(24px, 1.85vw, 27px);
+    padding-inline: clamp(5px, 0.44vw, 6.5px);
+    font-size: 11.5px;
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: 3px;
+    padding-inline: 5px;
+    gap: 3.5px;
+    font-size: 11.5px;
+  }
+}
+
+[data-terminal-resolution="1280x720"] .rtx-menu-launcher .rtx-application-menu-trigger {
+  width: 36px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-toolbar-command-cluster {
+  --rtx-toolbar-control-width: 26px;
+  --rtx-toolbar-item-gap: 6px;
+  --rtx-toolbar-group-gap: 9px;
+  padding-inline: 6px 8px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-toolbar-command-cluster .rtx-toolbar-action {
+  padding: 0 5.5px;
+  font-size: 11px;
+  gap: 4px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+  gap: 4.5px;
+  padding-inline: 5px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-toolbar-symbol-badge {
+  min-width: 32px;
+  padding: 0 3.5px;
+  font-size: 9px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 21px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-timeframe-strip .rtx-timeframe-option {
+  min-width: 24px;
+  padding-inline: 5px;
+  font-size: 11px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-report-bug-button {
+  margin-inline: 3px;
+  padding-inline: 4.5px;
+  gap: 3px;
+  font-size: 11px;
+}
+
+[data-terminal-resolution="1280x720"] .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+@media (max-width: 1320px) {
+  .rtx-menu-launcher .rtx-application-menu-trigger {
+    width: clamp(30px, 2.7vw, 36px);
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(19.5px, 1.9vw, 24px);
+    --rtx-toolbar-item-gap: clamp(1px, 0.18vw, 2.5px);
+    --rtx-toolbar-group-gap: clamp(2px, 0.28vw, 4px);
+    padding-inline: clamp(2.5px, 0.3vw, 4px);
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 clamp(3px, 0.34vw, 5px);
+    font-size: clamp(10px, 0.92vw, 11px);
+    gap: 2.5px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: 2.5px;
+    padding-inline: clamp(3px, 0.34vw, 4.5px);
+  }
+
+  .rtx-toolbar-symbol-badge {
+    min-width: 26px;
+    padding: 0 2.5px;
+    font-size: 8.5px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: clamp(17.5px, 1.65vw, 21px);
+    height: clamp(17.5px, 1.65vw, 21px);
+    flex: 0 0 clamp(17.5px, 1.65vw, 21px);
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: clamp(17px, 1.62vw, 21px);
+    padding-inline: clamp(2px, 0.24vw, 3.5px);
+    font-size: clamp(10px, 0.92vw, 11px);
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: 2px;
+    padding-inline: clamp(3.5px, 0.35vw, 5px);
+    gap: 2.5px;
+    font-size: clamp(10px, 0.92vw, 11px);
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+  }
+}
+
+@media (max-width: 980px) {
+  .rtx-menu-launcher .rtx-application-menu-trigger {
+    width: 28px;
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(17.5px, 1.95vw, 19.5px);
+    --rtx-toolbar-item-gap: 1px;
+    --rtx-toolbar-group-gap: 2px;
+    padding-inline: 2px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 2.5px;
+    font-size: 9.5px;
+    gap: 2px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: 2px;
+    padding-inline: 2.5px;
+  }
+
+  .rtx-toolbar-symbol-badge {
+    min-width: 24px;
+    padding: 0 2px;
+    font-size: 8px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: 16px;
+    padding-inline: 1.5px;
+    font-size: 9.5px;
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: 1.5px;
+    padding-inline: 3px;
+    gap: 2px;
+    font-size: 9.5px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
+    width: 12.5px;
+    height: 12.5px;
+    flex: 0 0 12.5px;
+  }
+}
+
+@media (max-width: 860px) {
+  .rtx-menu-launcher .rtx-application-menu-trigger {
+    width: 24px;
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(15px, 1.95vw, 17px);
+    --rtx-toolbar-item-gap: 0.5px;
+    --rtx-toolbar-group-gap: 1.5px;
+    padding-inline: 1.5px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 2px;
+    font-size: 8.5px;
+    gap: 1.5px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: 1.5px;
+    padding-inline: 2px;
+  }
+
+  .rtx-toolbar-symbol-badge {
+    min-width: 22px;
+    padding: 0 1.5px;
+    font-size: 7.5px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: 14px;
+    padding-inline: 1px;
+    font-size: 8.5px;
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: 1px;
+    padding-inline: 2.5px;
+    gap: 1.5px;
+    font-size: 8.5px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rtx-toolbar-action,
   .rtx-toolbar-icon-button {

@@ -8,6 +8,7 @@ export const MINUTE_SEPARATOR_PIXEL_DEDUP_DISTANCE = 10;
 export const CHART_AXIS_FONT_FAMILY = '"Segoe UI", Tahoma, Arial, sans-serif';
 export const LIGHT_CHART_AXIS_FONT_FAMILY = '"Segoe UI", Tahoma, Arial, sans-serif';
 export const CHART_AXIS_FONT_SIZE = 14;
+export const CHART_PRICE_SCALE_MIN_WIDTH = 72;
 
 const parseCssColor = (value: string): { r: number; g: number; b: number } | null => {
   const color = value.trim();
@@ -41,8 +42,18 @@ export const isLightChartBackground = (background: string): boolean => {
 export const readChartAxisFontSize = (): number => {
   if (typeof document === 'undefined') return CHART_AXIS_FONT_SIZE;
   const root = document.documentElement;
-  const size = Number.parseFloat(getComputedStyle(root).getPropertyValue('--rtx-ui-font-size'));
+  const styles = getComputedStyle(root);
+  const axisSize = Number.parseFloat(styles.getPropertyValue('--rtx-chart-axis-font-size'));
+  if (Number.isFinite(axisSize) && axisSize > 0) return axisSize;
+  const size = Number.parseFloat(styles.getPropertyValue('--rtx-ui-font-size'));
   return Number.isFinite(size) && size > 0 ? size : CHART_AXIS_FONT_SIZE;
+};
+
+export const readChartPriceScaleMinWidth = (): number => {
+  if (typeof document === 'undefined') return CHART_PRICE_SCALE_MIN_WIDTH;
+  const root = document.documentElement;
+  const width = Number.parseFloat(getComputedStyle(root).getPropertyValue('--rtx-chart-price-scale-min-width'));
+  return Number.isFinite(width) && width > 0 ? width : CHART_PRICE_SCALE_MIN_WIDTH;
 };
 
 export const clampAlpha = (alpha: number): number => Math.max(0, Math.min(1, alpha));

@@ -196,9 +196,15 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       if (allHistory.length < 2) return;
 
       const width = canvas.clientWidth || fallbackWidth;
-      const bodyFont = `${typography.bodyWeight} ${typography.fontSize}px ${typography.fontFamily}`;
-      const controlFont = `${typography.controlWeight} ${typography.fontSize}px ${typography.fontFamily}`;
-      const labelHeight = typography.lineHeight + 4;
+      const isLaptopCanvas = canvas.clientWidth > 0
+        && typeof window !== 'undefined'
+        && (window.innerWidth <= 1720 || window.innerHeight <= 920);
+      const effectiveFontSize = isLaptopCanvas
+        ? Math.min(typography.fontSize, window.innerWidth <= 1440 || window.innerHeight <= 780 ? 10.5 : 11)
+        : typography.fontSize;
+      const bodyFont = `${typography.bodyWeight} ${effectiveFontSize}px ${typography.fontFamily}`;
+      const controlFont = `${typography.controlWeight} ${effectiveFontSize}px ${typography.fontFamily}`;
+      const labelHeight = isLaptopCanvas ? Math.round(effectiveFontSize * 1.45) + 3 : typography.lineHeight + 4;
 
       const visibleCount = Math.max(20, Math.floor(MAX_TICKS / zoomLevel));
       const history = allHistory.slice(-visibleCount);
@@ -723,8 +729,19 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
   const COLUMN_HEADER_HEIGHT = 28;
   const ladderColumns = 'minmax(58px, 0.8fr) minmax(94px, 1.25fr) 48px';
   const symbolDescription = useMemo(() => getFallbackSymbolDescription(symbol), [symbol]);
-  const availableForRows = Math.max(ROW_H * 6 * 2, mainContentHeight - COLUMN_HEADER_HEIGHT);
-  const dynamicLevels = Math.max(6, Math.floor(availableForRows / ROW_H / 2));
+  const isLaptopDomSurface = typeof window !== 'undefined'
+    && Boolean(mainContentRef.current && mainContentRef.current.clientWidth > 0)
+    && (window.innerWidth <= 1720 || window.innerHeight <= 920);
+  const effectiveRowH = isLaptopDomSurface
+    ? (window.innerWidth <= 1440 || window.innerHeight <= 780 ? 18 : 21)
+    : ROW_H;
+  const effectiveHeaderH = isLaptopDomSurface
+    ? (window.innerWidth <= 1440 || window.innerHeight <= 780 ? 22 : 23)
+    : COLUMN_HEADER_HEIGHT;
+  const availableForRows = Math.max(effectiveRowH * 6 * 2, mainContentHeight - effectiveHeaderH);
+  const dynamicLevels = isLaptopDomSurface
+    ? Math.max(6, Math.floor((availableForRows - effectiveRowH) / effectiveRowH / 2))
+    : Math.max(6, Math.floor(availableForRows / ROW_H / 2));
   const requestLevels = Math.max(10, dynamicLevels);
   const { orderBook, loading: depthLoading, error: depthError } = useLiveOrderBook(symbol, requestLevels);
   const bestBid = currentTick?.bid ?? orderBook?.bids[0]?.price ?? 0;
@@ -773,8 +790,30 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
   type DepthLevel = { price: number; volume: number };
   const depthLevels = useMemo(() => {
     if (orderBook && (orderBook.asks.length > 0 || orderBook.bids.length > 0)) {
-      const asks = orderBook.asks.slice(0, dynamicLevels).reverse();
-      const bids = orderBook.bids.slice(0, dynamicLevels);
+      const rawAsks = orderBook.asks.slice(0, dynamicLevels);
+      const rawBids = orderBook.bids.slice(0, dynamicLevels);
+      if (digits !== null && (rawAsks.length < dynamicLevels || rawBids.length < dynamicLevels)) {
+        const point = 10 ** -digits;
+        const roundPrice = (value: number) => Number(value.toFixed(digits));
+        const paddedAsks: DepthLevel[] = [...rawAsks];
+        let lastAsk = paddedAsks.length > 0 ? paddedAsks[paddedAsks.length - 1].price : bestAsk;
+        while (paddedAsks.length < dynamicLevels && lastAsk > 0) {
+          lastAsk = roundPrice(lastAsk + point);
+          paddedAsks.push({ price: lastAsk, volume: 0 });
+        }
+        const paddedBids: DepthLevel[] = [...rawBids];
+        let lastBid = paddedBids.length > 0 ? paddedBids[paddedBids.length - 1].price : bestBid;
+        while (paddedBids.length < dynamicLevels && lastBid > 0) {
+          lastBid = roundPrice(lastBid - point);
+          paddedBids.push({ price: lastBid, volume: 0 });
+        }
+        const asks = paddedAsks.reverse();
+        const bids = paddedBids;
+        const maxVolume = Math.max(...[...asks, ...bids].map((level) => level.volume), 0);
+        return { asks, bids, maxVolume, synthetic: false };
+      }
+      const asks = rawAsks.reverse();
+      const bids = rawBids;
       const maxVolume = Math.max(...[...asks, ...bids].map((level) => level.volume), 0);
       return { asks, bids, maxVolume, synthetic: false };
     }

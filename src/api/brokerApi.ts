@@ -34,14 +34,56 @@ export function mapBrokerError(errorStrOrCode: string): string {
     case 'UNAUTHORIZED':
       return 'Session expired or invalid credentials. Please log in again.';
     case 'BROKER_INACTIVE':
+    case 'BROKER_OFFLINE':
       return 'The selected broker server is currently offline. Please try again later.';
+    case 'BINARY_TCP_UNAVAILABLE':
+    case 'BINARY_TRANSPORT_UNREACHABLE':
+    case 'BINARY_TUNNEL_UNAVAILABLE':
+    case 'GATEWAY_UNAVAILABLE':
+    case 'SERVICE_UNAVAILABLE':
+    case 'BAD_GATEWAY':
+      return 'Trading backend server is currently unreachable. Please check your connection and try again.';
+    case 'BINARY_TCP_TIMEOUT':
+    case 'GATEWAY_TIMEOUT':
+      return 'Trading backend server timed out before confirming the order.';
     case 'LICENSE_EXPIRED':
       return 'Your license has expired. Please renew your trading license to proceed.';
     case 'INSUFFICIENT_MARGIN':
+    case 'MARGIN_INSUFFICIENT':
+    case 'FREE_MARGIN_INSUFFICIENT':
       return 'Insufficient margin. You do not have enough funds to open this position.';
+    case 'INSUFFICIENT_FUNDS':
+    case 'INSUFFICIENT_BALANCE':
+    case 'ACCOUNT_BALANCE_INSUFFICIENT':
+    case 'NO_MONEY':
+    case 'NOT_ENOUGH_MONEY':
+      return 'Insufficient account balance or free margin to place this order.';
+    case 'ZERO_BALANCE':
+      return 'Account balance is zero. Please fund your account before placing an order.';
+    case 'ROUTE_NOT_FOUND':
+    case 'ROUTING_ERROR':
+    case 'NO_ROUTE':
+      return 'Order routing failed — no execution route is available for this symbol.';
+    case 'SYMBOL_NOT_FOUND':
+      return 'This symbol was not found on the trading server.';
+    case 'NO_LIQUIDITY':
+      return 'Insufficient market liquidity to fill this order right now.';
     case 'MARKET_CLOSED':
       return 'Trading is disabled. The market is currently closed for this symbol.';
+    case 'TRADE_DISABLED':
+    case 'SYMBOL_DISABLED':
+      return 'Trading is disabled for this symbol on the current account.';
+    case 'CLOSE_ONLY':
+      return 'This symbol is set to Close-Only mode — new positions cannot be opened.';
+    case 'OFF_QUOTES':
+    case 'NO_PRICE_AVAILABLE':
+      return 'No live quote is available for this symbol right now.';
+    case 'QUOTE_STALE':
+    case 'STALE_QUOTE':
+    case 'SYMBOL_STALE':
+      return 'Live market quote is stale — waiting for a fresh price tick.';
     case 'INVALID_SL_TP':
+    case 'INVALID_STOPS':
       return 'Invalid Stop Loss or Take Profit levels. Please check your price offsets.';
     default:
       return errorStrOrCode || 'An unexpected trading error occurred.';

@@ -176,7 +176,7 @@ export const MarketWatchRow: FC<MarketWatchRowProps> = ({
       && Math.abs(candidateAmount) > 0
       && Number(Math.abs(candidateAmount).toFixed(baseDailyDigits)) === 0
     ) {
-      return Math.min(6, Math.max(baseDailyDigits, Math.ceil(-Math.log10(Math.abs(candidateAmount))) + 1));
+      return Math.min(5, Math.max(baseDailyDigits, Math.ceil(-Math.log10(Math.abs(candidateAmount)))));
     }
     return baseDailyDigits;
   })();

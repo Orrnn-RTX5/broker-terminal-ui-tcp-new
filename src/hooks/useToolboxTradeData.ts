@@ -110,6 +110,7 @@ const INITIAL_STATE: ToolboxTradeState = {
 const DEBUG_LIMIT = 18;
 const IMMEDIATE_POSITION_RETENTION_MS = 30_000;
 const PENDING_MARKET_ORDER_ORPHAN_MS = 120_000;
+export const TERMINAL_PLACEMENT_FAILURE_RETENTION_MS = 5_000;
 
 const toNumber = (value: unknown, fallback = 0): number => {
   if (value === null || value === undefined) return fallback;
@@ -777,6 +778,7 @@ export function useToolboxTradeData() {
   const positionsRef = useRef<ToolboxTradePosition[]>(state.positions);
   const retainedImmediatePositionsRef = useRef<Map<number, RetainedImmediateToolboxPosition>>(new Map());
   const pendingMarketOrdersRef = useRef<Map<string, RetainedImmediateToolboxPosition>>(new Map());
+  const pendingPlacementTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const optimisticallyClosedPositionsRef = useRef<Map<number, OptimisticallyClosedToolboxPosition>>(new Map());
   const placementSessionScopeRef = useRef(getCommittedBrokerAccountSessionScopeKey(
     getCommittedBrokerAccountSessionScope(),
@@ -1051,6 +1053,8 @@ export function useToolboxTradeData() {
       stateSessionKeyRef.current = sessionKey;
       accountRef.current = null;
       positionsRef.current = [];
+      pendingPlacementTimersRef.current.forEach((timer) => clearTimeout(timer));
+      pendingPlacementTimersRef.current.clear();
       pendingMarketOrdersRef.current.clear();
       setState({
         ...INITIAL_STATE,
@@ -1066,6 +1070,8 @@ export function useToolboxTradeData() {
     );
     if (placementSessionScopeRef.current !== nextPlacementScope) {
       placementSessionScopeRef.current = nextPlacementScope;
+      pendingPlacementTimersRef.current.forEach((timer) => clearTimeout(timer));
+      pendingPlacementTimersRef.current.clear();
       pendingMarketOrdersRef.current.clear();
       setState((prev) => ({ ...prev, pendingPositions: [] }));
     }
@@ -1216,6 +1222,14 @@ export function useToolboxTradeData() {
         || toNumber(detail.login, 0) !== login
         || detail.sessionScope !== activeSessionScope
       ) return;
+      const clearPlacementTimer = (clientOrderId: string) => {
+        const existingTimer = pendingPlacementTimersRef.current.get(clientOrderId);
+        if (existingTimer !== undefined) {
+          clearTimeout(existingTimer);
+          pendingPlacementTimersRef.current.delete(clientOrderId);
+        }
+      };
+
       if (['pending', 'accepted', 'processing', 'rejected', 'expired'].includes(detail.status)) {
         const currentPending = Array.from(pendingMarketOrdersRef.current.values())
           .map(({ position }) => position);
@@ -1227,12 +1241,31 @@ export function useToolboxTradeData() {
         );
         if (nextPending === currentPending) return;
 
+        clearPlacementTimer(detail.clientOrderId);
+        const isTerminalFailure = detail.status === 'rejected' || detail.status === 'expired';
+        const retentionMs = isTerminalFailure
+          ? TERMINAL_PLACEMENT_FAILURE_RETENTION_MS
+          : PENDING_MARKET_ORDER_ORPHAN_MS;
         const position = nextPending.find((candidate) => candidate.clientOrderId === detail.clientOrderId);
         if (position) {
           pendingMarketOrdersRef.current.set(detail.clientOrderId, {
             position,
-            expiresAt: Date.now() + PENDING_MARKET_ORDER_ORPHAN_MS,
+            expiresAt: Date.now() + retentionMs,
           });
+          if (isTerminalFailure) {
+            const timer = setTimeout(() => {
+              pendingPlacementTimersRef.current.delete(detail.clientOrderId);
+              if (!pendingMarketOrdersRef.current.has(detail.clientOrderId)) return;
+              pendingMarketOrdersRef.current.delete(detail.clientOrderId);
+              setState((prev) => ({
+                ...prev,
+                pendingPositions: Array.from(pendingMarketOrdersRef.current.values())
+                  .map(({ position: pendingPosition }) => pendingPosition)
+                  .sort((a, b) => a.id - b.id),
+              }));
+            }, TERMINAL_PLACEMENT_FAILURE_RETENTION_MS);
+            pendingPlacementTimersRef.current.set(detail.clientOrderId, timer);
+          }
         }
         setState((prev) => ({
           ...prev,
@@ -1243,6 +1276,7 @@ export function useToolboxTradeData() {
         return;
       }
 
+      clearPlacementTimer(detail.clientOrderId);
       pendingMarketOrdersRef.current.delete(detail.clientOrderId);
       setState((prev) => ({
         ...prev,
@@ -1272,7 +1306,11 @@ export function useToolboxTradeData() {
     };
 
     window.addEventListener(MARKET_ORDER_PLACEMENT_STATE_EVENT, handleMarketOrderPlacement);
-    return () => window.removeEventListener(MARKET_ORDER_PLACEMENT_STATE_EVENT, handleMarketOrderPlacement);
+    return () => {
+      window.removeEventListener(MARKET_ORDER_PLACEMENT_STATE_EVENT, handleMarketOrderPlacement);
+      pendingPlacementTimersRef.current.forEach((timer) => clearTimeout(timer));
+      pendingPlacementTimersRef.current.clear();
+    };
   }, [commitPositions]);
 
   useEffect(() => {

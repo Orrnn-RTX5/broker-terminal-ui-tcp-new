@@ -49,8 +49,36 @@ const normalizeStatus = (rawStatus: unknown, rawEvent: unknown): PendingOrderLif
   return null;
 };
 
+const LIFECYCLE_EVENT_NAMES = new Set([
+  'filled',
+  'triggered',
+  'limit_activated',
+  'expired',
+  'rejected',
+  'pending_filled',
+  'order_filled',
+  'pending_order_filled',
+  'order_triggered',
+  'pending_order_triggered',
+  'pending_order_limit_activated',
+  'stop_limit_activated',
+  'order_expired',
+  'pending_order_expired',
+  'order_rejected',
+  'pending_order_rejected',
+  'channel_message',
+  'update',
+]);
+
+const sanitizeOrderTypeCandidate = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (LIFECYCLE_EVENT_NAMES.has(raw.toLowerCase())) return '';
+  return raw;
+};
+
 const formatOrderTypeLabel = (rawOrderType: unknown, fallbackSide: 'BUY' | 'SELL'): string => {
-  const cleaned = String(rawOrderType ?? '').trim().toUpperCase().replace(/_/g, ' ');
+  const cleaned = sanitizeOrderTypeCandidate(rawOrderType).toUpperCase().replace(/_/g, ' ');
   if (cleaned) return cleaned;
   return `${fallbackSide} ORDER`;
 };
@@ -86,11 +114,19 @@ export function parsePendingOrderLifecycleFrame(
     : undefined;
 
   const symbol = String(nested.symbol ?? root.symbol ?? prevMatch?.symbol ?? '').trim().toUpperCase();
-  const rawOrderType = nested.order_type ?? nested.orderType ?? nested.type ?? prevMatch?.order_type ?? prevMatch?.type ?? '';
+  const rawOrderType =
+    sanitizeOrderTypeCandidate(nested.order_type)
+    || sanitizeOrderTypeCandidate(nested.orderType)
+    || sanitizeOrderTypeCandidate(nested.type)
+    || sanitizeOrderTypeCandidate(prevMatch?.order_type)
+    || sanitizeOrderTypeCandidate(prevMatch?.type);
   const rawSide = String(nested.side ?? nested.action ?? rawOrderType ?? prevMatch?.side ?? prevMatch?.type ?? '').toUpperCase();
   const side: 'BUY' | 'SELL' = rawSide.includes('SELL') ? 'SELL' : 'BUY';
   const orderType = formatOrderTypeLabel(rawOrderType, side);
-  const volume = Number(nested.volume ?? nested.lots ?? prevMatch?.volume ?? prevMatch?.lots ?? 0);
+  const volume = Number(nested.volume ?? nested.lots ?? nested.quantity ?? prevMatch?.volume ?? prevMatch?.lots ?? 0);
+  if ((status === 'filled' || status === 'triggered') && (!(Number.isFinite(volume) && volume > 0))) {
+    return null;
+  }
   const price = Number(
     nested.fill_price
       ?? nested.price_open
@@ -125,9 +161,49 @@ export function parsePendingOrderLifecycleFrame(
   };
 }
 
-export function createPendingLifecycleDeduper(maxEntries = 256) {
+export function createPendingLifecycleDeduper(
+  maxEntries = 256,
+  options?: { persistKey?: string },
+) {
+  const persistKey = options?.persistKey;
   const seen = new Set<string>();
+  if (persistKey && typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage?.getItem(persistKey) ?? window.sessionStorage?.getItem(persistKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (typeof item === 'string' && item) seen.add(item);
+          }
+        }
+      }
+    } catch {
+      // Ignore storage read errors
+    }
+  }
+  const persistSeen = () => {
+    if (!persistKey || typeof window === 'undefined') return;
+    try {
+      const serialized = JSON.stringify(Array.from(seen).slice(-maxEntries * 2));
+      window.localStorage?.setItem(persistKey, serialized);
+      window.sessionStorage?.setItem(persistKey, serialized);
+    } catch {
+      // Ignore storage write errors
+    }
+  };
   return {
+    markSeen(dedupeKey: string): void {
+      const baseKey = dedupeKey.split(':').slice(0, 3).join(':');
+      seen.add(dedupeKey);
+      seen.add(baseKey);
+      while (seen.size > maxEntries * 2) {
+        const oldest = seen.values().next().value;
+        if (oldest === undefined) break;
+        seen.delete(oldest);
+      }
+      persistSeen();
+    },
     shouldEmit(dedupeKey: string): boolean {
       const baseKey = dedupeKey.split(':').slice(0, 3).join(':');
       if (seen.has(dedupeKey) || seen.has(baseKey)) {
@@ -140,10 +216,12 @@ export function createPendingLifecycleDeduper(maxEntries = 256) {
         if (oldest === undefined) break;
         seen.delete(oldest);
       }
+      persistSeen();
       return true;
     },
     clear(): void {
       seen.clear();
+      persistSeen();
     },
   };
 }

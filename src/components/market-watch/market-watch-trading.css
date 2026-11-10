@@ -90,6 +90,8 @@ html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-butto
   justify-content: flex-start !important;
   width: 100% !important;
   min-width: 0 !important;
+  max-width: none !important;
+  flex: 1 1 auto !important;
   height: 58px !important;
   min-height: 58px !important;
   max-height: 58px !important;

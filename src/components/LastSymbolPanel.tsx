@@ -192,7 +192,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     const flash = useCallback((msg: string, type: 'success' | 'error' | 'info' = 'info') => {
         setStatusMessage(msg);
         setStatusType(type);
-        setTimeout(() => setStatusMessage(''), 4000);
+        setTimeout(() => setStatusMessage(''), 5000);
     }, []);
 
     // Place order via MT5 Sync API
@@ -376,12 +376,30 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     useLayoutEffect(() => {
         const panel = panelRef.current;
         if (!panel) return;
+        const resolveChartHost = () => (
+            typeof document !== 'undefined'
+                ? (document.querySelector<HTMLElement>('.rtx-chart-panel[data-chart-panel-active="true"]')
+                    ?? document.querySelector<HTMLElement>('.rtx-chart-panel'))
+                : null
+        );
         const updatePosition = () => {
             const bounds = panel.getBoundingClientRect();
+            const isLaptopViewport = window.innerWidth <= 1720 || window.innerHeight <= 920;
+            const chartHost = isLaptopViewport ? resolveChartHost() : null;
+            const chartRect = chartHost?.getBoundingClientRect();
+            const hasValidChartRect = Boolean(chartRect && chartRect.width > 120 && chartRect.height > 120);
+            const defaultX = hasValidChartRect && chartRect
+                ? chartRect.left + (chartRect.width - bounds.width) / 2
+                : (window.innerWidth - bounds.width) / 2;
+            const defaultY = hasValidChartRect && chartRect
+                ? chartRect.top + (chartRect.height - bounds.height) / 2
+                : isLaptopViewport
+                    ? Math.max(42, (window.innerHeight - bounds.height) * 0.3)
+                    : (window.innerHeight - bounds.height) / 2;
             setPosition((current) => {
                 const next = clampPanelPosition(hasDragged.current && current ? current : {
-                    x: (window.innerWidth - bounds.width) / 2,
-                    y: (window.innerHeight - bounds.height) / 2,
+                    x: defaultX,
+                    y: defaultY,
                 }, panel);
                 return current?.x === next.x && current.y === next.y ? current : next;
             });
@@ -389,6 +407,8 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
         updatePosition();
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
         observer?.observe(panel);
+        const chartHost = resolveChartHost();
+        if (chartHost) observer?.observe(chartHost);
         window.addEventListener('resize', updatePosition);
         return () => {
             observer?.disconnect();

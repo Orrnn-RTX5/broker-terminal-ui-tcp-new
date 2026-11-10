@@ -82,6 +82,8 @@ Critical Instruction.txt
 !.env.example
 production.env
 *.exe
+*.exe~
+*~
 *.dll
 *.lic
 *secret*.json

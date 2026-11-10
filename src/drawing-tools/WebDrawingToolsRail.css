@@ -490,13 +490,132 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   background: transparent;
 }
 
-@media (max-height: 620px) {
+@media (max-height: 920px), (max-width: 1720px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    width: 42px;
+    min-width: 42px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    width: 41px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
+    padding-top: 7px;
+    padding-bottom: 4px;
+    gap: 6px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    padding-top: 2px;
+    padding-bottom: 7px;
+    gap: 6px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
+    width: 41px;
+    height: 32px;
+    min-height: 32px;
+    flex: 0 0 32px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before {
+    inset: 2px 5px;
+    border-radius: 5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 21px;
+    height: 21px;
+    flex: 0 0 21px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    width: 24px;
+    margin: 4px 0;
+    background: color-mix(in srgb, var(--text-secondary) 28%, var(--border-primary));
+  }
+}
+
+@media (max-height: 720px), (max-width: 1440px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    width: 38px;
+    min-width: 38px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    width: 37px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
+    padding-top: 6px;
+    padding-bottom: 3px;
+    gap: 5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    padding-top: 2px;
+    padding-bottom: 6px;
+    gap: 5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
+    width: 37px;
+    height: 28px;
+    min-height: 28px;
+    flex: 0 0 28px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before {
+    inset: 2px 4px;
+    border-radius: 5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    width: 22px;
+    margin: 3px 0;
+  }
+
   .web-drawing-tools-menu__item {
-    height: 34px;
+    height: 32px;
   }
 
   .web-drawing-tools-menu__toggle-row {
-    height: 34px;
+    height: 32px;
+  }
+}
+
+@media (max-height: 620px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
+    padding-top: 5px;
+    padding-bottom: 2px;
+    gap: 3.5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    padding-top: 1px;
+    padding-bottom: 5px;
+    gap: 3.5px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
+    height: 26px;
+    min-height: 26px;
+    flex: 0 0 26px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    margin: 2px 0;
   }
 }
 

@@ -58,6 +58,7 @@ import {
   CHART_AXIS_FONT_FAMILY,
   CHART_AXIS_FONT_SIZE,
   LIGHT_CHART_AXIS_FONT_FAMILY,
+  readChartPriceScaleMinWidth,
 } from '../presentation/chartTheme';
 import { useChartInitializationLifetime } from './useChartInitializationLifetime';
 
@@ -232,7 +233,7 @@ useChartInitializationLifetime(() => {
       rightPriceScale: {
         borderVisible: true,
         ticksVisible: !gridRenderingOptions.squareVisible,
-        minimumWidth: 72,
+        minimumWidth: readChartPriceScaleMinWidth(),
         borderColor: chartTheme.scaleBorder,
         textColor: chartSettings.showGrid && chartSettings.gridType === 'mt5' ? 'transparent' : chartTheme.axisText,
         scaleMargins: { top: 0.05, bottom: 0.28 },

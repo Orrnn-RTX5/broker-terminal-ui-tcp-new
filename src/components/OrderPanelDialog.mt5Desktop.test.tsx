@@ -518,4 +518,88 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
     fireEvent.change(stopLimitInput, { target: { value: '4176.25' } });
     expect(stopLimitInput.value).toBe('4176.25');
   });
+
+  it('renders sufficient balance, zero/insufficient balance, and rejected order states cleanly without shifting controls', async () => {
+    vi.useFakeTimers();
+    try {
+      // 1. Sufficient balance (5,000 USD free margin vs 208.69 USD required margin)
+      useAppStore.setState({
+        account: {
+          balance: 5000,
+          equity: 5000,
+          margin: 0,
+          freeMargin: 5000,
+          marginLevel: 0,
+          leverage: 100,
+          currency: 'USD',
+        },
+      });
+
+      const onSubmitOrder = vi.fn().mockRejectedValueOnce(
+        new Error('Encrypted Binary TCP Server (185.126.217.108:4443) unreachable: dial tcp 185.126.217.108:4443: connectex'),
+      );
+
+      const { container } = render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={onSubmitOrder}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(20);
+      });
+
+      const marginEl = screen.getByTestId('order-required-margin');
+      expect(marginEl.getAttribute('data-insufficient-margin')).toBe('false');
+      expect(screen.queryByTestId('order-insufficient-margin-notice')).toBeNull();
+
+      // Message slot reserves space even before any error/warning appears
+      const messageSlot = container.querySelector('.rtx-order-dialog__message-slot');
+      expect(messageSlot).not.toBeNull();
+      expect(messageSlot?.getAttribute('data-has-message')).toBe('false');
+
+      // 2. Zero balance / insufficient free margin state
+      await act(async () => {
+        useAppStore.setState({
+          account: {
+            balance: 0,
+            equity: 0,
+            margin: 0,
+            freeMargin: 0,
+            marginLevel: 0,
+            leverage: 100,
+            currency: 'USD',
+          },
+        });
+      });
+
+      expect(marginEl.getAttribute('data-insufficient-margin')).toBe('true');
+      expect(screen.getByTestId('order-insufficient-margin-notice').textContent).toContain(
+        'Insufficient account balance (0.00) to open a new order.',
+      );
+      expect(messageSlot?.getAttribute('data-has-message')).toBe('true');
+
+      // 3. Rejected order (backend down) formats exact reason inside the same reserved message slot
+      const buyBtn = container.querySelector('.rtx-order-dialog__action--buy') as HTMLButtonElement;
+      const sellBtn = container.querySelector('.rtx-order-dialog__action--sell') as HTMLButtonElement;
+      expect(buyBtn).not.toBeNull();
+      expect(sellBtn).not.toBeNull();
+
+      await act(async () => {
+        fireEvent.click(buyBtn);
+      });
+
+      const alertEl = screen.getByRole('alert');
+      expect(alertEl.textContent).toBe(
+        'Order failed: trading backend server is unreachable. Check that the backend service is running and try again.',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -555,6 +555,7 @@ export const getVisibleLogicalRangeAnchoredToTime = (
     wasFollowing: boolean;
     previousLatestTime: number | null;
     rightOffset: number;
+    previousCandleCount?: number;
   },
 ): LogicalRangeLike | null => {
   if (!previousRange) return null;
@@ -564,20 +565,38 @@ export const getVisibleLogicalRangeAnchoredToTime = (
   const latestTime = renderedCandles[renderedCandles.length - 1]?.time;
   if (
     liveEdge?.wasFollowing
-    && liveEdge.previousLatestTime !== null
-    && Number.isFinite(liveEdge.previousLatestTime)
     && Number.isFinite(liveEdge.rightOffset)
     && typeof latestTime === 'number'
     && Number.isFinite(latestTime)
     // History can grow to the left of a single live startup candle without
-    // advancing its timestamp. It still needs to stay at the live edge.
-    && latestTime >= liveEdge.previousLatestTime
+    // advancing its timestamp, or before any candle was previously rendered.
+    // It still needs to stay at the live edge.
+    && (
+      liveEdge.previousLatestTime === null
+      || !Number.isFinite(liveEdge.previousLatestTime)
+      || latestTime >= liveEdge.previousLatestTime
+      || leftVisibleTime == null
+    )
   ) {
     const to = renderedCandles.length - 1 + liveEdge.rightOffset;
     return { from: to - span, to };
   }
 
-  if (leftVisibleTime == null) return null;
+  if (leftVisibleTime == null) {
+    if (
+      previousRange.from < 0
+      && renderedCandles.length > 0
+      && (
+        liveEdge?.previousCandleCount === undefined
+        || liveEdge.previousCandleCount <= Math.ceil(span)
+      )
+    ) {
+      const rightOffset = liveEdge && Number.isFinite(liveEdge.rightOffset) ? liveEdge.rightOffset : 0;
+      const to = renderedCandles.length - 1 + rightOffset;
+      return { from: to - span, to };
+    }
+    return null;
+  }
 
   let low = 0;
   let high = renderedCandles.length;

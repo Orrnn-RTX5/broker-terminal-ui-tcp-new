@@ -356,6 +356,55 @@ describe('useToolboxTradeData display lifecycle', () => {
     unmount();
   });
 
+  it('auto-clears rejected order placement rows from the Trade tab after 5 seconds', () => {
+    vi.useFakeTimers();
+    try {
+      const scope = 'authenticated|200001|test|https://test.example.com';
+      const rejectedOrder = {
+        login: 200001,
+        sessionScope: scope,
+        clientOrderId: 'order-rejected-5s',
+        provisionalTicket: -201,
+      };
+      const { result, unmount } = renderHook(() => useToolboxTradeData());
+      act(() => {
+        window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
+          detail: {
+            ...rejectedOrder,
+            status: 'pending',
+            position: { ...rawPosition, ticket: -201, symbol: 'XAUUSD', side: 'buy', volume: 100 },
+          },
+        }));
+        window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
+          detail: {
+            ...rejectedOrder,
+            status: 'rejected',
+            errorCode: 'INSUFFICIENT_MARGIN',
+            errorMessage: 'Insufficient free margin (need 407669.00, available 6107.75)',
+          },
+        }));
+      });
+      expect(result.current.pendingPositions).toHaveLength(1);
+      expect(result.current.pendingPositions[0]).toMatchObject({
+        placementState: 'rejected',
+        placementErrorCode: 'INSUFFICIENT_MARGIN',
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(4_999);
+      });
+      expect(result.current.pendingPositions).toHaveLength(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(result.current.pendingPositions).toHaveLength(0);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps pushed SLTP and profit when an older REST snapshot finishes later', async () => {
     mocks.storeState.positions = [{ ...rawPosition, id: 17, sl: 0, tp: 0 }];
     let resolvePositions!: (value: unknown) => void;

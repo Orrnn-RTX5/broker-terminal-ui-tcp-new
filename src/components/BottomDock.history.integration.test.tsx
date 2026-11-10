@@ -789,4 +789,45 @@ describe('BottomDock History live-deal integration', () => {
         expect(screen.queryByText('Loading trade history…')).not.toBeInTheDocument();
         expect(getHistory).toHaveBeenCalledTimes(1);
     });
+
+    it('records rejected orders with their exact error reason on the History page', async () => {
+        useAppStore.setState({ accountId: '200001', positions: [] });
+        vi.spyOn(tradeGatewayApi, 'getHistoryDataSet').mockResolvedValue(historyDataSet({
+            positions: [],
+            deals: [],
+            orders: [],
+        }));
+
+        renderHistoryDock();
+        fireEvent.click(screen.getByRole('button', { name: 'History — Closed orders and account history' }));
+        await screen.findByText('0 records');
+
+        act(() => {
+            window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
+                detail: {
+                    status: 'rejected',
+                    clientOrderId: 'cid-xau-100',
+                    login: 200001,
+                    sessionScope: 'unauthenticated|200001||',
+                    provisionalTicket: -777,
+                    position: {
+                        id: -777,
+                        ticket: -777,
+                        symbol: 'XAUUSD',
+                        side: 'buy',
+                        volume: 100,
+                        time_create: '2026-11-06T09:46:35.000Z',
+                    },
+                    errorCode: 'INSUFFICIENT_MARGIN',
+                    errorMessage: 'Insufficient free margin (need 407669.00, available 6107.75)',
+                },
+            }));
+        });
+
+        await waitFor(() => expect(screen.getByText('1 records')).toBeInTheDocument());
+        expect(screen.getByTestId('history-row-status--777')).toHaveTextContent('REJECTED');
+        expect(
+            screen.getByText('Rejected · XAUUSD · buy · 100.00 lots: INSUFFICIENT_MARGIN: Insufficient free margin (need 407669.00, available 6107.75)'),
+        ).toBeInTheDocument();
+    });
 });

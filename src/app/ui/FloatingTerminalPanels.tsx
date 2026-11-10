@@ -29,7 +29,7 @@ export const FloatingTerminalPanels = ({ panels, onCloseBulk, onPlaceOrder }: Fl
   <>
     {panels.showDOM && (
       <div
-        className="rtx-dom-dialog absolute z-30 flex flex-col overflow-hidden"
+        className="rtx-dom-dialog fixed z-[1200] flex flex-col overflow-hidden"
         style={{
           left: panels.domPos.x,
           top: panels.domPos.y,
@@ -51,16 +51,13 @@ export const FloatingTerminalPanels = ({ panels, onCloseBulk, onPlaceOrder }: Fl
             onPlaceOrder={onPlaceOrder}
           />
         </Suspense>
-        <div
-          onMouseDown={(event) => panels.handleDomResizeMouseDown(event, 'e')}
-          style={{ position: 'absolute', right: 0, top: 8, bottom: 8, width: 5, cursor: 'ew-resize', background: 'transparent', zIndex: 10 }}
-          className="hover:bg-blue-500/30 rounded transition-colors"
-        />
-        <div
-          onMouseDown={(event) => panels.handleDomResizeMouseDown(event, 's')}
-          style={{ position: 'absolute', bottom: 0, left: 8, right: 8, height: 5, cursor: 'ns-resize', background: 'transparent', zIndex: 10 }}
-          className="hover:bg-blue-500/30 rounded transition-colors"
-        />
+        {resizeEdges.map(({ mode, style }) => (
+          <div
+            key={mode}
+            onMouseDown={(event) => panels.handleDomResizeMouseDown(event, mode)}
+            style={{ position: 'absolute', zIndex: 10, ...style }}
+          />
+        ))}
         <div
           onMouseDown={(event) => panels.handleDomResizeMouseDown(event, 'se')}
           style={{ position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '0 0 10px 0' }}
@@ -74,7 +71,7 @@ export const FloatingTerminalPanels = ({ panels, onCloseBulk, onPlaceOrder }: Fl
 
     {panels.showDataWindow && (
       <div
-        className="absolute z-30"
+        className="fixed z-[1200]"
         style={{
           left: panels.dataWindowPos.x,
           top: panels.dataWindowPos.y,

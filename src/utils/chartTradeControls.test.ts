@@ -679,4 +679,72 @@ describe('createDockedLevelChip', () => {
     expect(chip).toHaveStyle({ cursor: 'default' });
     expect(chip.querySelector('.rtx-trade-level-drag-label')).toHaveStyle({ cursor: 'grab' });
   });
+
+  it('shows concise compact tooltips for SL, TP, Copy URL and action icons in dark theme', () => {
+    const { root } = createEntryTradeControlBar({
+      tradeKey: 'trade:987',
+      ticket: 987,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      volume: 1,
+      isLightSurface: false,
+      leftInset: 10,
+      plainLabel: true,
+      hoverDetails: { ticketLabel: '987' },
+      onShare: vi.fn(),
+    });
+    const tpChip = document.createElement('div');
+    tpChip.className = 'rtx-trade-dock-chip rtx-trade-dock-chip--tp';
+    tpChip.dataset.role = 'TP';
+    tpChip.textContent = 'TP';
+    const slChip = document.createElement('div');
+    slChip.className = 'rtx-trade-dock-chip rtx-trade-dock-chip--sl';
+    slChip.dataset.role = 'SL';
+    slChip.textContent = 'SL';
+    root.append(tpChip, slChip);
+    document.body.appendChild(root);
+
+    const tooltip = root.querySelector<HTMLElement>('.rtx-trade-level-tooltip')!;
+    expect(tooltip.style.display).toBe('none');
+
+    slChip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(tooltip.style.display).toBe('block');
+    expect(tooltip.children[1].textContent).toBe('Drag to add stop loss');
+    expect(tooltip).toHaveStyle({ backgroundColor: '#303030', color: '#f8fafc' });
+
+    slChip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    expect(tooltip.style.display).toBe('none');
+
+    tpChip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(tooltip.style.display).toBe('block');
+    expect(tooltip.children[1].textContent).toBe('Drag to add profit');
+    expect(tooltip).toHaveStyle({ backgroundColor: '#303030', color: '#f8fafc' });
+
+    tpChip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    expect(tooltip.style.display).toBe('none');
+
+    const shareBtn = root.querySelector<HTMLElement>('.rtx-trade-control-btn--share')!;
+    const doubleBtn = root.querySelector<HTMLElement>('.rtx-trade-control-btn--double')!;
+    const reverseBtn = root.querySelector<HTMLElement>('.rtx-trade-control-btn--reverse')!;
+    const closeBtn = root.querySelector<HTMLElement>('.rtx-trade-control-btn--close')!;
+    const volumeChip = root.querySelector<HTMLElement>('.rtx-trade-chip--volume')!;
+    const moneyChip = root.querySelector<HTMLElement>('.rtx-trade-chip--money')!;
+
+    for (const [el, expectedText] of [
+      [shareBtn, 'Copy trade URL'],
+      [doubleBtn, 'Double position'],
+      [reverseBtn, 'Reverse position'],
+      [closeBtn, 'Close position'],
+      [volumeChip, 'BUY 1 lots · #987'],
+      [moneyChip, 'Profit / Loss: — USD'],
+    ] as const) {
+      el.dispatchEvent(new MouseEvent('mouseenter'));
+      expect(tooltip.style.display).toBe('block');
+      expect((tooltip.children[0] as HTMLElement).style.display).toBe('none');
+      expect(tooltip.children[1].textContent).toBe(expectedText);
+      expect(tooltip).toHaveStyle({ backgroundColor: '#303030', color: '#f8fafc' });
+      el.dispatchEvent(new MouseEvent('mouseleave'));
+      expect(tooltip.style.display).toBe('none');
+    }
+  });
 });

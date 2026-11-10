@@ -18,8 +18,13 @@
 }
 
 @keyframes rtx-modify-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes rtx-modify-rise {
@@ -27,6 +32,7 @@
     opacity: 0;
     transform: translateY(10px) scale(0.985);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -1118,8 +1124,179 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modi
   border-color: var(--modify-depth-color) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-depth-action > span {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-depth-action>span {
   border-top-color: var(--modify-depth-color) !important;
+}
+
+/* Laptop Screen Ratio Responsive Scaling for Modify Position & Pending Order Dialog */
+@media (max-width: 1720px),
+(max-height: 920px) {
+  .rtx-modify-dialog {
+    border-radius: 10px;
+    font-size: 11.5px;
+    max-height: min(468px, calc(100vh - 32px));
+  }
+
+  .rtx-modify-header {
+    flex: 0 0 34px;
+    height: 34px;
+    padding: 0 12px;
+  }
+
+  .rtx-modify-title {
+    --rtx-type-size: 12.5px;
+    font-size: 12.5px !important;
+  }
+
+  .rtx-modify-badge-id {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+    padding: 1.5px 6px;
+  }
+
+  .rtx-modify-badge-side {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+    padding: 3px 6px;
+  }
+
+  .rtx-modify-meta-detail {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+  }
+
+  .rtx-modify-close-btn {
+    flex: 0 0 22px;
+    height: 22px;
+    width: 22px;
+  }
+
+  .rtx-modify-chart-header {
+    height: 30px;
+    padding: 0 9px;
+  }
+
+  .rtx-modify-chart-symbol {
+    --rtx-type-size: 12px;
+    font-size: 12px !important;
+  }
+
+  .rtx-modify-chart-quote-pills {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+    padding: 2px 6px;
+  }
+
+  .rtx-modify-chart-toolbar {
+    height: 26px;
+    padding: 0 8px;
+  }
+
+  .rtx-modify-tool-btn {
+    height: 20px;
+    width: 20px;
+  }
+
+  .rtx-modify-form-panel {
+    gap: 6px;
+    padding: 9px 13px;
+  }
+
+  .rtx-modify-field-row {
+    gap: 8px;
+  }
+
+  .rtx-modify-label {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+    width: 78px;
+  }
+
+  .rtx-modify-input,
+  .rtx-modify-volume-compound {
+    --rtx-type-size: 11.5px;
+    border-radius: 5px;
+    font-size: 11.5px !important;
+    height: 27px;
+  }
+
+  .rtx-modify-volume-compound {
+    width: 96px;
+  }
+
+  .rtx-modify-volume-input {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+    padding: 0 7px;
+  }
+
+  .rtx-modify-volume-desc {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+    padding: 4px 9px;
+  }
+
+  .rtx-modify-input--price {
+    flex: 0 0 96px !important;
+    width: 96px !important;
+  }
+
+  .rtx-modify-input--points {
+    flex: 0 0 64px !important;
+    width: 64px !important;
+  }
+
+  .rtx-modify-points-label {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+  }
+
+  .rtx-modify-quote-strip {
+    gap: 8px;
+    padding: 5px 12px;
+  }
+
+  .rtx-modify-quote-tag {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+  }
+
+  .rtx-modify-quote-price {
+    --rtx-type-size: 14px;
+    font-size: 14px !important;
+  }
+
+  .rtx-modify-quote-price strong {
+    --rtx-type-size: 17px;
+    font-size: 17px !important;
+  }
+
+  .rtx-modify-quote-spread {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    padding: 2px 8px;
+  }
+
+  .rtx-modify-actions-stack {
+    gap: 5px;
+  }
+
+  .rtx-modify-btn--submit,
+  .rtx-modify-btn--market,
+  .rtx-modify-btn--close {
+    --rtx-type-size: 12px;
+    border-radius: 6px;
+    font-size: 12px !important;
+    min-height: 30px;
+    padding: 5px 10px;
+  }
+
+  .rtx-modify-notice {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    line-height: 1.4;
+    padding: 5px 9px;
+  }
 }
 
 /* Stack before the fixed chart width crowds the price/points controls. One
