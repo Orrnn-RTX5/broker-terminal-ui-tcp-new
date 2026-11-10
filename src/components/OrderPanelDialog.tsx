@@ -33,6 +33,7 @@ import { inferObservedPriceDigits } from '../utils/chartPriceScale';
 import { readRegisteredSymbolPriceSpec, readRegisteredSymbolStopsLevel } from '../services/dailyChangePriceModeRegistry';
 import { depthExecutionForLevel } from './depthOfMarketModel';
 import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
+import { formatOrderError } from '../utils/orderError';
 import '../styles/order-panel-dialog.css';
 
 // Symbol display names
@@ -558,8 +559,9 @@ function MiniTickChart({
     };
 
     const draw = () => {
-      const cssWidth = Math.max(260, Math.round(canvas.clientWidth || 323));
-      const cssHeight = Math.max(240, Math.round(canvas.clientHeight || 371));
+      const isCompactViewport = window.innerWidth <= 1720 || window.innerHeight <= 920;
+      const cssWidth = Math.max(isCompactViewport ? 160 : 260, Math.round(canvas.clientWidth || (isCompactViewport ? 202 : 323)));
+      const cssHeight = Math.max(isCompactViewport ? 180 : 240, Math.round(canvas.clientHeight || (isCompactViewport ? 310 : 371)));
       const pixelRatio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
       const backingWidth = Math.round(cssWidth * pixelRatio);
       const backingHeight = Math.round(cssHeight * pixelRatio);
@@ -592,8 +594,10 @@ function MiniTickChart({
         monoFont: readCssValue('--font-mono', 'Tahoma, Segoe UI, Consolas, monospace'),
       };
 
-      const tokenSize = Number.parseFloat(readCssValue('--rtx-ui-font-size', '11'));
-      const fontSize = Number.isFinite(tokenSize) && tokenSize > 0 ? Math.min(11.5, Math.max(11, tokenSize)) : 11.5;
+      const tokenSize = Number.parseFloat(readCssValue('--rtx-ui-font-size', isCompactViewport ? '9.5' : '11'));
+      const fontSize = isCompactViewport
+        ? 9.5
+        : (Number.isFinite(tokenSize) && tokenSize > 0 ? Math.min(11.5, Math.max(11, tokenSize)) : 11.5);
       const fontFamily = document.documentElement.classList.contains('rtx-skin-untitled-light')
         ? readCssValue('--font-sans', palette.monoFont)
         : palette.monoFont;
@@ -605,10 +609,13 @@ function MiniTickChart({
       const height = cssHeight;
       const left = 4;
       const samplePrice = Math.max(Math.abs(bid), Math.abs(ask), 100);
-      const right = Math.max(68, Math.ceil(ctx.measureText(formatDialogPrice(samplePrice, digits)).width) + 20);
-      const tagHeight = 17;
+      const right = Math.max(
+        isCompactViewport ? 56 : 68,
+        Math.ceil(ctx.measureText(formatDialogPrice(samplePrice, digits)).width) + (isCompactViewport ? 15 : 20),
+      );
+      const tagHeight = isCompactViewport ? 13 : 17;
       const top = 6;
-      const bottom = 22;
+      const bottom = isCompactViewport ? 17 : 22;
       const plotWidth = Math.max(80, width - left - right);
       const plotHeight = Math.max(80, height - top - bottom);
       const plotRight = left + plotWidth;
@@ -891,15 +898,18 @@ function MiniTickChart({
       const endTimeLabel = formatTickTimeShort(timeEnd, true);
       const minCenterX = left + Math.ceil(ctx.measureText(startDateLabel).width) + 22;
       const maxCenterX = plotRight - Math.ceil(ctx.measureText(endTimeLabel).width) - 22;
+      const minTimeGap = Math.ceil(ctx.measureText('00:00').width) + 14;
+      let lastTimeCenterX = -Infinity;
 
       ctx.textAlign = 'left';
       ctx.fillText(startDateLabel, left, height - 5);
       for (let c = 2; c < gridCols; c += 1) {
         const t = timeStart + (c / gridCols) * timeRange;
         const x = left + (c / gridCols) * plotWidth;
-        if (x < minCenterX || x > maxCenterX) continue;
+        if (x < minCenterX || x > maxCenterX || x - lastTimeCenterX < minTimeGap) continue;
         ctx.textAlign = 'center';
         ctx.fillText(formatTickTimeShort(t, false), x, height - 5);
+        lastTimeCenterX = x;
       }
       ctx.textAlign = 'right';
       ctx.fillText(endTimeLabel, plotRight, height - 5);
@@ -1116,8 +1126,9 @@ function MiniTickChart({
 
         if (badgeLabel) {
           ctx.font = controlFont;
-          const labelWidth = Math.ceil(ctx.measureText(badgeLabel).width) + 10;
-          const boxH = 15;
+          const labelPad = isCompactViewport ? 8 : 10;
+          const labelWidth = Math.ceil(ctx.measureText(badgeLabel).width) + labelPad;
+          const boxH = isCompactViewport ? 13 : 15;
           const boxX = left + 4;
           const boxY = Math.round(clampedY - boxH / 2);
           ctx.fillStyle = tagBg;
@@ -1125,7 +1136,7 @@ function MiniTickChart({
           ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
-          ctx.fillText(badgeLabel, boxX + 5, clampedY);
+          ctx.fillText(badgeLabel, boxX + (isCompactViewport ? 4 : 5), clampedY);
         }
 
         drawPriceAxisTag(levelPrice, tagBg, '#ffffff');
@@ -1779,12 +1790,9 @@ export function OrderPanelDialog({
   const quoteChartSettings = useChartSettingsStore((state) => (
     selectChartPropertiesForQuote(state, symbol)
   ));
-  const [isAdvancedUntitledLight, setIsAdvancedUntitledLight] = useState(() => {
-    if (typeof document === 'undefined') return false;
-    const root = document.documentElement;
-    return root.classList.contains('rtx-advanced-view')
-      && root.classList.contains('rtx-skin-untitled-light');
-  });
+  // Start with deterministic false so SSR and initial client hydration match,
+  // then synchronize immediately before browser paint via useLayoutEffect below.
+  const [isAdvancedUntitledLight, setIsAdvancedUntitledLight] = useState(false);
   const dialogQuoteColors = getChartDirectionalQuoteColors(quoteChartSettings, {
     isAdvancedUntitledLight,
   });
@@ -1948,6 +1956,32 @@ export function OrderPanelDialog({
   // Margin currency from the broker margin response, else the account
   // currency; omitted when neither is known (never derived from the symbol).
   const baseCurrency = marginCurrency || account?.currency || '';
+  const accountBalance = account && Number.isFinite(Number(account.balance)) ? Number(account.balance) : null;
+  const accountFreeMargin = account && Number.isFinite(Number(account.freeMargin)) ? Number(account.freeMargin) : null;
+  const hasZeroOrNegativeBalance = accountBalance !== null
+    && accountBalance <= 0
+    && (accountFreeMargin === null || accountFreeMargin <= 0);
+  const hasInsufficientMargin = Boolean(
+    hasZeroOrNegativeBalance
+    || (
+      requiredMargin !== null
+      && Number.isFinite(requiredMargin)
+      && requiredMargin > 0
+      && accountFreeMargin !== null
+      && requiredMargin > accountFreeMargin
+    ),
+  );
+  const insufficientMarginNotice = hasZeroOrNegativeBalance
+    ? tr('Insufficient account balance (0.00) to open a new order.')
+    : hasInsufficientMargin && requiredMargin !== null && accountFreeMargin !== null
+      ? tr(
+          'Insufficient free margin: required {{value0}}, available {{value1}}.',
+          {
+            value0: formatRequiredMargin(requiredMargin, baseCurrency),
+            value1: formatRequiredMargin(accountFreeMargin, baseCurrency),
+          },
+        )
+      : null;
 
   useEffect(() => {
     if (!isOpen) {
@@ -2246,7 +2280,11 @@ export function OrderPanelDialog({
       useLastSymbolStore.getState().setLastSymbol(symbol, side.toUpperCase() as 'BUY' | 'SELL');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Order failed');
+      const rawMsg = typeof err?.message === 'string' ? err.message.trim() : '';
+      const formattedMsg = /^(?:Order (?:failed|status unknown):|Account busy|[A-Z][A-Z0-9_]{2,}:\s)/.test(rawMsg)
+        ? rawMsg
+        : formatOrderError(err);
+      setError(formattedMsg || 'Order failed');
       setTimeout(() => setError(null), 5000);
     } finally {
       setIsPlacing(false);
@@ -2809,7 +2847,11 @@ export function OrderPanelDialog({
                   {orderType === 'Market Execution' && (
                     <span className="rtx-order-dialog__contract-units">{contractUnitsText}</span>
                   )}
-                  <span className="rtx-order-dialog__margin" data-testid="order-required-margin">
+                  <span
+                    className={`rtx-order-dialog__margin ${hasInsufficientMargin ? 'rtx-order-dialog__margin--insufficient' : ''}`}
+                    data-testid="order-required-margin"
+                    data-insufficient-margin={hasInsufficientMargin ? 'true' : 'false'}
+                  >
                     {formatRequiredMargin(requiredMargin, baseCurrency)}
                   </span>
                 </div>
@@ -3148,14 +3190,26 @@ export function OrderPanelDialog({
               </div>
             </div>
 
-            {error && (
-              <div className="rtx-order-dialog__message rtx-order-dialog__message--error" role="alert">{tr(error)}</div>
-            )}
-            {isMarketExecutionBlocked && !error && (
-              <div className="rtx-order-dialog__message rtx-order-dialog__message--warning" role="status">
-                {marketBlockedMessage || tr('Market is closed for {{value0}}.', { value0: symbol })}
-              </div>
-            )}
+            <div
+              className="rtx-order-dialog__message-slot"
+              data-has-message={Boolean(error || isMarketExecutionBlocked || insufficientMarginNotice)}
+            >
+              {error ? (
+                <div className="rtx-order-dialog__message rtx-order-dialog__message--error" role="alert">{tr(error)}</div>
+              ) : isMarketExecutionBlocked ? (
+                <div className="rtx-order-dialog__message rtx-order-dialog__message--warning" role="status">
+                  {marketBlockedMessage || tr('Market is closed for {{value0}}.', { value0: symbol })}
+                </div>
+              ) : insufficientMarginNotice ? (
+                <div
+                  className="rtx-order-dialog__message rtx-order-dialog__message--warning"
+                  data-testid="order-insufficient-margin-notice"
+                  role="status"
+                >
+                  {insufficientMarginNotice}
+                </div>
+              ) : null}
+            </div>
 
             {/* Bottom Action Footer: Sell / Buy Buttons, Sentiment Bar & Spread Summary */}
             <div className="rtx-order-dialog__bottom-actions">

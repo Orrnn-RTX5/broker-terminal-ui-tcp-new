@@ -6,7 +6,11 @@ import {
   getCommittedBrokerAccountSessionScopeKey,
   onCommittedBrokerAccountSessionScopeChange,
 } from '../../../services/brokerSession';
-import { loadTerminalHistory, peekTerminalHistory } from '../../../services/terminalHistory';
+import {
+  loadTerminalHistory,
+  peekTerminalHistory,
+  subscribeTerminalHistoryRejectedUpdates,
+} from '../../../services/terminalHistory';
 import { useAppStore } from '../../../store/useAppStore';
 import { EMPTY_HISTORY_DATA_SET } from './historyFilters';
 import { loadBalanceHistory, type HistoryBalanceOperation } from './balanceHistory';
@@ -146,8 +150,30 @@ export const useHistoryDataController = (
       void fetchHistory({ background: true, refresh: true });
     };
     window.addEventListener(TRADE_HISTORY_REFRESH_COMPLETED_EVENT, handleCompleted);
-    return () => window.removeEventListener(TRADE_HISTORY_REFRESH_COMPLETED_EVENT, handleCompleted);
-  }, [activeLogin, fetchHistory]);
+    const unsubscribeRejected = subscribeTerminalHistoryRejectedUpdates((login, updatedData) => {
+      if (login !== activeLogin) return;
+      setHistoryData((prev) => {
+        const seenClientIds = new Set(
+          prev.orders
+            .map((order) => order.clientOrderId)
+            .filter((id): id is string => Boolean(id)),
+        );
+        const addedOrders = updatedData.orders.filter(
+          (order) => order.clientOrderId && !seenClientIds.has(order.clientOrderId),
+        );
+        if (addedOrders.length === 0) return updatedData;
+        return {
+          ...prev,
+          orders: [...addedOrders, ...prev.orders],
+        };
+      });
+      setHistoryLoadedAt(Date.now());
+    });
+    return () => {
+      window.removeEventListener(TRADE_HISTORY_REFRESH_COMPLETED_EVENT, handleCompleted);
+      unsubscribeRejected();
+    };
+  }, [activeLogin, activeScopeKey, fetchHistory]);
 
   useEffect(() => onCommittedBrokerAccountSessionScopeChange(() => {
     requestSerialRef.current += 1;

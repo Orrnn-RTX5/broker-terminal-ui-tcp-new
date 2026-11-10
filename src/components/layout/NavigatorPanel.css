@@ -40,3 +40,48 @@ html.rtx-skin-untitled-light .navigator-panel {
 .navigator-panel .navigator-tree-item__row[data-account-active="false"]:hover .navigator-tree-item__label {
     color: var(--navigator-account-inactive-hover-text, #a1a1aa) !important;
 }
+
+@media (max-width: 1720px), (max-height: 920px) {
+    .navigator-panel .navigator-panel__body {
+        padding: 2px 3px !important;
+    }
+
+    .navigator-panel .navigator-tree-item {
+        padding-left: 10px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__row {
+        min-height: 20px !important;
+        height: 20px !important;
+        gap: 4px !important;
+        padding: 0 3px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__line[style*="height: 15px"] {
+        height: 10px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__line[style*="top: 15px"] {
+        top: 10px !important;
+        width: 6px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__icon svg,
+    .navigator-panel .navigator-tree-item__icon img,
+    .navigator-panel .navigator-account-icon,
+    .navigator-panel .navigator-tree-item__lock svg {
+        width: 12px !important;
+        height: 12px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__chevron svg {
+        width: 10px !important;
+        height: 10px !important;
+    }
+
+    .navigator-panel section p {
+        padding: 2px 14px 3px !important;
+        font-size: 10.5px !important;
+        line-height: 14px !important;
+    }
+}

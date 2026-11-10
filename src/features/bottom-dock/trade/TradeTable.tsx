@@ -599,6 +599,11 @@ export function TradeTable({
     }
   }, [displayedLivePositions.length]);
 
+  const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
+  const toColumnWidthStyle = (width: number) => (
+    visibleTradeTableWidth > 0 ? `${(width / visibleTradeTableWidth) * 100}%` : width
+  );
+
   const renderColumnResizeHandle = (key: TradeColumnWidthKey) => (
     <button
       type="button"
@@ -628,7 +633,7 @@ export function TradeTable({
       <th
         key={key}
         className={`relative py-[3px] whitespace-nowrap border-r border-zinc-700/70 ${isSymbolColumn ? 'pl-4 pr-1.5 text-left' : 'px-1.5 text-center'}`}
-        style={{ width: columnWidths[key] }}
+        style={{ width: toColumnWidthStyle(columnWidths[key]) }}
         title={tr(TRADE_COLUMN_HOVER_COMMENTS[key])}
         aria-sort={sortState?.column === sortColumn ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
       >
@@ -652,7 +657,7 @@ export function TradeTable({
     <th
       key={column.key}
       className="relative px-1.5 py-[3px] text-center whitespace-nowrap border-r border-zinc-700/70"
-      style={{ width: columnWidths[column.key] }}
+      style={{ width: toColumnWidthStyle(columnWidths[column.key]) }}
       title={tr(TRADE_COLUMN_HOVER_COMMENTS[column.key])}
     >
       <span className="block px-2 whitespace-nowrap">{tr(column.label)}</span>
@@ -707,8 +712,6 @@ export function TradeTable({
     profitMode, selectedPositionKey, setSelectedPositionKey, tr, visibleOptionalColumnCount,
   ]);
 
-  const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
-
   return (
     <div
       ref={scrollContainerRef}
@@ -719,11 +722,11 @@ export function TradeTable({
         style={{ minWidth: visibleTradeTableWidth, fontFamily: '"Segoe UI", Tahoma, Arial, sans-serif', fontVariantNumeric: 'tabular-nums' }}
       >
         <colgroup>
-          <col style={{ width: columnWidths.symbol }} />
+          <col style={{ width: toColumnWidthStyle(columnWidths.symbol) }} />
           {visibleTradeColumns.map(column => (
-            <col key={column.key} style={{ width: columnWidths[column.key] }} />
+            <col key={column.key} style={{ width: toColumnWidthStyle(columnWidths[column.key]) }} />
           ))}
-          <col style={{ width: closeColumnWidth }} />
+          <col style={{ width: toColumnWidthStyle(closeColumnWidth) }} />
         </colgroup>
         <thead className="rtx-trade-table__head sticky top-0 bg-[#17181c] text-[#c9cfdb] z-10 font-normal text-[12px] leading-[18px] uppercase border-y border-zinc-700/70 select-none shadow-[0_1px_0_0_rgba(255,255,255,0.04)]">
           <tr className="h-[30px]">
@@ -736,7 +739,7 @@ export function TradeTable({
             })}
             <th
               className="pl-2.5 pr-4 py-[3px] text-center whitespace-nowrap"
-              style={{ width: closeColumnWidth }}
+              style={{ width: toColumnWidthStyle(closeColumnWidth) }}
               aria-label={tr('Close position')}
               title={tr(TRADE_COLUMN_HOVER_COMMENTS.close)}
             >

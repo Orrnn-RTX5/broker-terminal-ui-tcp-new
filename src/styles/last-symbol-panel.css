@@ -525,14 +525,20 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel > .last-sy
   background: var(--lst-raised);
   border: 1px solid var(--lst-border);
   border-radius: 6px;
+  box-sizing: border-box;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 9px;
   height: 72px;
   justify-content: center;
+  max-height: 72px;
+  min-height: 72px;
+  min-width: 0;
+  overflow: hidden;
   padding: 0 14px;
   text-align: left;
+  width: 100%;
 }
 
 .last-symbol-trade-button--sell {
@@ -584,9 +590,16 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel > .last-sy
   --rtx-type-weight: 600;
   font-family: var(--font-mono);
   font-size: 18px;
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.15;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 
 .last-symbol-trade-button__quote-label {
@@ -954,6 +967,579 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symb
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-toggle input:checked + span {
   background: var(--lst-accent);
+}
+
+/* Laptop Screen Ratio Responsive Scaling for Last Symbol Trader Modal
+   (Desktop > 1720px width and > 920px height stays 100% untouched) */
+@media (max-width: 1720px), (max-height: 920px) {
+  .rtx-last-symbol-panel {
+    width: 388px;
+    font-size: 11.5px;
+    line-height: 1.3;
+  }
+
+  .rtx-last-symbol-panel > .last-symbol-card {
+    border-radius: 7px;
+    max-height: calc(100vh - 20px);
+  }
+
+  .last-symbol-header {
+    height: 40px;
+    padding: 0 13px 0 15px;
+  }
+
+  .last-symbol-brand {
+    gap: 8px;
+  }
+
+  .last-symbol-brand strong {
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 600;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+
+  .last-symbol-brand__icon {
+    height: 23px;
+    width: 23px;
+    border-radius: 5px;
+  }
+
+  .last-symbol-brand__icon svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .last-symbol-header__actions {
+    gap: 4px;
+  }
+
+  .last-symbol-icon-button {
+    height: 25px;
+    width: 25px;
+    border-radius: 5px;
+  }
+
+  .last-symbol-icon-button svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .last-symbol-summary,
+  .last-symbol-volume,
+  .last-symbol-execution {
+    padding: 9px 15px;
+  }
+
+  .last-symbol-section-heading {
+    --rtx-type-size: 11px;
+    --rtx-type-weight: 500;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  .last-symbol-status {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    gap: 5px;
+    line-height: 13px !important;
+    padding: 2px 7px;
+  }
+
+  .last-symbol-status__dot {
+    height: 5px;
+    width: 5px;
+  }
+
+  .last-symbol-summary__row {
+    gap: 10px;
+    margin-top: 5px;
+  }
+
+  .last-symbol-value {
+    --rtx-type-size: 18px;
+    --rtx-type-weight: 600;
+    font-size: 18px !important;
+    line-height: 1.15 !important;
+  }
+
+  .last-symbol-value[data-empty='true'] {
+    --rtx-type-size: 14px;
+    font-size: 14px !important;
+  }
+
+  .last-symbol-summary__row > div:first-child > :not(.last-symbol-value),
+  .last-symbol-summary__row > div:first-child > :not(.last-symbol-value) * {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    line-height: 1.25 !important;
+  }
+
+  .last-symbol-history,
+  .last-symbol-history > span:not(.last-symbol-side) {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    gap: 2px;
+  }
+
+  .last-symbol-side {
+    --rtx-type-size: 10px;
+    --rtx-type-weight: 600;
+    font-size: 10px !important;
+    line-height: 16px !important;
+    padding: 0 6px;
+    border-radius: 4px;
+  }
+
+  .last-symbol-volume {
+    gap: 7px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .last-symbol-unit {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+  }
+
+  .last-symbol-stepper {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    border-radius: 6px;
+  }
+
+  .last-symbol-stepper button,
+  .last-symbol-stepper input {
+    height: 32px;
+  }
+
+  .last-symbol-stepper button svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .last-symbol-stepper input {
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 600;
+    font-size: 12px !important;
+    padding: 0 8px;
+  }
+
+  .last-symbol-presets {
+    gap: 6px;
+  }
+
+  .last-symbol-presets button {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    height: 24px;
+    border-radius: 5px;
+  }
+
+  .last-symbol-protection-summary {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    gap: 8px;
+    margin: 4px 15px 0;
+    min-height: 24px;
+    padding: 4px 8px;
+  }
+
+  .last-symbol-notice,
+  .last-symbol-alert {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    line-height: 1.3 !important;
+    margin: 4px 15px;
+    padding: 4px 8px;
+  }
+
+  .last-symbol-execution {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .last-symbol-actions {
+    gap: 9px;
+    margin-top: 7px;
+  }
+
+  .last-symbol-trade-button {
+    height: 54px;
+    min-height: 54px;
+    max-height: 54px;
+    gap: 5px;
+    padding: 0 13px;
+    border-radius: 6px;
+  }
+
+  .last-symbol-trade-button__top strong {
+    --rtx-type-size: 10.5px;
+    --rtx-type-weight: 600;
+    font-size: 10.5px !important;
+  }
+
+  .last-symbol-trade-button__quote-label {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+  }
+
+  .last-symbol-trade-button__price {
+    --rtx-type-size: 15px;
+    --rtx-type-weight: 600;
+    font-size: 15px !important;
+    line-height: 1.15 !important;
+  }
+
+  .last-symbol-close-row {
+    padding: 0 15px 9px;
+  }
+
+  .last-symbol-close-button {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 5px;
+  }
+
+  .last-symbol-close-button__label {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    gap: 5px;
+  }
+
+  .last-symbol-close-button__label svg {
+    width: 11px !important;
+    height: 11px !important;
+  }
+
+  .last-symbol-close-button__value {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+    gap: 6px;
+  }
+
+  .last-symbol-account-summary {
+    padding: 8px 15px;
+    gap: 12px;
+  }
+
+  .last-symbol-account-summary > div {
+    gap: 2px;
+  }
+
+  .last-symbol-account-summary > div + div {
+    padding-left: 12px;
+  }
+
+  .last-symbol-account-summary dt {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .last-symbol-account-summary dd {
+    --rtx-type-size: 11.5px;
+    --rtx-type-weight: 600;
+    font-size: 11.5px !important;
+    line-height: 1.25 !important;
+  }
+
+  .last-symbol-settings {
+    padding: 8px 15px;
+  }
+
+  .last-symbol-settings__heading {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+    gap: 2px;
+    margin-bottom: 3px;
+  }
+
+  .last-symbol-settings__heading small {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  .last-symbol-setting-row {
+    min-height: 38px;
+    padding: 5px 0;
+  }
+
+  .last-symbol-setting-row strong {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+  }
+
+  .last-symbol-setting-row small {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+    line-height: 1.25 !important;
+    margin-top: 1px;
+  }
+
+  .last-symbol-field {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    margin: 0 0 6px;
+  }
+
+  .last-symbol-field small {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+  }
+
+  .last-symbol-field input {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    height: 25px;
+    padding: 0 8px;
+    width: 74px;
+  }
+
+  .last-symbol-protection-fields {
+    gap: 9px;
+  }
+}
+
+@media (max-width: 1440px), (max-height: 780px) {
+  .rtx-last-symbol-panel {
+    width: 376px;
+  }
+
+  .last-symbol-header {
+    height: 37px;
+    padding: 0 12px 0 14px;
+  }
+
+  .last-symbol-brand strong {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+  }
+
+  .last-symbol-brand__icon {
+    height: 22px;
+    width: 22px;
+  }
+
+  .last-symbol-icon-button {
+    height: 24px;
+    width: 24px;
+  }
+
+  .last-symbol-summary,
+  .last-symbol-volume,
+  .last-symbol-execution {
+    padding: 8px 14px;
+  }
+
+  .last-symbol-summary__row {
+    margin-top: 4px;
+  }
+
+  .last-symbol-value {
+    --rtx-type-size: 17px;
+    font-size: 17px !important;
+  }
+
+  .last-symbol-volume {
+    gap: 6px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .last-symbol-stepper {
+    grid-template-columns: 33px minmax(0, 1fr) 33px;
+  }
+
+  .last-symbol-stepper button,
+  .last-symbol-stepper input {
+    height: 29px;
+  }
+
+  .last-symbol-stepper input {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+  }
+
+  .last-symbol-presets button {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+    height: 22px;
+  }
+
+  .last-symbol-notice,
+  .last-symbol-alert {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    margin: 3px 14px;
+    padding: 4px 8px;
+  }
+
+  .last-symbol-execution {
+    padding-top: 6px;
+    padding-bottom: 7px;
+  }
+
+  .last-symbol-actions {
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .last-symbol-trade-button {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    gap: 4px;
+    padding: 0 12px;
+  }
+
+  .last-symbol-trade-button__top strong {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+  }
+
+  .last-symbol-trade-button__quote-label {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+  }
+
+  .last-symbol-trade-button__price {
+    --rtx-type-size: 14px;
+    font-size: 14px !important;
+  }
+
+  .last-symbol-close-row {
+    padding: 0 14px 8px;
+  }
+
+  .last-symbol-close-button {
+    height: 26px;
+    padding: 0 9px;
+  }
+
+  .last-symbol-close-button__label {
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+  }
+
+  .last-symbol-close-button__value {
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
+  }
+
+  .last-symbol-account-summary {
+    padding: 7px 14px;
+    gap: 12px;
+  }
+
+  .last-symbol-account-summary > div + div {
+    padding-left: 12px;
+  }
+
+  .last-symbol-account-summary dt {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+  }
+
+  .last-symbol-account-summary dd {
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
+  }
+}
+
+@media (max-width: 1280px), (max-height: 640px) {
+  .rtx-last-symbol-panel {
+    width: 364px;
+  }
+
+  .last-symbol-header {
+    height: 34px;
+    padding: 0 11px 0 13px;
+  }
+
+  .last-symbol-summary,
+  .last-symbol-volume,
+  .last-symbol-execution {
+    padding: 7px 13px;
+  }
+
+  .last-symbol-summary__row {
+    margin-top: 4px;
+  }
+
+  .last-symbol-value {
+    --rtx-type-size: 16px;
+    font-size: 16px !important;
+  }
+
+  .last-symbol-volume {
+    gap: 5px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .last-symbol-stepper {
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+  }
+
+  .last-symbol-stepper button,
+  .last-symbol-stepper input {
+    height: 27px;
+  }
+
+  .last-symbol-stepper input {
+    --rtx-type-size: 11.5px;
+    font-size: 11.5px !important;
+  }
+
+  .last-symbol-presets button {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+    height: 21px;
+  }
+
+  .last-symbol-notice,
+  .last-symbol-alert {
+    margin: 3px 13px;
+    padding: 4px 7px;
+  }
+
+  .last-symbol-execution {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .last-symbol-actions {
+    gap: 8px;
+    margin-top: 5px;
+  }
+
+  .last-symbol-trade-button {
+    height: 45px;
+    min-height: 45px;
+    max-height: 45px;
+    gap: 3px;
+    padding: 0 11px;
+  }
+
+  .last-symbol-trade-button__price {
+    --rtx-type-size: 13.5px;
+    font-size: 13.5px !important;
+  }
+
+  .last-symbol-close-row {
+    padding: 0 13px 7px;
+  }
+
+  .last-symbol-close-button {
+    height: 25px;
+    padding: 0 8px;
+  }
+
+  .last-symbol-account-summary {
+    padding: 6px 13px;
+  }
 }
 
 @media (max-width: 340px) {

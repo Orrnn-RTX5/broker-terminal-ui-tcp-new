@@ -684,19 +684,226 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-
 }
 
 /* Tighten every tab equally while keeping the close action labels visible. */
+html .rtx-bottom-dock__tabs {
+  container: rtx-dock-tabs / inline-size;
+}
+
 @container rtx-dock-tabs (max-width: 1550px) {
   html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
   html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
-    padding-left: 10px !important;
-    padding-right: 10px !important;
+    padding-left: clamp(4.5px, 0.5cqi, 9px) !important;
+    padding-right: clamp(4.5px, 0.5cqi, 9px) !important;
+    gap: 2.5px !important;
   }
 }
 
-@container rtx-dock-tabs (max-width: 1350px) {
+@container rtx-dock-tabs (max-width: 1250px) {
   html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
   html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: clamp(3.5px, 0.44cqi, 6.5px) !important;
+    padding-right: clamp(3.5px, 0.44cqi, 6.5px) !important;
+    gap: 2px !important;
+    --rtx-type-size: 10.5px !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html .rtx-bottom-dock__tabs .rtx-dock-tab span {
+    --rtx-type-size: 10.5px !important;
+    font-size: 10.5px !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab svg {
+    width: 9px !important;
+    height: 9px !important;
+  }
+}
+
+@container rtx-dock-tabs (max-width: 1060px) {
+  html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: clamp(2.5px, 0.36cqi, 4.5px) !important;
+    padding-right: clamp(2.5px, 0.36cqi, 4.5px) !important;
+    gap: 1.5px !important;
+    --rtx-type-size: 10px !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html .rtx-bottom-dock__tabs .rtx-dock-tab span {
+    --rtx-type-size: 10px !important;
+    font-size: 10px !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab svg {
+    width: 8.5px !important;
+    height: 8.5px !important;
+  }
+}
+
+@container rtx-dock-tabs (max-width: 920px) {
+  html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: clamp(1.75px, 0.28cqi, 3px) !important;
+    padding-right: clamp(1.75px, 0.28cqi, 3px) !important;
+    gap: 1px !important;
+    --rtx-type-size: 9.25px !important;
+    letter-spacing: -0.015em !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html .rtx-bottom-dock__tabs .rtx-dock-tab span {
+    --rtx-type-size: 9.25px !important;
+    font-size: 9.25px !important;
+    letter-spacing: -0.015em !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab svg {
+    width: 7.5px !important;
+    height: 7.5px !important;
+  }
+}
+
+@container rtx-dock-tabs (max-width: 760px) {
+  html:not(.rtx-skin-untitled-light) .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab {
+    padding-left: 1.5px !important;
+    padding-right: 1.5px !important;
+    gap: 1px !important;
+    --rtx-type-size: 8.5px !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab,
+  html .rtx-bottom-dock__tabs .rtx-dock-tab span {
+    --rtx-type-size: 8.5px !important;
+    font-size: 8.5px !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  html .rtx-bottom-dock__tabs .rtx-dock-tab svg {
+    width: 7px !important;
+    height: 7px !important;
+  }
+}
+
+/* Laptop responsive layout parity: ensure Positions/Trade table, Bottom Dock tabs,
+   Market Watch, and Navigator fit 100% visibly like the desktop view without clipping */
+@media (max-width: 1720px), (max-height: 920px) {
+  html [data-dock-child="left-sidebar"] {
+    min-width: clamp(224px, 20.5vw, 256px) !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table,
+  html .rtx-bottom-dock .rtx-trade-footer,
+  html .rtx-bottom-dock .rtx-trade-footer-inner,
+  html .rtx-bottom-dock .rtx-trade-empty-state {
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table thead th,
+  html .rtx-bottom-dock .rtx-trade-table__head th {
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+    font-size: 10px !important;
+    height: 22px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table thead th > span,
+  html .rtx-bottom-dock .rtx-trade-table thead th > button {
+    padding-left: 1px !important;
+    padding-right: 1px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table thead th:first-child,
+  html .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row td:first-child {
     padding-left: 6px !important;
-    padding-right: 6px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table thead th:last-child,
+  html .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row td:last-child {
+    padding-left: 3px !important;
+    padding-right: 5px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row {
+    height: 21px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row td {
+    padding-left: 3px !important;
+    padding-right: 3px !important;
+    font-size: 10.5px !important;
+    line-height: 17px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-row-actions {
+    gap: 3px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-action-button {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-action-button svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-footer-metrics {
+    gap: 8px !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-footer-metrics::-webkit-scrollbar {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1366px) {
+  html [data-dock-child="left-sidebar"] {
+    min-width: clamp(220px, 20.5vw, 244px) !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table {
+    table-layout: auto !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table thead th,
+  html .rtx-bottom-dock .rtx-trade-table__head th {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    font-size: 10px !important;
+    height: 22px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-table tbody tr.rtx-trade-row td {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    font-size: 10.5px !important;
+  }
+
+  html .rtx-bottom-dock .rtx-trade-footer-metrics {
+    gap: 6px !important;
+  }
+}
+
+@media (max-width: 980px) {
+  html [data-dock-child="left-sidebar"] {
+    min-width: 212px !important;
+  }
+}
+
+@media (max-height: 900px), (max-width: 1700px) {
+  html .navigator-panel .navigator-tree-item__row {
+    min-height: 20px !important;
+    height: 20px !important;
+  }
+
+  html .navigator-panel .navigator-tree-item__label {
+    font-size: 11px !important;
+    line-height: 16px !important;
   }
 }
 

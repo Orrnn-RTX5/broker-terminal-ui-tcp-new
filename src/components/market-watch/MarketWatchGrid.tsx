@@ -116,8 +116,10 @@ export const MarketWatchGrid = ({
 
   const columnHeaders = MARKET_WATCH_COLUMN_HEADERS;
   const hasSeparateDailyChangePrice = columns.includes('dailyChangePrice');
+  const isLaptopViewport = typeof window !== 'undefined'
+    && (window.innerWidth <= 1720 || window.innerHeight <= 920 || (panelWidth > 0 && panelWidth <= 260));
   const columnWidths = useMemo<Partial<Record<MarketWatchColumnId, number>>>(() => ({
-    symbol: 78,
+    symbol: isLaptopViewport ? 86 : 78,
     bid: hasSeparateDailyChangePrice ? 74 : 58,
     ask: hasSeparateDailyChangePrice ? 74 : 58,
     last: 80,
@@ -126,7 +128,7 @@ export const MarketWatchGrid = ({
     volume: 76,
     spread: 64,
     time: marketWatchOptions.showMilliseconds ? 104 : 82,
-    dailyChange: hasSeparateDailyChangePrice ? 76 : 96,
+    dailyChange: hasSeparateDailyChangePrice ? 76 : (isLaptopViewport ? 88 : 96),
     dailyChangePrice: 76,
     source: 110,
     accruedInterest: 102,
@@ -139,7 +141,7 @@ export const MarketWatchGrid = ({
     openInterest: 92,
     averageWeightedPrice: 138,
     theoreticalPrice: 106,
-  }), [hasSeparateDailyChangePrice, marketWatchOptions.showMilliseconds]);
+  }), [hasSeparateDailyChangePrice, isLaptopViewport, marketWatchOptions.showMilliseconds]);
   const totalBaseColumnWidth = Math.max(
     1,
     columns.reduce((total, column) => total + (columnWidths[column] ?? 82), 0),

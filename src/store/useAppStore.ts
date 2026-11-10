@@ -330,6 +330,9 @@ export interface Trade {
   contractSize?: number;
   digits?: number;
   historySource?: 'closed-position' | 'deal' | 'order';
+  clientOrderId?: string;
+  placementErrorCode?: string;
+  placementErrorMessage?: string;
 }
 
 export interface SavedAccount {

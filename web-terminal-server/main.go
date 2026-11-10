@@ -219,13 +219,59 @@ func loadAuthorityMasterPubHex(exeDir string) string {
 	return ""
 }
 
+func loadDotEnvFiles(dirs ...string) {
+	for _, dir := range dirs {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, ".env"))
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			eq := strings.IndexByte(line, '=')
+			if eq <= 0 {
+				continue
+			}
+			k := strings.TrimSpace(line[:eq])
+			v := strings.TrimSpace(line[eq+1:])
+			v = strings.Trim(v, `"'`)
+			if k != "" && os.Getenv(k) == "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
+}
+
 func main() {
+	exePath, _ := os.Executable()
+	exeDir := filepath.Dir(exePath)
+	cwd, _ := os.Getwd()
+	loadDotEnvFiles(cwd, exeDir)
+
+	defaultTargetTCP := envOrDefault("BROKER_TCP_ADDR", "")
+	if defaultTargetTCP == "" || defaultTargetTCP == "127.0.0.1:4443" {
+		if v := envOrDefault("VITE_DEFAULT_MT5_SERVER", ""); strings.Contains(v, ":") {
+			defaultTargetTCP = v
+		}
+	}
+	if defaultTargetTCP == "" {
+		defaultTargetTCP = "127.0.0.1:4443"
+	}
+
+	defaultBrokerID := envOrDefault("BROKER_ID", envOrDefault("VITE_BROKER_ID", "fxtrust-tcp"))
+	defaultBrokerName := envOrDefault("BROKER_NAME", defaultBrokerID)
+
 	listenFlag := flag.String("listen", envOrDefault("WEB_TERMINAL_LISTEN", "0.0.0.0:8443"), "HTTP/HTTPS & Binary WebSocket listen address")
-	targetFlag := flag.String("server", envOrDefault("BROKER_TCP_ADDR", "127.0.0.1:4443"), "Target Encrypted Binary TCP Server (IP:Port)")
+	targetFlag := flag.String("server", defaultTargetTCP, "Target Encrypted Binary TCP Server (IP:Port)")
 	gatewayRTOFlag := flag.String("gateway-rto", envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), "Direct 256-Shard RAM + Binary WAL Engine RTO\\x01 TCP address (:8190)")
 	saFlag := flag.String("superadmin", envOrDefault("SUPERADMIN_TCP_ADDR", "127.0.0.1:9100"), "Super Admin Encrypted Binary TCP Hub (:9100) for Broker Discovery & Multi-App Routing")
-	brokerIDFlag := flag.String("broker-id", envOrDefault("BROKER_ID", "fxtrust-tcp"), "Initial Broker ID")
-	brokerNameFlag := flag.String("broker-name", envOrDefault("BROKER_NAME", "FXTrust-TCP-Live"), "Initial Broker Name / Server label")
+	brokerIDFlag := flag.String("broker-id", defaultBrokerID, "Initial Broker ID")
+	brokerNameFlag := flag.String("broker-name", defaultBrokerName, "Initial Broker Name / Server label")
 	tlsCertFlag := flag.String("tls-cert", envOrDefault("WEB_TERMINAL_TLS_CERT", ""), "Optional TLS certificate PEM path for direct HTTPS/WSS (zero Cloudflare)")
 	tlsKeyFlag := flag.String("tls-key", envOrDefault("WEB_TERMINAL_TLS_KEY", ""), "Optional TLS private key PEM path for direct HTTPS/WSS (zero Cloudflare)")
 	flag.Parse()
@@ -233,9 +279,6 @@ func main() {
 	if strings.TrimSpace(*gatewayRTOFlag) != "" {
 		_ = os.Setenv("BROKER_GATEWAY_RTO_ADDR", strings.TrimSpace(*gatewayRTOFlag))
 	}
-
-	exePath, _ := os.Executable()
-	exeDir := filepath.Dir(exePath)
 
 	// Optional adjacent web-terminal-config.json override
 	cfgFilePath := filepath.Join(exeDir, "web-terminal-config.json")
@@ -274,6 +317,19 @@ func main() {
 		}
 	}
 
+	if *tlsCertFlag != "" || *tlsKeyFlag != "" {
+		if _, err1 := os.Stat(*tlsCertFlag); err1 != nil {
+			*tlsCertFlag = ""
+			*tlsKeyFlag = ""
+		} else if _, err2 := os.Stat(*tlsKeyFlag); err2 != nil {
+			*tlsCertFlag = ""
+			*tlsKeyFlag = ""
+		}
+	}
+	if (*tlsCertFlag == "" || *tlsKeyFlag == "") && (*listenFlag == "0.0.0.0:443" || *listenFlag == ":443") {
+		*listenFlag = "127.0.0.1:8443"
+	}
+
 	subFS, err := fs.Sub(embeddedDist, "dist")
 	if err != nil {
 		log.Fatalf("Failed to mount embedded UI dist: %v", err)
@@ -297,6 +353,12 @@ func main() {
 	tcpAddr := ln.Addr().(*net.TCPAddr)
 	ln = tcpNoDelayListener{Listener: ln}
 
+	initialTarget := strings.TrimSpace(*targetFlag)
+	localBrokerID := ""
+	if strings.HasPrefix(initialTarget, "127.0.0.1:") || strings.HasPrefix(initialTarget, "localhost:") {
+		localBrokerID = strings.TrimSpace(*brokerIDFlag)
+	}
+
 	srv := &WebTerminalServer{
 		listenAddr:       *listenFlag,
 		defaultPort:      tcpAddr.Port,
@@ -306,8 +368,8 @@ func main() {
 		externalDist:     extDist,
 		localUIOnly:      strings.EqualFold(strings.TrimSpace(os.Getenv("RTX5_WEB_UI_SOURCE")), "local"),
 		binHub:           newWebBinaryMarketHub(),
-		localBrokerID:    strings.TrimSpace(*brokerIDFlag),
-		targetTCPAddr:    strings.TrimSpace(*targetFlag),
+		localBrokerID:    localBrokerID,
+		targetTCPAddr:    initialTarget,
 		superAdminTCP:    strings.TrimSpace(*saFlag),
 		activeBrokerID:   strings.TrimSpace(*brokerIDFlag),
 		activeBrokerName: strings.TrimSpace(*brokerNameFlag),
@@ -316,7 +378,9 @@ func main() {
 	srv.initHotUIOTAState()
 
 	// Start direct :8190 RTO\x01 push stream listener (0.0 ms tick/candle/position fanout when co-located with rtx5-gateway)
-	srv.binHub.startDirectGatewayPushLoop()
+	if srv.isLocalGatewayTarget() {
+		srv.binHub.startDirectGatewayPushLoop()
+	}
 
 	if srv.superAdminTCP != "" {
 		go srv.refreshBrokerDirectory(true)
@@ -449,6 +513,11 @@ func (c *WebTerminalServer) getActiveDistFSForApp(appKind string) fs.FS {
 	if appKind == "" {
 		appKind = "terminal"
 	}
+	if c.localUIOnly && appKind == "terminal" && c.externalDist != "" {
+		if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
+			return os.DirFS(c.externalDist)
+		}
+	}
 	candidates := []string{
 		filepath.Join(c.exeDir, "..", "runtime-data", "ui-cache", appKind),
 		filepath.Join(c.exeDir, "ui-cache", appKind),
@@ -471,11 +540,10 @@ func (c *WebTerminalServer) getActiveDistFSForApp(appKind string) fs.FS {
 			}
 		}
 	}
-	if appKind == "terminal" {
-		if c.externalDist != "" {
+	if appKind == "terminal" && c.externalDist != "" {
+		if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
 			return os.DirFS(c.externalDist)
 		}
-		return c.distRoot
 	}
 	return c.distRoot
 }

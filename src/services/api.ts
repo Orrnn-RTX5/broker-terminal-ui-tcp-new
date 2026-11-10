@@ -2115,14 +2115,13 @@ export const ordersApi = {
       }));
     };
 
-    const dispatchPendingPlacement = () => {
-      if (pendingPlacementDispatched) return;
-      pendingPlacementDispatched = true;
+    const buildProvisionalPlacementPosition = () => {
       const appState = useAppStore.getState();
       const tick = resolveTickFromLookup(appState.ticks, appState.tickLookup, symbol);
       const quotedPrice = side === 'buy' ? Number(tick?.ask) : Number(tick?.bid);
       const optimisticPrice = Number.isFinite(quotedPrice) && quotedPrice > 0 ? quotedPrice : 0;
-      dispatchPlacementState('pending', {
+      const nowIso = new Date().toISOString();
+      return {
         id: provisionalTicket,
         ticket: provisionalTicket,
         account_login: accountLogin,
@@ -2140,9 +2139,15 @@ export const ordersApi = {
         hasBackendCurrentPrice: false,
         commission: 0,
         swap: 0,
-        time_create: new Date().toISOString(),
-        time_update: new Date().toISOString(),
-      });
+        time_create: nowIso,
+        time_update: nowIso,
+      };
+    };
+
+    const dispatchPendingPlacement = () => {
+      if (pendingPlacementDispatched) return;
+      pendingPlacementDispatched = true;
+      dispatchPlacementState('pending', buildProvisionalPlacementPosition());
     };
 
     let binaryFilledAtMs: number | undefined;
@@ -2301,6 +2306,11 @@ export const ordersApi = {
               message: errorMessage,
             });
           }
+        } else if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
+          dispatchPlacementState(terminalStatus, buildProvisionalPlacementPosition(), {
+            code: errorCode,
+            message: errorMessage,
+          });
         }
         throw error;
       }

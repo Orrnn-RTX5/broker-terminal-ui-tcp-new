@@ -62,4 +62,34 @@ describe('pendingOrderStream', () => {
     expect(deduper.shouldEmit('200001:1042:triggered:4')).toBe(false);
     expect(deduper.shouldEmit('200001:1043:triggered:1')).toBe(true);
   });
+
+  it('ignores zero-volume filled/triggered replay frames when ticket is not in active pending orders', () => {
+    const staleReplay = parsePendingOrderLifecycleFrame(
+      'orders.200025',
+      {
+        type: 'pending_filled',
+        ticket: 1016583,
+        symbol: 'XAUUSD',
+        status: 'filled',
+        volume: 0,
+      },
+      [],
+    );
+    expect(staleReplay).toBeNull();
+  });
+
+  it('resolves orderType from previousOrders instead of event name pending_filled', () => {
+    const filledFromKnown = parsePendingOrderLifecycleFrame(
+      'orders.200025',
+      {
+        type: 'pending_filled',
+        ticket: 1016583,
+        symbol: 'XAUUSD',
+        status: 'filled',
+      },
+      [{ ticket: 1016583, symbol: 'XAUUSD', type: 'buy_limit', volume: 0.05, price: 4050.0 }],
+    );
+    expect(filledFromKnown?.orderType).toBe('BUY LIMIT');
+    expect(filledFromKnown?.volume).toBe(0.05);
+  });
 });

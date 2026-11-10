@@ -190,7 +190,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     const [volumeDraft, setVolumeDraft] = useState(() => {
         let lastUsedVolume: unknown;
         try {
-            lastUsedVolume = localStorage.getItem('lastLotSize');
+            lastUsedVolume = typeof window !== 'undefined' ? window.localStorage.getItem('lastLotSize') : undefined;
         } catch {
             lastUsedVolume = undefined;
         }
@@ -254,6 +254,15 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     const ask = tick?.ask || 0;
     const accountId = useAppStore((s) => s.accountId);
     const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+    const account = useAppStore((s) => s.account);
+    const hasInsufficientAccountFunds = Boolean(
+        hasTradingSession
+        && account
+        && (
+            (Number.isFinite(account.balance) && account.balance <= 0 && (!Number.isFinite(account.freeMargin) || account.freeMargin <= 0))
+            || (Number.isFinite(account.freeMargin) && account.freeMargin <= 0 && Number.isFinite(account.margin) && account.margin > 0)
+        ),
+    );
 
     // Track price direction for color flash
     const [bidFlash, setBidFlash] = useState<'up' | 'down' | ''>('');
@@ -309,9 +318,14 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     const getAccountLogin = useCallback((): number => {
         const storeLogin = Number.parseInt(String(accountId || ''), 10);
         if (Number.isFinite(storeLogin) && storeLogin > 0) return storeLogin;
-        const saved = localStorage.getItem('rtx_saved_username') || localStorage.getItem('rtx_last_login');
-        const savedLogin = Number.parseInt(String(saved || ''), 10);
-        return Number.isFinite(savedLogin) && savedLogin > 0 ? savedLogin : 0;
+        if (typeof window === 'undefined') return 0;
+        try {
+            const saved = window.localStorage.getItem('rtx_saved_username') || window.localStorage.getItem('rtx_last_login');
+            const savedLogin = Number.parseInt(String(saved || ''), 10);
+            return Number.isFinite(savedLogin) && savedLogin > 0 ? savedLogin : 0;
+        } catch {
+            return 0;
+        }
     }, [accountId]);
 
     useEffect(() => {
@@ -490,7 +504,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             console.error('[OneClick] Trade failed:', err);
             setError(formatOrderError(err));
             if (isStaleOrderError(err)) setBlockedMessage(staleQuoteMessage);
-            setTimeout(() => setError(null), 6000);
+            setTimeout(() => setError(null), 5000);
         } finally {
             setTimeout(() => setFlashSide(null), 500);
         }
@@ -527,6 +541,22 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         transition: 'background 150ms ease, filter 150ms ease',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
         boxSizing: 'border-box',
+        fontVariantNumeric: 'tabular-nums',
+    };
+
+    const bannerStyleBase: React.CSSProperties = {
+        width: 0,
+        minWidth: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        fontSize: 10,
+        lineHeight: 1.35,
+        textAlign: 'center',
+        padding: '3px 8px',
+        borderRadius: 0,
+        borderTop: 'none',
+        overflowWrap: 'break-word',
+        wordBreak: 'break-word',
     };
 
     const renderTradeButton = (side: 'buy' | 'sell') => {
@@ -592,6 +622,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             ref={panelRef}
             className="rtx-oct absolute top-[28px] left-[10px] z-30 select-none drop-shadow-2xl"
             data-compact={compact}
+            data-insufficient-margin={hasInsufficientAccountFunds ? 'true' : 'false'}
             style={{ pointerEvents: 'auto', fontFamily: 'var(--font-sans)', display: 'inline-block', width: compact ? 'calc(100% - 20px)' : 'fit-content', maxWidth: 'calc(100% - 20px)' }}
         >
             <div
@@ -719,58 +750,62 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
 
             {/* Invalid volume warning */}
             {!isVolumeValid && (
-                <div style={{
-                    fontSize: 10,
-                    color: '#f87171',
-                    textAlign: 'center',
-                    padding: '3px 8px',
-                    background: '#7f1d1d',
-                    borderRadius: 0,
-                    border: '1px solid #7f1d1d',
-                    borderTop: 'none',
-                }}>
+                <div
+                    className="rtx-oct-banner rtx-oct-banner--error"
+                    role="status"
+                    style={{
+                        ...bannerStyleBase,
+                        color: '#f87171',
+                        background: '#7f1d1d',
+                        border: '1px solid #7f1d1d',
+                        borderTop: 'none',
+                    }}
+                >
                     {tr("⚠ Invalid volume (min ")}{formatTradeVolume(volumeConstraints.min, volumeConstraints)})
                 </div>
             )}
             {tradeAllowed && marketOpenForTrading && !hasExecutablePrice && !error && (
-                <div style={{
-                    fontSize: 10,
-                    color: '#fbbf24',
-                    textAlign: 'center',
-                    padding: '3px 8px',
-                    background: '#78350f',
-                    borderRadius: 0,
-                    border: '1px solid rgba(245, 158, 11, 0.45)',
-                    borderTop: 'none',
-                }}>
+                <div
+                    className="rtx-oct-banner rtx-oct-banner--warning"
+                    role="status"
+                    style={{
+                        ...bannerStyleBase,
+                        color: '#fbbf24',
+                        background: '#78350f',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        borderTop: 'none',
+                    }}
+                >
                     {tr("Waiting for a valid bid/ask price")}</div>
             )}
             {tradeAllowed && !marketOpenForTrading && !isMarketStatusLoading && !error && (
-                <div style={{
-                    fontSize: 10,
-                    color: '#fbbf24',
-                    textAlign: 'center',
-                    padding: '3px 8px',
-                    background: '#78350f',
-                    borderRadius: 0,
-                    border: '1px solid rgba(245, 158, 11, 0.45)',
-                    borderTop: 'none',
-                }}>
+                <div
+                    className="rtx-oct-banner rtx-oct-banner--warning"
+                    role="status"
+                    style={{
+                        ...bannerStyleBase,
+                        color: '#fbbf24',
+                        background: '#78350f',
+                        border: '1px solid rgba(245, 158, 11, 0.45)',
+                        borderTop: 'none',
+                    }}
+                >
                     {tr(marketBlockedMessage || effectiveMarketStatus.label)}
                 </div>
             )}
             {blockedMessage && <TradeUnavailableDialog message={blockedMessage} onClose={() => setBlockedMessage(null)} />}
             {error && (
-                <div style={{
-                    fontSize: 10,
-                    color: '#fecaca',
-                    textAlign: 'center',
-                    padding: '3px 8px',
-                    background: '#7f1d1d',
-                    borderRadius: 0,
-                    border: '1px solid #7f1d1d',
-                    borderTop: 'none',
-                }}>
+                <div
+                    className="rtx-oct-banner rtx-oct-banner--error"
+                    role="alert"
+                    style={{
+                        ...bannerStyleBase,
+                        color: '#fecaca',
+                        background: '#7f1d1d',
+                        border: '1px solid #7f1d1d',
+                        borderTop: 'none',
+                    }}
+                >
                     {tr(error)}
                 </div>
             )}

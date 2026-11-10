@@ -128,7 +128,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 }) => {
     const { state: toolbarState, dispatch: dispatchToolbar, syncState: syncToolbarState } = useToolbarState();
     const { dispatch: dispatchCommand } = useCommandBus();
-    const isDesktopShell = isDesktopBackendTarget();
+    const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const dockLayout = useDockLayoutStore(state => state.layout);
     const activeChartSourceId = useSyncExternalStore(
         subscribeToolbarActiveChartSource,
@@ -418,7 +418,7 @@ const MainToolbar = ({
     profileSymbols,
 }: MainToolbarProps) => {
 
-    const isDesktopShell = isDesktopBackendTarget();
+    const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const tr = useUiTranslation();
 
     const [showHistoryOverlayMenu, setShowHistoryOverlayMenu] = useState(false);
@@ -1026,7 +1026,7 @@ const MainToolbar = ({
                     </div>
 
                     {/* Keep a usable row end without hiding any toolbar actions. */}
-                    <div className="min-w-[24px] flex-1 self-stretch" aria-hidden="true" />
+                    <div className="min-w-0 flex-1 self-stretch" aria-hidden="true" />
                 </div>
                 {isDesktopShell && <DesktopSymbolSearchButton />}
                 {isDesktopShell && desktopDrawingTools && (

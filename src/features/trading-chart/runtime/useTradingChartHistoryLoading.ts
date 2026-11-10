@@ -245,6 +245,8 @@ export function useTradingChartHistoryLoading({
       // responsive even when a refresh request is comparatively slow.
       historyRequestCoordinatorRef.current.abort();
       const hydratedFromCache = hydrateHistoryFromCache(activeTf, 'cached-history');
+      const hydratedFullViewportFromCache = hydratedFromCache
+        && candlesRef.current.length >= getTradingChartDefaultVisibleBars(activeTf);
       const currentAfterHydration = currentCandleRef.current;
       if (!hydratedFromCache) {
         setLoadingPhase('receiving');
@@ -615,7 +617,7 @@ export function useTradingChartHistoryLoading({
       // refresh continues to preserve any user pan/zoom.
       const shouldResetVisibleRange = shouldResetInitialHistoryVisibleRange({
         resetVisibleRangeOnNextData: resetVisibleRangeOnNextDataRef.current,
-        hydratedFromCache: hydratedFromCache || (
+        hydratedFromCache: hydratedFullViewportFromCache || (
           hasDisplayedHistoryRef.current
           && protectedDisplayedHistoryRef.current.length >= getStartupSnapshotCandleCount(activeTf)
         ),

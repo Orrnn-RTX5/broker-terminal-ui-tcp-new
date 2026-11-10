@@ -784,35 +784,35 @@ export const createTradeOverlayDomRuntime = ({
       // existing level's price is outside the visible chart scale.
       const appendDockChip = (chip: HTMLElement, role: 'SL' | 'TP') => {
         const accent = role === 'TP'
-          ? (lightSurface ? LIGHT_CHART_TRADE_COLORS.tp : DARK_CHART_TRADE_COLORS.tp)
-          : (lightSurface ? LIGHT_CHART_TRADE_COLORS.sl : DARK_CHART_TRADE_COLORS.sl);
-        const restingBorderColor = `${accent}d9`;
+          ? (lightSurface ? LIGHT_CHART_TRADE_COLORS.tp : '#089981')
+          : (lightSurface ? LIGHT_CHART_TRADE_COLORS.sl : '#ff9800');
+        const restingBackground = 'transparent';
+        const hoverBackground = lightSurface
+          ? LIGHT_CHART_TRADE_COLORS.actionHover
+          : DARK_CHART_TRADE_COLORS.actionHover;
         Object.assign(chip.style, {
           position: 'static', display: 'inline-flex', transform: 'none',
-          fontWeight: '600', fontFamily: 'var(--rtx-ui-font-family, "Segoe UI", Tahoma, Arial, sans-serif)', fontSize: '10.5px', letterSpacing: '0.02em',
-          color: accent, padding: '0 4px', height: '14px', lineHeight: '12px', boxSizing: 'border-box',
-          minWidth: '22px', justifyContent: 'center', flex: '0 0 auto',
-          backgroundColor: lightSurface
-            ? (role === 'TP' ? '#e1f2ed' : '#fff0cc')
-            : (role === 'TP' ? '#143825' : '#3b2814'),
-          border: `1px solid ${restingBorderColor}`, borderRadius: '2px', textShadow: 'none',
+          fontWeight: '600', fontFamily: 'var(--rtx-ui-font-family, "Segoe UI", Tahoma, Arial, sans-serif)', fontSize: '11px', letterSpacing: '0.02em',
+          color: accent, padding: '0 4px', height: '16px', lineHeight: '14px', boxSizing: 'border-box',
+          minWidth: '22px', justifyContent: 'center', alignItems: 'center', flex: '0 0 auto',
+          backgroundColor: restingBackground,
+          border: '0', borderRadius: '2px', textShadow: 'none',
         });
-        chip.style.setProperty('--rtx-type-size', '10.5px');
+        chip.style.setProperty('--rtx-type-size', '11px');
         chip.style.setProperty('--rtx-type-weight', '600');
         const dragLabel = chip.querySelector<HTMLElement>('.rtx-trade-level-drag-label');
         if (dragLabel) {
-          dragLabel.style.fontSize = '10.5px';
+          dragLabel.style.fontSize = '11px';
           dragLabel.style.fontWeight = '600';
           dragLabel.style.letterSpacing = '0.02em';
-          dragLabel.style.setProperty('--rtx-type-size', '10.5px');
+          dragLabel.style.setProperty('--rtx-type-size', '11px');
           dragLabel.style.setProperty('--rtx-type-weight', '600');
         }
         chip.addEventListener('mouseenter', () => {
-          chip.style.borderColor = accent;
-          chip.style.borderStyle = 'solid';
+          chip.style.backgroundColor = hoverBackground;
         });
         chip.addEventListener('mouseleave', () => {
-          chip.style.borderColor = restingBorderColor;
+          chip.style.backgroundColor = restingBackground;
         });
         const brackets = controlBar.root.querySelector<HTMLElement>('.rtx-trade-brackets')
           ?? controlBar.root.querySelector<HTMLElement>('.rtx-trade-control-actions')
@@ -827,7 +827,7 @@ export const createTradeOverlayDomRuntime = ({
           label: 'SL',
           isLightSurface: lightSurface,
           leftInset: TRADE_LEVEL_BADGE_LEFT_INSET_PX,
-          title: 'Drag to add SL',
+          title: 'Drag to add stop loss',
         });
         bindChartUiTranslation(slChip, () => {
           slChip.removeAttribute('title');
@@ -842,7 +842,7 @@ export const createTradeOverlayDomRuntime = ({
           label: 'TP',
           isLightSurface: lightSurface,
           leftInset: TRADE_LEVEL_BADGE_LEFT_INSET_PX,
-          title: 'Drag to add TP',
+          title: 'Drag to add profit',
         });
         bindChartUiTranslation(tpChip, () => {
           tpChip.removeAttribute('title');

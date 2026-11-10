@@ -139,4 +139,17 @@ describe('TopToolbar primary command cluster', () => {
     expect(indicatorIcon).toContain("fill: 'currentColor'");
     expect(indicatorIcon).not.toMatch(/#[0-9a-f]{6}/i);
   });
+
+  it('scales controls responsively on laptop screens so all actions, timeframes (M1..MN), search, and Report a Bug fit without clipping or scrollbars', () => {
+    const searchCss = readSource('src/components/layout/TopToolbarSearch.css');
+    expect(toolbarSource).toContain('<div className="min-w-0 flex-1 self-stretch" aria-hidden="true" />');
+    expect(toolbarSource).not.toContain('min-w-[24px] flex-1 self-stretch');
+    expect(themeCss).toContain('@media (max-width: 1720px), (max-height: 920px)');
+    expect(themeCss).toContain('@media (max-width: 1500px)');
+    expect(themeCss).toContain('@media (max-width: 1320px)');
+    expect(themeCss).toContain('scrollbar-width: none !important;');
+    expect(searchCss).toContain('@media (max-width: 1720px), (max-height: 920px)');
+    expect(searchCss).toContain('@media (max-width: 1500px), (max-height: 860px)');
+    expect(searchCss).toContain('@media (max-width: 1320px)');
+  });
 });

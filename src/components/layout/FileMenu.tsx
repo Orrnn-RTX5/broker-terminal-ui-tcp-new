@@ -110,7 +110,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     const savedAccounts = useAppStore(state => state.savedAccounts);
     const { hasDemoAndRealAccounts } = getBrokerSavedAccountTypes(savedAccounts);
     const hideOpenAccountOption = Boolean(isAuthenticated && hasDemoAndRealAccounts);
-    const isDesktopShell = isDesktopBackendTarget();
+    const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
 
     useLayoutEffect(() => {
         const alignSubmenus = () => {

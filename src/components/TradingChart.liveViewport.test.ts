@@ -102,4 +102,20 @@ describe('full chart render live viewport', () => {
     const result = fixture.render(fixture.candles.slice(0, 99));
     expect(result.range).toEqual({ from: 76, to: 106.5 });
   });
+
+  it('anchors a sparse 2-bar refresh baseline ({ from: -28, to: 1 }) to the latest history candles instead of locking to bars 0..1', () => {
+    const previousRange = { from: -28, to: 1 };
+    const sparseCandles = [{ time: 30_940 }, { time: 31_000 }];
+    const nextCandles = Array.from({ length: 500 }, (_, index) => ({ time: 1_000 + index * 60 }));
+    const leftTime = getLeftVisibleTimeFromLogicalRange(sparseCandles, previousRange);
+    expect(leftTime).toBeNull();
+
+    const nextRange = getVisibleLogicalRangeAnchoredToTime(nextCandles, leftTime, previousRange, {
+      wasFollowing: false,
+      previousLatestTime: sparseCandles[1].time,
+      rightOffset: 0,
+      previousCandleCount: sparseCandles.length,
+    });
+    expect(nextRange).toEqual({ from: 470, to: 499 });
+  });
 });

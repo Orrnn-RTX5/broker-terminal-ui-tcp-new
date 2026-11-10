@@ -104,4 +104,81 @@ describe('independent one-click chart trading', { timeout: 30000 }, () => {
     expect(outer).toHaveAttribute('data-compact', 'false');
     view.unmount(); expect(disconnect).toHaveBeenCalledOnce();
   });
+
+  it('keeps identical BUY and SELL button dimensions, tabular-nums price alignment, and non-shifting error banners across sufficient balance, zero balance, and rejected orders', async () => {
+    // 1. Sufficient balance state
+    useAppStore.setState({
+      account: {
+        balance: 5000,
+        equity: 5000,
+        margin: 100,
+        freeMargin: 4900,
+        marginLevel: 5000,
+        leverage: 100,
+        currency: 'USD',
+      },
+    });
+    render(chart(symbols[0], 0));
+    const outer = screen.getByTestId('one-click-trading-row').parentElement!;
+    expect(outer).toHaveAttribute('data-insufficient-margin', 'false');
+
+    const sellBtn = screen.getByRole('button', { name: /^SELL / });
+    const buyBtn = screen.getByRole('button', { name: /^BUY / });
+
+    // BUY and SELL buttons share identical dimensions, padding, and alignment
+    expect(sellBtn).toHaveStyle({
+      width: 'auto',
+      minWidth: '104px',
+      height: '34px',
+      padding: '5px 10px',
+      justifyContent: 'center',
+      fontVariantNumeric: 'tabular-nums',
+    });
+    expect(buyBtn).toHaveStyle({
+      width: 'auto',
+      minWidth: '104px',
+      height: '34px',
+      padding: '5px 10px',
+      justifyContent: 'center',
+      fontVariantNumeric: 'tabular-nums',
+    });
+
+    // Dynamic price change keeps consistent minWidth and height on both buttons
+    act(() => {
+      useAppStore.getState().setTicks({
+        ...useAppStore.getState().ticks,
+        [symbols[0]]: { symbol: symbols[0], bid: 99999.98765, ask: 100000.12345, spread: 0.1358, digits: 5, timestamp: Date.now() },
+      });
+    });
+    expect(sellBtn).toHaveStyle({ minWidth: '104px', height: '34px', fontVariantNumeric: 'tabular-nums' });
+    expect(buyBtn).toHaveStyle({ minWidth: '104px', height: '34px', fontVariantNumeric: 'tabular-nums' });
+
+    // 2. Zero balance conditional state & rejected order (insufficient margin)
+    act(() => {
+      useAppStore.setState({
+        account: {
+          balance: 0,
+          equity: 0,
+          margin: 0,
+          freeMargin: 0,
+          marginLevel: 0,
+          leverage: 100,
+          currency: 'USD',
+        },
+      });
+    });
+    expect(outer).toHaveAttribute('data-insufficient-margin', 'true');
+
+    orders.placeMarketOrder.mockRejectedValueOnce(Object.assign(new Error('INSUFFICIENT_MARGIN'), {
+      preserveBackendOrderError: true,
+      code: 'INSUFFICIENT_MARGIN',
+      backendMessage: 'INSUFFICIENT_MARGIN',
+    }));
+    await act(async () => {
+      fireEvent.click(buyBtn);
+    });
+    const alertBanner = screen.getByRole('alert');
+    expect(alertBanner).toHaveTextContent('Order failed: not enough free margin to open this order.');
+    expect(alertBanner).toHaveStyle({ width: '0px', minWidth: '100%', maxWidth: '100%' });
+  });
 });

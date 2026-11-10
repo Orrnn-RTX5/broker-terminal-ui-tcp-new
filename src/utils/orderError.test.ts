@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatOrderError } from './orderError';
 import { ApiError } from '../api/client';
 import { OrderCommandTerminalError } from '../services/orderCommandLifecycle';
+import { useAppStore } from '../store/useAppStore';
 
 describe('formatOrderError', () => {
   it('preserves an async command backend code and message verbatim', () => {
@@ -151,5 +152,81 @@ describe('formatOrderError', () => {
       .toBe('Order failed: not enough free margin to open this order.');
     expect(formatOrderError(new Error('Missing account login for /api/v2/orders')))
       .toBe('Order failed: no trading account is selected. Please sign in again.');
+  });
+
+  it('shows exact reasons for backend down, insufficient balance/margin, and routing failures across Binary TCP and REST rejections', () => {
+    // 1. Backend down / Binary TCP server unreachable
+    expect(formatOrderError(new Error('Encrypted Binary TCP Server (185.126.217.108:4443) unreachable: dial tcp 185.126.217.108:4443: connectex: No connection could be made')))
+      .toBe('Order failed: trading backend server is unreachable. Check that the backend service is running and try again.');
+    expect(formatOrderError(new OrderCommandTerminalError({
+      status: 'rejected',
+      terminal: true,
+      clientOrderId: 'cid-tcp-down',
+      error: { code: 'BINARY_TCP_UNAVAILABLE', message: 'BINARY_TCP_UNAVAILABLE' },
+      raw: {},
+    }, 'cid-tcp-down')))
+      .toBe('Order failed: trading backend server is unreachable. Check that the backend service is running and try again.');
+
+    // 2. Insufficient balance / margin
+    expect(formatOrderError(new OrderCommandTerminalError({
+      status: 'rejected',
+      terminal: true,
+      clientOrderId: 'cid-margin',
+      error: { code: 'INSUFFICIENT_MARGIN', message: 'INSUFFICIENT_MARGIN' },
+      raw: {},
+    }, 'cid-margin')))
+      .toBe('Order failed: not enough free margin to open this order.');
+    expect(formatOrderError(new OrderCommandTerminalError({
+      status: 'rejected',
+      terminal: true,
+      clientOrderId: 'cid-margin-detail',
+      error: { code: 'INSUFFICIENT_MARGIN', message: 'Required: 120.00, Available: 0.00' },
+      raw: {},
+    }, 'cid-margin-detail')))
+      .toBe('Order failed: not enough free margin to open this order (Required: 120.00, Available: 0.00).');
+    expect(formatOrderError(new ApiError(400, 'INSUFFICIENT_BALANCE', { code: 'INSUFFICIENT_BALANCE' })))
+      .toBe('Order failed: insufficient account balance to place this order.');
+    expect(formatOrderError(new ApiError(400, 'ZERO_BALANCE', { code: 'ZERO_BALANCE' })))
+      .toBe('Order failed: account balance is zero. Please fund your account before placing an order.');
+
+    // Generic ORDER_REJECTED when account balance is 0
+    const prevAccount = useAppStore.getState().account;
+    try {
+      useAppStore.setState({
+        account: {
+          balance: 0,
+          equity: 0,
+          margin: 0,
+          freeMargin: 0,
+          marginLevel: 0,
+          leverage: 100,
+          currency: 'USD',
+        },
+      });
+      expect(formatOrderError(new OrderCommandTerminalError({
+        status: 'rejected',
+        terminal: true,
+        clientOrderId: 'cid-zero-bal',
+        error: { code: 'ORDER_REJECTED', message: 'ORDER_REJECTED' },
+        raw: {},
+      }, 'cid-zero-bal')))
+        .toBe('Order failed: insufficient account balance (0.00) to place this order.');
+    } finally {
+      useAppStore.setState({ account: prevAccount });
+    }
+
+    // 3. Routing / execution issues
+    expect(formatOrderError(new OrderCommandTerminalError({
+      status: 'rejected',
+      terminal: true,
+      clientOrderId: 'cid-route',
+      error: { code: 'ROUTE_NOT_FOUND', message: 'ROUTE_NOT_FOUND' },
+      raw: {},
+    }, 'cid-route')))
+      .toBe('Order failed: order routing failed — no execution route is configured for this symbol.');
+    expect(formatOrderError(new ApiError(400, 'ROUTING_ERROR', { code: 'ROUTING_ERROR' })))
+      .toBe('Order failed: order routing failed while forwarding the trade to the execution engine.');
+    expect(formatOrderError(new Error('No execution route available for XAUUSD')))
+      .toBe('Order failed: order routing failed — no execution route is available for this symbol.');
   });
 });

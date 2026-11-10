@@ -106,7 +106,10 @@ export const useTradeStreamRuntime = ({
       refresh: (login) => refreshOrdersAndHistory(login),
       isCurrent: (login) => isSessionActive() && getLiveTradingLogin() === login,
     });
-    const pendingLifecycleDeduper = createPendingLifecycleDeduper();
+    const pendingLifecycleDeduper = createPendingLifecycleDeduper(256, {
+      persistKey: 'rtx5_seen_pending_lifecycle_v1',
+    });
+    const streamMountedAtMs = Date.now();
 
     const scheduleStreamHistoryRefresh = (targetLogin: number, kind: 'close' | 'order'): void => {
       if (isBinaryTcpOrderEnabled()) {
@@ -317,6 +320,31 @@ export const useTradeStreamRuntime = ({
           if (data.channel.startsWith('orders.') || data.channel.startsWith('rtx5.pending_orders.')) {
             const currentOrders = (useAppStore.getState().orders ?? []) as unknown as ReadonlyArray<Record<string, unknown>>;
             const notice = parsePendingOrderLifecycleFrame(data.channel, data.data ?? data, currentOrders);
+            if (notice) {
+              const wasKnownPendingOrder = currentOrders.some(
+                (ord) => String(ord.ticket ?? ord.id ?? '') === notice.ticket,
+              );
+              const payloadRecord = asRecord(data.data) ?? asRecord(data);
+              const nestedRecord = asRecord(payloadRecord?.data) ?? asRecord(payloadRecord?.order) ?? payloadRecord;
+              const rawTs = Number(
+                nestedRecord?.filled_at
+                ?? nestedRecord?.triggered_at
+                ?? nestedRecord?.updated_at
+                ?? nestedRecord?.timestamp
+                ?? payloadRecord?.timestamp
+                ?? data.timestamp
+                ?? 0,
+              );
+              const eventTimeMs = Number.isFinite(rawTs) && rawTs > 0
+                ? (rawTs > 1_000_000_000_000 ? rawTs : rawTs * 1_000)
+                : 0;
+              const isStaleHistoricalReplay =
+                (eventTimeMs > 0 && eventTimeMs < streamMountedAtMs - 5_000)
+                || (!wasKnownPendingOrder && Date.now() - streamMountedAtMs < 6_000);
+              if (isStaleHistoricalReplay) {
+                pendingLifecycleDeduper.markSeen(notice.dedupeKey);
+              }
+            }
             if (notice && pendingLifecycleDeduper.shouldEmit(notice.dedupeKey)) {
               const specDigits = readRegisteredSymbolPriceSpec(notice.symbol)?.digits;
               const priceLabel = notice.price > 0 ? formatPrice(notice.price, specDigits ?? undefined) : '';
