@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountMetricAvailable, normalizeAccountMetrics } from './accountMetrics';
+import { accountMetricAvailable, accountMetricProvided, normalizeAccountMetrics } from './accountMetrics';
 
 const now = 1_789_558_200_000;
 const complete = { balance: 100, equity: 90, used_margin: 110, free_margin: -20, floating_pnl: -12, credit: 2, margin_level: 81.81 };
@@ -124,3 +124,46 @@ describe('authoritative account metrics', () => {
     expect(accountMetricAvailable(result, 'equity', now)).toBe(false);
   });
 });
+
+describe('margin unavailable (available:false)', () => {
+  const unavailable = { balance: 1000, credit: 0, equity: 1000, used_margin: null, free_margin: null, margin_level: null, available: false, reason: 'margin_unavailable' };
+
+  it('marks margin, free margin and margin level unavailable with no 0 exposed', () => {
+    const result = normalizeAccountMetrics({ ...unavailable, publication_token: older }, null, { now });
+    for (const key of ['margin', 'freeMargin', 'marginLevel'] as const) {
+      expect(accountMetricProvided(result, key)).toBeNull();
+      expect(accountMetricAvailable(result, key, now)).toBe(false);
+    }
+    expect(result.metricsStatus).toBe('unavailable');
+  });
+
+  it('keeps real balance, equity and credit available', () => {
+    const result = normalizeAccountMetrics({ ...unavailable, credit: 2, publication_token: older }, null, { now });
+    expect(accountMetricProvided(result, 'equity')).toBe(1000);
+    for (const key of ['balance', 'equity', 'credit'] as const) {
+      expect(accountMetricAvailable(result, key, now)).toBe(true);
+    }
+  });
+
+  it('treats numeric margin fields as unavailable when the event says available:false', () => {
+    const result = normalizeAccountMetrics({ ...complete, available: false, publication_token: older }, null, { now });
+    expect(accountMetricProvided(result, 'margin')).toBeNull();
+    expect(accountMetricProvided(result, 'freeMargin')).toBeNull();
+    expect(accountMetricProvided(result, 'marginLevel')).toBeNull();
+  });
+
+  it('reads available:false nested inside data', () => {
+    const result = normalizeAccountMetrics({ type: 'metrics_update', publication_token: older, data: { ...unavailable } }, null, { now });
+    expect(accountMetricProvided(result, 'marginLevel')).toBeNull();
+    expect(accountMetricAvailable(result, 'equity', now)).toBe(true);
+  });
+
+  it('restores margin fields from a later normal event', () => {
+    const blocked = normalizeAccountMetrics({ ...unavailable, publication_token: older }, null, { now });
+    const restored = normalizeAccountMetrics({ ...complete, publication_token: newer }, blocked, { now });
+    expect(accountMetricProvided(restored, 'margin')).toBe(110);
+    expect(accountMetricAvailable(restored, 'freeMargin', now)).toBe(true);
+    expect(restored.metricsStatus).toBe('valid');
+  });
+});
+

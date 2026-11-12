@@ -737,3 +737,23 @@ describe('live account metrics between backend snapshots', () => {
     }
   });
 });
+
+describe('backend Trade values when account margin is unavailable', () => {
+  it('keeps margin, free margin and margin level unavailable instead of summing position margin', () => {
+    const metrics = resolveTradeAccountMetrics({
+      balance: 1000, credit: 0, equity: 1000, margin: 0, freeMargin: 0, marginLevel: 0,
+      hasBackendMargin: false, hasBackendFreeMargin: false, hasBackendMarginLevel: false,
+      metricsMarginUnavailable: true, metricsStatus: 'unavailable',
+    });
+    expect(metrics.margin).toBeNull();
+    expect(metrics.freeMargin).toBeNull();
+    expect(metrics.marginLevel).toBeNull();
+    const live = applyLivePositionProfit(metrics, [
+      { symbol: 'EURUSD', side: 'BUY', volume: 1, profit: 5, margin: 200, hasBackendMargin: true, hasBackendProfit: true },
+    ]);
+    expect(live.margin).toBeNull();
+    expect(live.freeMargin).toBeNull();
+    expect(live.marginLevel).toBeNull();
+  });
+});
+

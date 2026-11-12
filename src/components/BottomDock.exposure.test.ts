@@ -110,3 +110,14 @@ describe('BottomDock exposure helpers', () => {
     expect(summary.rows.map((row) => row.asset)).toEqual(['USD']);
   });
 });
+
+describe('BottomDock exposure with unavailable free margin', () => {
+  it('does not size the account-currency leg from equity or a stored 0 when free margin is unavailable', () => {
+    const summary = buildExposureSummary(
+      [{ symbol: 'EURUSD', side: 'BUY', volume: 1, openPrice: 1.1, currentPrice: 1.1, contract_size: 100000 }],
+      { currency: 'USD', balance: 1000, equity: 1000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, leverage: 100 },
+    );
+    expect(summary.freeMarginAvailable).toBe(false);
+    expect(summary.rows.find((row) => row.asset === 'USD')).toBeUndefined();
+  });
+});
