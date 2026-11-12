@@ -103,17 +103,35 @@ export function normalizeAccountMetrics(
     || invalidSourceTime
     || (options.login !== undefined && incomingLogin !== undefined && Number(incomingLogin) !== options.login);
   if (invalid) next.metricsStatus = 'unavailable';
+  // The backend says margin cannot be valued: margin, free margin and margin level are
+  // unavailable, never 0. Equity, balance and credit that arrive as numbers stay available.
+  const marginUnavailable = raw.available === false || raw.reason === 'margin_unavailable';
+  if (marginUnavailable) {
+    next.metricsStatus = 'unavailable';
+    if (!invalid) next.metricsMarginUnavailable = true;
+  }
   for (const field of Object.keys(aliases) as AccountMetric[]) {
     const keys = aliases[field];
     const key = keys.find((candidate) => Object.prototype.hasOwnProperty.call(raw, candidate));
     const value = key ? accountMetricNumber(raw[key]) : null;
-    const preserve = options.partial && key === undefined && current;
-    next[field] = value ?? (preserve ? current[field] ?? 0 : 0);
-    next[flags[field]] = !invalid && (value !== null || Boolean(preserve && current[flags[field]] !== false && Number.isFinite(current[field])));
-    next.metricUpdatedAt![field] = value !== null ? timestamp : preserve ? current.metricUpdatedAt?.[field] ?? 0 : 0;
+    const blocked = marginUnavailable && (field === 'margin' || field === 'freeMargin' || field === 'marginLevel');
+    const preserve = !blocked && options.partial && key === undefined && current;
+    next[field] = blocked ? 0 : value ?? (preserve ? current[field] ?? 0 : 0);
+    next[flags[field]] = !invalid && !blocked && (value !== null || Boolean(preserve && current[flags[field]] !== false && Number.isFinite(current[field])));
+    next.metricUpdatedAt![field] = blocked ? 0 : value !== null ? timestamp : preserve ? current.metricUpdatedAt?.[field] ?? 0 : 0;
   }
   if (next.margin < 0) next.hasBackendMargin = false;
   return next;
+}
+
+// The stored figure only when the backend supplied it (hasBackend* provenance), with no age or status gate.
+// Readers that must not show or compute with an unvalued margin figure use this instead of the raw field.
+export function accountMetricProvided(
+  account: Partial<Account> | null | undefined,
+  field: AccountMetric,
+): number | null {
+  if (!account || account[flags[field]] === false) return null;
+  return accountMetricNumber(account[field]);
 }
 
 export function accountMetricAvailable(
@@ -122,7 +140,9 @@ export function accountMetricAvailable(
   now = Date.now(),
   maxAgeMs = ACCOUNT_METRICS_MAX_AGE_MS,
 ): boolean {
-  if (!account || account[flags[field]] === false || ['stale', 'unavailable', 'invalid'].includes(account.metricsStatus ?? '')) return false;
+  if (!account || account[flags[field]] === false) return false;
+  // A margin-only unavailability (available:false) must not hide the real equity, balance or credit.
+  if (['stale', 'unavailable', 'invalid'].includes(account.metricsStatus ?? '') && !account.metricsMarginUnavailable) return false;
   const at = account.metricUpdatedAt?.[field];
   if (at !== undefined && (at <= 0 || now - at > maxAgeMs || at - now > 5_000)) return false;
   return accountMetricNumber(account[field]) !== null;

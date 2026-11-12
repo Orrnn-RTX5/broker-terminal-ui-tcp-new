@@ -9,6 +9,7 @@
 import { ApiError } from '../api/client';
 import { mapBrokerError } from '../api/brokerApi';
 import { useAppStore } from '../store/useAppStore';
+import { accountMetricProvided } from '../services/accountMetrics';
 import { protectionLevelViolation } from './tradeLevelDrag';
 
 const URL_LIKE_RE = /\b(?:wss?|https?):\/\/\S+/gi;
@@ -123,8 +124,9 @@ const inferGenericRejectionReasonFromAccount = (): string | null => {
     const account = useAppStore.getState()?.account;
     if (!account) return null;
     const balance = Number(account.balance);
-    const freeMargin = Number(account.freeMargin);
-    if (Number.isFinite(balance) && balance <= 0 && (!Number.isFinite(freeMargin) || freeMargin <= 0)) {
+    // Unavailable free margin is unknown, not 0: no margin-based rejection is inferred from it.
+    const freeMargin = accountMetricProvided(account, 'freeMargin') ?? Number.NaN;
+    if (Number.isFinite(balance) && balance <= 0 && Number.isFinite(freeMargin) && freeMargin <= 0) {
       return 'Order failed: insufficient account balance (0.00) to place this order.';
     }
     if (Number.isFinite(freeMargin) && freeMargin <= 0) {

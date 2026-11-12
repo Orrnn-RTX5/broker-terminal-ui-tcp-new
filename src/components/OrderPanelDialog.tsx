@@ -33,6 +33,7 @@ import { inferObservedPriceDigits } from '../utils/chartPriceScale';
 import { readRegisteredSymbolPriceSpec, readRegisteredSymbolStopsLevel } from '../services/dailyChangePriceModeRegistry';
 import { depthExecutionForLevel } from './depthOfMarketModel';
 import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
+import { accountMetricProvided } from '../services/accountMetrics';
 import { formatOrderError } from '../utils/orderError';
 import '../styles/order-panel-dialog.css';
 
@@ -1957,10 +1958,12 @@ export function OrderPanelDialog({
   // currency; omitted when neither is known (never derived from the symbol).
   const baseCurrency = marginCurrency || account?.currency || '';
   const accountBalance = account && Number.isFinite(Number(account.balance)) ? Number(account.balance) : null;
-  const accountFreeMargin = account && Number.isFinite(Number(account.freeMargin)) ? Number(account.freeMargin) : null;
+  // Unavailable free margin is unknown (null), never 0: it neither blocks nor passes the order.
+  const accountFreeMargin = account ? accountMetricProvided(account, 'freeMargin') : null;
   const hasZeroOrNegativeBalance = accountBalance !== null
     && accountBalance <= 0
-    && (accountFreeMargin === null || accountFreeMargin <= 0);
+    && accountFreeMargin !== null
+    && accountFreeMargin <= 0;
   const hasInsufficientMargin = Boolean(
     hasZeroOrNegativeBalance
     || (

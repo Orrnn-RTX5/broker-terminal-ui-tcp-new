@@ -28,6 +28,8 @@ import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
 import { isShortcutInput, isShortcutLocalScope, isShortcutOverlay, shouldIgnoreShortcutEvent } from '../services/keyboardShortcutManager';
 import { formatSpreadDisplayWithUnit } from '../utils/spread';
 import { formatOrderError } from '../utils/orderError';
+import { accountMetricProvided } from '../services/accountMetrics';
+import { METRIC_UNAVAILABLE } from '../features/bottom-dock/trade/tradeTabModel';
 import { resolveAccountCurrencyDigits } from '../utils/accountCurrency';
 import { hasAuthenticatedTradingSession, requireTradingAuth } from '../services/tradingAuthGate';
 import { useSymbolMarketStatus } from '../hooks/useSymbolMarketStatus';
@@ -730,7 +732,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                         </div>
                         <div>
                             <dt>{tr("Equity")}</dt>
-                            <dd>{ACCOUNT_VALUE_FORMATTER.format(account.equity ?? 0)} {account.currency || 'USD'}</dd>
+                            <dd>{accountMetricProvided(account, 'equity') === null ? METRIC_UNAVAILABLE : ACCOUNT_VALUE_FORMATTER.format(accountMetricProvided(account, 'equity') ?? 0)} {account.currency || 'USD'}</dd>
                         </div>
                     </dl>
                 )}

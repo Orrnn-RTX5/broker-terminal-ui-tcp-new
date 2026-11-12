@@ -295,6 +295,8 @@ export interface Account {
   marginCalculationVersion?: string;
   configurationVersion?: string;
   metricsStatus?: string;
+  /** Set when the backend said margin cannot be valued (available:false); margin fields are then unavailable, not 0. */
+  metricsMarginUnavailable?: boolean;
   marketClosed?: boolean;
   metricUpdatedAt?: Partial<Record<'balance' | 'equity' | 'margin' | 'freeMargin' | 'unrealizedPL' | 'marginLevel' | 'credit', number>>;
   currency: string;

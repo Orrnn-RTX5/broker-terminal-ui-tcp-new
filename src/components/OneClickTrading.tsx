@@ -12,6 +12,7 @@ import { useLastSymbolStore } from '../store/useLastSymbolStore';
 import api from '../services/api';
 import { getTradeEntryPriceFromQuote } from '../services/chartPriceGuards';
 import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
+import { accountMetricProvided } from '../services/accountMetrics';
 import { resolvePositionOpenTime } from '../services/tradePositionTime';
 import {
     createUnavailableMarketStatus,
@@ -259,8 +260,8 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         hasTradingSession
         && account
         && (
-            (Number.isFinite(account.balance) && account.balance <= 0 && (!Number.isFinite(account.freeMargin) || account.freeMargin <= 0))
-            || (Number.isFinite(account.freeMargin) && account.freeMargin <= 0 && Number.isFinite(account.margin) && account.margin > 0)
+            (Number.isFinite(account.balance) && account.balance <= 0 && (accountMetricProvided(account, 'freeMargin') ?? 1) <= 0)
+            || ((accountMetricProvided(account, 'freeMargin') ?? 1) <= 0 && (accountMetricProvided(account, 'margin') ?? 0) > 0)
         ),
     );
 
