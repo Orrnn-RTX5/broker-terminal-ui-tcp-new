@@ -1960,10 +1960,10 @@ export function OrderPanelDialog({
   const accountBalance = account && Number.isFinite(Number(account.balance)) ? Number(account.balance) : null;
   // Unavailable free margin is unknown (null), never 0: it neither blocks nor passes the order.
   const accountFreeMargin = account ? accountMetricProvided(account, 'freeMargin') : null;
+  // An unknown free margin never removes the zero-balance block that the balance alone triggers (5ad2aa97).
   const hasZeroOrNegativeBalance = accountBalance !== null
     && accountBalance <= 0
-    && accountFreeMargin !== null
-    && accountFreeMargin <= 0;
+    && (accountFreeMargin === null || accountFreeMargin <= 0);
   const hasInsufficientMargin = Boolean(
     hasZeroOrNegativeBalance
     || (

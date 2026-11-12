@@ -29,6 +29,10 @@ export interface ExposureAccountInput {
   currency?: string | null;
   /** false when the backend could not value free margin; the stored figure is then not real. */
   hasBackendFreeMargin?: boolean | null;
+  /** 'unavailable' when the account is not valued (invalid event or margin cannot be valued). */
+  metricsStatus?: string | null;
+  /** true when the backend said margin cannot be valued (available:false). */
+  metricsMarginUnavailable?: boolean | null;
 }
 
 export interface ExposureRow {
@@ -212,7 +216,10 @@ export const buildExposureSummary = (
   const rowsByAsset = new Map<string, ExposureRow>();
   const balance = toFiniteNumber(account?.balance, 0);
   const equity = toFiniteNumber(account?.equity, balance);
-  const freeMarginAvailable = account?.hasBackendFreeMargin !== false;
+  // Not valued = the backend said margin cannot be valued. Only then is the cash leg a placeholder;
+  // a valued account whose free-margin flag is false keeps the 5ad2aa97 cash basis.
+  const accountNotValued = account?.metricsMarginUnavailable === true || account?.metricsStatus === 'unavailable';
+  const freeMarginAvailable = !(accountNotValued && account?.hasBackendFreeMargin !== true);
   const freeMargin = toFiniteNumber(account?.freeMargin ?? account?.free_margin, equity);
   const usedMargin = toFiniteNumber(account?.margin, 0);
   const leverage = toFiniteNumber(account?.leverage, 0);
@@ -264,7 +271,7 @@ export const buildExposureSummary = (
   const nonCashLongExposure = Array.from(rowsByAsset.values())
     .filter((row) => row.asset !== accountCurrency && row.value > 0)
     .reduce((sum, row) => sum + row.value, 0);
-  // Unavailable free margin is not sized from equity, balance or a stored 0.
+  // Unvalued account: the cash leg is not sized (shown as a placeholder by ExposureTab), never from 0.
   const cashBasis = !freeMarginAvailable ? null : freeMargin > 0 ? freeMargin : equity > 0 ? equity : balance;
   const accountCurrencyValue = cashBasis === null ? 0 : Math.max(0, cashBasis - nonCashLongExposure);
 
