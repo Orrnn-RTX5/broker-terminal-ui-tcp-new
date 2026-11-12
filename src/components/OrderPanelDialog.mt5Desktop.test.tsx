@@ -519,6 +519,47 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
     expect(stopLimitInput.value).toBe('4176.25');
   });
 
+  it('keeps the zero-balance notice when balance is 0 and free margin is unavailable', async () => {
+    vi.useFakeTimers();
+    try {
+      useAppStore.setState({
+        account: {
+          balance: 0,
+          equity: 0,
+          margin: 0,
+          freeMargin: 0,
+          marginLevel: 0,
+          leverage: 100,
+          currency: 'USD',
+          hasBackendFreeMargin: false,
+          metricsMarginUnavailable: true,
+          metricsStatus: 'unavailable',
+        },
+      });
+
+      render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(20);
+      });
+
+      expect(screen.getByTestId('order-insufficient-margin-notice').textContent).toContain(
+        'Insufficient account balance (0.00) to open a new order.',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders sufficient balance, zero/insufficient balance, and rejected order states cleanly without shifting controls', async () => {
     vi.useFakeTimers();
     try {

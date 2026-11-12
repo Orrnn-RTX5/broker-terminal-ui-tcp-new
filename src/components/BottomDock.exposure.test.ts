@@ -112,10 +112,40 @@ describe('BottomDock exposure helpers', () => {
 });
 
 describe('BottomDock exposure with unavailable free margin', () => {
-  it('does not size the account-currency leg from equity or a stored 0 when free margin is unavailable', () => {
+  const eurusdBuy = [{ symbol: 'EURUSD', side: 'BUY', volume: 1, openPrice: 1.1, currentPrice: 1.1, contract_size: 100000 }];
+
+  it('does not size the account-currency leg from equity or a stored 0 when the account is not valued', () => {
     const summary = buildExposureSummary(
-      [{ symbol: 'EURUSD', side: 'BUY', volume: 1, openPrice: 1.1, currentPrice: 1.1, contract_size: 100000 }],
-      { currency: 'USD', balance: 1000, equity: 1000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, leverage: 100 },
+      eurusdBuy,
+      { currency: 'USD', balance: 1000, equity: 1000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, metricsMarginUnavailable: true, leverage: 100 },
+    );
+    expect(summary.freeMarginAvailable).toBe(false);
+    expect(summary.rows.find((row) => row.asset === 'USD')).toBeUndefined();
+  });
+
+  it('keeps the valued account cash leg exactly as before when its free-margin flag is false', () => {
+    // 5000 equity minus the 1100 EURUSD leg (110000 notional at leverage 100) = 3900, as on 5ad2aa97.
+    const summary = buildExposureSummary(
+      eurusdBuy,
+      { currency: 'USD', balance: 5000, equity: 5000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, metricsStatus: 'valid', leverage: 100 },
+    );
+    expect(summary.freeMarginAvailable).toBe(true);
+    expect(summary.rows.find((row) => row.asset === 'USD')?.value).toBeCloseTo(3900, 6);
+  });
+
+  it('keeps the valued account cash leg when the account has no status and the free-margin flag is false', () => {
+    const summary = buildExposureSummary(
+      eurusdBuy,
+      { currency: 'USD', balance: 5000, equity: 5000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, leverage: 100 },
+    );
+    expect(summary.freeMarginAvailable).toBe(true);
+    expect(summary.rows.find((row) => row.asset === 'USD')?.value).toBeCloseTo(3900, 6);
+  });
+
+  it('marks the cash leg unavailable when the backend status is unavailable and free margin is unflagged', () => {
+    const summary = buildExposureSummary(
+      eurusdBuy,
+      { currency: 'USD', balance: 5000, equity: 5000, margin: 0, freeMargin: 0, hasBackendFreeMargin: false, metricsStatus: 'unavailable', leverage: 100 },
     );
     expect(summary.freeMarginAvailable).toBe(false);
     expect(summary.rows.find((row) => row.asset === 'USD')).toBeUndefined();
