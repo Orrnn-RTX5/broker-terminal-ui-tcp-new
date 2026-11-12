@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore';
 import { OrderPanelDialog } from './OrderPanelDialog';
+import { tradeApi } from '../api/trade';
 
 vi.mock('../hooks/useSymbolMarketStatus', () => ({
   useSymbolMarketStatus: () => ({
@@ -556,6 +557,53 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
         'Insufficient account balance (0.00) to open a new order.',
       );
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the insufficient-margin block for a VALUED account whose free-margin flag is false (5ad2aa97 reading)', async () => {
+    vi.useFakeTimers();
+    const marginSpy = vi.spyOn(tradeApi.market, 'calculateMargin')
+      .mockResolvedValue({ required_margin: 208.69, currency: 'USD' } as never);
+    const previousAccountId = useAppStore.getState().accountId;
+    try {
+      // A valued account (no not-valued marker) with a small numeric free margin and the flag false:
+      // the dialog reads the number as 5ad2aa97 did and blocks (required 208.69 USD > 10 USD).
+      useAppStore.setState({
+        accountId: '900001',
+        account: {
+          balance: 10,
+          equity: 10,
+          margin: 0,
+          freeMargin: 10,
+          marginLevel: 0,
+          leverage: 100,
+          currency: 'USD',
+          hasBackendFreeMargin: false,
+        },
+      });
+
+      render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(20);
+      });
+
+      expect(screen.getByTestId('order-required-margin').getAttribute('data-insufficient-margin')).toBe('true');
+      expect(marginSpy).toHaveBeenCalled();
+      expect(screen.getByTestId('order-insufficient-margin-notice').textContent).toContain('Insufficient free margin');
+    } finally {
+      marginSpy.mockRestore();
+      useAppStore.setState({ accountId: previousAccountId });
       vi.useRealTimers();
     }
   });
