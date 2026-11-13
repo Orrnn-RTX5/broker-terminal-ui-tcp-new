@@ -394,13 +394,16 @@ function TradeAuthFlow({
       if (requestGeneration !== demoRequestGenerationRef.current) return;
       if (desktop && desktopBroker) {
         // The link was checked before the request; check it again before this
-        // broker's session is stored, so a switch during the request never
-        // stores the new account's session against another broker's server.
+        // broker's session is stored. This catches a switch during the request
+        // (not one in the instant between this check and the storing). The
+        // request went to the shared local address, so after a switch the
+        // account may be at either broker: the message does not guess which.
         try {
           await assertTerminalConnectedToBroker(desktopBroker);
         } catch {
           const login = String(response.account_login ?? response.login ?? '');
-          throw new Error(`Demo account ${login} was created at ${brokerPolicy?.displayName || brokerId}, but the terminal is no longer connected to that broker server, so you were not logged in. Connect to ${brokerPolicy?.displayName || brokerId} again and log in with account ${login} and the password you chose.`);
+          const formBroker = brokerPolicy?.displayName || brokerId;
+          throw new Error(`Demo account ${login} was created, but the terminal's broker connection changed during sign-up, so you were not logged in. The account is at ${formBroker} or at the broker server you switched to. Log in there with account ${login} and the password you chose.`);
         }
         if (requestGeneration !== demoRequestGenerationRef.current) return;
       }

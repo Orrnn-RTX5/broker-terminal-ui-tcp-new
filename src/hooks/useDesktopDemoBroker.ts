@@ -100,9 +100,10 @@ export const useDesktopDemoBroker = (active: boolean): DesktopDemoBroker | null 
  * The broker creates a public demo account on whichever server the terminal
  * is connected to, whatever the request names. The form asks the TCP link
  * itself right before sending (nothing is sent when the link moved or is down)
- * and again before it stores the new session. A switch in the short time
- * between the first check and the request is not prevented: the account is
- * then created at the new broker, and the second check refuses to log in.
+ * and again before it stores the new session. Neither check is atomic with
+ * the step after it: a switch during the request creates the account at the
+ * new broker and the second check refuses to log in; a switch in the instant
+ * after the second check is not caught.
  */
 export const assertTerminalConnectedToBroker = async (broker: BrokerDiscoveryItem): Promise<void> => {
   let status: TcpClientStatus | null = null;

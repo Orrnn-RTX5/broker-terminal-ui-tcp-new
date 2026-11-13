@@ -319,8 +319,10 @@ describe('desktop demo account from the trade login', () => {
     fireEvent.click(screen.getByRole('button', { name: /create and continue/i }));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Demo account 300009 was created at Nexa');
+    expect(alert).toHaveTextContent('Demo account 300009 was created');
     expect(alert).toHaveTextContent('you were not logged in');
+    // The request went to the shared local address, so the message names both possible brokers.
+    expect(alert).toHaveTextContent('at Nexa or at the broker server you switched to');
     expect(mocks.persist).not.toHaveBeenCalled();
     expect(mocks.setToken).not.toHaveBeenCalled();
     expect(mocks.setAuthenticated).not.toHaveBeenCalled();
