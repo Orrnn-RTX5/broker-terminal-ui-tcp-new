@@ -299,6 +299,8 @@ export interface Account {
   metricsMarginUnavailable?: boolean;
   marketClosed?: boolean;
   metricUpdatedAt?: Partial<Record<'balance' | 'equity' | 'margin' | 'freeMargin' | 'unrealizedPL' | 'marginLevel' | 'credit', number>>;
+  // Server as-of time (ms) of the values held: source_as_of, else calculated_at, else receipt time.
+  metricsAsOf?: number;
   currency: string;
   currencyDigits?: number;
   leverage: number;
@@ -1297,6 +1299,9 @@ export const useAppStore = create<AppState>()(
           const previous = state.account;
           if (account && previous?.publicationToken && account.publicationToken === previous.publicationToken
             && account.metricsScope === previous.metricsScope) {
+            // A token-less REST answer newer than the held values (see normalizeAccountMetrics) replaces them.
+            if (account.metricsAsOf !== undefined && previous.metricsAsOf !== undefined
+              && account.metricsAsOf > previous.metricsAsOf) return { account };
             if (account.currency === previous.currency && account.leverage === previous.leverage) return state;
             return { account: { ...previous, currency: account.currency, leverage: account.leverage } };
           }

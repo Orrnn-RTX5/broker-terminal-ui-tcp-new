@@ -29,6 +29,22 @@ export function accountMetricNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+// The server's as-of time of an answer in ms: source_as_of, else calculated_at (as_of).
+// Undefined when the answer carries no valid time field.
+function answerAsOfMs(raw: Record<string, any>, now: number): number | undefined {
+  const valid = (value: number | null) => value !== null && Number.isSafeInteger(value) && value > 0 && value <= now + 5_000;
+  if (raw.source_as_of !== undefined) {
+    const sourceAsOf = accountMetricNumber(raw.source_as_of);
+    return valid(sourceAsOf) ? sourceAsOf! : undefined;
+  }
+  if (raw.calculated_at !== undefined || raw.as_of !== undefined) {
+    const calculatedAt = accountMetricNumber(raw.calculated_at ?? raw.as_of);
+    const timestamp = calculatedAt === null ? null : calculatedAt < 100_000_000_000 ? calculatedAt * 1000 : calculatedAt;
+    return valid(timestamp) ? timestamp! : undefined;
+  }
+  return undefined;
+}
+
 // Keep metadata from every envelope while unwrapping account/metrics channel frames.
 export function extractAccountMetrics(payload: unknown): Record<string, any> {
   let value = payload;
@@ -60,7 +76,12 @@ export function normalizeAccountMetrics(
   }
   const token = raw.publication_token;
   const validToken = typeof token === 'string' && /^[0-9]{20}$/.test(token) && !/^0+$/.test(token);
-  if (current?.publicationToken && (!validToken || token <= current.publicationToken)) {
+  // A token-less REST answer that is newer than the held value may apply even after a
+  // stamped frame locked the token; otherwise a tab freezes on its last stamped balance.
+  const answerAsOf = answerAsOfMs(raw, now);
+  const newerTokenlessAnswer = token === undefined && answerAsOf !== undefined
+    && current?.metricsAsOf !== undefined && answerAsOf > current.metricsAsOf;
+  if (current?.publicationToken && !newerTokenlessAnswer && (!validToken || token <= current.publicationToken)) {
     // The profile endpoint may finish after a newer metrics event. It can
     // supply account identity, but must not roll back any financial value.
     if (token === undefined) {
@@ -87,6 +108,7 @@ export function normalizeAccountMetrics(
     metricsStatus: String(raw.status ?? (raw.valid === false ? 'unavailable' : raw.stale === true ? 'stale' : 'valid')),
     marketClosed: raw.market_closed === true || raw.market_status === 'closed',
     metricUpdatedAt: {},
+    metricsAsOf: answerAsOf ?? now,
   };
   const calculatedAt = accountMetricNumber(raw.calculated_at ?? raw.as_of);
   const calculationTimestamp = calculatedAt === null ? now : calculatedAt < 100_000_000_000 ? calculatedAt * 1000 : calculatedAt;

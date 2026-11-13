@@ -167,3 +167,44 @@ describe('margin unavailable (available:false)', () => {
   });
 });
 
+
+describe('token-less REST answers after a stamped frame locked the token', () => {
+  const stampedAt = now - 2_000;
+  const stampedFrame = {
+    balance: 89999.95, equity: 89999.95, credit: 0, calculated_at: stampedAt, source_as_of: stampedAt, publication_token: older,
+  };
+  const heldFrame = () => normalizeAccountMetrics(stampedFrame, null, { now });
+
+  it('applies a REST answer newer than the held stamped frame (owner case: 89999.95 then 89999.78)', () => {
+    const rest = { balance: 89999.78, equity: 89999.78, credit: 0, calculated_at: now - 1_000, source_as_of: now - 1_000 };
+    const result = normalizeAccountMetrics(rest, heldFrame(), { partial: true, now });
+    expect(result).toMatchObject({ balance: 89999.78, equity: 89999.78, publicationToken: older });
+    expect(accountMetricAvailable(result, 'balance', now)).toBe(true);
+  });
+
+  it('ignores a REST answer whose source_as_of is not newer than the held value', () => {
+    const held = heldFrame();
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: stampedAt }, held, { partial: true, now })).toBe(held);
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: stampedAt - 500 }, held, { partial: true, now })).toBe(held);
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, calculated_at: stampedAt }, held, { partial: true, now })).toBe(held);
+  });
+
+  it('uses calculated_at when a REST answer has no source_as_of, and never rolls back an applied answer', () => {
+    const held = heldFrame();
+    const applied = normalizeAccountMetrics({ balance: 89999.78, credit: 0, calculated_at: now - 1_000 }, held, { partial: true, now });
+    expect(applied.balance).toBe(89999.78);
+    expect(normalizeAccountMetrics({ balance: 89999.90, credit: 0, source_as_of: now - 1_500 }, applied, { partial: true, now })).toBe(applied);
+  });
+
+  it('ignores a token-less answer that carries no time field', () => {
+    const held = heldFrame();
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0 }, held, { partial: true, now })).toBe(held);
+  });
+
+  it('still applies a later stamped frame with a newer token and ignores an older token', () => {
+    const restApplied = normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: now - 1_000 }, heldFrame(), { partial: true, now });
+    const newerFrame = normalizeAccountMetrics({ balance: 89999.60, credit: 0, calculated_at: now - 500, source_as_of: now - 500, publication_token: newer }, restApplied, { now });
+    expect(newerFrame).toMatchObject({ balance: 89999.60, publicationToken: newer });
+    expect(normalizeAccountMetrics({ balance: 1, credit: 0, source_as_of: now, publication_token: older }, newerFrame, { now })).toBe(newerFrame);
+  });
+});
