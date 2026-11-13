@@ -2,6 +2,7 @@ import { API_V2_BASE_URL } from '../config/api';
 import { getRuntimeBrokerConfiguration, isDesktopBackendTarget } from '../config/backendTarget.js';
 import { toLocalDevProxyUrl } from '../config/localDevProxy';
 import { ApiError, apiClient } from './client';
+import { authV2Api } from './trade';
 import type { AccountClassificationFields } from '../types/api';
 
 /** Position accounting of a new demo account. Absent = the broker's hedging demo default. */
@@ -110,13 +111,22 @@ const apiErrorCode = (error: unknown): string => {
 export const loadDemoRegistrationModes = async (
   policyBrokerId?: string,
   signal?: AbortSignal,
+  desktopTarget?: DesktopDemoRegistrationTarget,
 ): Promise<DemoRegistrationModes> => {
   const closed: DemoRegistrationModes = { hedging: null, netting: false };
-  let target: DemoRegistrationTarget;
-  try {
-    target = resolveDemoRegistrationTarget(policyBrokerId);
-  } catch {
-    return closed;
+  let target: Pick<DemoRegistrationTarget, 'brokerId' | 'baseUrl'>;
+  if (desktopTarget) {
+    // Desktop: ask the connected broker at its directory address (see registerDesktopBrokerDemoAccount).
+    const brokerId = String(desktopTarget.brokerId ?? '').trim();
+    const origin = String(desktopTarget.serverUrl ?? '').trim().replace(/\/+$/, '');
+    if (!isDesktopBackendTarget() || !brokerId || !/^https?:\/\//i.test(origin)) return closed;
+    target = { brokerId, baseUrl: `${origin}/api/v2` };
+  } else {
+    try {
+      target = resolveDemoRegistrationTarget(policyBrokerId);
+    } catch {
+      return closed;
+    }
   }
   try {
     const config = await apiClient.get<Record<string, unknown>>('/broker/config', {
@@ -136,6 +146,125 @@ export const loadDemoRegistrationModes = async (
   } catch {
     return closed;
   }
+};
+
+/** A desktop demo signup: the broker's Manager route also asks for a phone number. */
+export interface DesktopDemoRegistrationInput {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  /** Only 'netting' is sent; hedging keeps the admin's demo group and sends no mode. */
+  accountMode?: DemoAccountMode;
+}
+
+/** The connected broker of a desktop demo signup and its directory server address. */
+export interface DesktopDemoRegistrationTarget {
+  brokerId: string;
+  serverUrl: string;
+}
+
+export const DESKTOP_DEMO_NAME_MESSAGE = 'Please enter your first and last name.';
+export const DESKTOP_DEMO_NO_LOGIN_MESSAGE = 'The broker did not return the new demo account login.';
+
+/** Splits "First Middle Last" into the first word and the rest; null unless both parts are present. */
+export const splitDemoAccountName = (fullName: string): { firstName: string; lastName: string } | null => {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+};
+
+const readCreatedLogin = (created: unknown): number => {
+  const record = created && typeof created === 'object' ? created as Record<string, unknown> : {};
+  const login = Number(record.login ?? record.Login);
+  return Number.isSafeInteger(login) && login > 0 ? login : 0;
+};
+
+/**
+ * Opens a demo account from the desktop (TCP) terminal at the connected broker.
+ *
+ * The broker's Manager creates public demo accounts on its least-privilege
+ * provisioning login, the same transaction path as an account the Manager opens
+ * by hand (POST {origin}/api/v1/public/demo-account; the access server routes
+ * /api/v1/public/* to the Manager). The Manager applies the admin's demo group
+ * (its netting demo group for a netting request), leverage, currency and opening
+ * balance; the caller cannot choose them. The new
+ * account is then logged in through the ordinary trader login, so the session
+ * is exactly the one a manual login would give.
+ */
+export const registerDesktopBrokerDemoAccount = async (
+  input: DesktopDemoRegistrationInput,
+  target: DesktopDemoRegistrationTarget,
+): Promise<DemoRegistrationResponse> => {
+  // The caller names the broker the TCP link is connected to and its
+  // directory address (useDesktopDemoBroker); a saved session or the packaged
+  // default broker does not decide where a desktop demo account is opened.
+  if (!isDesktopBackendTarget()) throw new Error('Demo registration broker does not match this terminal deployment.');
+  const brokerId = String(target?.brokerId ?? '').trim();
+  const brokerOrigin = String(target?.serverUrl ?? '').trim().replace(/\/+$/, '');
+  if (!brokerId || !/^https?:\/\//i.test(brokerOrigin)) {
+    throw new Error('Demo registration is unavailable because this terminal has no broker configured.');
+  }
+  const names = splitDemoAccountName(input.name);
+  if (!names) throw new Error(DESKTOP_DEMO_NAME_MESSAGE);
+  const baseUrl = `${brokerOrigin}/api/v2`;
+  const netting = input.accountMode === 'netting';
+
+  let created: Record<string, unknown>;
+  try {
+    created = await apiClient.post<Record<string, unknown>>('/public/demo-account', {
+      master_pass: input.password,
+      email: input.email.trim(),
+      first_name: names.firstName,
+      last_name: names.lastName,
+      phone: input.phone.trim(),
+      // The Manager opens a netting request in the admin's netting demo group.
+      ...(netting ? { account_mode: 'netting' } : {}),
+    }, {
+      baseUrl: `${brokerOrigin}/api/v1`,
+      skipDynamicUrl: true,
+      skipAuth: true,
+    });
+  } catch (error) {
+    if (netting) {
+      const code = apiErrorCode(error);
+      if (code === 'DEMO_NETTING_NOT_CONFIGURED') throw new Error(DEMO_NETTING_NOT_CONFIGURED_MESSAGE);
+      // A Manager without the netting demo group step answers a group/mode mismatch; nothing was created.
+      if (code === 'ACCOUNT_MODE_GROUP_MISMATCH' || code === 'ACCOUNT_MODE_UNSUPPORTED') {
+        throw new Error(DEMO_NETTING_UNAVAILABLE_MESSAGE);
+      }
+    }
+    throw error;
+  }
+  const login = readCreatedLogin(created);
+  if (!login) throw new Error(DESKTOP_DEMO_NO_LOGIN_MESSAGE);
+
+  let session: Awaited<ReturnType<typeof authV2Api.login>>;
+  try {
+    session = await authV2Api.login({ username: String(login), password: input.password, broker_id: brokerId }, {
+      baseUrl,
+      skipDynamicUrl: true,
+      persistSession: false,
+    });
+  } catch (error) {
+    const reason = error instanceof Error && error.message ? ` (${error.message})` : '';
+    throw new Error(`Demo account ${login} was created, but logging in to it failed${reason}. Log in with account ${login} and the password you chose.`);
+  }
+  const token = session.access_token || session.token;
+  if (!token) {
+    throw new Error(`Demo account ${login} was created, but no trading session was returned. Log in with account ${login} and the password you chose.`);
+  }
+  if (session.broker_id && session.broker_id.trim() !== brokerId) {
+    throw new Error('The demo account was returned for a different broker.');
+  }
+  return {
+    ...session,
+    access_token: token,
+    token,
+    account_login: session.account_login ?? login,
+    broker_id: session.broker_id || brokerId,
+    name: input.name.trim(),
+  } as DemoRegistrationResponse;
 };
 
 /**
