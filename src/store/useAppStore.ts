@@ -1312,7 +1312,9 @@ export const useAppStore = create<AppState>()(
             return { account: { ...previous, currency: account.currency, leverage: account.leverage } };
           }
           // Unlocked held value: a token-less answer provably older or equal than the held value is dropped.
+          // Ordering applies within one metrics scope only; another scope's first value is accepted.
           if (account && previous && !previous.publicationToken && !account.publicationToken
+            && (!account.metricsScope || account.metricsScope === previous.metricsScope)
             && answerOrder({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt, sentAt: account.metricsSentAt }, previous) === false) return state;
           if (account && previous?.publicationToken
             && (!account.metricsScope || account.metricsScope === previous.metricsScope)

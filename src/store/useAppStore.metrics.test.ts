@@ -64,3 +64,33 @@ describe('unlocked held value in the store', () => {
   });
 });
 
+describe('a new metrics scope: its first value is accepted whatever its times', () => {
+  const at = Date.now();
+  const cases = [
+    { name: 'unlocked, no server times', locked: false, serverTimes: false },
+    { name: 'unlocked, server times', locked: false, serverTimes: true },
+    { name: 'locked, no server times', locked: true, serverTimes: false },
+    { name: 'locked, server times', locked: true, serverTimes: true },
+  ];
+
+  it.each(cases)('$name: account B (55) replaces account A (100) from another scope', ({ locked, serverTimes }) => {
+    const times = (value: number) => (serverTimes ? { calculated_at: value, source_as_of: value } : {});
+    const token = (value: string) => (locked ? { publication_token: value } : {});
+    const a = normalizeAccountMetrics(
+      { balance: 100, credit: 0, ...times(at - 500), ...token('17895582000000000002') },
+      null,
+      { scope: 'session-a', now: at, requestedAt: at - 500 },
+    );
+    useAppStore.setState({ account: a });
+    // B's answer is older than A's in every time it carries, and its token is older too.
+    const b = normalizeAccountMetrics(
+      { balance: 55, credit: 0, ...times(at - 2_000), ...token('17895582000000000001') },
+      a,
+      { partial: true, scope: 'session-b', now: at, requestedAt: at - 2_000 },
+    );
+    useAppStore.getState().setAccount(b);
+    expect(useAppStore.getState().account?.balance).toBe(55);
+    expect(useAppStore.getState().account?.metricsScope).toBe('session-b');
+  });
+});
+

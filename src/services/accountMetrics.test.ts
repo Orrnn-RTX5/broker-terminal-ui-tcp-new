@@ -288,3 +288,30 @@ describe('unlocked held value (no publication token): out-of-order REST answers 
   });
 });
 
+describe('metrics scope change', () => {
+  it('normalizes a value from a new scope as a first value, whatever its times', () => {
+    const a = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, null, { scope: 'session-a', now, requestedAt: now - 500 });
+    const b = normalizeAccountMetrics({ balance: 55, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, a, { partial: true, scope: 'session-b', now, requestedAt: now - 2_000 });
+    expect(b.balance).toBe(55);
+    expect(b.metricsScope).toBe('session-b');
+  });
+});
+
+describe('server-timed locked value and a time-less REST answer (client clock ordering)', () => {
+  const held = () => normalizeAccountMetrics(
+    { balance: 100, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000, publication_token: older },
+    null,
+    { now: now - 2_000, requestedAt: now - 2_000 },
+  );
+
+  it('applies a time-less REST answer whose request started after the held value', () => {
+    const result = normalizeAccountMetrics({ balance: 99, credit: 0 }, held(), { partial: true, now, requestedAt: now - 500 });
+    expect(result).toMatchObject({ balance: 99, publicationToken: older });
+  });
+
+  it('ignores a time-less REST answer whose request started before the held value', () => {
+    const previous = held();
+    expect(normalizeAccountMetrics({ balance: 99, credit: 0 }, previous, { partial: true, now, requestedAt: now - 3_000 })).toBe(previous);
+  });
+});
+
