@@ -259,3 +259,32 @@ describe('time-less held frame (no server times) and client clock skew', () => {
   });
 });
 
+describe('unlocked held value (no publication token): out-of-order REST answers never roll back', () => {
+  it('with server times: an older answer that arrives last is ignored', () => {
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, null, { now, requestedAt: now - 500 });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, newer, { partial: true, now, requestedAt: now - 2_000 });
+    expect(late).toBe(newer);
+    expect(late.balance).toBe(100);
+  });
+
+  it('without server times: an answer whose request started before the held one is ignored', () => {
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { now: now - 500, requestedAt: now - 500 });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0 }, newer, { partial: true, now, requestedAt: now - 2_000 });
+    expect(late).toBe(newer);
+  });
+
+  it('accepts the first answer, and a later answer whose request started after it', () => {
+    const first = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, null, { now, requestedAt: now - 2_000 });
+    expect(first.balance).toBe(99);
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, first, { partial: true, now, requestedAt: now - 500 });
+    expect(newer.balance).toBe(100);
+  });
+
+  it('never compares a server time with a client time: a server-timed answer sent later applies over a time-less held value', () => {
+    const held = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { now: now - 2_000, requestedAt: now - 2_000 });
+    // The server time is older than the held client time, but the request was sent after it.
+    const later = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 3_000, source_as_of: now - 3_000 }, held, { partial: true, now, requestedAt: now - 1_000 });
+    expect(later.balance).toBe(99);
+  });
+});
+

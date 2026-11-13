@@ -53,3 +53,14 @@ describe('time-less held frame and REST answers in the store', () => {
   });
 });
 
+describe('unlocked held value in the store', () => {
+  it('keeps the newer value when an older REST answer reaches the store last', () => {
+    const at = Date.now();
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { scope: 'session-a', now: at - 500, requestedAt: at - 500 });
+    useAppStore.setState({ account: newer });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0 }, null, { scope: 'session-a', now: at, requestedAt: at - 2_000 });
+    useAppStore.getState().setAccount(late);
+    expect(useAppStore.getState().account).toBe(newer);
+  });
+});
+

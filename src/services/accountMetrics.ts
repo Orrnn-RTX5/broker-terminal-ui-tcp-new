@@ -52,27 +52,28 @@ function answerAsOfMs(raw: Record<string, any>, now: number): number | undefined
   return answerCalculatedAtMs(raw, now);
 }
 
-// Is a token-less answer newer than the held values?
-// - Held values with server times: compare server times only. Newer source_as_of wins; with an
+// Orders an answer against the held values, for every held value (locked or not).
+// - Both sides have server times: compare server times only. Newer source_as_of wins; with an
 //   equal source (a quiet symbol keeps it constant) a newer calculated_at wins.
-// - Held values without server times (a RAM frame): compare client clock only. The REST request
-//   must have been sent after the held value was received (answer.sentAt > held.metricsReceivedAt).
-// A server time is never compared with a client time, so clock skew cannot freeze or roll back.
-export function isNewerThanHeld(
+// - Otherwise: compare client clock only. The answer's request start (sentAt) against the held
+//   value's own client time (its request start, or its receipt time for a frame).
+// This ordering never compares a server time with a client time. The validity and freshness
+// gates elsewhere in this file (validAnswerTimeMs, invalidCalculationTime, invalidSourceTime,
+// accountMetricAvailable) still compare server times with the browser clock: a follow-up, not
+// covered by this ordering. Returns true when newer, false when older or equal, and undefined
+// when the two cannot be ordered (no comparable times, or no held value).
+export function answerOrder(
   answer: { asOf?: number; calculatedAt?: number; sentAt?: number },
-  held: Pick<Account, 'metricsAsOf' | 'metricsCalculatedAt' | 'metricsReceivedAt'> | null | undefined,
-): boolean {
-  if (!held) return false;
-  if (held.metricsAsOf !== undefined) {
-    if (answer.asOf === undefined) return false;
+  held: Pick<Account, 'metricsAsOf' | 'metricsCalculatedAt' | 'metricsClientAt'> | null | undefined,
+): boolean | undefined {
+  if (!held) return undefined;
+  if (answer.asOf !== undefined && held.metricsAsOf !== undefined) {
     if (answer.asOf !== held.metricsAsOf) return answer.asOf > held.metricsAsOf;
-    return answer.calculatedAt !== undefined && held.metricsCalculatedAt !== undefined
-      && answer.calculatedAt > held.metricsCalculatedAt;
+    if (answer.calculatedAt === undefined || held.metricsCalculatedAt === undefined) return false;
+    return answer.calculatedAt > held.metricsCalculatedAt;
   }
-  if (held.metricsReceivedAt !== undefined) {
-    return answer.sentAt !== undefined && answer.sentAt > held.metricsReceivedAt;
-  }
-  return false;
+  if (answer.sentAt !== undefined && held.metricsClientAt !== undefined) return answer.sentAt > held.metricsClientAt;
+  return undefined;
 }
 
 // Keep metadata from every envelope while unwrapping account/metrics channel frames.
@@ -106,15 +107,19 @@ export function normalizeAccountMetrics(
   }
   const token = raw.publication_token;
   const validToken = typeof token === 'string' && /^[0-9]{20}$/.test(token) && !/^0+$/.test(token);
-  // A token-less REST answer that is newer than the held value may apply even after a
-  // stamped frame locked the token; otherwise a tab freezes on its last stamped balance.
   // options.requestedAt is the client time the REST request was sent (captured before the call).
   const answerAsOf = answerAsOfMs(raw, now);
   const answerCalculatedAt = answerCalculatedAtMs(raw, now);
   const sentAt = options.requestedAt;
-  const newerTokenlessAnswer = token === undefined
-    && isNewerThanHeld({ asOf: answerAsOf, calculatedAt: answerCalculatedAt, sentAt }, current);
-  if (current?.publicationToken && !newerTokenlessAnswer && (!validToken || token <= current.publicationToken)) {
+  const order = answerOrder({ asOf: answerAsOf, calculatedAt: answerCalculatedAt, sentAt }, current);
+  // Locked (a publication token is held): a token-less answer applies only when newer, so a
+  // stamped frame cannot freeze the tab on its last balance; stamped frames keep token ordering.
+  // Unlocked: a token-less answer is ignored only when provably older or equal. An unorderable
+  // answer, and the first value (no held value), are accepted as before.
+  const stale = current?.publicationToken
+    ? (token === undefined ? order !== true : !validToken || token <= current.publicationToken)
+    : Boolean(current) && token === undefined && order === false;
+  if (stale && current) {
     // The profile endpoint may finish after a newer metrics event. It can
     // supply account identity, but must not roll back any financial value.
     if (token === undefined) {
@@ -145,8 +150,8 @@ export function normalizeAccountMetrics(
     metricsAsOf: answerAsOf,
     metricsCalculatedAt: answerCalculatedAt,
     metricsSentAt: sentAt,
-    // Client receipt time (or REST request start) of a value that has no server time.
-    metricsReceivedAt: answerAsOf === undefined && answerCalculatedAt === undefined ? (sentAt ?? now) : undefined,
+    // The held value's own client time: its request start, or its receipt time (frames).
+    metricsClientAt: sentAt ?? now,
   };
   const calculatedAt = accountMetricNumber(raw.calculated_at ?? raw.as_of);
   const calculationTimestamp = calculatedAt === null ? now : calculatedAt < 100_000_000_000 ? calculatedAt * 1000 : calculatedAt;
