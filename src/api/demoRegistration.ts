@@ -111,13 +111,22 @@ const apiErrorCode = (error: unknown): string => {
 export const loadDemoRegistrationModes = async (
   policyBrokerId?: string,
   signal?: AbortSignal,
+  desktopTarget?: DesktopDemoRegistrationTarget,
 ): Promise<DemoRegistrationModes> => {
   const closed: DemoRegistrationModes = { hedging: null, netting: false };
-  let target: DemoRegistrationTarget;
-  try {
-    target = resolveDemoRegistrationTarget(policyBrokerId);
-  } catch {
-    return closed;
+  let target: Pick<DemoRegistrationTarget, 'brokerId' | 'baseUrl'>;
+  if (desktopTarget) {
+    // Desktop: ask the connected broker at its directory address (see registerDesktopBrokerDemoAccount).
+    const brokerId = String(desktopTarget.brokerId ?? '').trim();
+    const origin = String(desktopTarget.serverUrl ?? '').trim().replace(/\/+$/, '');
+    if (!isDesktopBackendTarget() || !brokerId || !/^https?:\/\//i.test(origin)) return closed;
+    target = { brokerId, baseUrl: `${origin}/api/v2` };
+  } else {
+    try {
+      target = resolveDemoRegistrationTarget(policyBrokerId);
+    } catch {
+      return closed;
+    }
   }
   try {
     const config = await apiClient.get<Record<string, unknown>>('/broker/config', {
@@ -147,6 +156,12 @@ export interface DesktopDemoRegistrationInput {
   phone: string;
   /** Only 'netting' is sent; hedging keeps the admin's demo group and sends no mode. */
   accountMode?: DemoAccountMode;
+}
+
+/** The connected broker of a desktop demo signup and its directory server address. */
+export interface DesktopDemoRegistrationTarget {
+  brokerId: string;
+  serverUrl: string;
 }
 
 export const DESKTOP_DEMO_NAME_MESSAGE = 'Please enter your first and last name.';
@@ -179,13 +194,20 @@ const readCreatedLogin = (created: unknown): number => {
  */
 export const registerDesktopBrokerDemoAccount = async (
   input: DesktopDemoRegistrationInput,
-  policyBrokerId?: string,
+  target: DesktopDemoRegistrationTarget,
 ): Promise<DemoRegistrationResponse> => {
-  const { desktop, brokerId, baseUrl } = resolveDemoRegistrationTarget(policyBrokerId);
-  if (!desktop) throw new Error('Demo registration broker does not match this terminal deployment.');
+  // The caller names the broker the TCP link is connected to and its
+  // directory address (useDesktopDemoBroker); a saved session or the packaged
+  // default broker does not decide where a desktop demo account is opened.
+  if (!isDesktopBackendTarget()) throw new Error('Demo registration broker does not match this terminal deployment.');
+  const brokerId = String(target?.brokerId ?? '').trim();
+  const brokerOrigin = String(target?.serverUrl ?? '').trim().replace(/\/+$/, '');
+  if (!brokerId || !/^https?:\/\//i.test(brokerOrigin)) {
+    throw new Error('Demo registration is unavailable because this terminal has no broker configured.');
+  }
   const names = splitDemoAccountName(input.name);
   if (!names) throw new Error(DESKTOP_DEMO_NAME_MESSAGE);
-  const brokerOrigin = baseUrl.replace(/\/api\/v2\/?$/, '');
+  const baseUrl = `${brokerOrigin}/api/v2`;
   const netting = input.accountMode === 'netting';
 
   let created: Record<string, unknown>;

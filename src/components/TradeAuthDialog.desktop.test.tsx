@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   setAuthenticated: vi.fn(),
   addSavedAccount: vi.fn(),
   setActiveAccount: vi.fn(),
+  saveLogin: vi.fn(),
+  savedLoginsOn: false,
 }));
 
 vi.mock('../hooks/useUiTranslation', () => ({ useUiTranslation: () => (text: string) => text }));
@@ -29,6 +31,11 @@ vi.mock('../api/client', () => ({
   setRefreshToken: vi.fn(),
   removeToken: vi.fn(),
   parseTokenExpiresAt: vi.fn(),
+}));
+vi.mock('../services/savedLogins', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/savedLogins')>(),
+  supportsSavedLogins: () => mocks.savedLoginsOn,
+  saveLogin: mocks.saveLogin,
 }));
 vi.mock('../services/brokerSession', () => ({ persistBrokerSessionDiscovery: mocks.persist }));
 vi.mock('../services/brokerDirectory', () => ({ loadAppBrokerDirectory: mocks.loadDirectory }));
@@ -223,7 +230,7 @@ describe('desktop demo account from the trade login', () => {
     const demo = screen.getByRole('button', { name: /create demo account/i });
     await waitFor(() => expect(demo).toBeEnabled());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    await waitFor(() => expect(loadDemoRegistrationModes).toHaveBeenCalledWith('Nexa', expect.anything()));
+    await waitFor(() => expect(loadDemoRegistrationModes).toHaveBeenCalledWith('Nexa', expect.anything(), { brokerId: 'Nexa', serverUrl: 'http://127.0.0.1:18504' }));
     expect(mocks.webPolicy).not.toHaveBeenCalled();
 
     fireEvent.click(demo);
@@ -243,7 +250,7 @@ describe('desktop demo account from the trade login', () => {
     await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith('300001'));
     expect(fetchMock).toHaveBeenCalledWith('/api/tcp-client/status', { cache: 'no-store' });
     expect(registerDesktopBrokerDemoAccount).toHaveBeenCalledExactlyOnceWith(
-      { name: 'Demo User', email: 'demo@example.com', password: 'Password1', phone: '+44 20 7946 0000' }, 'Nexa',
+      { name: 'Demo User', email: 'demo@example.com', password: 'Password1', phone: '+44 20 7946 0000' }, { brokerId: 'Nexa', serverUrl: 'http://127.0.0.1:18504' },
     );
     const routing = {
       broker_id: 'Nexa', broker_name: 'Nexa', tcp_addr: '10.0.0.2:4443',
@@ -301,6 +308,40 @@ describe('desktop demo account from the trade login', () => {
     expect(mocks.setAuthenticated).not.toHaveBeenCalled();
   });
 
+  it('does not store the session when the terminal moved to another broker during the request', async () => {
+    const onAuthenticated = vi.fn();
+    vi.mocked(registerDesktopBrokerDemoAccount).mockImplementation(async () => {
+      liveTcpStatus = { connected: true, broker_id: 'achiever', target_tcp: '10.0.0.1:4443' };
+      return { access_token: 'demo-token', account_login: 300009, broker_id: 'Nexa' };
+    });
+    render(<TradeAuthDialog isOpen intent={intent} onClose={vi.fn()} onAuthenticated={onAuthenticated} />);
+    await openDemoForm();
+    fireEvent.click(screen.getByRole('button', { name: /create and continue/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Demo account 300009 was created at Nexa');
+    expect(alert).toHaveTextContent('you were not logged in');
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.setToken).not.toHaveBeenCalled();
+    expect(mocks.setAuthenticated).not.toHaveBeenCalled();
+    expect(onAuthenticated).not.toHaveBeenCalled();
+  });
+
+  it('never saves the demo password on the desktop terminal', async () => {
+    mocks.savedLoginsOn = true;
+    try {
+      const onAuthenticated = vi.fn();
+      vi.mocked(registerDesktopBrokerDemoAccount).mockResolvedValue({ access_token: 'demo-token', account_login: 300010, broker_id: 'Nexa' });
+      render(<TradeAuthDialog isOpen intent={null} onClose={vi.fn()} onAuthenticated={onAuthenticated} />);
+      await openDemoForm();
+      fireEvent.click(screen.getByRole('button', { name: /create and continue/i }));
+      await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith('300010'));
+      expect(mocks.saveLogin).not.toHaveBeenCalled();
+    } finally {
+      mocks.savedLoginsOn = false;
+    }
+  });
+
   it('does not log in with a demo account returned for a different broker', async () => {
     const onAuthenticated = vi.fn();
     vi.mocked(registerDesktopBrokerDemoAccount).mockResolvedValue({
@@ -339,7 +380,7 @@ describe('desktop demo account from the trade login', () => {
 
     await waitFor(() => expect(onAuthenticated).toHaveBeenCalledWith('300003'));
     expect(registerDesktopBrokerDemoAccount).toHaveBeenCalledExactlyOnceWith(
-      { name: 'Demo User', email: 'demo@example.com', password: 'Password1', phone: '+44 20 7946 0000', accountMode: 'netting' }, 'Nexa',
+      { name: 'Demo User', email: 'demo@example.com', password: 'Password1', phone: '+44 20 7946 0000', accountMode: 'netting' }, { brokerId: 'Nexa', serverUrl: 'http://127.0.0.1:18504' },
     );
   });
 
@@ -389,6 +430,6 @@ describe('desktop demo account from the trade login', () => {
       window.dispatchEvent(new CustomEvent('rtx5-tcp-status'));
     });
     expect(await screen.findByText('Achiever Financials')).toBeVisible();
-    await waitFor(() => expect(loadDemoRegistrationModes).toHaveBeenLastCalledWith('achiever', expect.anything()));
+    await waitFor(() => expect(loadDemoRegistrationModes).toHaveBeenLastCalledWith('achiever', expect.anything(), { brokerId: 'achiever', serverUrl: 'http://127.0.0.1:18504' }));
   });
 });

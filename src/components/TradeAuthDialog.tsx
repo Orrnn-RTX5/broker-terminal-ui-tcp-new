@@ -160,16 +160,22 @@ function TradeAuthFlow({
   // offer a demo account at a broker that says it has none.
   const demoNotOffered = desktop && knownDemoModes?.hedging === false && !nettingAvailable;
 
+  // Desktop: the directory address of the broker the TCP link is connected to.
+  const desktopServerUrl = desktop ? getDirectoryBrokerServerUrl(desktopBroker) : '';
+
   useEffect(() => {
     // A previous answer never outlives the broker/config it was read for.
     setDemoModes(null);
-    if (!isOpen || !brokerId) return undefined;
+    if (!isOpen || !brokerId || (desktop && !desktopServerUrl)) return undefined;
     const controller = new AbortController();
-    void loadDemoRegistrationModes(brokerId, controller.signal).then((modes) => {
+    const request = desktop
+      ? loadDemoRegistrationModes(brokerId, controller.signal, { brokerId, serverUrl: desktopServerUrl })
+      : loadDemoRegistrationModes(brokerId, controller.signal);
+    void request.then((modes) => {
       if (!controller.signal.aborted) setDemoModes({ brokerId, modes });
     });
     return () => controller.abort();
-  }, [isOpen, brokerId, configurationIdentity]);
+  }, [isOpen, brokerId, configurationIdentity, desktop, desktopServerUrl]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -326,10 +332,10 @@ function TradeAuthFlow({
         store.setActiveAccount(login);
       }
     }
-    if (password && supportsSavedLogins()) {
-      const candidateUrls = Array.from(new Set(
-        (desktopSession ? [desktopSession.serverUrl] : [demoServerUrl, sessionServerUrl]).filter(Boolean),
-      ));
+    // The desktop login saves a password only when its "Save password" box is
+    // ticked; the desktop demo signup has no such choice, so it saves none.
+    if (!desktopSession && password && supportsSavedLogins()) {
+      const candidateUrls = Array.from(new Set([demoServerUrl, sessionServerUrl].filter(Boolean)));
       for (const url of candidateUrls) {
         void saveLogin({ brokerId, serverUrl: url }, accountId, password).catch(() => undefined);
       }
@@ -368,7 +374,7 @@ function TradeAuthFlow({
     const requestGeneration = ++demoRequestGenerationRef.current;
     try {
       if (desktop) {
-        if (!desktopBroker) throw new Error('This terminal does not have a broker configured.');
+        if (!desktopBroker || !desktopServerUrl) throw new Error('This terminal does not have a broker configured.');
         await assertTerminalConnectedToBroker(desktopBroker);
         if (requestGeneration !== demoRequestGenerationRef.current) return;
       }
@@ -377,7 +383,7 @@ function TradeAuthFlow({
           selectedAccountMode === 'netting'
             ? { name, email, password, phone, accountMode: 'netting' }
             : { name, email, password, phone },
-          brokerId,
+          { brokerId, serverUrl: desktopServerUrl },
         )
         : await registerRuntimeBrokerDemoAccount(
           selectedAccountMode === 'netting'
@@ -386,6 +392,18 @@ function TradeAuthFlow({
           brokerId,
         );
       if (requestGeneration !== demoRequestGenerationRef.current) return;
+      if (desktop && desktopBroker) {
+        // The link was checked before the request; check it again before this
+        // broker's session is stored, so a switch during the request never
+        // stores the new account's session against another broker's server.
+        try {
+          await assertTerminalConnectedToBroker(desktopBroker);
+        } catch {
+          const login = String(response.account_login ?? response.login ?? '');
+          throw new Error(`Demo account ${login} was created at ${brokerPolicy?.displayName || brokerId}, but the terminal is no longer connected to that broker server, so you were not logged in. Connect to ${brokerPolicy?.displayName || brokerId} again and log in with account ${login} and the password you chose.`);
+        }
+        if (requestGeneration !== demoRequestGenerationRef.current) return;
+      }
       completeDemoSession(response);
     } catch (registrationError) {
       if (requestGeneration !== demoRequestGenerationRef.current) return;

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { getRuntimeBrokerConfiguration } from '../config/backendTarget.js';
 import { loadAppBrokerDirectory } from '../services/brokerDirectory';
 import { isDirectoryBrokerSelectable, type BrokerDiscoveryItem } from '../services/brokerDiscovery';
 import type { BrokerLoginPolicy } from '../services/brokerLoginPolicy';
@@ -38,8 +37,7 @@ const readTcpStatus = (): TcpClientStatus => {
 // (not a saved session or a packaged default) names the broker.
 const readConnectedBrokerKey = (): string => {
   const status = readTcpStatus();
-  const brokerId = text(status.broker_id) || text(getRuntimeBrokerConfiguration().brokerId);
-  return JSON.stringify([brokerId, text(status.target_tcp)]);
+  return JSON.stringify([text(status.broker_id), text(status.target_tcp)]);
 };
 
 const matchesTcpStatus = (broker: BrokerDiscoveryItem, brokerId: string, tcpAddr: string): boolean =>
@@ -100,9 +98,11 @@ export const useDesktopDemoBroker = (active: boolean): DesktopDemoBroker | null 
 
 /**
  * The broker creates a public demo account on whichever server the terminal
- * is connected to, whatever the request names. Ask the TCP link itself right
- * before sending, so an account is never opened at a broker other than the
- * one shown in the form.
+ * is connected to, whatever the request names. The form asks the TCP link
+ * itself right before sending (nothing is sent when the link moved or is down)
+ * and again before it stores the new session. A switch in the short time
+ * between the first check and the request is not prevented: the account is
+ * then created at the new broker, and the second check refuses to log in.
  */
 export const assertTerminalConnectedToBroker = async (broker: BrokerDiscoveryItem): Promise<void> => {
   let status: TcpClientStatus | null = null;

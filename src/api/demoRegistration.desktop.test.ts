@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, apiClient } from './client';
 import { authV2Api } from './trade';
-import { registerDesktopBrokerDemoAccount, splitDemoAccountName } from './demoRegistration';
+import { loadDemoRegistrationModes, registerDesktopBrokerDemoAccount, splitDemoAccountName } from './demoRegistration';
 
 vi.mock('./client', () => ({
-  ApiError: class ApiError extends Error {},
+  ApiError: class ApiError extends Error {
+    constructor(public status: number, message: string, public data?: unknown) { super(message); }
+  },
   apiClient: { post: vi.fn(), get: vi.fn() },
 }));
 vi.mock('./trade', () => ({ authV2Api: { login: vi.fn() } }));
@@ -14,21 +16,48 @@ vi.mock('../config/backendTarget.js', async (importOriginal) => ({
   isDesktopBackendTarget: () => true,
 }));
 
+const target = { brokerId: 'tradex', serverUrl: 'http://127.0.0.1:18504/' };
 const input = { name: 'Demo  Test User', email: ' demo@example.test ', password: 'Password1', phone: ' +44 20 7946 0000 ' };
 
 describe('desktop demo registration through the broker Manager', () => {
   beforeEach(() => {
     localStorage.clear();
-    localStorage.setItem('broker_id', 'tradex');
+    localStorage.setItem('broker_id', target);
     vi.mocked(apiClient.post).mockReset();
     vi.mocked(authV2Api.login).mockReset();
+    vi.mocked(apiClient.get).mockReset();
+  });
+
+  it('opens the account at the connected broker even when the saved session names another broker', async () => {
+    localStorage.setItem('broker_id', 'yo4x');
+    vi.mocked(apiClient.post).mockResolvedValue({ login: 300130 });
+    vi.mocked(authV2Api.login).mockResolvedValue({ access_token: 'session-token', account_login: 300130 } as never);
+    await expect(registerDesktopBrokerDemoAccount(input, target)).resolves.toMatchObject({ broker_id: 'tradex' });
+    expect(vi.mocked(apiClient.post).mock.calls[0][2]).toMatchObject({ baseUrl: 'http://127.0.0.1:18504/api/v1' });
+  });
+
+  it.each([
+    [{ brokerId: '', serverUrl: 'http://127.0.0.1:18504' }],
+    [{ brokerId: 'tradex', serverUrl: '' }],
+    [{ brokerId: 'tradex', serverUrl: '127.0.0.1:18504' }],
+  ])('refuses an incomplete broker target %j before sending anything', async (bad) => {
+    await expect(registerDesktopBrokerDemoAccount(input, bad)).rejects.toThrow('no broker configured');
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('reads the demo options from the connected broker address', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ broker_id: 'tradex', demo_registration_enabled: true, demo_netting_registration_enabled: true });
+    await expect(loadDemoRegistrationModes('tradex', undefined, target)).resolves.toEqual({ hedging: true, netting: true });
+    expect(apiClient.get).toHaveBeenCalledWith('/broker/config', expect.objectContaining({
+      baseUrl: 'http://127.0.0.1:18504/api/v2', params: { broker_id: 'tradex' },
+    }));
   });
 
   it('creates the account on the Manager public demo route, then logs it in through the trader login', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ login: 300123, Group: 'test' });
     vi.mocked(authV2Api.login).mockResolvedValue({ access_token: 'session-token', refresh_token: 'refresh', account_login: 300123, broker_id: 'tradex' } as never);
 
-    await expect(registerDesktopBrokerDemoAccount(input, 'tradex')).resolves.toMatchObject({
+    await expect(registerDesktopBrokerDemoAccount(input, target)).resolves.toMatchObject({
       access_token: 'session-token', token: 'session-token', account_login: 300123, broker_id: 'tradex', name: 'Demo  Test User',
     });
     expect(apiClient.post).toHaveBeenCalledExactlyOnceWith('/public/demo-account', {
@@ -48,11 +77,11 @@ describe('desktop demo registration through the broker Manager', () => {
   it('asks the Manager for a netting account only when netting was chosen', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ login: 300127 });
     vi.mocked(authV2Api.login).mockResolvedValue({ access_token: 'session-token', account_login: 300127 } as never);
-    await registerDesktopBrokerDemoAccount({ ...input, accountMode: 'netting' }, 'tradex');
+    await registerDesktopBrokerDemoAccount({ ...input, accountMode: 'netting' }, target);
     expect(vi.mocked(apiClient.post).mock.calls[0][1]).toMatchObject({ account_mode: 'netting' });
 
     vi.mocked(apiClient.post).mockClear();
-    await registerDesktopBrokerDemoAccount({ ...input, accountMode: 'hedging' }, 'tradex');
+    await registerDesktopBrokerDemoAccount({ ...input, accountMode: 'hedging' }, target);
     expect(vi.mocked(apiClient.post).mock.calls[0][1]).not.toHaveProperty('account_mode');
   });
 
@@ -60,32 +89,32 @@ describe('desktop demo registration through the broker Manager', () => {
     [503, 'DEMO_NETTING_NOT_CONFIGURED', 'not available from this broker'],
     [409, 'ACCOUNT_MODE_GROUP_MISMATCH', 'Nothing was created'],
   ])('explains a netting refusal %s %s without logging in', async (status, code, text) => {
-    vi.mocked(apiClient.post).mockRejectedValue(Object.assign(new ApiError('refused'), { status, data: { code } }));
-    await expect(registerDesktopBrokerDemoAccount({ ...input, accountMode: 'netting' }, 'tradex')).rejects.toThrow(text);
+    vi.mocked(apiClient.post).mockRejectedValue(new ApiError(status, 'refused', { code }));
+    await expect(registerDesktopBrokerDemoAccount({ ...input, accountMode: 'netting' }, target)).rejects.toThrow(text);
     expect(authV2Api.login).not.toHaveBeenCalled();
   });
 
   it('accepts the commission-approval answer, which carries the login only', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ login: 300124, commission_approval_id: 7 });
     vi.mocked(authV2Api.login).mockResolvedValue({ token: 'session-token', account_login: 300124 } as never);
-    await expect(registerDesktopBrokerDemoAccount(input, 'tradex')).resolves.toMatchObject({ account_login: 300124, broker_id: 'tradex' });
+    await expect(registerDesktopBrokerDemoAccount(input, target)).resolves.toMatchObject({ account_login: 300124, broker_id: 'tradex' });
   });
 
   it('refuses a one-word name before sending anything', async () => {
-    await expect(registerDesktopBrokerDemoAccount({ ...input, name: 'Demo' }, 'tradex')).rejects.toThrow('first and last name');
+    await expect(registerDesktopBrokerDemoAccount({ ...input, name: 'Demo' }, target)).rejects.toThrow('first and last name');
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it('does not log in when the Manager returns no login', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ opening_funding: 'pending' });
-    await expect(registerDesktopBrokerDemoAccount(input, 'tradex')).rejects.toThrow('did not return the new demo account login');
+    await expect(registerDesktopBrokerDemoAccount(input, target)).rejects.toThrow('did not return the new demo account login');
     expect(authV2Api.login).not.toHaveBeenCalled();
   });
 
   it('names the created login when the following login fails', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ login: 300125 });
     vi.mocked(authV2Api.login).mockRejectedValue(new Error('Invalid credentials'));
-    await expect(registerDesktopBrokerDemoAccount(input, 'tradex')).rejects.toThrow(
+    await expect(registerDesktopBrokerDemoAccount(input, target)).rejects.toThrow(
       'Demo account 300125 was created, but logging in to it failed (Invalid credentials). Log in with account 300125',
     );
   });
@@ -93,7 +122,7 @@ describe('desktop demo registration through the broker Manager', () => {
   it('refuses a session returned for another broker', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ login: 300126 });
     vi.mocked(authV2Api.login).mockResolvedValue({ access_token: 'other', account_login: 300126, broker_id: 'yo4x' } as never);
-    await expect(registerDesktopBrokerDemoAccount(input, 'tradex')).rejects.toThrow('different broker');
+    await expect(registerDesktopBrokerDemoAccount(input, target)).rejects.toThrow('different broker');
   });
 
   it('splits names on any whitespace', () => {
