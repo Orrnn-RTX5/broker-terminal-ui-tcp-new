@@ -21,3 +21,76 @@ describe('account publication ordering across store writers', () => {
     expect(useAppStore.getState().account?.balance).toBe(100);
   });
 });
+
+describe('token-less REST answers after a stamped frame locked the token', () => {
+  it('stores a REST answer newer than the held stamped frame, and keeps an older one out', () => {
+    const at = Date.now();
+    const held = normalizeAccountMetrics({
+      balance: 89999.95, credit: 0, calculated_at: at - 2_000, source_as_of: at - 2_000, publication_token: '17895582000000000002',
+    }, null, { scope: 'session-a' });
+    useAppStore.setState({ account: held });
+    useAppStore.getState().setAccount(normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: at - 1_000 }, held, { partial: true, scope: 'session-a' }));
+    expect(useAppStore.getState().account?.balance).toBe(89999.78);
+    expect(useAppStore.getState().account?.publicationToken).toBe('17895582000000000002');
+    const applied = useAppStore.getState().account;
+    useAppStore.getState().setAccount(normalizeAccountMetrics({ balance: 1, credit: 0, source_as_of: at - 1_500 }, applied, { partial: true, scope: 'session-a' }));
+    expect(useAppStore.getState().account).toBe(applied);
+  });
+});
+
+describe('time-less held frame and REST answers in the store', () => {
+  it('stores a REST answer whose request started after the time-less frame was received', () => {
+    const received = Date.now();
+    const held = normalizeAccountMetrics({ balance: 100, credit: 0, publication_token: '17895582000000000002' }, null, { scope: 'session-a', now: received });
+    useAppStore.setState({ account: held });
+    const sent = received + 1_000;
+    useAppStore.getState().setAccount(normalizeAccountMetrics(
+      { balance: 99.5, credit: 0, calculated_at: sent, source_as_of: sent },
+      held,
+      { partial: true, scope: 'session-a', now: sent + 500, requestedAt: sent },
+    ));
+    expect(useAppStore.getState().account?.balance).toBe(99.5);
+  });
+});
+
+describe('unlocked held value in the store', () => {
+  it('keeps the newer value when an older REST answer reaches the store last', () => {
+    const at = Date.now();
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { scope: 'session-a', now: at - 500, requestedAt: at - 500 });
+    useAppStore.setState({ account: newer });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0 }, null, { scope: 'session-a', now: at, requestedAt: at - 2_000 });
+    useAppStore.getState().setAccount(late);
+    expect(useAppStore.getState().account).toBe(newer);
+  });
+});
+
+describe('a new metrics scope: its first value is accepted whatever its times', () => {
+  const at = Date.now();
+  const cases = [
+    { name: 'unlocked, no server times', locked: false, serverTimes: false },
+    { name: 'unlocked, server times', locked: false, serverTimes: true },
+    { name: 'locked, no server times', locked: true, serverTimes: false },
+    { name: 'locked, server times', locked: true, serverTimes: true },
+  ];
+
+  it.each(cases)('$name: account B (55) replaces account A (100) from another scope', ({ locked, serverTimes }) => {
+    const times = (value: number) => (serverTimes ? { calculated_at: value, source_as_of: value } : {});
+    const token = (value: string) => (locked ? { publication_token: value } : {});
+    const a = normalizeAccountMetrics(
+      { balance: 100, credit: 0, ...times(at - 500), ...token('17895582000000000002') },
+      null,
+      { scope: 'session-a', now: at, requestedAt: at - 500 },
+    );
+    useAppStore.setState({ account: a });
+    // B's answer is older than A's in every time it carries, and its token is older too.
+    const b = normalizeAccountMetrics(
+      { balance: 55, credit: 0, ...times(at - 2_000), ...token('17895582000000000001') },
+      a,
+      { partial: true, scope: 'session-b', now: at, requestedAt: at - 2_000 },
+    );
+    useAppStore.getState().setAccount(b);
+    expect(useAppStore.getState().account?.balance).toBe(55);
+    expect(useAppStore.getState().account?.metricsScope).toBe('session-b');
+  });
+});
+

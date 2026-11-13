@@ -13,6 +13,9 @@ export interface SessionTradeSnapshot {
   accountResult: PromiseSettledResult<StartupAccount>;
   positionsResult: PromiseSettledResult<StartupPositions>;
   metricsResultPromise?: Promise<PromiseSettledResult<StartupAccount | null>>;
+  // Client clock: when each REST request was sent. Undefined for a handoff value (no known send time).
+  accountRequestedAt?: number;
+  metricsRequestedAt?: number;
 }
 
 export interface SessionTradeSnapshotRequests {
@@ -20,6 +23,8 @@ export interface SessionTradeSnapshotRequests {
   positionsResultPromise: Promise<PromiseSettledResult<StartupPositions>>;
   metricsResultPromise: Promise<PromiseSettledResult<StartupAccount | null>>;
   snapshotPromise: Promise<SessionTradeSnapshot>;
+  accountRequestedAt?: number;
+  metricsRequestedAt?: number;
 }
 
 const inFlightSnapshots = new Map<string, SessionTradeSnapshotRequests>();
@@ -135,9 +140,11 @@ export const getSessionTradeSnapshotRequests = (
   const handoff = validatedAccountHandoff;
   clearValidatedAccountHandoff();
   const canUseHandoff = handoff?.requestKey === requestKey && Date.now() < handoff.expiresAt;
+  const accountRequestedAt = canUseHandoff ? undefined : Date.now();
   const accountResultPromise = canUseHandoff
     ? Promise.resolve<PromiseSettledResult<StartupAccount>>({ status: 'fulfilled', value: handoff.account })
     : settleRequest(startSettledRequest(() => api.account.getAccountSummary(login)));
+  const metricsRequestedAt = Date.now();
   const metricsResultPromise = typeof api.account?.getAccountMetrics === 'function'
     ? settleRequest(startSettledRequest(() => api.account.getAccountMetrics(login)))
     : Promise.resolve<PromiseSettledResult<StartupAccount | null>>({ status: 'fulfilled', value: null });
@@ -151,12 +158,16 @@ export const getSessionTradeSnapshotRequests = (
     accountResult,
     positionsResult,
     metricsResultPromise,
+    accountRequestedAt,
+    metricsRequestedAt,
   }));
   const requests = {
     accountResultPromise,
     positionsResultPromise,
     metricsResultPromise,
     snapshotPromise,
+    accountRequestedAt,
+    metricsRequestedAt,
   };
 
   inFlightSnapshots.set(requestKey, requests);

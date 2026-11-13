@@ -66,7 +66,16 @@ export function ExposureTab({ positions, formatMoney, account }: ExposureTabProp
               </tr>
             </thead>
             <tbody className="font-mono text-[12.5px] leading-[20px] text-zinc-200">
-              {exposure.rows.length === 0 ? (
+              {!exposure.freeMarginAvailable ? (
+                <tr data-testid="exposure-cash-leg-unavailable" className="rtx-exposure-row h-[34px] border-b border-zinc-800/90 bg-[#111318]">
+                  <td className="p-1.5 pl-3 font-sans font-semibold text-amber-400">{exposure.accountCurrency}</td>
+                  <td className="p-1.5 text-right text-zinc-500">{METRIC_UNAVAILABLE}</td>
+                  <td className="p-1.5 text-right text-zinc-500">{METRIC_UNAVAILABLE}</td>
+                  <td className="p-1.5 text-right text-zinc-500">{METRIC_UNAVAILABLE}</td>
+                  <td className="p-1.5 px-4 align-middle" />
+                </tr>
+              ) : null}
+              {exposure.rows.length === 0 && exposure.freeMarginAvailable ? (
                 <tr>
                   <td colSpan={5} className="h-20 text-center font-sans text-[12px] text-zinc-500">
                     {tr('No active asset exposure')}

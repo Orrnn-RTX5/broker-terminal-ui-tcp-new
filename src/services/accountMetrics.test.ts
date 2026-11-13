@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountMetricAvailable, normalizeAccountMetrics } from './accountMetrics';
+import { accountMetricAvailable, accountMetricProvided, normalizeAccountMetrics } from './accountMetrics';
 
 const now = 1_789_558_200_000;
 const complete = { balance: 100, equity: 90, used_margin: 110, free_margin: -20, floating_pnl: -12, credit: 2, margin_level: 81.81 };
@@ -124,3 +124,194 @@ describe('authoritative account metrics', () => {
     expect(accountMetricAvailable(result, 'equity', now)).toBe(false);
   });
 });
+
+describe('margin unavailable (available:false)', () => {
+  const unavailable = { balance: 1000, credit: 0, equity: 1000, used_margin: null, free_margin: null, margin_level: null, available: false, reason: 'margin_unavailable' };
+
+  it('marks margin, free margin and margin level unavailable with no 0 exposed', () => {
+    const result = normalizeAccountMetrics({ ...unavailable, publication_token: older }, null, { now });
+    for (const key of ['margin', 'freeMargin', 'marginLevel'] as const) {
+      expect(accountMetricProvided(result, key)).toBeNull();
+      expect(accountMetricAvailable(result, key, now)).toBe(false);
+    }
+    expect(result.metricsStatus).toBe('unavailable');
+  });
+
+  it('keeps real balance, equity and credit available', () => {
+    const result = normalizeAccountMetrics({ ...unavailable, credit: 2, publication_token: older }, null, { now });
+    expect(accountMetricProvided(result, 'equity')).toBe(1000);
+    for (const key of ['balance', 'equity', 'credit'] as const) {
+      expect(accountMetricAvailable(result, key, now)).toBe(true);
+    }
+  });
+
+  it('treats numeric margin fields as unavailable when the event says available:false', () => {
+    const result = normalizeAccountMetrics({ ...complete, available: false, publication_token: older }, null, { now });
+    expect(accountMetricProvided(result, 'margin')).toBeNull();
+    expect(accountMetricProvided(result, 'freeMargin')).toBeNull();
+    expect(accountMetricProvided(result, 'marginLevel')).toBeNull();
+  });
+
+  it('reads available:false nested inside data', () => {
+    const result = normalizeAccountMetrics({ type: 'metrics_update', publication_token: older, data: { ...unavailable } }, null, { now });
+    expect(accountMetricProvided(result, 'marginLevel')).toBeNull();
+    expect(accountMetricAvailable(result, 'equity', now)).toBe(true);
+  });
+
+  it('restores margin fields from a later normal event', () => {
+    const blocked = normalizeAccountMetrics({ ...unavailable, publication_token: older }, null, { now });
+    const restored = normalizeAccountMetrics({ ...complete, publication_token: newer }, blocked, { now });
+    expect(accountMetricProvided(restored, 'margin')).toBe(110);
+    expect(accountMetricAvailable(restored, 'freeMargin', now)).toBe(true);
+    expect(restored.metricsStatus).toBe('valid');
+  });
+});
+
+
+describe('token-less REST answers after a stamped frame locked the token', () => {
+  const stampedAt = now - 2_000;
+  const stampedFrame = {
+    balance: 89999.95, equity: 89999.95, credit: 0, calculated_at: stampedAt, source_as_of: stampedAt, publication_token: older,
+  };
+  const heldFrame = () => normalizeAccountMetrics(stampedFrame, null, { now });
+
+  it('applies a REST answer newer than the held stamped frame (owner case: 89999.95 then 89999.78)', () => {
+    const rest = { balance: 89999.78, equity: 89999.78, credit: 0, calculated_at: now - 1_000, source_as_of: now - 1_000 };
+    const result = normalizeAccountMetrics(rest, heldFrame(), { partial: true, now });
+    expect(result).toMatchObject({ balance: 89999.78, equity: 89999.78, publicationToken: older });
+    expect(accountMetricAvailable(result, 'balance', now)).toBe(true);
+  });
+
+  it('ignores a REST answer whose source_as_of is not newer than the held value', () => {
+    const held = heldFrame();
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: stampedAt }, held, { partial: true, now })).toBe(held);
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: stampedAt - 500 }, held, { partial: true, now })).toBe(held);
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0, calculated_at: stampedAt }, held, { partial: true, now })).toBe(held);
+  });
+
+  it('uses calculated_at when a REST answer has no source_as_of, and never rolls back an applied answer', () => {
+    const held = heldFrame();
+    const applied = normalizeAccountMetrics({ balance: 89999.78, credit: 0, calculated_at: now - 1_000 }, held, { partial: true, now });
+    expect(applied.balance).toBe(89999.78);
+    expect(normalizeAccountMetrics({ balance: 89999.90, credit: 0, source_as_of: now - 1_500 }, applied, { partial: true, now })).toBe(applied);
+  });
+
+  it('ignores a token-less answer that carries no time field', () => {
+    const held = heldFrame();
+    expect(normalizeAccountMetrics({ balance: 89999.78, credit: 0 }, held, { partial: true, now })).toBe(held);
+  });
+
+  it('still applies a later stamped frame with a newer token and ignores an older token', () => {
+    const restApplied = normalizeAccountMetrics({ balance: 89999.78, credit: 0, source_as_of: now - 1_000 }, heldFrame(), { partial: true, now });
+    const newerFrame = normalizeAccountMetrics({ balance: 89999.60, credit: 0, calculated_at: now - 500, source_as_of: now - 500, publication_token: newer }, restApplied, { now });
+    expect(newerFrame).toMatchObject({ balance: 89999.60, publicationToken: newer });
+    expect(normalizeAccountMetrics({ balance: 1, credit: 0, source_as_of: now, publication_token: older }, newerFrame, { now })).toBe(newerFrame);
+  });
+});
+
+describe('token-less answers with an unchanged source_as_of (quiet symbol)', () => {
+  const quietSource = now - 60_000;
+  const held = () => normalizeAccountMetrics({
+    balance: 89999.95, credit: 0, calculated_at: now - 2_000, source_as_of: quietSource, publication_token: older,
+  }, null, { now });
+
+  it('applies an answer with the same source_as_of and a newer calculated_at', () => {
+    const later = { balance: 89999.78, credit: 0, calculated_at: now - 1_000, source_as_of: quietSource };
+    const applied = normalizeAccountMetrics(later, held(), { partial: true, now });
+    expect(applied.balance).toBe(89999.78);
+    expect(applied.metricsCalculatedAt).toBe(now - 1_000);
+    expect(applied.metricsAsOf).toBe(quietSource);
+    expect(applied.publicationToken).toBe(older);
+  });
+
+  it('ignores an answer with the same source_as_of and the same calculated_at', () => {
+    const previous = held();
+    const same = { balance: 1, credit: 0, calculated_at: now - 2_000, source_as_of: quietSource };
+    expect(normalizeAccountMetrics(same, previous, { partial: true, now })).toBe(previous);
+  });
+});
+
+describe('time-less held frame (no server times) and client clock skew', () => {
+  // The server clock is the true clock (now). The client clock is offset by `skew` ms.
+  const restAnswer = (serverAt: number) => ({ balance: 99.5, credit: 0, calculated_at: serverAt, source_as_of: serverAt });
+  const frame = (receivedAt: number) => normalizeAccountMetrics(
+    { balance: 100, credit: 0, publication_token: older }, null, { now: receivedAt },
+  );
+
+  it('applies a REST answer whose request started after the time-less frame was received', () => {
+    const held = frame(now);
+    const result = normalizeAccountMetrics(restAnswer(now + 1_000), held, { partial: true, now: now + 2_000, requestedAt: now + 1_000 });
+    expect(result).toMatchObject({ balance: 99.5, publicationToken: older });
+  });
+
+  it('ignores a REST answer whose request started before the time-less frame was received', () => {
+    const held = frame(now);
+    expect(normalizeAccountMetrics(restAnswer(now - 1_000), held, { partial: true, now: now + 500, requestedAt: now - 1_000 })).toBe(held);
+  });
+
+  it.each([0, 60_000, -3_000])('client clock offset %i ms: no freeze and no rollback', (skew) => {
+    const held = frame(now + skew);
+    // Sent 1 s after the frame arrived: must apply, whatever the client clock says.
+    const after = normalizeAccountMetrics(restAnswer(now + 1_000), held, { partial: true, now: now + 2_000 + skew, requestedAt: now + 1_000 + skew });
+    expect(after.balance).toBe(99.5);
+    // Sent 1 s before the frame arrived (answer older than the frame): must stay ignored.
+    expect(normalizeAccountMetrics(restAnswer(now - 1_000), held, { partial: true, now: now + 500 + skew, requestedAt: now - 1_000 + skew })).toBe(held);
+  });
+});
+
+describe('unlocked held value (no publication token): out-of-order REST answers never roll back', () => {
+  it('with server times: an older answer that arrives last is ignored', () => {
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, null, { now, requestedAt: now - 500 });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, newer, { partial: true, now, requestedAt: now - 2_000 });
+    expect(late).toBe(newer);
+    expect(late.balance).toBe(100);
+  });
+
+  it('without server times: an answer whose request started before the held one is ignored', () => {
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { now: now - 500, requestedAt: now - 500 });
+    const late = normalizeAccountMetrics({ balance: 99, credit: 0 }, newer, { partial: true, now, requestedAt: now - 2_000 });
+    expect(late).toBe(newer);
+  });
+
+  it('accepts the first answer, and a later answer whose request started after it', () => {
+    const first = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, null, { now, requestedAt: now - 2_000 });
+    expect(first.balance).toBe(99);
+    const newer = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, first, { partial: true, now, requestedAt: now - 500 });
+    expect(newer.balance).toBe(100);
+  });
+
+  it('never compares a server time with a client time: a server-timed answer sent later applies over a time-less held value', () => {
+    const held = normalizeAccountMetrics({ balance: 100, credit: 0 }, null, { now: now - 2_000, requestedAt: now - 2_000 });
+    // The server time is older than the held client time, but the request was sent after it.
+    const later = normalizeAccountMetrics({ balance: 99, credit: 0, calculated_at: now - 3_000, source_as_of: now - 3_000 }, held, { partial: true, now, requestedAt: now - 1_000 });
+    expect(later.balance).toBe(99);
+  });
+});
+
+describe('metrics scope change', () => {
+  it('normalizes a value from a new scope as a first value, whatever its times', () => {
+    const a = normalizeAccountMetrics({ balance: 100, credit: 0, calculated_at: now - 500, source_as_of: now - 500 }, null, { scope: 'session-a', now, requestedAt: now - 500 });
+    const b = normalizeAccountMetrics({ balance: 55, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000 }, a, { partial: true, scope: 'session-b', now, requestedAt: now - 2_000 });
+    expect(b.balance).toBe(55);
+    expect(b.metricsScope).toBe('session-b');
+  });
+});
+
+describe('server-timed locked value and a time-less REST answer (client clock ordering)', () => {
+  const held = () => normalizeAccountMetrics(
+    { balance: 100, credit: 0, calculated_at: now - 2_000, source_as_of: now - 2_000, publication_token: older },
+    null,
+    { now: now - 2_000, requestedAt: now - 2_000 },
+  );
+
+  it('applies a time-less REST answer whose request started after the held value', () => {
+    const result = normalizeAccountMetrics({ balance: 99, credit: 0 }, held(), { partial: true, now, requestedAt: now - 500 });
+    expect(result).toMatchObject({ balance: 99, publicationToken: older });
+  });
+
+  it('ignores a time-less REST answer whose request started before the held value', () => {
+    const previous = held();
+    expect(normalizeAccountMetrics({ balance: 99, credit: 0 }, previous, { partial: true, now, requestedAt: now - 3_000 })).toBe(previous);
+  });
+});
+

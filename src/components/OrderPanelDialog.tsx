@@ -33,6 +33,7 @@ import { inferObservedPriceDigits } from '../utils/chartPriceScale';
 import { readRegisteredSymbolPriceSpec, readRegisteredSymbolStopsLevel } from '../services/dailyChangePriceModeRegistry';
 import { depthExecutionForLevel } from './depthOfMarketModel';
 import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
+import { accountMetricProvided } from '../services/accountMetrics';
 import { formatOrderError } from '../utils/orderError';
 import '../styles/order-panel-dialog.css';
 
@@ -1957,7 +1958,18 @@ export function OrderPanelDialog({
   // currency; omitted when neither is known (never derived from the symbol).
   const baseCurrency = marginCurrency || account?.currency || '';
   const accountBalance = account && Number.isFinite(Number(account.balance)) ? Number(account.balance) : null;
-  const accountFreeMargin = account && Number.isFinite(Number(account.freeMargin)) ? Number(account.freeMargin) : null;
+  // A NOT VALUED account (the backend said its margin cannot be valued) has an unknown free margin (null),
+  // never 0. Every other account keeps the 5ad2aa97 reading, including a valued account whose free-margin
+  // flag is false (review hk-rev-term-notvalued2: its insufficient-margin block must stay).
+  const accountNotValued = Boolean(account)
+    && ((account as { metricsMarginUnavailable?: boolean | null }).metricsMarginUnavailable === true
+      || (account as { metricsStatus?: string | null }).metricsStatus === 'unavailable');
+  const accountFreeMargin = !account
+    ? null
+    : accountNotValued
+      ? accountMetricProvided(account, 'freeMargin')
+      : (Number.isFinite(Number(account.freeMargin)) ? Number(account.freeMargin) : null);
+  // An unknown free margin never removes the zero-balance block that the balance alone triggers (5ad2aa97).
   const hasZeroOrNegativeBalance = accountBalance !== null
     && accountBalance <= 0
     && (accountFreeMargin === null || accountFreeMargin <= 0);

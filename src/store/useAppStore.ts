@@ -10,6 +10,7 @@ import { devtools, persist } from 'zustand/middleware';
 import { formatJournalLoginMessage, useSystemJournalStore } from './useSystemJournalStore';
 import { hasTradeHistoryPositionLevelChanges, rememberTradeHistoryPositionLevels } from '../utils/tradeHistoryLevelCache';
 import { isOlderPositionVersion, mergePositionRecord } from '../services/positionStream';
+import { answerOrder } from '../services/accountMetrics';
 import {
   commitBrokerAccountSessionScope,
   createCommittedBrokerAccountSessionScope,
@@ -295,8 +296,18 @@ export interface Account {
   marginCalculationVersion?: string;
   configurationVersion?: string;
   metricsStatus?: string;
+  /** Set when the backend said margin cannot be valued (available:false); margin fields are then unavailable, not 0. */
+  metricsMarginUnavailable?: boolean;
   marketClosed?: boolean;
   metricUpdatedAt?: Partial<Record<'balance' | 'equity' | 'margin' | 'freeMargin' | 'unrealizedPL' | 'marginLevel' | 'credit', number>>;
+  // Server times (ms) of the values held, present only when the server supplied them.
+  // Client clock values are never stored here.
+  metricsAsOf?: number;
+  metricsCalculatedAt?: number;
+  // Client clock only: REST request start of the answer that produced the values held.
+  metricsSentAt?: number;
+  // Client clock only: the held value's own client time (request start, or receipt for a frame).
+  metricsClientAt?: number;
   currency: string;
   currencyDigits?: number;
   leverage: number;
@@ -1295,9 +1306,16 @@ export const useAppStore = create<AppState>()(
           const previous = state.account;
           if (account && previous?.publicationToken && account.publicationToken === previous.publicationToken
             && account.metricsScope === previous.metricsScope) {
+            // A token-less REST answer newer than the held values (see normalizeAccountMetrics) replaces them.
+            if (answerOrder({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt, sentAt: account.metricsSentAt }, previous) === true) return { account };
             if (account.currency === previous.currency && account.leverage === previous.leverage) return state;
             return { account: { ...previous, currency: account.currency, leverage: account.leverage } };
           }
+          // Unlocked held value: a token-less answer provably older or equal than the held value is dropped.
+          // Ordering applies within one metrics scope only; another scope's first value is accepted.
+          if (account && previous && !previous.publicationToken && !account.publicationToken
+            && (!account.metricsScope || account.metricsScope === previous.metricsScope)
+            && answerOrder({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt, sentAt: account.metricsSentAt }, previous) === false) return state;
           if (account && previous?.publicationToken
             && (!account.metricsScope || account.metricsScope === previous.metricsScope)
             && (!account.publicationToken || account.publicationToken <= previous.publicationToken)) return state;

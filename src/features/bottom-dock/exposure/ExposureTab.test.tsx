@@ -40,4 +40,28 @@ describe('ExposureTab', () => {
     expect(screen.getAllByText('USD')).toHaveLength(2);
     expect(screen.getByText('1.00')).toBeInTheDocument();
   });
+
+  it('shows the account-currency cash leg as the unavailable placeholder when the account is not valued', () => {
+    render(
+      <ExposureTab
+        positions={[{ symbol: 'EURUSD', side: 'BUY', volume: 1, currentPrice: 1.1, contractSize: 100000 }]}
+        account={{
+          balance: 5000,
+          equity: 5000,
+          margin: 0,
+          freeMargin: 0,
+          currency: 'USD',
+          leverage: 100,
+          hasBackendFreeMargin: false,
+          metricsMarginUnavailable: true,
+        }}
+        formatMoney={(value) => Number(value ?? 0).toFixed(2)}
+      />,
+    );
+
+    const cashLeg = screen.getByTestId('exposure-cash-leg-unavailable');
+    expect(cashLeg).toHaveTextContent('USD');
+    expect(cashLeg.textContent).toContain('—');
+    expect(cashLeg.textContent).not.toContain('0.00');
+  });
 });

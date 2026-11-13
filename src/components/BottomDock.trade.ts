@@ -81,6 +81,8 @@ export interface TradeAccountMetricInput {
   // Broker-scoped metrics envelope metadata; drives the staleness gate below.
   metricsStatus?: string;
   metricUpdatedAt?: Account['metricUpdatedAt'];
+  // Set by the metrics normalizer when the backend said margin cannot be valued (available:false).
+  metricsMarginUnavailable?: boolean;
 }
 
 /**
@@ -110,6 +112,8 @@ export interface TradeAccountMetricResolution {
   freeMarginSource: TradeAccountMetricSource;
   marginLevelSource: TradeAccountMetricSource;
   warnings: string[];
+  /** True when the backend said margin cannot be valued; position margin must not stand in for it. */
+  marginUnavailable?: boolean;
 }
 
 /** Decode a backend number/Money.amount without deriving or rounding its value. */
@@ -183,17 +187,18 @@ export const resolveTradeAccountMetrics = (
   const equity = read('equity', account?.equity, account?.hasBackendEquity);
   // A negative used margin is not a reportable requirement: report it unavailable
   // rather than manufacturing a zero or showing a nonsensical negative.
-  const rawMargin = read('margin', account?.margin, account?.hasBackendMargin);
+  const marginSupplied = account?.metricsMarginUnavailable === true ? false : account?.hasBackendMargin;
+  const rawMargin = read('margin', account?.margin, marginSupplied);
   const margin = rawMargin !== null && rawMargin >= 0 ? rawMargin : null;
   const freeMargin = read(
     'freeMargin',
     account?.freeMargin ?? account?.free_margin ?? account?.margin_free ?? account?.margin_available,
-    account?.hasBackendFreeMargin,
+    account?.metricsMarginUnavailable === true ? false : account?.hasBackendFreeMargin,
   );
   const marginLevel = read(
     'marginLevel',
     account?.marginLevel ?? account?.margin_level,
-    account?.hasBackendMarginLevel,
+    account?.metricsMarginUnavailable === true ? false : account?.hasBackendMarginLevel,
   );
   const unrealizedPL = read(
     'unrealizedPL',
@@ -225,6 +230,7 @@ export const resolveTradeAccountMetrics = (
     freeMarginSource: freeMargin === null ? 'unavailable' : 'backend',
     marginLevelSource: marginLevel === null ? 'unavailable' : 'backend',
     warnings,
+    marginUnavailable: account?.metricsMarginUnavailable === true,
   };
 };
 
@@ -233,9 +239,10 @@ export const resolveTradeAccountMetrics = (
  * position stream between backend account snapshots.
  *
  * The backend streams per-position profit far more often than it publishes account
- * metrics. Its position `profit` excludes swap and commission, so the live floating
- * P/L is the sum of each open position's profit + swap + commission (the same rule
- * as the mobile app), and equity = balance + credit + floating P/L. Balance,
+ * metrics. Its position `profit` excludes swap, and the backend debits the entry
+ * commission from balance when the position opens. So the live floating P/L is the
+ * sum of each open position's profit + swap (never commission, which would count it
+ * twice), and equity = balance + credit + floating P/L. Balance,
  * credit and margin stay exactly as the backend reports them. Metrics the backend
  * did not supply stay unavailable, and nothing is derived while any open position
  * is missing its backend profit.
@@ -265,6 +272,8 @@ export const applyLivePositionProfit = (
   if (positionsMargin !== null && !Number.isFinite(positionsMargin)) {
     positionsMargin = null;
   }
+  // Position margin must not stand in for an account margin the backend could not value.
+  if (metrics.marginUnavailable) positionsMargin = null;
 
   const margin = metrics.margin !== null && metrics.margin > 0
     ? metrics.margin
@@ -284,7 +293,7 @@ export const applyLivePositionProfit = (
       allProfitsAvailable = false;
       break;
     }
-    floatingPnL += profit + toFiniteNumber(position.swap ?? position.storage) + toFiniteNumber(position.commission);
+    floatingPnL += profit + toFiniteNumber(position.swap ?? position.storage);
   }
   if (!allProfitsAvailable || !Number.isFinite(floatingPnL)) {
     if (positionsMargin === null) return metrics;

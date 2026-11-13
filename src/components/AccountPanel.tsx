@@ -7,6 +7,8 @@ import { useUiTranslation } from '../hooks/useUiTranslation';
 import { Icon } from './ui/Icon';
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { accountMetricProvided } from '../services/accountMetrics';
+import { METRIC_UNAVAILABLE } from '../features/bottom-dock/trade/tradeTabModel';
 import { useOneClickTrading, useSettingsStore } from '../store/useSettingsStore';
 import { getStoredAccountLogin, tradeGatewayApi } from '../api/tradeGateway';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
@@ -238,25 +240,25 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
               />
               <BalanceRow
                 label={tr("Equity")}
-                value={account?.equity || 0}
+                value={accountMetricProvided(account, 'equity')}
                 currency={account?.currency || 'USD'}
                 valueColor="text-emerald-400"
               />
               <BalanceRow
                 label={tr("Margin")}
-                value={account?.margin || 0}
+                value={accountMetricProvided(account, 'margin')}
                 currency={account?.currency || 'USD'}
               />
               <BalanceRow
                 label={tr("Free Margin")}
-                value={account?.freeMargin || 0}
+                value={accountMetricProvided(account, 'freeMargin')}
                 currency={account?.currency || 'USD'}
               />
               <BalanceRow
                 label={tr("Margin Level")}
-                value={account?.marginLevel || 0}
+                value={accountMetricProvided(account, 'marginLevel')}
                 suffix="%"
-                valueColor={getMarginLevelColor(account?.marginLevel || 0)}
+                valueColor={getMarginLevelColor(accountMetricProvided(account, 'marginLevel') ?? 0)}
               />
             </div>
           </div>
@@ -415,7 +417,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
  */
 interface BalanceRowProps {
   label: string;
-  value: number;
+  /** null when the backend did not value the figure: rendered as the unavailable placeholder. */
+  value: number | null;
   currency?: string;
   suffix?: string;
   valueColor?: string;
@@ -423,17 +426,19 @@ interface BalanceRowProps {
 
 const BalanceRow: React.FC<BalanceRowProps> = ({ label, value, currency, suffix, valueColor = '' }) => {
   const tr = useUiTranslation();
-  const prevRef = useRef(value);
+  const prevRef = useRef<number | null>(value);
   const [flashClass, setFlashClass] = useState('');
 
   useEffect(() => {
-    if (value > prevRef.current) {
+    if (value === null) return undefined;
+    const previous = prevRef.current;
+    if (previous !== null && value > previous) {
       setFlashClass('bg-emerald-500/25 text-emerald-400 transition-none');
       const timer = setTimeout(() => setFlashClass('transition-colors duration-500'), 120);
       prevRef.current = value;
       return () => clearTimeout(timer);
     }
-    if (value < prevRef.current) {
+    if (previous !== null && value < previous) {
       setFlashClass('bg-red-500/25 text-red-400 transition-none');
       const timer = setTimeout(() => setFlashClass('transition-colors duration-500'), 120);
       prevRef.current = value;
@@ -458,9 +463,13 @@ const BalanceRow: React.FC<BalanceRowProps> = ({ label, value, currency, suffix,
         className={`text-[14px] leading-[21px] font-semibold font-mono tabular-nums px-1 rounded-sm inline-block ${valueColor} ${flashClass}`}
         style={!valueColor ? { color: 'var(--text-primary, #e2e2e8)' } : undefined}
       >
-        {currency && `${currency} `}
-        {value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        {suffix}
+        {value === null ? METRIC_UNAVAILABLE : (
+          <>
+            {currency && `${currency} `}
+            {value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {suffix}
+          </>
+        )}
       </span>
     </div>
   );
