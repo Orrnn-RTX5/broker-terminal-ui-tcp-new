@@ -208,3 +208,25 @@ describe('token-less REST answers after a stamped frame locked the token', () =>
     expect(normalizeAccountMetrics({ balance: 1, credit: 0, source_as_of: now, publication_token: older }, newerFrame, { now })).toBe(newerFrame);
   });
 });
+
+describe('token-less answers with an unchanged source_as_of (quiet symbol)', () => {
+  const quietSource = now - 60_000;
+  const held = () => normalizeAccountMetrics({
+    balance: 89999.95, credit: 0, calculated_at: now - 2_000, source_as_of: quietSource, publication_token: older,
+  }, null, { now });
+
+  it('applies an answer with the same source_as_of and a newer calculated_at', () => {
+    const later = { balance: 89999.78, credit: 0, calculated_at: now - 1_000, source_as_of: quietSource };
+    const applied = normalizeAccountMetrics(later, held(), { partial: true, now });
+    expect(applied.balance).toBe(89999.78);
+    expect(applied.metricsCalculatedAt).toBe(now - 1_000);
+    expect(applied.metricsAsOf).toBe(quietSource);
+    expect(applied.publicationToken).toBe(older);
+  });
+
+  it('ignores an answer with the same source_as_of and the same calculated_at', () => {
+    const previous = held();
+    const same = { balance: 1, credit: 0, calculated_at: now - 2_000, source_as_of: quietSource };
+    expect(normalizeAccountMetrics(same, previous, { partial: true, now })).toBe(previous);
+  });
+});

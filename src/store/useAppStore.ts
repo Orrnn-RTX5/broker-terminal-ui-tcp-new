@@ -10,6 +10,7 @@ import { devtools, persist } from 'zustand/middleware';
 import { formatJournalLoginMessage, useSystemJournalStore } from './useSystemJournalStore';
 import { hasTradeHistoryPositionLevelChanges, rememberTradeHistoryPositionLevels } from '../utils/tradeHistoryLevelCache';
 import { isOlderPositionVersion, mergePositionRecord } from '../services/positionStream';
+import { isNewerThanHeld } from '../services/accountMetrics';
 import {
   commitBrokerAccountSessionScope,
   createCommittedBrokerAccountSessionScope,
@@ -301,6 +302,8 @@ export interface Account {
   metricUpdatedAt?: Partial<Record<'balance' | 'equity' | 'margin' | 'freeMargin' | 'unrealizedPL' | 'marginLevel' | 'credit', number>>;
   // Server as-of time (ms) of the values held: source_as_of, else calculated_at, else receipt time.
   metricsAsOf?: number;
+  // Server calculation time (ms) of the values held, when the server supplied one.
+  metricsCalculatedAt?: number;
   currency: string;
   currencyDigits?: number;
   leverage: number;
@@ -1300,8 +1303,7 @@ export const useAppStore = create<AppState>()(
           if (account && previous?.publicationToken && account.publicationToken === previous.publicationToken
             && account.metricsScope === previous.metricsScope) {
             // A token-less REST answer newer than the held values (see normalizeAccountMetrics) replaces them.
-            if (account.metricsAsOf !== undefined && previous.metricsAsOf !== undefined
-              && account.metricsAsOf > previous.metricsAsOf) return { account };
+            if (isNewerThanHeld({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt }, previous)) return { account };
             if (account.currency === previous.currency && account.leverage === previous.leverage) return state;
             return { account: { ...previous, currency: account.currency, leverage: account.leverage } };
           }
