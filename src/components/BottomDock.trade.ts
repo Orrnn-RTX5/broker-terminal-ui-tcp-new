@@ -239,9 +239,10 @@ export const resolveTradeAccountMetrics = (
  * position stream between backend account snapshots.
  *
  * The backend streams per-position profit far more often than it publishes account
- * metrics. Its position `profit` excludes swap and commission, so the live floating
- * P/L is the sum of each open position's profit + swap + commission (the same rule
- * as the mobile app), and equity = balance + credit + floating P/L. Balance,
+ * metrics. Its position `profit` excludes swap, and the backend debits the entry
+ * commission from balance when the position opens. So the live floating P/L is the
+ * sum of each open position's profit + swap (never commission, which would count it
+ * twice), and equity = balance + credit + floating P/L. Balance,
  * credit and margin stay exactly as the backend reports them. Metrics the backend
  * did not supply stay unavailable, and nothing is derived while any open position
  * is missing its backend profit.
@@ -292,7 +293,7 @@ export const applyLivePositionProfit = (
       allProfitsAvailable = false;
       break;
     }
-    floatingPnL += profit + toFiniteNumber(position.swap ?? position.storage) + toFiniteNumber(position.commission);
+    floatingPnL += profit + toFiniteNumber(position.swap ?? position.storage);
   }
   if (!allProfitsAvailable || !Number.isFinite(floatingPnL)) {
     if (positionsMargin === null) return metrics;

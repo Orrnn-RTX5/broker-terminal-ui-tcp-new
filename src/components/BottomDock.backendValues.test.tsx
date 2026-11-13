@@ -45,7 +45,7 @@ describe('Trade backend financial rendering', () => {
   it('renders backend row profit, keeps the account total on the live rows, then applies fresh backend updates', () => {
     const { container, rerender } = render(<BottomDock height={300} onClosePosition={vi.fn()} onModifyPosition={vi.fn()} />);
     expect(screen.getByTitle('Profit: 7.00')).toHaveTextContent('7.00');
-    // Floating P/L follows the streamed rows (profit + swap + commission), not the older -81.40 snapshot.
+    // Floating P/L follows the streamed rows (profit + swap), not the older -81.40 snapshot.
     expect(container.querySelector('.rtx-trade-footer-floating')).toHaveTextContent('7.00');
 
     act(() => useAppStore.getState().setTicks({

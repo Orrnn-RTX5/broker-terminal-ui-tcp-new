@@ -523,9 +523,18 @@ describe('live account metrics between backend snapshots', () => {
     expect(live.marginLevel).toBeCloseTo((10024.2336 / 25.08) * 100, 8);
   });
 
-  it('adds swap and commission, which backend position profit excludes', () => {
-    const live = applyLivePositionProfit(metrics, [{ ...positions[0], swap: -1, commission: -0.5 }]);
-    expect(live.floatingPnL).toBeCloseTo(-1.6525, 10);
+  it('adds swap, which backend position profit excludes', () => {
+    const live = applyLivePositionProfit(metrics, [{ ...positions[0], swap: -1, commission: 0 }]);
+    expect(live.floatingPnL).toBeCloseTo(-1.1525, 10);
+  });
+
+  it('does not add the open commission to floating P/L or equity: the backend already debited it from balance', () => {
+    // Entry commission leaves the balance when the position opens; floating = profit + swap only.
+    const open = { symbol: 'BTCUSD', side: 'BUY', volume: 0.01, profit: -0.04, swap: 0, commission: -0.05 };
+    const live = applyLivePositionProfit(metrics, [open]);
+    expect(live.floatingPnL).toBeCloseTo(-0.04, 10);
+    expect(live.equity).toBeCloseTo(10025.36 - 0.04, 10);
+    expect(live.balance).toBe(10025.36);
   });
 
   it('keeps backend values when a row has no backend profit or a metric is unavailable', () => {
