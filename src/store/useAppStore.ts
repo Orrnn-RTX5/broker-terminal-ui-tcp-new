@@ -300,10 +300,14 @@ export interface Account {
   metricsMarginUnavailable?: boolean;
   marketClosed?: boolean;
   metricUpdatedAt?: Partial<Record<'balance' | 'equity' | 'margin' | 'freeMargin' | 'unrealizedPL' | 'marginLevel' | 'credit', number>>;
-  // Server as-of time (ms) of the values held: source_as_of, else calculated_at, else receipt time.
+  // Server times (ms) of the values held, present only when the server supplied them.
+  // Client clock values are never stored here.
   metricsAsOf?: number;
-  // Server calculation time (ms) of the values held, when the server supplied one.
   metricsCalculatedAt?: number;
+  // Client clock only: REST request start of the answer that produced the values held.
+  metricsSentAt?: number;
+  // Client clock only: receipt time of a value held without server times (e.g. a RAM frame).
+  metricsReceivedAt?: number;
   currency: string;
   currencyDigits?: number;
   leverage: number;
@@ -1303,7 +1307,7 @@ export const useAppStore = create<AppState>()(
           if (account && previous?.publicationToken && account.publicationToken === previous.publicationToken
             && account.metricsScope === previous.metricsScope) {
             // A token-less REST answer newer than the held values (see normalizeAccountMetrics) replaces them.
-            if (isNewerThanHeld({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt }, previous)) return { account };
+            if (isNewerThanHeld({ asOf: account.metricsAsOf, calculatedAt: account.metricsCalculatedAt, sentAt: account.metricsSentAt }, previous)) return { account };
             if (account.currency === previous.currency && account.leverage === previous.leverage) return state;
             return { account: { ...previous, currency: account.currency, leverage: account.leverage } };
           }

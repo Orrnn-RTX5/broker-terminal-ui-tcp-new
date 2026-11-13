@@ -145,6 +145,7 @@ export const useTradeRefreshController = ({
         const startedAuthToken = useAppStore.getState().authToken;
         const accountScope = getCommittedBrokerAccountSessionScope();
         const metricsScope = getCommittedBrokerAccountSessionScopeKey(accountScope);
+        const requestedAt = Date.now();
         const metricsPayload = await api.account.getAccountMetrics(requestedLogin);
         const activeLogin = parsePositiveLogin(useAppStore.getState().accountId || accountIdRef.current || undefined);
         if (!isAuthenticatedRef.current || activeLogin !== requestedLogin) return;
@@ -156,7 +157,7 @@ export const useTradeRefreshController = ({
         const normalizedAccount = normalizeAccountSummary(
           metricsPayload,
           useAppStore.getState().account,
-          { partial: true, login: requestedLogin, scope: metricsScope },
+          { partial: true, login: requestedLogin, scope: metricsScope, requestedAt },
         );
         useAppStore.getState().setAccount(normalizedAccount);
       } catch (error) {

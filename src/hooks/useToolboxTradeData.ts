@@ -874,6 +874,7 @@ export function useToolboxTradeData() {
       // Start every read together, but never hold open-position rows behind
       // account or optional metrics latency.
       const startupRequests = getSessionTradeSnapshotRequests(login);
+      const metricsRequestedAt = Date.now();
       const metricsPromise = requestBrokerJson<any>(
         restBaseUrl,
         `/account/${login}/metrics`,
@@ -979,11 +980,11 @@ export function useToolboxTradeData() {
         message: `Loaded ${rawPositions.length} open position(s) for account ${login} from ${restBaseUrl}`,
       });
 
-      const applyMetrics = (body: unknown) => {
+      const applyMetrics = (body: unknown, requestedAt?: number) => {
         if (metricsScope !== getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope())) return;
         if (useAppStore.getState().authToken !== startedAuthToken) return;
         const current = useAppStore.getState().account ?? accountRef.current;
-        const next = normalizeAccountMetrics(body, current, { partial: true, scope: metricsScope, login });
+        const next = normalizeAccountMetrics(body, current, { partial: true, scope: metricsScope, login, requestedAt });
         commitAccount(next);
         if (next !== current) useAppStore.getState().setAccount(next);
       };
@@ -995,10 +996,10 @@ export function useToolboxTradeData() {
       if (seq !== refreshSeqRef.current || controller.signal.aborted) return;
 
       if (accountResult.status === 'fulfilled' && accountResult.value) {
-        applyMetrics(accountResult.value);
+        applyMetrics(accountResult.value, startupRequests.accountRequestedAt);
       }
       if (metricsBody) {
-        applyMetrics(metricsBody);
+        applyMetrics(metricsBody, metricsRequestedAt);
       }
       if (
         accountResult.status === 'rejected'

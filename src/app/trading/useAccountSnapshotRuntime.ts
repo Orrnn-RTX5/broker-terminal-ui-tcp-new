@@ -111,7 +111,7 @@ export const useAccountSnapshotRuntime = ({
           }
 
           const startedSessionToken = useAppStore.getState().authToken;
-          const { accountResult, positionsResult, metricsResultPromise } = await loadSessionTradeSnapshot(loginId);
+          const { accountResult, positionsResult, metricsResultPromise, accountRequestedAt, metricsRequestedAt } = await loadSessionTradeSnapshot(loginId);
           const isCurrentAccountHeartbeat = () => {
             const activeLogin = parsePositiveLogin(useAppStore.getState().accountId || accountIdRef.current || undefined);
             return useAppStore.getState().authToken === startedSessionToken
@@ -134,6 +134,7 @@ export const useAccountSnapshotRuntime = ({
               partial: true,
               login: loginId,
               scope: metricsScope,
+              requestedAt: accountRequestedAt,
             });
             useAppStore.getState().setAccount(normalizedAccount);
 
@@ -185,6 +186,7 @@ export const useAccountSnapshotRuntime = ({
                 partial: true,
                 login: loginId,
                 scope: metricsScope,
+                requestedAt: metricsRequestedAt,
               });
               useAppStore.getState().setAccount(normalizedMetrics);
             }

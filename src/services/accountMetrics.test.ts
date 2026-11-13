@@ -230,3 +230,32 @@ describe('token-less answers with an unchanged source_as_of (quiet symbol)', () 
     expect(normalizeAccountMetrics(same, previous, { partial: true, now })).toBe(previous);
   });
 });
+
+describe('time-less held frame (no server times) and client clock skew', () => {
+  // The server clock is the true clock (now). The client clock is offset by `skew` ms.
+  const restAnswer = (serverAt: number) => ({ balance: 99.5, credit: 0, calculated_at: serverAt, source_as_of: serverAt });
+  const frame = (receivedAt: number) => normalizeAccountMetrics(
+    { balance: 100, credit: 0, publication_token: older }, null, { now: receivedAt },
+  );
+
+  it('applies a REST answer whose request started after the time-less frame was received', () => {
+    const held = frame(now);
+    const result = normalizeAccountMetrics(restAnswer(now + 1_000), held, { partial: true, now: now + 2_000, requestedAt: now + 1_000 });
+    expect(result).toMatchObject({ balance: 99.5, publicationToken: older });
+  });
+
+  it('ignores a REST answer whose request started before the time-less frame was received', () => {
+    const held = frame(now);
+    expect(normalizeAccountMetrics(restAnswer(now - 1_000), held, { partial: true, now: now + 500, requestedAt: now - 1_000 })).toBe(held);
+  });
+
+  it.each([0, 60_000, -3_000])('client clock offset %i ms: no freeze and no rollback', (skew) => {
+    const held = frame(now + skew);
+    // Sent 1 s after the frame arrived: must apply, whatever the client clock says.
+    const after = normalizeAccountMetrics(restAnswer(now + 1_000), held, { partial: true, now: now + 2_000 + skew, requestedAt: now + 1_000 + skew });
+    expect(after.balance).toBe(99.5);
+    // Sent 1 s before the frame arrived (answer older than the frame): must stay ignored.
+    expect(normalizeAccountMetrics(restAnswer(now - 1_000), held, { partial: true, now: now + 500 + skew, requestedAt: now - 1_000 + skew })).toBe(held);
+  });
+});
+

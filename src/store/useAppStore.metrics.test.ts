@@ -37,3 +37,19 @@ describe('token-less REST answers after a stamped frame locked the token', () =>
     expect(useAppStore.getState().account).toBe(applied);
   });
 });
+
+describe('time-less held frame and REST answers in the store', () => {
+  it('stores a REST answer whose request started after the time-less frame was received', () => {
+    const received = Date.now();
+    const held = normalizeAccountMetrics({ balance: 100, credit: 0, publication_token: '17895582000000000002' }, null, { scope: 'session-a', now: received });
+    useAppStore.setState({ account: held });
+    const sent = received + 1_000;
+    useAppStore.getState().setAccount(normalizeAccountMetrics(
+      { balance: 99.5, credit: 0, calculated_at: sent, source_as_of: sent },
+      held,
+      { partial: true, scope: 'session-a', now: sent + 500, requestedAt: sent },
+    ));
+    expect(useAppStore.getState().account?.balance).toBe(99.5);
+  });
+});
+
