@@ -6,6 +6,9 @@ import { LoginDialog } from './LoginDialog';
 import {
   loadDemoRegistrationModes,
   registerRuntimeBrokerDemoAccount,
+  registerDesktopBrokerDemoAccount,
+  splitDemoAccountName,
+  DESKTOP_DEMO_NAME_MESSAGE,
   type DemoAccountMode,
   type DemoRegistrationModes,
 } from '../api/demoRegistration';
@@ -13,7 +16,15 @@ import { parseTokenExpiresAt, setRefreshToken, setToken } from '../api/client';
 import { useAppStore } from '../store/useAppStore';
 import type { TradingAuthIntent } from '../services/tradingAuthGate';
 import { useBrokerLoginPolicy } from '../hooks/useBrokerLoginPolicy';
-import { getRuntimeBrokerConfiguration, isElectronRuntime } from '../config/backendTarget.js';
+import { assertTerminalConnectedToBroker, useDesktopDemoBroker } from '../hooks/useDesktopDemoBroker';
+import { updateDynamicUrls } from '../config/api';
+import { getRuntimeBrokerConfiguration, isElectronRuntime, normalizeBrokerInfoForTarget } from '../config/backendTarget.js';
+import type { BrokerLoginPolicy } from '../services/brokerLoginPolicy';
+import {
+  formatBrokerDisplayServer,
+  getDirectoryBrokerServerUrl,
+  type BrokerDiscoveryItem,
+} from '../services/brokerDiscovery';
 import { persistBrokerSessionDiscovery } from '../services/brokerSession';
 import { rememberAccountSession } from '../services/accountSessionCache';
 import { saveLogin, supportsSavedLogins } from '../services/savedLogins';
@@ -30,31 +41,84 @@ interface TradeAuthDialogProps {
 
 type DialogMode = 'choice' | 'login' | 'demo';
 
+interface TradeAuthFlowProps extends TradeAuthDialogProps {
+  brokerPolicy: BrokerLoginPolicy | null;
+  /**
+   * Set only on the desktop terminal: the directory row of the broker server
+   * the terminal is connected to (null until it is known).
+   */
+  desktopBroker?: BrokerDiscoveryItem | null;
+  desktop: boolean;
+}
+
+// Same key the desktop login writes (WelcomeTerminal.LAST_AUTHENTICATED_BROKER_ID_KEY).
+const LAST_AUTHENTICATED_BROKER_ID_KEY = 'rtx_last_authenticated_broker_id';
+
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : 'Unable to create the demo account.';
 const normalizeBrokerId = (value: unknown): string => String(value ?? '').trim();
 
-export function TradeAuthDialog(props: TradeAuthDialogProps) {
-  // Desktop accounts belong to the selected directory server, not a web
-  // deployment. Keep the broker selector available when re-authenticating.
-  if (isElectronRuntime()) {
-    return (
-      <LoginDialog
-        isOpen={props.isOpen}
-        reason="trade"
-        onClose={props.onClose}
-        onLoginSuccess={props.onAuthenticated}
-      />
-    );
-  }
+/**
+ * Session routing of the connected desktop broker, built from its directory
+ * row exactly as the desktop login builds it (LoginDialog), so a demo session
+ * and a login session of one broker are stored the same way.
+ */
+const describeDesktopBrokerSession = (broker: BrokerDiscoveryItem | null, brokerId: string) => {
+  const serverUrl = getDirectoryBrokerServerUrl(broker);
+  if (!broker || !serverUrl) return null;
+  const submitBroker = normalizeBrokerInfoForTarget(broker) as BrokerDiscoveryItem;
+  const brokerName = normalizeBrokerId(broker.broker_name || submitBroker.broker_name);
+  const displayServer = formatBrokerDisplayServer(broker)
+    || normalizeBrokerId(broker.display_server || submitBroker.display_server || submitBroker.broker_name);
+  const tcpAddr = normalizeBrokerId(broker.tcp_addr || submitBroker.tcp_addr);
+  return {
+    serverUrl,
+    displayServer,
+    routing: {
+      ...submitBroker,
+      broker_id: brokerId,
+      broker_name: brokerName,
+      display_server: displayServer || brokerName,
+      broker_server: displayServer || brokerName,
+      ...(tcpAddr ? { tcp_addr: tcpAddr } : {}),
+      backend_url: serverUrl,
+      market_api_url: serverUrl,
+      server_url: serverUrl,
+    },
+  };
+};
 
-  return <WebTradeAuthDialog {...props} />;
+export function TradeAuthDialog(props: TradeAuthDialogProps) {
+  // Desktop accounts belong to a directory server, not a web deployment: the
+  // login keeps its broker selector, and a demo account is opened at the
+  // broker server the terminal is connected to.
+  return isElectronRuntime() ? <DesktopTradeAuthDialog {...props} /> : <WebTradeAuthDialog {...props} />;
 }
 
-function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialMode = 'choice' }: TradeAuthDialogProps) {
+function WebTradeAuthDialog(props: TradeAuthDialogProps) {
+  const brokerPolicy = useBrokerLoginPolicy(props.isOpen);
+  return <TradeAuthFlow {...props} brokerPolicy={brokerPolicy} desktop={false} />;
+}
+
+function DesktopTradeAuthDialog(props: TradeAuthDialogProps) {
+  const connected = useDesktopDemoBroker(props.isOpen);
+  return (
+    <TradeAuthFlow
+      {...props}
+      brokerPolicy={connected?.policy ?? null}
+      desktopBroker={connected?.broker ?? null}
+      desktop
+    />
+  );
+}
+
+function TradeAuthFlow({
+  isOpen, intent, onClose, onAuthenticated, initialMode = 'choice', brokerPolicy, desktopBroker = null, desktop,
+}: TradeAuthFlowProps) {
   const [mode, setMode] = useState<DialogMode>(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -65,19 +129,23 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
   const dialogRef = useRef<HTMLElement>(null);
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const demoRequestGenerationRef = useRef(0);
-  const brokerPolicy = useBrokerLoginPolicy(isOpen);
   const brokerId = brokerPolicy?.status === 'ready' ? brokerPolicy.brokerId : '';
   const brokerPolicyError = brokerPolicy?.status === 'error' ? brokerPolicy.error : undefined;
   const configuration = getRuntimeBrokerConfiguration();
   const configurationIdentity = JSON.stringify(configuration);
   const termsUrl = configuration.valid ? configuration.brokerTermsUrl : '';
   const storeState = typeof useAppStore.getState === 'function' ? useAppStore.getState() : undefined;
-  const { hasDemoAndRealAccounts } = getBrokerSavedAccountTypes(storeState?.savedAccounts, {
-    brokerId: brokerId || configuration.brokerId,
-    brokerName: brokerPolicy?.displayName,
-    server: configuration.defaultMt5Server,
-    serverUrl: configuration.apiHost || configuration.apiHostExt,
-  });
+  // The desktop terminal serves every directory broker from one local address
+  // and bookmarks untyped logins as real, so saved accounts cannot tell there
+  // whether this broker's choice is still needed: it always shows the choice.
+  const { hasDemoAndRealAccounts } = desktop
+    ? { hasDemoAndRealAccounts: false }
+    : getBrokerSavedAccountTypes(storeState?.savedAccounts, {
+      brokerId: brokerId || configuration.brokerId,
+      brokerName: brokerPolicy?.displayName,
+      server: configuration.defaultMt5Server,
+      serverUrl: configuration.apiHost || configuration.apiHostExt,
+    });
   const effectiveInitialMode: DialogMode = hasDemoAndRealAccounts ? 'login' : initialMode;
   // Each demo option is shown on the broker's own flag. Netting fails closed
   // (shown only on an explicit true for THIS broker); hedging stays offered
@@ -88,6 +156,9 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
   const selectedAccountMode: DemoAccountMode = nettingAvailable
     ? (hedgingOffered ? accountMode : 'netting')
     : 'hedging';
+  // A desktop terminal can connect to any directory broker, so it does not
+  // offer a demo account at a broker that says it has none.
+  const demoNotOffered = desktop && knownDemoModes?.hedging === false && !nettingAvailable;
 
   useEffect(() => {
     // A previous answer never outlives the broker/config it was read for.
@@ -114,13 +185,15 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
       demoRequestGenerationRef.current += 1;
       if (brokerPolicyError) {
         setSubmitting(false);
-        setMode(current => current === 'login' ? 'choice' : current);
+        // The desktop login selects its own server; a demo broker that cannot
+        // be named does not close it.
+        if (!desktop) setMode(current => current === 'login' ? 'choice' : current);
       }
     }
     return () => {
       demoRequestGenerationRef.current += 1;
     };
-  }, [isOpen, configurationIdentity, brokerPolicyError]);
+  }, [isOpen, configurationIdentity, brokerPolicyError, desktop]);
 
   const closeDialog = useCallback(() => {
     demoRequestGenerationRef.current += 1;
@@ -138,20 +211,24 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
     if (!isOpen) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      // The desktop login handles Escape itself (server list, then close).
+      if (desktop && mode === 'login') return;
       if (mode === 'choice') closeDialog();
       else leaveDemo();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [closeDialog, isOpen, leaveDemo, mode]);
+  }, [closeDialog, desktop, isOpen, leaveDemo, mode]);
 
   useEffect(() => {
-    if (!isOpen || mode !== 'choice' || !brokerId) return;
+    if (!isOpen || mode !== 'choice' || (!brokerId && !desktop)) return;
     primaryActionRef.current?.focus();
-  }, [brokerId, isOpen, mode]);
+  }, [brokerId, desktop, isOpen, mode]);
 
   const completeDemoSession = (response: Awaited<ReturnType<typeof registerRuntimeBrokerDemoAccount>>) => {
     if (!brokerId) throw new Error('This terminal does not have a broker configured.');
+    const desktopSession = desktop ? describeDesktopBrokerSession(desktopBroker, brokerId) : null;
+    if (desktop && !desktopSession) throw new Error('This terminal does not have a broker configured.');
     if (response.broker_id && normalizeBrokerId(response.broker_id) !== normalizeBrokerId(brokerId)) {
       throw new Error('The demo account was returned for a different broker.');
     }
@@ -179,11 +256,23 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
         expiresAt: prevState.tokenExpiresAt || undefined,
       });
     }
-    persistBrokerSessionDiscovery({
-      broker_id: brokerId,
-      broker_name: brokerPolicy?.displayName,
-      ...(sessionServerUrl ? { server_url: sessionServerUrl, backend_url: sessionServerUrl } : {}),
-    });
+    if (desktopSession) {
+      // The same two commits as the desktop login: the connected broker's
+      // routing first, then its token, so no listener ever sees the new token
+      // at another broker's address.
+      persistBrokerSessionDiscovery(desktopSession.routing, { notifySessionChange: 'routing-changes' });
+      updateDynamicUrls();
+      persistBrokerSessionDiscovery({ ...desktopSession.routing, access_token: token }, { notifySessionChange: false });
+      if (desktopSession.displayServer) localStorage.setItem('rtx_broker_server', desktopSession.displayServer);
+      localStorage.setItem(LAST_AUTHENTICATED_BROKER_ID_KEY, brokerId);
+      updateDynamicUrls();
+    } else {
+      persistBrokerSessionDiscovery({
+        broker_id: brokerId,
+        broker_name: brokerPolicy?.displayName,
+        ...(sessionServerUrl ? { server_url: sessionServerUrl, backend_url: sessionServerUrl } : {}),
+      });
+    }
     setToken(token);
     if (response.refresh_token) {
       setRefreshToken(response.refresh_token);
@@ -201,10 +290,12 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
     localStorage.setItem('rtx_saved_username', accountId);
     localStorage.removeItem('rtx_saved_password');
 
-    const demoServerUrl = configuration.apiHostExt || configuration.apiHost || sessionServerUrl;
+    const demoServerUrl = desktopSession
+      ? desktopSession.serverUrl
+      : configuration.apiHostExt || configuration.apiHost || sessionServerUrl;
     rememberAccountSession({
       brokerId,
-      serverUrl: sessionServerUrl || demoServerUrl,
+      serverUrl: desktopSession ? desktopSession.serverUrl : sessionServerUrl || demoServerUrl,
       login: accountId,
       authToken: token,
       refreshToken: response.refresh_token,
@@ -215,22 +306,30 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
     const login = Number.parseInt(accountId, 10);
     const hasValidLogin = Number.isFinite(login) && login > 0;
     const store = useAppStore.getState();
-    store.setAuthTokens(token, response.refresh_token, expiresAt);
-    store.setAuthenticated(true, accountId, token, response.refresh_token, expiresAt,
-      hasValidLogin ? {
-        login,
-        name: response.name || response.username || name.trim(),
-        server: response.broker_name || brokerPolicy?.displayName || response.server || response.broker_id || brokerId,
-        accountType: 'demo',
-        isLive: false,
-        lastUsed: Date.now(),
-      } : undefined,
-    );
-    if (hasValidLogin) {
-      store.setActiveAccount(login);
+    const savedAccount = hasValidLogin ? {
+      login,
+      name: response.name || response.username || name.trim(),
+      server: desktopSession
+        ? desktopSession.displayServer || brokerPolicy?.displayName || brokerId
+        : response.broker_name || brokerPolicy?.displayName || response.server || response.broker_id || brokerId,
+      accountType: 'demo' as const,
+      isLive: false,
+      lastUsed: Date.now(),
+    } : undefined;
+    if (desktopSession) {
+      // Like the desktop login: one store commit publishes the whole session.
+      store.setAuthenticated(true, accountId, token, response.refresh_token, expiresAt, savedAccount);
+    } else {
+      store.setAuthTokens(token, response.refresh_token, expiresAt);
+      store.setAuthenticated(true, accountId, token, response.refresh_token, expiresAt, savedAccount);
+      if (hasValidLogin) {
+        store.setActiveAccount(login);
+      }
     }
     if (password && supportsSavedLogins()) {
-      const candidateUrls = Array.from(new Set([demoServerUrl, sessionServerUrl].filter(Boolean)));
+      const candidateUrls = Array.from(new Set(
+        (desktopSession ? [desktopSession.serverUrl] : [demoServerUrl, sessionServerUrl]).filter(Boolean),
+      ));
       for (const url of candidateUrls) {
         void saveLogin({ brokerId, serverUrl: url }, accountId, password).catch(() => undefined);
       }
@@ -248,6 +347,14 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
       setError('Name, email, and password are required.');
       return;
     }
+    if (desktop && !splitDemoAccountName(name)) {
+      setError(DESKTOP_DEMO_NAME_MESSAGE);
+      return;
+    }
+    if (desktop && !phone.trim()) {
+      setError('Phone number is required.');
+      return;
+    }
     if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
       setError('Password must be at least 8 characters and include a letter and a number.');
       return;
@@ -260,12 +367,24 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
     setSubmitting(true);
     const requestGeneration = ++demoRequestGenerationRef.current;
     try {
-      const response = await registerRuntimeBrokerDemoAccount(
-        selectedAccountMode === 'netting'
-          ? { name, email, password, accountMode: 'netting' }
-          : { name, email, password },
-        brokerId,
-      );
+      if (desktop) {
+        if (!desktopBroker) throw new Error('This terminal does not have a broker configured.');
+        await assertTerminalConnectedToBroker(desktopBroker);
+        if (requestGeneration !== demoRequestGenerationRef.current) return;
+      }
+      const response = desktop
+        ? await registerDesktopBrokerDemoAccount(
+          selectedAccountMode === 'netting'
+            ? { name, email, password, phone, accountMode: 'netting' }
+            : { name, email, password, phone },
+          brokerId,
+        )
+        : await registerRuntimeBrokerDemoAccount(
+          selectedAccountMode === 'netting'
+            ? { name, email, password, accountMode: 'netting' }
+            : { name, email, password },
+          brokerId,
+        );
       if (requestGeneration !== demoRequestGenerationRef.current) return;
       completeDemoSession(response);
     } catch (registrationError) {
@@ -278,8 +397,21 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
 
   if (!isOpen) return null;
 
+  if (desktop && mode === 'login') {
+    // The desktop login chooses its server from the directory itself, so it
+    // does not wait for (or depend on) the broker a demo account would use.
+    return (
+      <LoginDialog
+        isOpen
+        reason="trade"
+        onClose={closeDialog}
+        onLoginSuccess={onAuthenticated}
+      />
+    );
+  }
+
   const loginBrokerId = brokerId || ((hasDemoAndRealAccounts || mode === 'login') ? configuration.brokerId : '');
-  if ((mode === 'login' || hasDemoAndRealAccounts) && loginBrokerId && !brokerPolicyError) {
+  if (!desktop && (mode === 'login' || hasDemoAndRealAccounts) && loginBrokerId && !brokerPolicyError) {
     return (
       <LoginDialog
         isOpen
@@ -418,7 +550,7 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
                   type="button"
                   className="rtx-auth-action rtx-auth-action--primary"
                   onClick={() => setMode('login')}
-                  disabled={!brokerId}
+                  disabled={!desktop && !brokerId}
                 >
                   <span className="rtx-auth-action__icon" aria-hidden="true">
                     <LogIn size={17} strokeWidth={1.9} />
@@ -437,14 +569,16 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
                     type="button"
                     className="rtx-auth-action rtx-auth-action--secondary"
                     onClick={() => setMode('demo')}
-                    disabled={!brokerId}
+                    disabled={!brokerId || demoNotOffered}
                   >
                     <span className="rtx-auth-action__icon" aria-hidden="true">
                       <UserPlus size={17} strokeWidth={1.9} />
                     </span>
                     <span className="rtx-auth-action__copy">
                       <span className="rtx-auth-action__label">Create demo account</span>
-                      <span className="rtx-auth-action__description">Practice with virtual funds</span>
+                      <span className="rtx-auth-action__description">
+                        {demoNotOffered ? 'This broker does not offer demo accounts' : 'Practice with virtual funds'}
+                      </span>
                     </span>
                     <span className="rtx-auth-action__cta" aria-hidden="true">
                       <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
@@ -515,7 +649,7 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     autoComplete="name"
-                    placeholder="Your name"
+                    placeholder={desktop ? 'First and last name' : 'Your name'}
                   />
                 </label>
 
@@ -529,6 +663,19 @@ function WebTradeAuthDialog({ isOpen, intent, onClose, onAuthenticated, initialM
                     placeholder="you@example.com"
                   />
                 </label>
+
+                {desktop && (
+                  <label className="rtx-auth-field">
+                    <span className="rtx-auth-field__label">Phone</span>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(event) => setPhone(event.target.value)}
+                      autoComplete="tel"
+                      placeholder="+1 555 0100"
+                    />
+                  </label>
+                )}
 
                 <div className="rtx-auth-grid">
                   <label className="rtx-auth-field">
