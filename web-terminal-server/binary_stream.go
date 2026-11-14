@@ -201,14 +201,21 @@ func (h *webBinaryMarketHub) broadcastTradeEvent(payload []byte) {
 
 func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
-	if !ok || s.binHub == nil {
+	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
 
-	_, _ = s.getOrDialSession()
 	clientKey := s.resolveClientSessionKey(w, r)
 	appKind := resolveWebAppKind(r)
+	// Prices come from this page's own broker (per-session broker targets).
+	link := s.linkForSession(clientKey)
+	if link == nil || link.binHub == nil {
+		http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	hub := link.binHub
+	_, _ = link.getOrDialSession()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store, no-transform")
@@ -222,29 +229,29 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		ch:        make(chan []byte, 2048),
 	}
 
-	s.binHub.mu.Lock()
-	if boundLogin, exists := s.binHub.loginByKey[clientKey]; exists {
+	hub.mu.Lock()
+	if boundLogin, exists := hub.loginByKey[clientKey]; exists {
 		sub.accountLogin.Store(boundLogin)
 	} else if (appKind == "manager" || appKind == "admin") && s.getSessionOrderToken(clientKey) != "" {
 		sub.accountLogin.Store(-1)
-		s.binHub.loginByKey[clientKey] = -1
+		hub.loginByKey[clientKey] = -1
 	}
-	s.binHub.subs[sub] = struct{}{}
-	snaps := make([]rtx5tcp.BinaryTick, 0, len(s.binHub.latestTicks))
-	for _, bt := range s.binHub.latestTicks {
+	hub.subs[sub] = struct{}{}
+	snaps := make([]rtx5tcp.BinaryTick, 0, len(hub.latestTicks))
+	for _, bt := range hub.latestTicks {
 		snaps = append(snaps, bt)
 	}
-	depthSnaps := make([]rtx5tcp.BinaryDepth, 0, len(s.binHub.latestDepth))
-	for _, bd := range s.binHub.latestDepth {
+	depthSnaps := make([]rtx5tcp.BinaryDepth, 0, len(hub.latestDepth))
+	for _, bd := range hub.latestDepth {
 		depthSnaps = append(depthSnaps, bd)
 	}
-	s.binHub.mu.Unlock()
+	hub.mu.Unlock()
 
 	defer func() {
 		sub.closed.Store(true)
-		s.binHub.mu.Lock()
-		delete(s.binHub.subs, sub)
-		s.binHub.mu.Unlock()
+		hub.mu.Lock()
+		delete(hub.subs, sub)
+		hub.mu.Unlock()
 	}()
 
 	bytesSent := 0
@@ -364,14 +371,17 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	}
 }
 
-
 type webDepthLevelJSON struct {
 	Price string `json:"price"`
 	Size  string `json:"size"`
 }
 
 func (c *WebTerminalServer) tryServeCachedDepthSnapshot(w http.ResponseWriter, r *http.Request) bool {
-	if c == nil || c.binHub == nil || r == nil {
+	if c == nil || r == nil {
+		return false
+	}
+	link := c.linkForRequest(r)
+	if link == nil || link.binHub == nil {
 		return false
 	}
 	normP := strings.TrimPrefix(r.URL.Path, "/ext-api")
@@ -379,9 +389,9 @@ func (c *WebTerminalServer) tryServeCachedDepthSnapshot(w http.ResponseWriter, r
 	if symbol == "" {
 		return false
 	}
-	c.binHub.mu.RLock()
-	bd, ok := c.binHub.latestDepth[symbol]
-	c.binHub.mu.RUnlock()
+	link.binHub.mu.RLock()
+	bd, ok := link.binHub.latestDepth[symbol]
+	link.binHub.mu.RUnlock()
 	if !ok || (len(bd.Bids) == 0 && len(bd.Asks) == 0) {
 		return false
 	}

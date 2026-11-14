@@ -223,16 +223,19 @@ func (c *WebTerminalServer) fetchOTARPC(otaPath string, timeout time.Duration) (
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	if saSess, err := c.getOrDialSessionForApp("superadmin"); err == nil && saSess != nil {
+	if saSess, err := c.getOrDialSessionForApp(nil, "superadmin"); err == nil && saSess != nil {
 		status, _, body, rerr := saSess.RoundTripRPC("ota", http.MethodGet, otaPath, nil, nil, timeout)
 		if rerr == nil && status == http.StatusOK && len(body) > 0 {
 			return body, status, nil
 		}
 	}
-	if brkSess, err := c.getOrDialSession(); err == nil && brkSess != nil {
-		status, _, body, rerr := brkSess.RoundTripRPC("ota", http.MethodGet, otaPath, nil, nil, timeout)
-		if rerr == nil && status == http.StatusOK && len(body) > 0 {
-			return body, status, nil
+	// OTA bundles are fetched over the server's own (default) broker.
+	if def := c.defaultLink(); def != nil {
+		if brkSess, err := def.getOrDialSession(); err == nil && brkSess != nil {
+			status, _, body, rerr := brkSess.RoundTripRPC("ota", http.MethodGet, otaPath, nil, nil, timeout)
+			if rerr == nil && status == http.StatusOK && len(body) > 0 {
+				return body, status, nil
+			}
 		}
 	}
 	return nil, 0, fmt.Errorf("failed fetching %s over Binary TCP", otaPath)

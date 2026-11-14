@@ -95,13 +95,19 @@ func setBinaryOrderCORSHeaders(w http.ResponseWriter, r *http.Request) {
 // executeBinaryOrderPayload dispatches the 128B+token order payload directly over the 0.0ms local
 // 32-socket RTO\x01 Binary TCP Pool (127.0.0.1:8190 -> RAMMT5Engine in ~0.02-0.35ms) when running
 // on the Broker VPS, with automatic fallback to the :4443 RTX\x05 RoleTraderOrderFastLane tunnel.
-func (s *WebTerminalServer) executeBinaryOrderPayload(payload []byte, timeout time.Duration) ([]byte, error) {
-	if s.isLocalGatewayTarget() {
+//
+// link is the calling page's broker (per-session broker targets): the :8190 pool serves only
+// the broker on this host, so a page on another broker always uses that broker's tunnel.
+func (s *WebTerminalServer) executeBinaryOrderPayload(link *brokerLink, payload []byte, timeout time.Duration) ([]byte, error) {
+	if link == nil {
+		return nil, errNoBrokerTarget
+	}
+	if link.local {
 		if rawResp, err := rtx5tcp.RawGatewayExecuteBinaryOrder(payload, timeout); err == nil && len(rawResp) >= rtx5tcp.BinaryOrderFastRespHeaderSize {
 			return rawResp, nil
 		}
 	}
-	sess, err := s.getOrDialOrderSession()
+	sess, err := link.getOrDialOrderSession()
 	if err != nil || sess == nil {
 		return nil, err
 	}
@@ -181,7 +187,7 @@ func (s *WebTerminalServer) serveBinaryOrderHTTP(w http.ResponseWriter, r *http.
 	payload := rawReq[:canonicalLen]
 	normalizeBinaryOrderHeaderInPlace(payload[:rtx5tcp.BinaryOrderFastReqHeaderSize], &req)
 
-	rawResp, err := s.executeBinaryOrderPayload(payload, 15*time.Second)
+	rawResp, err := s.executeBinaryOrderPayload(s.linkForRequest(r), payload, 15*time.Second)
 	if err != nil {
 		writeBinaryOrderFastResp(w, r, rtx5tcp.BinaryOrderFastResp{
 			Action:         req.Action,
@@ -278,6 +284,7 @@ func releaseWSFrameBuf(bufPtr *[]byte) {
 // with strict per-connection JWT isolation and 0.0ms direct RTO\x01 (:8190) dispatch.
 func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Request) {
 	clientKey := s.resolveClientSessionKey(w, r)
+	link := s.linkForSession(clientKey)
 	wsConn, err := binaryOrderWSUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -342,7 +349,7 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 	executeOrderJob := func(job wsBinaryOrderJob) {
 		defer releaseWSFrameBuf(job.poolBuf)
 
-		rawResp, serr := s.executeBinaryOrderPayload(job.rawPayload, 15*time.Second)
+		rawResp, serr := s.executeBinaryOrderPayload(link, job.rawPayload, 15*time.Second)
 		if serr != nil {
 			var req rtx5tcp.BinaryOrderFastReq
 			_ = rtx5tcp.DecodeBinaryOrderFastReqInto(job.rawPayload, &req)
@@ -739,6 +746,12 @@ func (s *WebTerminalServer) serveBinaryAccountSub(w http.ResponseWriter, r *http
 
 	clientKey := s.resolveClientSessionKey(w, r)
 	appKind := resolveWebAppKind(r)
+	link := s.linkForSession(clientKey)
+	if link == nil {
+		http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	hub := link.binHub
 	canonicalLen := rtx5tcp.BinaryAccountSubHeaderSize + len(sub.AuthToken)
 	cp := make([]byte, canonicalLen)
 	copy(cp, rawBody[:canonicalLen])
@@ -746,34 +759,34 @@ func (s *WebTerminalServer) serveBinaryAccountSub(w http.ResponseWriter, r *http
 	trimmedTok := strings.TrimSpace(sub.AuthToken)
 	if len(trimmedTok) == 0 || sub.AccountLogin < 0 {
 		s.setSessionOrderToken(clientKey, "")
-		if s.binHub != nil {
-			s.binHub.bindClientAccount(clientKey, 0)
+		if hub != nil {
+			hub.bindClientAccount(clientKey, 0)
 		}
 	} else if sub.AccountLogin == 0 && len(trimmedTok) > 0 {
 		// Manager/Admin wildcard subscription (AccountLogin == 0 + valid AuthToken)
 		s.setSessionOrderToken(clientKey, sub.AuthToken)
 		status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second)
 		if (verr == nil && status == http.StatusOK) || appKind == "manager" || appKind == "admin" {
-			if s.binHub != nil {
-				s.binHub.bindClientAccount(clientKey, -1)
+			if hub != nil {
+				hub.bindClientAccount(clientKey, -1)
 			}
 		}
 	} else if sub.AccountLogin > 0 && len(trimmedTok) > 0 {
 		s.setSessionOrderToken(clientKey, sub.AuthToken)
 		if status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second); verr == nil && status == http.StatusOK {
-			if s.binHub != nil {
-				s.binHub.bindClientAccount(clientKey, sub.AccountLogin)
+			if hub != nil {
+				hub.bindClientAccount(clientKey, sub.AccountLogin)
 			}
-		} else if s.binHub != nil {
-			s.binHub.bindClientAccount(clientKey, sub.AccountLogin)
+		} else if hub != nil {
+			hub.bindClientAccount(clientKey, sub.AccountLogin)
 		}
 	}
 
-	if sess, err := s.getOrDialSession(); err == nil && sess != nil {
+	if sess, err := link.getOrDialSession(); err == nil && sess != nil {
 		_ = sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
 	}
 	if appKind == "manager" || appKind == "admin" {
-		if appSess, err := s.getOrDialSessionForApp(appKind); err == nil && appSess != nil {
+		if appSess, err := s.getOrDialSessionForApp(link, appKind); err == nil && appSess != nil {
 			_ = appSess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
 		}
 	}

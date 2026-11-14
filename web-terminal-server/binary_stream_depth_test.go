@@ -30,10 +30,9 @@ func TestWebTerminalServerCachesAndServesBinaryDepthSnapshot(t *testing.T) {
 		},
 	})
 
-	srv := &WebTerminalServer{
-		binHub: newWebBinaryMarketHub(),
-	}
-	srv.binHub.handleControlFrame(rtx5tcp.FrameBinaryDepthBatch, payload)
+	srv := &WebTerminalServer{}
+	srv.setDefaultBroker("test-broker", "Test Broker", "127.0.0.1:4443")
+	srv.defaultLink().binHub.handleControlFrame(rtx5tcp.FrameBinaryDepthBatch, payload)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/depth/EURUSD?limit=2", nil)
 	rec := httptest.NewRecorder()
