@@ -130,9 +130,9 @@ func TestBinaryOrderBridgeForwardsExtras_ModeA_ModeB_HTTP(t *testing.T) {
 	rtx5tcp.PrewarmBinaryOrderGatewayPool()
 
 	srv := &WebTerminalServer{
-		targetTCPAddr: "127.0.0.1:4443",
 		sessionTokens: make(map[string]string),
 	}
+	srv.setDefaultBroker("", "", "127.0.0.1:4443")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__rtx5_binary_order", srv.serveBinaryOrderHTTP)

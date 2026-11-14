@@ -58,31 +58,29 @@ type WebTerminalServer struct {
 	// production OTA bundle never replaces it. Terminal falls back to the external/embedded dist as before.
 	localUIOnly bool
 
-	binHub *webBinaryMarketHub
+	// Broker on this host (set only when -server is a loopback address) and its loopback target.
+	localBrokerID string
+	localTarget   string
+	// directGatewayPush starts the :8190 trade-event push loop for the local broker's link.
+	directGatewayPush bool
 
-	mu                       sync.RWMutex
-	localBrokerID            string
-	targetTCPAddr            string
-	superAdminTCP            string
-	activeBrokerID           string
-	activeBrokerName         string
-	cachedBrokers            []DiscoveredBroker
-	cachedBrokersAt          time.Time
-	activeMux                *rtx5tcp.MuxSession
-	orderMux                 *rtx5tcp.MuxSession
-	superAdminMux            *rtx5tcp.MuxSession
-	managerMux               *rtx5tcp.MuxSession
-	adminMux                 *rtx5tcp.MuxSession
-	lastRTTMs                float64
-	avgRTTMs                 float64
-	dialMu                   sync.Mutex
-	orderDialMu              sync.Mutex
-	saDialMu                 sync.Mutex
-	managerDialMu            sync.Mutex
-	adminDialMu              sync.Mutex
-	dirRefreshMu             sync.Mutex
-	orderFastLaneUnsupported atomic.Bool
-	cachedOrderAuthToken     atomic.Value // fallback string
+	// Per-session broker targets (broker_links.go): one link per broker, each session's choice,
+	// and the default link for sessions that never chose a broker.
+	linksMu           sync.RWMutex
+	links             map[string]*brokerLink
+	sessionBrokers    map[string]sessionBinding
+	defaultLinkKey    string
+	defaultBrokerID   string // identity shown while the default broker has no target yet
+	defaultBrokerName string
+
+	mu                   sync.RWMutex
+	superAdminTCP        string
+	cachedBrokers        []DiscoveredBroker
+	cachedBrokersAt      time.Time
+	superAdminMux        *rtx5tcp.MuxSession
+	saDialMu             sync.Mutex
+	dirRefreshMu         sync.Mutex
+	cachedOrderAuthToken atomic.Value // fallback string
 
 	sessionMu     sync.RWMutex
 	sessionTokens map[string]string
@@ -360,27 +358,26 @@ func main() {
 	}
 
 	srv := &WebTerminalServer{
-		listenAddr:       *listenFlag,
-		defaultPort:      tcpAddr.Port,
-		exeDir:           exeDir,
-		masterPubHex:     loadAuthorityMasterPubHex(exeDir),
-		distRoot:         subFS,
-		externalDist:     extDist,
-		localUIOnly:      strings.EqualFold(strings.TrimSpace(os.Getenv("RTX5_WEB_UI_SOURCE")), "local"),
-		binHub:           newWebBinaryMarketHub(),
-		localBrokerID:    localBrokerID,
-		targetTCPAddr:    initialTarget,
-		superAdminTCP:    strings.TrimSpace(*saFlag),
-		activeBrokerID:   strings.TrimSpace(*brokerIDFlag),
-		activeBrokerName: strings.TrimSpace(*brokerNameFlag),
-		sessionTokens:    make(map[string]string),
+		listenAddr:        *listenFlag,
+		defaultPort:       tcpAddr.Port,
+		exeDir:            exeDir,
+		masterPubHex:      loadAuthorityMasterPubHex(exeDir),
+		distRoot:          subFS,
+		externalDist:      extDist,
+		localUIOnly:       strings.EqualFold(strings.TrimSpace(os.Getenv("RTX5_WEB_UI_SOURCE")), "local"),
+		localBrokerID:     localBrokerID,
+		superAdminTCP:     strings.TrimSpace(*saFlag),
+		directGatewayPush: true,
+		sessionTokens:     make(map[string]string),
+	}
+	if localBrokerID != "" {
+		srv.localTarget = initialTarget
 	}
 	srv.initHotUIOTAState()
 
-	// Start direct :8190 RTO\x01 push stream listener (0.0 ms tick/candle/position fanout when co-located with rtx5-gateway)
-	if srv.isLocalGatewayTarget() {
-		srv.binHub.startDirectGatewayPushLoop()
-	}
+	// Sessions that never pick a broker use this server's own broker. The local broker's link
+	// starts the direct :8190 RTO\x01 push stream (0.0 ms trade-event fanout next to rtx5-gateway).
+	srv.setDefaultBroker(strings.TrimSpace(*brokerIDFlag), strings.TrimSpace(*brokerNameFlag), initialTarget)
 
 	if srv.superAdminTCP != "" {
 		go srv.refreshBrokerDirectory(true)
@@ -388,12 +385,13 @@ func main() {
 	go srv.backgroundReconnectLoop()
 	go srv.runBackgroundHotUIOTALoop()
 
+	defID, defName, defTarget := srv.linkIdentity(srv.defaultLink())
 	modeLabel := "HTTP + WS (Direct Zero-Cloudflare Binary TCP)"
 	if *tlsCertFlag != "" && *tlsKeyFlag != "" {
 		modeLabel = "HTTPS + WSS TLS 1.3 (Direct Zero-Cloudflare Binary TCP)"
 	}
 	log.Printf("[RTX5-Web-Terminal-TCP] Listening on %s (%s) ===> Fast-Lane Engine: %s | Access Tunnel: %s | SuperAdmin Hub: %s (Broker: %s / %s)",
-		*listenFlag, modeLabel, envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), srv.getTargetTCP(), srv.superAdminTCP, srv.activeBrokerID, srv.activeBrokerName)
+		*listenFlag, modeLabel, envOrDefault("BROKER_GATEWAY_RTO_ADDR", "127.0.0.1:8190"), defTarget, srv.superAdminTCP, defID, defName)
 
 	if *tlsCertFlag != "" && *tlsKeyFlag != "" && tcpAddr.Port == 443 {
 		go func() {
@@ -451,6 +449,9 @@ func main() {
 
 func (c *WebTerminalServer) resolveClientSessionKey(w http.ResponseWriter, r *http.Request) string {
 	if r != nil {
+		if v, ok := r.Context().Value(sessionKeyCtx{}).(string); ok && v != "" {
+			return v // already resolved (and any new cookie already issued) earlier in this request
+		}
 		if ck, err := r.Cookie("rtx5_wt_sid"); err == nil && strings.TrimSpace(ck.Value) != "" {
 			return strings.TrimSpace(ck.Value)
 		}
@@ -552,24 +553,6 @@ func (c *WebTerminalServer) getActiveDistFS() fs.FS {
 	return c.getActiveDistFSForApp("terminal")
 }
 
-func (c *WebTerminalServer) getTargetTCP() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.targetTCPAddr
-}
-
-func (c *WebTerminalServer) isLocalGatewayTarget() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if strings.HasPrefix(c.targetTCPAddr, "127.0.0.1:") || strings.HasPrefix(c.targetTCPAddr, "localhost:") {
-		return true
-	}
-	if c.localBrokerID != "" && strings.EqualFold(c.activeBrokerID, c.localBrokerID) {
-		return true
-	}
-	return false
-}
-
 func (c *WebTerminalServer) superAdminCandidates() []string {
 	c.mu.RLock()
 	sa := strings.TrimSpace(c.superAdminTCP)
@@ -601,55 +584,7 @@ func (c *WebTerminalServer) superAdminCandidates() []string {
 	return list
 }
 
-func (c *WebTerminalServer) getOrDialSession() (*rtx5tcp.MuxSession, error) {
-	c.mu.RLock()
-	sess := c.activeMux
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
-		}
-	}
-
-	c.dialMu.Lock()
-	defer c.dialMu.Unlock()
-
-	c.mu.RLock()
-	sess = c.activeMux
-	target := c.targetTCPAddr
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
-		}
-	}
-
-	tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleTraderTerminalClient, 8*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	newSess := rtx5tcp.NewMuxSession(tc, false, nil, c.handleServerControlFrame)
-	c.mu.Lock()
-	c.activeMux = newSess
-	c.mu.Unlock()
-
-	go func(s *rtx5tcp.MuxSession) {
-		_ = s.ServeLoop()
-		c.mu.Lock()
-		if c.activeMux == s {
-			c.activeMux = nil
-		}
-		c.mu.Unlock()
-	}(newSess)
-
-	return newSess, nil
-}
-
-func (c *WebTerminalServer) getOrDialSessionForApp(appKind string) (*rtx5tcp.MuxSession, error) {
+func (c *WebTerminalServer) getOrDialSessionForApp(link *brokerLink, appKind string) (*rtx5tcp.MuxSession, error) {
 	switch appKind {
 	case "superadmin":
 		c.mu.RLock()
@@ -711,219 +646,49 @@ func (c *WebTerminalServer) getOrDialSessionForApp(appKind string) (*rtx5tcp.Mux
 		return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
 
 	case "manager":
-		c.mu.RLock()
-		sess := c.managerMux
-		c.mu.RUnlock()
-		if sess != nil {
-			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
-			}
+		if link == nil {
+			return nil, errNoBrokerTarget
 		}
-
-		c.managerDialMu.Lock()
-		defer c.managerDialMu.Unlock()
-
-		c.mu.RLock()
-		sess = c.managerMux
-		target := c.targetTCPAddr
-		c.mu.RUnlock()
-		if sess != nil {
-			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
-			}
-		}
-
-		tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleBrokerManagerClient, 8*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		newSess := rtx5tcp.NewMuxSession(tc, false, nil, c.handleServerControlFrame)
-		c.mu.Lock()
-		c.managerMux = newSess
-		c.mu.Unlock()
-
-		go func(s *rtx5tcp.MuxSession) {
-			_ = s.ServeLoop()
-			c.mu.Lock()
-			if c.managerMux == s {
-				c.managerMux = nil
-			}
-			c.mu.Unlock()
-		}(newSess)
-		return newSess, nil
+		return link.getOrDialManagerSession()
 
 	case "admin":
-		c.mu.RLock()
-		sess := c.adminMux
-		c.mu.RUnlock()
-		if sess != nil {
-			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
-			}
+		if link == nil {
+			return nil, errNoBrokerTarget
 		}
-
-		c.adminDialMu.Lock()
-		defer c.adminDialMu.Unlock()
-
-		c.mu.RLock()
-		sess = c.adminMux
-		target := c.targetTCPAddr
-		c.mu.RUnlock()
-		if sess != nil {
-			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
-			}
-		}
-
-		tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleBrokerAdminClient, 8*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
-		c.mu.Lock()
-		c.adminMux = newSess
-		c.mu.Unlock()
-
-		go func(s *rtx5tcp.MuxSession) {
-			_ = s.ServeLoop()
-			c.mu.Lock()
-			if c.adminMux == s {
-				c.adminMux = nil
-			}
-			c.mu.Unlock()
-		}(newSess)
-		return newSess, nil
+		return link.getOrDialAdminSession()
 
 	default:
-		return c.getOrDialSession()
-	}
-}
-
-func (c *WebTerminalServer) handleServerControlFrame(_ *rtx5tcp.MuxSession, frameType uint8, _ uint32, _ uint8, payload []byte) {
-	if c.binHub != nil {
-		c.binHub.handleControlFrame(frameType, payload)
-	}
-}
-
-func (c *WebTerminalServer) getOrDialOrderSession() (*rtx5tcp.MuxSession, error) {
-	if c.orderFastLaneUnsupported.Load() {
-		return c.getOrDialSession()
-	}
-
-	c.mu.RLock()
-	sess := c.orderMux
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
+		if link == nil {
+			return nil, errNoBrokerTarget
 		}
+		return link.getOrDialSession()
 	}
-
-	c.orderDialMu.Lock()
-	defer c.orderDialMu.Unlock()
-
-	if c.orderFastLaneUnsupported.Load() {
-		return c.getOrDialSession()
-	}
-
-	c.mu.RLock()
-	sess = c.orderMux
-	target := c.targetTCPAddr
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
-		}
-	}
-
-	tc, err := rtx5tcp.DialTunnel(target, rtx5tcp.RoleTraderOrderFastLane, 3*time.Second)
-	if err != nil {
-		if strings.Contains(err.Error(), "handshake server ack read failed") {
-			c.orderFastLaneUnsupported.Store(true)
-		}
-		return c.getOrDialSession()
-	}
-
-	newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
-	c.mu.Lock()
-	c.orderMux = newSess
-	c.mu.Unlock()
-
-	go func(s *rtx5tcp.MuxSession) {
-		_ = s.ServeLoop()
-		c.mu.Lock()
-		if c.orderMux == s {
-			c.orderMux = nil
-		}
-		c.mu.Unlock()
-	}(newSess)
-
-	return newSess, nil
 }
 
 func (c *WebTerminalServer) backgroundReconnectLoop() {
 	firstBoot := true
 	lastDirRefresh := time.Now()
 	for {
-		var wg sync.WaitGroup
-		if firstBoot {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				_, _ = c.getOrDialOrderSession()
-			}()
-		}
-
-		if sess, err := c.getOrDialSession(); err == nil && sess != nil {
-			if rtt, perr := sess.MeasurePingRTT(2 * time.Second); perr == nil && rtt > 0 {
-				c.mu.Lock()
-				c.lastRTTMs = rtt
-				if c.avgRTTMs <= 0 {
-					c.avgRTTMs = rtt
-				} else {
-					c.avgRTTMs = c.avgRTTMs*0.7 + rtt*0.3
-				}
-				c.mu.Unlock()
+		now := time.Now()
+		c.pruneIdle(now)
+		c.linksMu.RLock()
+		defKey := c.defaultLinkKey
+		c.linksMu.RUnlock()
+		// Keep the default broker's tunnels warm always, other brokers' while pages use them.
+		for _, l := range c.activeLinks() {
+			isDefault := linkKey(l.id, l.target) == defKey
+			if !isDefault && l.isIdle(now) {
+				continue
 			}
+			keepLinkWarm(l, firstBoot && isDefault)
 		}
+		firstBoot = false
 
 		c.mu.RLock()
 		saSess := c.superAdminMux
-		mgrSess := c.managerMux
-		admSess := c.adminMux
 		c.mu.RUnlock()
 		if saSess != nil {
 			_, _ = saSess.MeasurePingRTT(1500 * time.Millisecond)
-		}
-		if mgrSess != nil {
-			_, _ = mgrSess.MeasurePingRTT(1500 * time.Millisecond)
-		}
-		if admSess != nil {
-			_, _ = admSess.MeasurePingRTT(1500 * time.Millisecond)
-		}
-
-		if firstBoot {
-			wg.Wait()
-			firstBoot = false
-		} else {
-			c.mu.RLock()
-			actSess := c.activeMux
-			c.mu.RUnlock()
-			if orderSess, oerr := c.getOrDialOrderSession(); oerr == nil && orderSess != nil && orderSess != actSess {
-				_, _ = orderSess.MeasurePingRTT(1500 * time.Millisecond)
-			}
 		}
 
 		if c.superAdminTCP != "" && time.Since(lastDirRefresh) >= 5*time.Second {
@@ -931,6 +696,37 @@ func (c *WebTerminalServer) backgroundReconnectLoop() {
 			go c.refreshBrokerDirectory(false)
 		}
 		time.Sleep(3 * time.Second)
+	}
+}
+
+// keepLinkWarm dials the link's terminal tunnel (recording its RTT) and pings its other tunnels.
+func keepLinkWarm(l *brokerLink, firstBoot bool) {
+	var wg sync.WaitGroup
+	if firstBoot {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = l.getOrDialOrderSession()
+		}()
+	}
+	if sess, err := l.getOrDialSession(); err == nil && sess != nil {
+		if rtt, perr := sess.MeasurePingRTT(2 * time.Second); perr == nil && rtt > 0 {
+			l.recordRTT(rtt)
+		}
+	}
+	l.mu.RLock()
+	actSess, mgrSess, admSess := l.activeMux, l.managerMux, l.adminMux
+	l.mu.RUnlock()
+	if mgrSess != nil {
+		_, _ = mgrSess.MeasurePingRTT(1500 * time.Millisecond)
+	}
+	if admSess != nil {
+		_, _ = admSess.MeasurePingRTT(1500 * time.Millisecond)
+	}
+	if firstBoot {
+		wg.Wait()
+	} else if orderSess, oerr := l.getOrDialOrderSession(); oerr == nil && orderSess != nil && orderSess != actSess {
+		_, _ = orderSess.MeasurePingRTT(1500 * time.Millisecond)
 	}
 }
 
@@ -993,43 +789,16 @@ func (c *WebTerminalServer) resolveBrokerFromCache(brokerID, brokerName, tcpAddr
 	return brokerID, brokerName, tcpAddr
 }
 
-func (c *WebTerminalServer) switchBrokerTarget(brokerID, brokerName, tcpAddr string) {
+// switchSessionBroker points this browser session (and only this one) at the chosen broker.
+// It returns nil when the broker has no known TCP address.
+func (c *WebTerminalServer) switchSessionBroker(sessionKey, brokerID, brokerName, tcpAddr string) *brokerLink {
 	brokerID, brokerName, tcpAddr = c.resolveBrokerFromCache(brokerID, brokerName, tcpAddr)
-	c.orderFastLaneUnsupported.Store(false)
-	c.mu.Lock()
-	if c.localBrokerID != "" && strings.EqualFold(brokerID, c.localBrokerID) {
-		c.targetTCPAddr = "127.0.0.1:4443"
-	} else if tcpAddr != "" {
-		c.targetTCPAddr = tcpAddr
+	l := c.ensureLink(brokerID, brokerName, tcpAddr)
+	if l == nil {
+		return nil
 	}
-	if brokerID != "" {
-		c.activeBrokerID = brokerID
-	}
-	if brokerName != "" {
-		c.activeBrokerName = brokerName
-	}
-	old := c.activeMux
-	c.activeMux = nil
-	oldOrder := c.orderMux
-	c.orderMux = nil
-	oldMgr := c.managerMux
-	c.managerMux = nil
-	oldAdm := c.adminMux
-	c.adminMux = nil
-	c.mu.Unlock()
-
-	if old != nil {
-		_ = old.Close()
-	}
-	if oldOrder != nil && oldOrder != old {
-		_ = oldOrder.Close()
-	}
-	if oldMgr != nil {
-		_ = oldMgr.Close()
-	}
-	if oldAdm != nil {
-		_ = oldAdm.Close()
-	}
+	l.orderFastLaneUnsupported.Store(false)
+	c.bindSession(sessionKey, l)
 	dialDone := make(chan struct{})
 	go func() {
 		defer close(dialDone)
@@ -1037,11 +806,11 @@ func (c *WebTerminalServer) switchBrokerTarget(brokerID, brokerName, tcpAddr str
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, _ = c.getOrDialSession()
+			_, _ = l.getOrDialSession()
 		}()
 		go func() {
 			defer wg.Done()
-			_, _ = c.getOrDialOrderSession()
+			_, _ = l.getOrDialOrderSession()
 		}()
 		wg.Wait()
 	}()
@@ -1049,6 +818,7 @@ func (c *WebTerminalServer) switchBrokerTarget(brokerID, brokerName, tcpAddr str
 	case <-dialDone:
 	case <-time.After(300 * time.Millisecond):
 	}
+	return l
 }
 
 func (c *WebTerminalServer) maybeRefreshBrokerDirectoryOnRequest() {
@@ -1132,25 +902,34 @@ func (c *WebTerminalServer) refreshBrokerDirectory(initial bool) {
 	if !initial {
 		return
 	}
-	c.mu.Lock()
+	// Only the default broker (for sessions that never chose one) follows the directory here.
+	defLink := c.defaultLink()
+	id, name, target := c.linkIdentity(defLink)
+	if defLink != nil {
+		defLink.mu.RLock()
+		name = defLink.name
+		defLink.mu.RUnlock()
+	}
 	matched := false
 	for _, b := range list {
-		if strings.EqualFold(b.BrokerID, c.activeBrokerID) {
+		if strings.EqualFold(b.BrokerID, id) {
 			matched = true
-			if c.activeBrokerName == "" {
-				c.activeBrokerName = b.BrokerName
+			if name == "" && b.BrokerName != "" {
+				c.setDefaultBroker(id, b.BrokerName, target)
 			}
 			break
 		}
 	}
-	if !matched && (c.activeBrokerID == "" || c.activeBrokerID == "fxtrust-tcp") {
-		c.activeBrokerID = list[0].BrokerID
-		c.activeBrokerName = list[0].BrokerName
+	if !matched && (id == "" || id == "fxtrust-tcp") {
+		t := strings.TrimSpace(list[0].TCPAddr)
+		if t == "" {
+			t = target
+		}
+		c.setDefaultBroker(list[0].BrokerID, list[0].BrokerName, t)
 	}
-	c.mu.Unlock()
 }
 
-func (c *WebTerminalServer) getCachedBrokerDirectory() []DiscoveredBroker {
+func (c *WebTerminalServer) getCachedBrokerDirectory(link *brokerLink) []DiscoveredBroker {
 	c.mu.RLock()
 	if len(c.cachedBrokers) > 0 {
 		out := make([]DiscoveredBroker, len(c.cachedBrokers))
@@ -1158,10 +937,8 @@ func (c *WebTerminalServer) getCachedBrokerDirectory() []DiscoveredBroker {
 		c.mu.RUnlock()
 		return out
 	}
-	curID := c.activeBrokerID
-	curName := c.activeBrokerName
-	curTCP := c.targetTCPAddr
 	c.mu.RUnlock()
+	curID, curName, curTCP := c.linkIdentity(link)
 	if curID == "" {
 		curID = "fxtrust-tcp"
 	}
@@ -1220,8 +997,10 @@ func (c *WebTerminalServer) requestOrigin(r *http.Request) (httpOrigin, wsOrigin
 
 func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	_ = c.resolveClientSessionKey(w, r)
+	sessionKey := c.resolveClientSessionKey(w, r)
+	r = withSessionKey(r, sessionKey)
 	appKind := resolveWebAppKind(r)
+	link := c.linkForSession(sessionKey) // this page's broker (per-session broker targets)
 
 	switch p {
 	case "/__rtx5_binary_stream":
@@ -1255,15 +1034,15 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/tcp-client/status":
 		httpOrigin, wsOrigin, _, _ := c.requestOrigin(r)
 		c.mu.RLock()
-		target := c.targetTCPAddr
 		saTarget := c.superAdminTCP
-		bid := c.activeBrokerID
-		bnm := c.activeBrokerName
-		rttMs := c.lastRTTMs
-		avgRttMs := c.avgRTTMs
 		c.mu.RUnlock()
+		bid, bnm, target := c.linkIdentity(link)
+		var rttMs, avgRttMs float64
+		if link != nil {
+			rttMs, avgRttMs = link.rtt()
+		}
 
-		sess, _ := c.getOrDialSessionForApp(appKind)
+		sess, _ := c.getOrDialSessionForApp(link, appKind)
 		if appKind == "superadmin" {
 			if saTarget != "" {
 				target = saTarget
@@ -1369,7 +1148,7 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "/api/tcp-client/brokers":
 		c.maybeRefreshBrokerDirectoryOnRequest()
-		writeJSON(w, http.StatusOK, c.getCachedBrokerDirectory())
+		writeJSON(w, http.StatusOK, c.getCachedBrokerDirectory(link))
 		return
 
 	case "/api/tcp-client/switch-broker":
@@ -1406,12 +1185,16 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		if tAddr == "" {
 			tAddr = strings.TrimSpace(req.ServerTCP)
 		}
-		c.switchBrokerTarget(bid, bnm, tAddr)
-		c.mu.RLock()
-		activeID := c.activeBrokerID
-		activeName := c.activeBrokerName
-		activeTCP := c.targetTCPAddr
-		c.mu.RUnlock()
+		// Only this browser session moves; other pages keep their broker.
+		switched := c.switchSessionBroker(sessionKey, bid, bnm, tAddr)
+		if switched == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"ok":    false,
+				"error": "unknown broker: no TCP address for " + strings.TrimSpace(bid+" "+bnm),
+			})
+			return
+		}
+		activeID, activeName, activeTCP := c.linkIdentity(switched)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":          true,
 			"broker_id":   activeID,
@@ -1441,7 +1224,7 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if svc, rewritten, ok := classifySuperAdminRoute(r); ok {
-			c.proxyOverBinaryTCPForApp(w, r, "superadmin", svc, rewritten)
+			c.proxyOverBinaryTCPForApp(w, r, link, "superadmin", svc, rewritten)
 			return
 		}
 		c.serveEmbeddedSPA(w, r)
@@ -1456,12 +1239,8 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		normP := strings.TrimPrefix(p, "/ext-api")
 		if normP == "/health" || normP == "/readiness" {
-			sess, err := c.getOrDialSessionForApp(appKind)
-			c.mu.RLock()
-			bid := c.activeBrokerID
-			bnm := c.activeBrokerName
-			tAddr := c.targetTCPAddr
-			c.mu.RUnlock()
+			sess, err := c.getOrDialSessionForApp(link, appKind)
+			bid, bnm, tAddr := c.linkIdentity(link)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":        "ok",
 				"ok":            true,
@@ -1476,12 +1255,12 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if normP == "/api/v2/broker/servers" || normP == "/api/v1/broker/servers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
-			c.serveBrokerDirectoryPayload(w, r, true)
+			c.serveBrokerDirectoryPayload(w, r, link, true)
 			return
 		}
 		if normP == "/api/v2/brokers" || normP == "/api/v1/brokers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
-			c.serveBrokerDirectoryPayload(w, r, false)
+			c.serveBrokerDirectoryPayload(w, r, link, false)
 			return
 		}
 		if (strings.HasPrefix(normP, "/api/v1/brokers/") || strings.HasPrefix(normP, "/api/v2/brokers/")) && strings.HasSuffix(normP, "/logo") {
@@ -1494,7 +1273,7 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if svc, rewritten, ok := classifyBrokerRoute(appKind, r); ok {
-		c.proxyOverBinaryTCPForApp(w, r, appKind, svc, rewritten)
+		c.proxyOverBinaryTCPForApp(w, r, link, appKind, svc, rewritten)
 		return
 	}
 
@@ -1503,11 +1282,7 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (c *WebTerminalServer) serveBrokerRuntimeConfigJS(w http.ResponseWriter, r *http.Request) {
 	httpOrigin, wsOrigin, _, _ := c.requestOrigin(r)
-	c.mu.RLock()
-	bid := c.activeBrokerID
-	bnm := c.activeBrokerName
-	target := c.targetTCPAddr
-	c.mu.RUnlock()
+	bid, bnm, target := c.linkIdentity(c.linkForRequest(r))
 	if bid == "" {
 		bid = "fxtrust-tcp"
 	}
@@ -1561,18 +1336,15 @@ func (c *WebTerminalServer) serveBrokerRuntimeConfigJS(w http.ResponseWriter, r 
 	_, _ = w.Write([]byte(js))
 }
 
-func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r *http.Request, asArray bool) {
+func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r *http.Request, link *brokerLink, asArray bool) {
 	appKind := resolveWebAppKind(r)
 	httpOrigin, wsOrigin, hostOnly, port := c.requestOrigin(r)
 	proto := "http"
 	if strings.HasPrefix(httpOrigin, "https://") {
 		proto = "https"
 	}
-	list := c.getCachedBrokerDirectory()
-
-	c.mu.RLock()
-	curTCP := c.targetTCPAddr
-	c.mu.RUnlock()
+	list := c.getCachedBrokerDirectory(link)
+	_, _, curTCP := c.linkIdentity(link)
 
 	servicesDomain := hostOnly
 	if port > 0 && port != 80 && port != 443 {
@@ -1651,11 +1423,11 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 }
 
 func (c *WebTerminalServer) proxyOverBinaryTCP(w http.ResponseWriter, r *http.Request, targetService string, rewrittenPath string) {
-	c.proxyOverBinaryTCPForApp(w, r, resolveWebAppKind(r), targetService, rewrittenPath)
+	c.proxyOverBinaryTCPForApp(w, r, c.linkForRequest(r), resolveWebAppKind(r), targetService, rewrittenPath)
 }
 
-func (c *WebTerminalServer) proxyOverBinaryTCPForApp(w http.ResponseWriter, r *http.Request, appKind string, targetService string, rewrittenPath string) {
-	sess, err := c.getOrDialSessionForApp(appKind)
+func (c *WebTerminalServer) proxyOverBinaryTCPForApp(w http.ResponseWriter, r *http.Request, link *brokerLink, appKind string, targetService string, rewrittenPath string) {
+	sess, err := c.getOrDialSessionForApp(link, appKind)
 	if err != nil || sess == nil {
 		if r.URL.Path == "/health" || r.URL.Path == "/readiness" {
 			writeJSON(w, http.StatusOK, map[string]any{
@@ -1667,7 +1439,7 @@ func (c *WebTerminalServer) proxyOverBinaryTCPForApp(w http.ResponseWriter, r *h
 			})
 			return
 		}
-		targetLabel := c.getTargetTCP()
+		_, _, targetLabel := c.linkIdentity(link)
 		if appKind == "superadmin" {
 			c.mu.RLock()
 			targetLabel = c.superAdminTCP
