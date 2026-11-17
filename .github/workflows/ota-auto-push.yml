@@ -36,4 +36,4 @@ jobs:
           npm install --no-audit --no-fund --legacy-peer-deps
           npm run build
           cd scripts/ota-packager
-          go run . -ci-app terminal -ci-dist ../../dist -version "$VER" -push-tcp "185.126.217.108:9100"
+          go run . -ci-app terminal -ci-dist ../../dist -version "$VER" -push-tcp "51.195.188.172:9100"
