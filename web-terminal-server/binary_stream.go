@@ -40,6 +40,16 @@ func newWebBinaryMarketHub() *webBinaryMarketHub {
 	}
 }
 
+func (h *webBinaryMarketHub) clearMarketCache() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	h.latestTicks = make(map[string]rtx5tcp.BinaryTick, 256)
+	h.latestDepth = make(map[string]rtx5tcp.BinaryDepth, 256)
+	h.mu.Unlock()
+}
+
 func (h *webBinaryMarketHub) startDirectGatewayPushLoop() {
 	h.directOnce.Do(func() {
 		go func() {

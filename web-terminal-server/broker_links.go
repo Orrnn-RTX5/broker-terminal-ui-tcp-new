@@ -115,6 +115,9 @@ func (l *brokerLink) dialSlot(slot **rtx5tcp.MuxSession, dialMu *sync.Mutex, rol
 		onControl = l.handleServerControlFrame
 	}
 	newSess := rtx5tcp.NewMuxSession(tc, false, nil, onControl)
+	if withControl && l.binHub != nil {
+		l.binHub.clearMarketCache()
+	}
 	l.mu.Lock()
 	*slot = newSess
 	l.mu.Unlock()
