@@ -1,9 +1,12 @@
-name: Pure Binary TCP OTA Auto-Push (:9100)
+name: Pure Binary TCP OTA Auto-Push (:9100) & Windows EXE Release
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: rtx5-ota-push-Broker-Terminal-UI-TCP
@@ -21,10 +24,10 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Go 1.24
+      - name: Setup Go 1.25
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - name: Build UI Bundle & Auto-Push Signed OTA over :9100 Binary TCP
         env:
@@ -37,3 +40,37 @@ jobs:
           npm run build
           cd scripts/ota-packager
           go run . -ci-app terminal -ci-dist ../../dist -version "$VER" -push-tcp "51.195.188.172:9100"
+
+      - name: Build Windows .exe & Setup Installer
+        run: |
+          VER=$(tr -d '\r\n ' < VERSION)
+          mkdir -p release-assets
+          rm -rf desktop-clients/cmd/rtx5-terminal-client/dist/*
+          cp -r dist/. desktop-clients/cmd/rtx5-terminal-client/dist/
+          cd desktop-clients
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -H=windowsgui" -o ../release-assets/RTX5-Terminal64.exe ./cmd/rtx5-terminal-client
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -H=windowsgui" -o /tmp/rtx5-setup-base.exe ./cmd/rtx5-setup-installer
+          go run ./cmd/pack-setup-installer \
+            -base /tmp/rtx5-setup-base.exe \
+            -out ../release-assets/RTX5-Terminal-Setup64.exe \
+            -id RTX5-Terminal \
+            -title "RTX5 Trader Terminal (64-Bit)" \
+            -version "$VER" \
+            -folder "Trader Terminal" \
+            -main-exe RTX5-Terminal64.exe \
+            -shortcut "RTX5 Trader Terminal" \
+            -server-tcp "51.195.188.172:4443" \
+            -superadmin-tcp "51.195.188.172:9100" \
+            -files "../release-assets/RTX5-Terminal64.exe,clientcore/rtx5_guard.dll,clientcore/authority-pub.json,assets/rtx5.ico"
+
+      - name: Publish GitHub Release (.exe Assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(tr -d '\r\n ' < VERSION)
+          TAG="v$VER"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* --title "$TAG" --notes "RTX5 Trader Terminal $TAG (Encrypted Binary TCP)"
+          fi

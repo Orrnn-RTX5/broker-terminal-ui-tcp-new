@@ -1,0 +1,4 @@
+*.exe
+!clientcore/rtx5_guard.dll
+cmd/*/dist/*
+!cmd/*/dist/.gitkeep
