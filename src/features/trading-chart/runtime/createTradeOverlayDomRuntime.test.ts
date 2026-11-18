@@ -509,6 +509,7 @@ describe('SL/TP chart controls', () => {
         endTime: 1_730_265_120,
         startMarkerSide: 'BUY',
         endMarkerSide: 'SELL',
+        layoutCache: { placed: false, live: false, styles: {} },
       },
     ]);
   });

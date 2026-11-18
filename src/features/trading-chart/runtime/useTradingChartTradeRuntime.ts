@@ -102,6 +102,9 @@ interface UseTradingChartTradeRuntimeOptions {
   visibleRuntime: TradingChartVisibleRuntime;
 }
 
+// First N entries of the history layout key describe the viewport; the rest the live candle OHLC.
+const HISTORY_VIEWPORT_KEY_LENGTH = 14;
+
 export const useTradingChartTradeRuntime = ({
   activeChartSourceId,
   activeToolRef,
@@ -226,6 +229,8 @@ export const useTradingChartTradeRuntime = ({
 
 
   const lastHistoryTradeOverlaySignatureRef = useRef('');
+  // Viewport + candle fingerprint of the last history layout pass (null = lay out everything).
+  const historyViewportKeyRef = useRef<number[] | null>(null);
 
 
 
@@ -333,6 +338,7 @@ export const useTradingChartTradeRuntime = ({
       tradeControlLiveUpdatersRef.current = [];
     } else {
       lastHistoryTradeOverlaySignatureRef.current = '';
+      historyViewportKeyRef.current = null;
     }
   }, [overlayRef]);
 
@@ -420,8 +426,8 @@ export const useTradingChartTradeRuntime = ({
     const series = seriesRef.current;
     const chart = chartRef.current;
     const overlayLayers = [
-      { nodes: historyOverlayNodesRef.current, data: historyOverlayNodeDataRef.current },
-      { nodes: activeOverlayNodesRef.current, data: activeOverlayNodeDataRef.current },
+      { nodes: historyOverlayNodesRef.current, data: historyOverlayNodeDataRef.current, isHistory: true },
+      { nodes: activeOverlayNodesRef.current, data: activeOverlayNodeDataRef.current, isHistory: false },
     ];
     const { width: chartWidth, height: chartHeight } = readTradeOverlayContainerSize(
       tradeOverlayContainerSizesRef.current, containerRef.current, tradeControlSizeObservationRef.current,
@@ -577,11 +583,69 @@ export const useTradingChartTradeRuntime = ({
       return rects;
     };
 
-    for (const { nodes, data } of overlayLayers) {
+    // Closed-trade (history) geometry depends only on the viewport and candle data, never on the
+    // live quote. Re-lay out history nodes only when that key changes, for new nodes, and for the
+    // few nodes touching the live candle; every other tick leaves them (and their styles) alone.
+    let historyFullPass = true;
+    let historyLiveDirty = false;
+    let nextHistoryKey: number[] | null = null;
+    let liveThresholdTime = Number.POSITIVE_INFINITY;
+    if (historyOverlayNodesRef.current.length > 0) {
+      try {
+        const candles = candlesRef.current;
+        const liveCandle = currentCandleRef.current;
+        const candleCount = candles.length;
+        if (candleCount > 0) {
+          const timeScale = chart.timeScale();
+          const range = timeScale.getVisibleLogicalRange();
+          const probePrice = candles[0].close > 0 ? candles[0].close : 1;
+          const missing = Number.MAX_VALUE;
+          const key = [
+            range?.from ?? missing, range?.to ?? missing, chartWidth, chartHeight, priceScaleWidth,
+            Number.isFinite(timeScaleHeight) ? timeScaleHeight : 0,
+            candleCount, candles[0].time, candles[candleCount - 1].time, liveCandle?.time ?? 0,
+            series.priceToCoordinate(probePrice) ?? missing,
+            series.priceToCoordinate(probePrice * 1.5) ?? missing,
+            timeScale.timeToCoordinate(candles[0].time as Time) ?? missing,
+            timeScale.timeToCoordinate(candles[candleCount - 1].time as Time) ?? missing,
+            // Live candle OHLC: only nodes touching the live candle depend on these.
+            liveCandle?.open ?? 0, liveCandle?.high ?? 0, liveCandle?.low ?? 0, liveCandle?.close ?? 0,
+          ];
+          const previous = historyViewportKeyRef.current;
+          if (previous && previous.length === key.length) {
+            historyFullPass = false;
+            for (let k = 0; k < HISTORY_VIEWPORT_KEY_LENGTH; k++) {
+              if (key[k] !== previous[k]) { historyFullPass = true; break; }
+            }
+            for (let k = HISTORY_VIEWPORT_KEY_LENGTH; k < key.length; k++) {
+              if (key[k] !== previous[k]) { historyLiveDirty = true; break; }
+            }
+          }
+          nextHistoryKey = key;
+          liveThresholdTime = Math.min(liveCandle?.time ?? Number.POSITIVE_INFINITY, candles[candleCount - 1].time);
+        }
+      } catch {
+        historyFullPass = true;
+        nextHistoryKey = null;
+      }
+    }
+    // Writes a style value; history nodes skip the DOM write when the value is unchanged.
+    const put = (el: HTMLElement, node: OverlayNodeData, prop: string, value: string) => {
+      const styles = node.layoutCache?.styles;
+      if (styles) {
+        if (styles[prop] === value) return;
+        styles[prop] = value;
+      }
+      (el.style as unknown as Record<string, string>)[prop] = value;
+    };
+
+    for (const { nodes, data, isHistory } of overlayLayers) {
       for (let i = 0; i < nodes.length; i++) {
         const el = nodes[i];
         const node = data[i];
         if (!el || !node) continue;
+        const layoutCache = isHistory ? node.layoutCache : undefined;
+        if (layoutCache && layoutCache.placed && !historyFullPass && !(layoutCache.live && historyLiveDirty)) continue;
 
         try {
           if (node.kind === 'axis-price-badge') {
@@ -663,14 +727,16 @@ export const useTradingChartTradeRuntime = ({
 
           if (node.kind === 'segment') {
             if (node.price == null || node.time == null) {
-              el.style.display = 'none';
+              put(el, node, 'display', 'none');
+              if (layoutCache) layoutCache.placed = true;
               continue;
             }
 
             const endPrice = node.resolveEndPrice?.() ?? node.endPrice ?? null;
             const endTime = node.resolveEndTime?.() ?? node.endTime ?? null;
             if (endPrice == null || endTime == null) {
-              el.style.display = 'none';
+              put(el, node, 'display', 'none');
+              if (layoutCache) layoutCache.placed = true;
               continue;
             }
 
@@ -699,16 +765,16 @@ export const useTradingChartTradeRuntime = ({
               continue;
             }
 
-            el.style.display = 'block';
-            el.style.left = `${geometry.left}px`;
+            put(el, node, 'display', 'block');
+            put(el, node, 'left', `${geometry.left}px`);
             const isHistoryLine = el.classList.contains('rtx-trade-history-line');
             // History lines have a fixed inline height; reading offsetHeight here
             // forced one synchronous layout per trade segment on every pass.
             const segmentHeight = isHistoryLine ? (Number.parseFloat(el.style.height) || 1) : 0;
-            el.style.top = `${geometry.top - segmentHeight / 2}px`;
-            el.style.width = `${geometry.width}px`;
-            el.style.transform = `rotate(${geometry.angleDeg}deg)`;
-            el.style.transformOrigin = isHistoryLine ? '0 50%' : '0 0';
+            put(el, node, 'top', `${geometry.top - segmentHeight / 2}px`);
+            put(el, node, 'width', `${geometry.width}px`);
+            put(el, node, 'transform', `rotate(${geometry.angleDeg}deg)`);
+            put(el, node, 'transformOrigin', isHistoryLine ? '0 50%' : '0 0');
             if (isHistoryLine && x1 != null && y1 != null && x2 != null && y2 != null) {
               const maskImage = buildTradeHistoryLineCandleMask(
                 x1,
@@ -717,14 +783,34 @@ export const useTradingChartTradeRuntime = ({
                 y2,
                 collectSegmentCandleBodyRects(node.time, endTime),
               );
-              el.style.maskImage = maskImage;
-              el.style.webkitMaskImage = maskImage;
+              // Skip the DOM write when the cached value is unchanged.
+              const maskStyles = layoutCache?.styles;
+              if (!maskStyles || maskStyles.maskImage !== maskImage) {
+                if (maskStyles) maskStyles.maskImage = maskImage;
+                el.style.maskImage = maskImage;
+              }
+              if (!maskStyles || maskStyles.webkitMaskImage !== maskImage) {
+                if (maskStyles) maskStyles.webkitMaskImage = maskImage;
+                el.style.webkitMaskImage = maskImage;
+              }
+            }
+            if (layoutCache) {
+              // Only a segment reaching the live candle's body depends on the live quote.
+              const liveCandle = currentCandleRef.current;
+              const liveRect = liveCandle
+                ? resolveCandleBodyRect(liveCandle, Math.max(0, candlesRef.current.length - 1))
+                : null;
+              layoutCache.live = liveRect == null
+                ? liveCandle != null
+                : Math.max(x1 ?? Number.NEGATIVE_INFINITY, x2 ?? Number.NEGATIVE_INFINITY) >= liveRect.left;
+              layoutCache.placed = true;
             }
             continue;
           }
 
           if (node.price == null || node.time == null) {
-            el.style.display = 'none';
+            put(el, node, 'display', 'none');
+            if (layoutCache) layoutCache.placed = true;
             continue;
           }
 
@@ -742,20 +828,24 @@ export const useTradingChartTradeRuntime = ({
             if (!el.style.top) el.style.display = 'none';
             continue;
           }
+          if (layoutCache) {
+            layoutCache.live = Number(node.time) >= liveThresholdTime;
+            layoutCache.placed = true;
+          }
           if (x < -24 || x > chartWidth + 24 || y < -24 || y > chartHeight + 24) {
-            el.style.display = 'none';
+            put(el, node, 'display', 'none');
             continue;
           }
 
-          el.style.display = 'block';
+          put(el, node, 'display', 'block');
 
           if (node.kind === 'marker') {
             const markerY = y + (node.pixelOffsetY ?? 0);
-            el.style.left = `${x}px`;
-            el.style.top = `${markerY}px`;
-            el.style.transform = node.markerSide === 'BUY'
+            put(el, node, 'left', `${x}px`);
+            put(el, node, 'top', `${markerY}px`);
+            put(el, node, 'transform', node.markerSide === 'BUY'
               ? 'translate(-50%, 0)'
-              : 'translate(-50%, -100%)';
+              : 'translate(-50%, -100%)');
 
             const tooltip = el.querySelector<HTMLElement>('.rtx-trade-marker__price-tooltip');
             if (tooltip) {
@@ -776,6 +866,8 @@ export const useTradingChartTradeRuntime = ({
         }
       }
     }
+
+    historyViewportKeyRef.current = nextHistoryKey;
 
     // Refresh the live Pips/USD text on position control bars. Relayout is
     // already tick-driven for active trades, so this stays in the same frame.

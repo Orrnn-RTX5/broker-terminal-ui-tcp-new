@@ -658,6 +658,8 @@ interface ValidatedBinaryOrderReq {
 }
 
 interface PendingWsOrderEntry {
+  /** Id this entry is CURRENTLY registered under in wsInFlightOrders (changes on the inline-token retry). */
+  reqId: number;
   readonly validated: ValidatedBinaryOrderReq;
   readonly resolvedToken: string;
   readonly hasExplicitTokenOverride: boolean;
@@ -891,6 +893,7 @@ export function ensureBinaryOrderWebSocket(): WebSocket | null {
       wsSyncedAuthToken = null;
       pending.retriedInlineToken = true;
       const retryReqId = allocateWsReqId();
+      pending.reqId = retryReqId;
       wsInFlightOrders.set(retryReqId, pending);
       try {
         const inlineFrame = encodeWsInlineTokenOrderFrame(retryReqId, pending.validated, pending.resolvedToken);
@@ -2018,7 +2021,8 @@ function sendBinaryTcpOrderOverOpenWs(
     };
 
     const timer = setTimeout(() => {
-      if (!wsInFlightOrders.delete(reqId)) return;
+      // Resolve by the CURRENT id: after an AUTH_TOKEN_REQUIRED retry the entry lives under retryReqId.
+      if (!wsInFlightOrders.delete(pendingEntry.reqId)) return;
       cleanupAbort();
       releaseActiveSlot();
       reject(
@@ -2033,7 +2037,7 @@ function sendBinaryTcpOrderOverOpenWs(
     }, timeoutMs);
 
     const onCallerAbort = (): void => {
-      if (!wsInFlightOrders.delete(reqId)) return;
+      if (!wsInFlightOrders.delete(pendingEntry.reqId)) return;
       clearTimeout(timer);
       cleanupAbort();
       releaseActiveSlot();
@@ -2054,6 +2058,7 @@ function sendBinaryTcpOrderOverOpenWs(
     }
 
     const pendingEntry: PendingWsOrderEntry = {
+      reqId,
       validated,
       resolvedToken: validated.resolvedToken,
       hasExplicitTokenOverride: validated.hasExplicitTokenOverride,
@@ -2092,7 +2097,7 @@ function sendBinaryTcpOrderOverOpenWs(
       }
     } catch {
       // Zero bytes hit the wire — clean up synchronously and signal instant HTTP fallback.
-      wsInFlightOrders.delete(reqId);
+      wsInFlightOrders.delete(pendingEntry.reqId);
       clearTimeout(timer);
       cleanupAbort();
       releaseActiveSlot();

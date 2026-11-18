@@ -33,6 +33,18 @@ export interface ActiveTradeSnapshot {
 
 export type ClosedTradeSnapshot = ClosedTradeOverlaySnapshot;
 
+/**
+ * Per-node layout memo for closed-trade (history) nodes. History geometry depends only on the
+ * chart viewport and candle data, so a node is re-laid out only when the viewport key changes,
+ * when it is new (`placed` false), or when it touches the live candle (`live`).
+ */
+export interface HistoryNodeLayoutCache {
+  placed: boolean;
+  live: boolean;
+  /** Last value written per style property; unchanged values skip the DOM write. */
+  styles: Record<string, string>;
+}
+
 export interface OverlayNodeData {
   kind: 'horizontal-line' | 'price-badge' | 'axis-price-badge' | 'price-hit-area' | 'segment' | 'marker';
   price?: number;
@@ -47,6 +59,7 @@ export interface OverlayNodeData {
   resolveTime?: () => number | null;
   resolveEndPrice?: () => number | null;
   resolveEndTime?: () => number | null;
+  layoutCache?: HistoryNodeLayoutCache;
 }
 
 export type TradeOverlayLayer = 'active' | 'history';

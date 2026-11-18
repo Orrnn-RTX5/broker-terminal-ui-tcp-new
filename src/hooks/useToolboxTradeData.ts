@@ -35,6 +35,7 @@ import { resolvePositionOpenTime } from '../services/tradePositionTime';
 import { readBackendNumber } from '../services/backendAccountMetrics';
 import { isConfiguredBrokerEndpoint } from '../config/backendTarget.js';
 import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
+import { createTickPositionCoalescer, overlayRelevantPositionsChanged } from './toolboxTickCoalescer';
 
 type TradeWsState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -273,6 +274,17 @@ const positionSignature = (position: ToolboxTradePosition): string => [
 const positionsSignature = (positions: ToolboxTradePosition[]): string => (
   positions.map(positionSignature).join('|')
 );
+
+const memoPositionsSignature = (
+  cache: { current: { list: ToolboxTradePosition[]; sig: string } | null },
+  positions: ToolboxTradePosition[],
+): string => {
+  const hit = cache.current;
+  if (hit && hit.list === positions) return hit.sig;
+  const sig = positionsSignature(positions);
+  cache.current = { list: positions, sig };
+  return sig;
+};
 
 const accountSignature = (account: Account | null): string => (
   account
@@ -776,6 +788,8 @@ export function useToolboxTradeData() {
 
   const accountRef = useRef<Account | null>(state.account);
   const positionsRef = useRef<ToolboxTradePosition[]>(state.positions);
+  const positionsSigRef = useRef<{ list: ToolboxTradePosition[]; sig: string } | null>(null);
+  const storeSigRef = useRef<{ list: ToolboxTradePosition[]; sig: string } | null>(null);
   const retainedImmediatePositionsRef = useRef<Map<number, RetainedImmediateToolboxPosition>>(new Map());
   const pendingMarketOrdersRef = useRef<Map<string, RetainedImmediateToolboxPosition>>(new Map());
   const pendingPlacementTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -817,13 +831,17 @@ export function useToolboxTradeData() {
     positions: ToolboxTradePosition[],
     read?: { readStartedAt?: number; unlistedTickets?: readonly number[]; touchedTickets?: readonly number[] },
   ) => {
-    const previousSig = positionsSignature(positionsRef.current);
+    const previousPositions = positionsRef.current;
+    // Signatures are memoised per array identity: the previous list and the store list were
+    // signed when they were committed, so a tick commit signs only the new list (once).
+    const previousSig = memoPositionsSignature(positionsSigRef, previousPositions);
     positions = positions.filter((position) => !isConfirmedClosedPosition(position.id));
     let nextSig = positionsSignature(positions);
     const storePositions = Array.isArray(useAppStore.getState().positions)
       ? useAppStore.getState().positions as ToolboxTradePosition[]
       : [];
-    if (positionsSignature(storePositions) !== nextSig || (read?.touchedTickets?.length ?? 0) > 0) {
+    if (memoPositionsSignature(storeSigRef, storePositions) !== nextSig || (read?.touchedTickets?.length ?? 0) > 0) {
+      const submitted = positions;
       useAppStore.getState().setPositions(positions as Position[], {
         removedTickets: [...optimisticallyClosedPositionsRef.current.keys()],
         readStartedAt: read?.readStartedAt,
@@ -831,12 +849,16 @@ export function useToolboxTradeData() {
         touchedTickets: read?.touchedTickets,
       });
       positions = useAppStore.getState().positions as ToolboxTradePosition[];
-      nextSig = positionsSignature(positions);
-      if (typeof window !== 'undefined') {
+      if (positions !== submitted) nextSig = positionsSignature(positions);
+      storeSigRef.current = { list: positions, sig: nextSig };
+      // Only structural changes (rows added/removed, side, volume, open price, SL/TP) need an
+      // explicit overlay refresh; pure current-price/profit updates are drawn by the live path.
+      if (typeof window !== 'undefined' && overlayRelevantPositionsChanged(previousPositions, positions)) {
         window.dispatchEvent(new CustomEvent('rtx:refresh-trade-overlay'));
       }
     }
     positionsRef.current = positions;
+    positionsSigRef.current = { list: positions, sig: nextSig };
     if (previousSig === nextSig) return;
     setState((prev) => ({ ...prev, positions }));
   }, []);
@@ -1173,6 +1195,11 @@ export function useToolboxTradeData() {
   }, [refresh]);
 
   useEffect(() => {
+    const tickCoalescer = createTickPositionCoalescer<ToolboxTradePosition, { symbol: string; bid: number; ask: number; timestamp: unknown }>({
+      getPositions: () => positionsRef.current,
+      patch: patchPositionsFromTick,
+      commit: commitPositions,
+    });
     const unsubscribeTick = binaryTcpMarketStream.onTick((bt) => {
       const currentPositions = positionsRef.current;
       if (currentPositions.length === 0) return;
@@ -1194,18 +1221,17 @@ export function useToolboxTradeData() {
         spread: bt.spread,
         timestamp: bt.timestamp,
       });
-      const patched = patchPositionsFromTick(currentPositions, {
+      // At most one commit (store write + signatures) per frame; the latest tick per symbol wins.
+      tickCoalescer.push({
         symbol: bt.symbol,
         bid: Number(widened.bid ?? bt.bid),
         ask: Number(widened.ask ?? bt.ask),
         timestamp: bt.sourceTimestamp || bt.timestamp,
       });
-      if (patched !== currentPositions) {
-        commitPositions(patched);
-      }
     });
     return () => {
       unsubscribeTick();
+      tickCoalescer.dispose();
     };
   }, [commitPositions]);
 

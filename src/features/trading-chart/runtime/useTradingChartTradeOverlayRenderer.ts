@@ -34,6 +34,13 @@ import { createTradeOverlayModelRuntime } from './createTradeOverlayModelRuntime
 import { createTradeOverlayDomRuntime } from './createTradeOverlayDomRuntime';
 import { bindTradeOverlayRuntimeSubscriptions } from './bindTradeOverlayRuntimeSubscriptions';
 import {
+  capRecentHistoryTrades,
+  hashString32,
+  reconcileHistoryOverlayNodes,
+  type HistoryOverlayDesiredTrade,
+  type HistoryOverlayEntries,
+} from './tradeHistoryOverlayReconcile';
+import {
   getEntryLineColor,
   getFrozenEntryTimeKey,
   TRADE_BUY_COLOR,
@@ -278,10 +285,38 @@ export const useTradingChartTradeOverlayRenderer = ({
     let historyCache: {
       rows: unknown[]; activeKeys: string; candleWindow: string; snapshots: ClosedTradeSnapshot[];
     } | undefined;
+    // Keyed history nodes (ticket key -> DOM nodes) so a close only adds/removes its own nodes.
+    const historyEntries: HistoryOverlayEntries = new Map();
+    let lastHistoryHeader: string | undefined;
+    const closedContentCache = new WeakMap<ClosedTradeSnapshot, { key: string; hash: number }>();
+    const getClosedTradeContent = (trade: ClosedTradeSnapshot) => {
+      let content = closedContentCache.get(trade);
+      if (!content) {
+        const key = [
+          trade.key,
+          trade.side,
+          trade.volume,
+          trade.entryTime,
+          trade.exitTime,
+          trade.entryExecutionTime,
+          trade.exitExecutionTime,
+          formatSignaturePrice(trade.entryPrice),
+          formatSignaturePrice(trade.exitPrice),
+          trade.profit ?? '',
+          trade.source,
+        ].join(':');
+        content = { key, hash: hashString32(key) };
+        closedContentCache.set(trade, content);
+      }
+      return content;
+    };
     const renderTradeOverlay = (options: boolean | { forceActive?: boolean; forceHistory?: boolean } = false) => {
       if (isDisposedRef.current || !seriesRef.current || !overlayRef.current) return;
       const forceActive = typeof options === 'boolean' ? options : Boolean(options.forceActive);
       const forceHistory = typeof options === 'boolean' ? options : Boolean(options.forceHistory);
+      // An explicit `true` (settings/theme/rebuild requests) still rebuilds every history node;
+      // object-form forces (a close) reconcile incrementally.
+      const explicitHistoryRebuild = options === true;
       const now = Date.now();
       pruneCloseSuppressedTradeKeys(now);
       const closeSuppressedTradeKeys = new Set(closeSuppressedTradeKeysRef.current.keys());
@@ -687,8 +722,10 @@ export const useTradingChartTradeOverlayRenderer = ({
 
       // Reconcile the complete account history before selecting DOM membership.
       // Panning never removes records or changes optimistic close reconciliation.
-      const visibleClosedTrades = Array.from(closedTrades.values())
-        .filter(trade => isTradeHistoryInTimeRange(trade, historyTimeRange));
+      // Only trades crossing the visible time range keep DOM, capped to the most recent ones.
+      const visibleClosedTrades = capRecentHistoryTrades(
+        Array.from(closedTrades.values()).filter(trade => isTradeHistoryInTimeRange(trade, historyTimeRange)),
+      );
       const sortedActiveSnapshots = Array.from(renderActiveSnapshots.values())
         .sort((a, b) => a.key.localeCompare(b.key));
       const activeSignature = showTradeLevels
@@ -707,22 +744,21 @@ export const useTradingChartTradeOverlayRenderer = ({
           ].join(':');
         }).join('|')
         : '';
-      const closedSignature = showAnyTradeHistoryOverlay
-        ? visibleClosedTrades
-          .sort((a, b) => a.key.localeCompare(b.key))
-          .map((trade) => [
-            trade.key,
-            trade.side,
-            trade.volume,
-            trade.entryTime,
-            trade.exitTime,
-            trade.entryExecutionTime,
-            trade.exitExecutionTime,
-            formatSignaturePrice(trade.entryPrice),
-            formatSignaturePrice(trade.exitPrice),
-            trade.source,
-          ].join(':')).join('|')
-        : '';
+      // Order-independent rolling signature (count + sum + xor of per-trade hashes): no sort/join
+      // of the whole set per pass; the keyed diff below is what decides which nodes change.
+      const desiredHistory: Array<HistoryOverlayDesiredTrade<ClosedTradeSnapshot>> = [];
+      let closedSignature = '';
+      if (showAnyTradeHistoryOverlay) {
+        let hashSum = 0;
+        let hashXor = 0;
+        for (const trade of visibleClosedTrades) {
+          const content = getClosedTradeContent(trade);
+          hashSum = (hashSum + content.hash) >>> 0;
+          hashXor = (hashXor ^ content.hash) >>> 0;
+          desiredHistory.push({ key: trade.key, contentKey: content.key, item: trade });
+        }
+        closedSignature = `${desiredHistory.length}:${hashSum}:${hashXor}`;
+      }
       const sharedTradeForSignature = getSharedChartTrade();
       const sharedTradeSignature = sharedTradeForSignature && sharedTradeForSignature.symbol === normalizedChartSymbol
         ? `shared:${sharedTradeForSignature.ticket}:${activeTradeKeys.has(`trade:${sharedTradeForSignature.ticket}`) ? 'live' : 'annotated'}`
@@ -735,15 +771,15 @@ export const useTradingChartTradeOverlayRenderer = ({
         sharedTradeSignature,
         activeSignature,
       ].join('\n');
-      const nextHistorySignature = [
+      const historyHeader = [
         normalizedChartSymbol,
         timeframe,
         TRADE_HISTORY_PRESENTATION_VERSION,
         showTradeHistoryLine ? 'history-lines:on' : 'history-lines:off',
         showTradeHistoryArrows ? 'arrows:on' : 'arrows:off',
         `line-opacity:${tradeHistoryLineOpacityPercent}`,
-        closedSignature,
       ].join('\n');
+      const nextHistorySignature = `${historyHeader}\n${closedSignature}`;
 
       const { activeChanged, historyChanged } = getTradeOverlayRedrawDecision({
         lastActiveSignature: lastActiveTradeOverlaySignatureRef.current,
@@ -883,11 +919,26 @@ export const useTradingChartTradeOverlayRenderer = ({
       }
 
       if (historyChanged) {
-        clearTradeOverlayLayer('history');
+        // Presentation changes, explicit rebuilds and an externally cleared layer rebuild everything;
+        // otherwise only the added/removed/changed trades touch the DOM.
+        if (
+          explicitHistoryRebuild
+          || lastHistoryHeader !== historyHeader
+          || lastHistoryTradeOverlaySignatureRef.current === ''
+        ) {
+          clearTradeOverlayLayer('history');
+          historyEntries.clear();
+        }
         lastHistoryTradeOverlaySignatureRef.current = nextHistorySignature;
+        lastHistoryHeader = historyHeader;
 
         if (showAnyTradeHistoryOverlay) {
-          visibleClosedTrades.forEach((trade) => {
+          reconcileHistoryOverlayNodes({
+            desired: desiredHistory,
+            entries: historyEntries,
+            nodesRef: historyOverlayNodesRef,
+            dataRef: historyOverlayNodeDataRef,
+            create: (trade) => {
             const exitSide = getTradeHistoryExecutionSide(trade.side, 'CLOSE');
             if (showTradeHistoryLine) {
               createTradeHistoryLine(
@@ -907,7 +958,10 @@ export const useTradingChartTradeOverlayRenderer = ({
               const closePriceLabel = formatTradeLevelBadgePrice(trade.exitPrice);
               createTradeMarker(exitSide, trade.exitPrice, trade.exitTime, closePriceLabel, 'history', 1, undefined, 'close', trade.side, trade.exitExecutionTime);
             }
+            },
           });
+        } else {
+          historyEntries.clear();
         }
       }
 

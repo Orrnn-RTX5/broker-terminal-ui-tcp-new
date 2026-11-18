@@ -57,6 +57,7 @@ import {
 import type {
   ActiveTradeSnapshot,
   EntryTradeControlOptions,
+  HistoryNodeLayoutCache,
   OverlayNodeData,
   PriceLevelOptions,
   TradeLevelModifyRequestId,
@@ -143,6 +144,8 @@ export const createTradeOverlayDomRuntime = ({
       };
     };
 
+    const newHistoryLayoutCache = (): HistoryNodeLayoutCache => ({ placed: false, live: false, styles: {} });
+
     const appendOverlayNode = (element: HTMLElement, node: OverlayNodeData, layer: TradeOverlayLayer) => {
       const nodesRef = layer === 'active' ? activeOverlayNodesRef : historyOverlayNodesRef;
       const dataRef = layer === 'active' ? activeOverlayNodeDataRef : historyOverlayNodeDataRef;
@@ -192,7 +195,7 @@ export const createTradeOverlayDomRuntime = ({
       const markerHeight = 12;
       marker.innerHTML = createArrowSvg(side);
       marker.style.cssText = `position:absolute;display:none;width:${markerWidth}px;height:${markerHeight}px;z-index:${isHistoryMarker ? 20 : 16};pointer-events:none;opacity:${opacity};filter:none;`;
-      appendOverlayNode(marker, { kind: 'marker', price, time, markerSide: side, resolveTime, markerAnchor: 'candle', pixelOffsetY: side === 'BUY' ? -1 : 1 }, layer);
+      appendOverlayNode(marker, { kind: 'marker', price, time, markerSide: side, resolveTime, markerAnchor: 'candle', pixelOffsetY: side === 'BUY' ? -1 : 1, layoutCache: isHistoryMarker ? newHistoryLayoutCache() : undefined }, layer);
 
       if (layer !== 'history') return;
 
@@ -267,7 +270,7 @@ export const createTradeOverlayDomRuntime = ({
       hoverTarget.appendChild(tooltip);
       appendHistoryInteractionNode(
         hoverTarget,
-        { kind: 'marker', price, time, markerSide: side, resolveTime, markerAnchor: 'candle', pixelOffsetY: side === 'BUY' ? -1 : 1 },
+        { kind: 'marker', price, time, markerSide: side, resolveTime, markerAnchor: 'candle', pixelOffsetY: side === 'BUY' ? -1 : 1, layoutCache: newHistoryLayoutCache() },
       );
     };
 
@@ -291,6 +294,7 @@ export const createTradeOverlayDomRuntime = ({
         endTime,
         startMarkerSide: arrowSides?.start,
         endMarkerSide: arrowSides?.end,
+        layoutCache: newHistoryLayoutCache(),
       }, 'history');
     };
 

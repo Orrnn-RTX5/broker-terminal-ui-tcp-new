@@ -22,6 +22,7 @@ import {
   encodeBinaryOrderWsModeAFrame,
   encodeBinaryOrderWsModeBFrame,
   ensureBinaryOrderWebSocket,
+  getActiveBinaryTcpOrderCount,
   REQ_HEADER_SIZE,
   RESP_HEADER_SIZE,
   sendBinaryTcpOrder,
@@ -456,5 +457,94 @@ describe('binaryTcpOrderClient HAS_EXTRAS (0x0400) TLV encoding & validation', (
         clientOrderId: FIXED_UUID,
       }),
     ).toThrow(/trailing_step requires trailing_stop > 0/);
+  });
+});
+
+describe('binaryTcpOrderClient AUTH_TOKEN_REQUIRED retry settles and releases the active-order slot', () => {
+  const originalWebSocket = globalThis.WebSocket;
+
+  class RetryMockWebSocket {
+    static readonly OPEN = 1;
+    static instances: RetryMockWebSocket[] = [];
+    readyState = 1;
+    binaryType = 'blob';
+    onopen: (() => void) | null = null;
+    onmessage: ((ev: any) => void) | null = null;
+    onerror: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+    send = vi.fn();
+    close = vi.fn();
+    constructor(public url: string) { RetryMockWebSocket.instances.push(this); }
+  }
+
+  const authRequiredReply = (reqId: number): ArrayBuffer => {
+    const code = new TextEncoder().encode('AUTH_TOKEN_REQUIRED');
+    const header = new Uint8Array(buildMockBinaryOrderRespBuffer({ status: 401 }));
+    const frame = new Uint8Array(4 + RESP_HEADER_SIZE + 2 + code.length + 2);
+    const view = new DataView(frame.buffer);
+    view.setUint32(0, reqId, true);
+    frame.set(header, 4);
+    view.setUint16(4 + RESP_HEADER_SIZE, code.length, true);
+    frame.set(code, 4 + RESP_HEADER_SIZE + 2);
+    view.setUint16(4 + RESP_HEADER_SIZE + 2 + code.length, 0, true);
+    return frame.buffer;
+  };
+
+  const sendAndRetry = (extra: { timeoutMs?: number; signal?: AbortSignal }) => {
+    const socket = ensureBinaryOrderWebSocket() as unknown as RetryMockWebSocket;
+    socket.readyState = 1;
+    const outcome = sendBinaryTcpOrder({
+      action: BINARY_ORDER_ACTION_PLACE_MARKET,
+      accountLogin: 5058375,
+      symbol: 'EURUSD',
+      side: 'BUY',
+      volume: 0.1,
+      ...extra,
+    }).then(() => null, (err: any) => err);
+    expect(getActiveBinaryTcpOrderCount()).toBe(1);
+    const firstFrame = socket.send.mock.calls[0][0] as Uint8Array;
+    const firstReqId = new DataView(firstFrame.buffer, firstFrame.byteOffset).getUint32(0, true);
+    // Server says the token was not bound yet: the client retries under a NEW request id.
+    socket.onmessage?.({ data: authRequiredReply(firstReqId) });
+    const retryFrame = socket.send.mock.calls[1][0] as Uint8Array;
+    const retryReqId = new DataView(retryFrame.buffer, retryFrame.byteOffset).getUint32(0, true);
+    expect(retryReqId).not.toBe(firstReqId);
+    // The retry reply is lost: still in flight.
+    expect(getActiveBinaryTcpOrderCount()).toBe(1);
+    return outcome;
+  };
+
+  beforeEach(() => {
+    __resetBinaryOrderWsForTests();
+    RetryMockWebSocket.instances = [];
+    vi.useFakeTimers();
+    globalThis.WebSocket = RetryMockWebSocket as any;
+    (globalThis as any).__RTX5_RUNTIME_CONFIG__ = {
+      BINARY_ORDER_WS_URL: 'ws://127.0.0.1:18404/__rtx5_binary_order_ws',
+    };
+  });
+
+  afterEach(() => {
+    __resetBinaryOrderWsForTests();
+    vi.useRealTimers();
+    globalThis.WebSocket = originalWebSocket;
+    delete (globalThis as any).__RTX5_RUNTIME_CONFIG__;
+  });
+
+  it('times out by the CURRENT request id, rejects, and frees the slot when the retry reply is lost', async () => {
+    const outcome = sendAndRetry({ timeoutMs: 1000 });
+    vi.advanceTimersByTime(1001);
+    const err = await outcome;
+    expect(err?.code).toBe('GATEWAY_TIMEOUT');
+    expect(getActiveBinaryTcpOrderCount()).toBe(0);
+  });
+
+  it('aborts by the CURRENT request id, rejects, and frees the slot when the retry reply is lost', async () => {
+    const controller = new AbortController();
+    const outcome = sendAndRetry({ timeoutMs: 60_000, signal: controller.signal });
+    controller.abort();
+    const err = await outcome;
+    expect(err?.code).toBe('REQUEST_ABORTED');
+    expect(getActiveBinaryTcpOrderCount()).toBe(0);
   });
 });
