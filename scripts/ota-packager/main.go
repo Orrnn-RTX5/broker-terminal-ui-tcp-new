@@ -820,37 +820,9 @@ func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp,
 		if err := json.Unmarshal(mBody, &m); err != nil || len(m.Apps) == 0 {
 			continue
 		}
-		anyChanged := false
-		if ch == "production" && uploadedSHA != "" && (ciApp == "superadmin-linux" || ciApp == "broker-linux") && m.Apps[ciApp] == nil {
-			appName := "RTX5 Super Admin Linux VPS Backend (:9100 Hub + :8102 Control Plane)"
-			if ciApp == "broker-linux" {
-				appName = "RTX5 Broker Linux VPS Backend (:4443 + 256-Shard RAM Engine)"
-			}
-			m.Apps[ciApp] = &rtx5tcp.OTAAppArtifact{
-				AppKey:  ciApp,
-				AppName: appName,
-				Version: ver,
-			}
-			anyChanged = true
-		}
-		for k, a := range m.Apps {
-			if a == nil {
-				continue
-			}
-			if ciAppOwnsManifestKey(ciApp, k) && a.Version != ver {
-				a.Version = ver
-				anyChanged = true
-			}
-			if k == ciApp && uploadedSHA != "" && (ch == "production" || (ciApp != "superadmin-linux" && ciApp != "broker-linux")) {
-				if a.UITreeSHA256 != uploadedTreeSHA || a.UISHA256 != uploadedSHA {
-					anyChanged = true
-				}
-				a.UIZipFile = uploadedZipName
-				a.UISHA256 = uploadedSHA
-				a.UISize = uploadedSize
-				a.UITreeSHA256 = uploadedTreeSHA
-			}
-		}
+		anyChanged := mergeCIArtifactIntoManifest(&m, ch, ciApp, ver, ciUploadedUI{
+			ZipName: uploadedZipName, SHA: uploadedSHA, TreeSHA: uploadedTreeSHA, Size: uploadedSize,
+		})
 		if !anyChanged && m.ReleaseID != "" {
 			fmt.Printf("[CI-OTA] Channel %s already up-to-date at %s (v%s); skipping duplicate manifest push\n", ch, m.ReleaseID, ver)
 			continue
