@@ -432,7 +432,7 @@ const DockWorkspaceClean: React.FC<{
                     {tr("Reset Layout")}</button>
             )}
 
-            <div className="flex-1 relative min-h-0 min-w-0">
+            <div className="flex-1 flex flex-col relative min-h-0 min-w-0">
                 <StableChartHosts renderPanel={renderPanel}>
                 <DockContainer
                     container={layout.root}

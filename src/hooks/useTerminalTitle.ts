@@ -1,4 +1,4 @@
-import { brokerDisplayName, NEUTRAL_TERMINAL_TITLE, resolveTerminalTitle } from '../services/brokerDisplayName';
+import { brokerDisplayName, isBrokerName, NEUTRAL_TERMINAL_TITLE, resolveTerminalTitle } from '../services/brokerDisplayName';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { brokerV2Api } from '../api/trade';
@@ -15,8 +15,9 @@ import {
     getConfiguredBrokerLogoUrl,
     isPlaceholderBrokerLogoUrl,
 } from '../components/BrokerLogoImage';
-import { getRuntimeBrokerConfiguration } from '../config/backendTarget.js';
+import { getRuntimeBrokerConfiguration, isDesktopBackendTarget } from '../config/backendTarget.js';
 import {
+    getKnownBrokerServerName,
     recordBrokerServerIdentity,
     resolveServerDisplayLabel,
     useKnownBrokerServerName,
@@ -26,12 +27,40 @@ import {
 export const WEB_TERMINAL_TITLE = NEUTRAL_TERMINAL_TITLE;
 export const DEFAULT_BROKER_SERVER = WEB_TERMINAL_TITLE;
 
+const getExplicitConfiguredBrokerName = (): string => {
+    try {
+        const config = getRuntimeBrokerConfiguration() as {
+            explicitBrokerName?: unknown; brokerId?: unknown;
+        } | null;
+        const explicitFromConfig = typeof config?.explicitBrokerName === 'string'
+            ? config.explicitBrokerName.trim()
+            : '';
+        const configBrokerId = typeof config?.brokerId === 'string' ? config.brokerId.trim() : '';
+        if (isDesktopBackendTarget() && typeof window !== 'undefined') {
+            const activeBrokerId = getStoredBrokerId();
+            if (explicitFromConfig && isBrokerName(explicitFromConfig) && (!activeBrokerId || !configBrokerId || activeBrokerId === configBrokerId)) {
+                return explicitFromConfig;
+            }
+            const sessionName = String(window.localStorage.getItem('broker_name') || '').trim();
+            const knownServer = getKnownBrokerServerName();
+            if (isBrokerName(sessionName) && (!knownServer || sessionName.toLowerCase() !== knownServer.toLowerCase())) {
+                return sessionName;
+            }
+        }
+        return explicitFromConfig && isBrokerName(explicitFromConfig) ? explicitFromConfig : '';
+    } catch {
+        return '';
+    }
+};
+
 /**
  * White-label terminal title: broker display name from broker config when
  * configured, neutral fallback otherwise. Never a vendor default.
  */
 export const getWebTerminalTitle = (): string => {
     try {
+        const explicit = getExplicitConfiguredBrokerName();
+        if (explicit) return explicit;
         const config = getRuntimeBrokerConfiguration() as {
             brokerName?: unknown; defaultMt5Server?: unknown; brokerId?: unknown;
         } | null;
@@ -61,7 +90,15 @@ const getStoredHeaderValue = (key: string): string => {
     return normalizeHeaderText(localStorage.getItem(key));
 };
 
-const getStoredBrokerId = (): string => getStoredHeaderValue('broker_id') || getStoredHeaderValue('rtx_broker_id');
+const getStoredBrokerId = (): string => {
+    const stored = getStoredHeaderValue('broker_id') || getStoredHeaderValue('rtx_broker_id');
+    if (stored) return stored;
+    try {
+        return String(getRuntimeBrokerConfiguration().brokerId || '').trim();
+    } catch {
+        return '';
+    }
+};
 const getStoredLogoUrl = (): string => {
     const storedLogo = getStoredHeaderValue('logo_url');
     const validStoredLogo = isPlaceholderBrokerLogoUrl(storedLogo) ? '' : storedLogo;
@@ -122,6 +159,30 @@ const matchesBrokerServer = (server: BrokerServer, serverName: string): boolean 
     ].some((value) => normalizeHeaderText(value).toLowerCase() === target);
 };
 
+const pickExplicitBrokerName = (
+    config: BrokerTitleConfig | null,
+    matchedServer?: BrokerServer,
+    brokers: Broker[] = [],
+    brokerId = '',
+): string => {
+    const safeBrokers = Array.isArray(brokers) ? brokers : [];
+    const targetBrokerId = matchedServer?.broker_id || brokerId;
+    const matchedBroker = targetBrokerId
+        ? safeBrokers.find((broker) => String(broker?.broker_id) === String(targetBrokerId))
+        : undefined;
+    const directoryName = matchedServer?.broker_name && (!targetBrokerId || String(matchedServer.broker_name) !== String(targetBrokerId))
+        ? matchedServer.broker_name
+        : matchedBroker?.name;
+    const candidates = [
+        directoryName,
+        config?.broker_name,
+        config?.brokerName,
+        config?.name,
+        getExplicitConfiguredBrokerName(),
+    ];
+    return candidates.map((value) => String(value ?? '').trim()).find(isBrokerName) || '';
+};
+
 const resolveBrokerDisplayName = (
     serverName: string,
     config: BrokerTitleConfig | null,
@@ -129,6 +190,8 @@ const resolveBrokerDisplayName = (
     brokers: Broker[] = [],
     brokerId = '',
 ): string => {
+    const explicit = pickExplicitBrokerName(config, matchedServer, brokers, brokerId);
+    if (explicit) return explicit;
     const safeBrokers = Array.isArray(brokers) ? brokers : [];
     const targetBrokerId = matchedServer?.broker_id || brokerId;
     const matchedBroker = targetBrokerId
@@ -294,7 +357,8 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
     const infoKey = `${brokerId}|${serverName}|${accountId}|${sessionRevision}`;
 
     const [resolvedKey, setResolvedKey] = useState(infoKey);
-    const [brokerName, setBrokerName] = useState<string>(() => brokerDisplayName(serverName));
+    const [brokerName, setBrokerName] = useState<string>(() => getExplicitConfiguredBrokerName() || brokerDisplayName(serverName));
+    const [hasExplicitBroker, setHasExplicitBroker] = useState<boolean>(() => Boolean(getExplicitConfiguredBrokerName()));
     const isAuthenticated = useAppStore((s) => s.isAuthenticated);
     const modeSymbol = normalizeHeaderText(symbol);
     const modeKey = `${brokerId}|${serverName}|${accountId}|${isAuthenticated ? 'auth' : 'guest'}|${accountModeSessionEpoch}`;
@@ -303,8 +367,10 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
 
     useEffect(() => {
         let active = true;
+        const initialExplicit = getExplicitConfiguredBrokerName();
         setResolvedKey(infoKey);
-        setBrokerName(brokerDisplayName(serverName));
+        setBrokerName(initialExplicit || brokerDisplayName(serverName));
+        setHasExplicitBroker(Boolean(initialExplicit));
         setLogoUrl(getStoredLogoUrl());
         setLogoBaseCandidates([]);
 
@@ -353,13 +419,24 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                     ];
                 }
 
-                setBrokerName(resolveBrokerDisplayName(serverName, config, matchedServer, brokersList, brokerId));
+                const explicitName = pickExplicitBrokerName(config, matchedServer, brokersList, brokerId);
+                if (explicitName && isDesktopBackendTarget() && typeof window !== 'undefined') {
+                    const currentStoredBrokerName = getStoredHeaderValue('broker_name');
+                    const knownServerName = getKnownBrokerServerName();
+                    if (!currentStoredBrokerName || (knownServerName && currentStoredBrokerName.toLowerCase() === knownServerName.toLowerCase())) {
+                        window.localStorage.setItem('broker_name', explicitName);
+                    }
+                }
+                setHasExplicitBroker(Boolean(explicitName));
+                setBrokerName(explicitName || resolveBrokerDisplayName(serverName, config, matchedServer, brokersList, brokerId));
                 setLogoUrl(finalLogoUrl);
                 setLogoBaseCandidates(nextLogoBaseCandidates);
             } catch (err) {
                 console.error('[TerminalTitle] Error loading dynamic titlebar info:', err);
                 if (!active) return;
-                setBrokerName(brokerDisplayName(serverName));
+                const fallbackExplicit = getExplicitConfiguredBrokerName();
+                setHasExplicitBroker(Boolean(fallbackExplicit));
+                setBrokerName(fallbackExplicit || brokerDisplayName(serverName));
                 setLogoUrl(getStoredLogoUrl());
                 setLogoBaseCandidates([]);
             }
@@ -393,9 +470,13 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
     // build fallback is replaced without waiting for another session change.
     useKnownBrokerServerName();
     const currentDetails = resolvedKey === infoKey;
+    const explicitFallback = getExplicitConfiguredBrokerName();
+    const resolvedDisplayBrokerName = currentDetails
+        ? (hasExplicitBroker ? brokerName : resolveServerDisplayLabel(brokerName))
+        : (explicitFallback || resolveServerDisplayLabel(brokerDisplayName(serverName)));
     return {
         accountId, accountName, serverName: resolveServerDisplayLabel(serverName), marginMode,
-        brokerName: resolveServerDisplayLabel(currentDetails ? brokerName : brokerDisplayName(serverName)),
+        brokerName: resolvedDisplayBrokerName,
         logoUrl: currentDetails ? logoUrl : getStoredLogoUrl(),
         logoBaseCandidates: currentDetails ? logoBaseCandidates : [],
     };
@@ -410,11 +491,21 @@ export function formatTerminalTitle(
     const marketStatusSuffix = marketStatus?.isTradeBlocked && !marketStatus.loading && marketStatus.status !== 'unknown'
         ? ` - ${marketStatus.label}`
         : '';
+    const webTitle = getWebTerminalTitle();
+    const knownServer = getKnownBrokerServerName();
+    const primaryLabel = (
+        knownServer
+        && isSameTerminalLabel(webTitle, knownServer)
+        && isBrokerName(info.brokerName)
+        && !isSameTerminalLabel(info.brokerName, knownServer)
+    )
+        ? info.brokerName
+        : webTitle;
     // Broker display name from discovery/runtime-config, shown once: when it
     // equals the title prefix the broker segment adds nothing, so it is dropped
     // (the server label then appears only once via the remaining segment).
-    const brokerSegment = isSameTerminalLabel(info.brokerName, getWebTerminalTitle()) ? '' : info.brokerName;
-    const title = `${getWebTerminalTitle()} - ${info.accountId}`
+    const brokerSegment = isSameTerminalLabel(info.brokerName, primaryLabel) ? '' : info.brokerName;
+    const title = `${primaryLabel} - ${info.accountId}`
         + (brokerSegment ? ` - ${brokerSegment}` : '')
         + ` - ${info.marginMode} - ${symbol},${timeframe.toUpperCase()}${marketStatusSuffix}`;
     return title;

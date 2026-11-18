@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { createWebRuntimeConfig } from './viteWebRuntimeConfig'
+import { createWebRuntimeConfig } from './viteWebRuntimeConfig.ts'
 
 /** Reject overlapping broker blocks before dotenv silently takes the last value. */
 export function validateWebBrokerEnvironment(env: Record<string, string>, directory: string): void {

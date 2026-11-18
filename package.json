@@ -1,107 +1,70 @@
 {
-    "name":  "broker-terminal-ui-tcp",
-    "private":  true,
+    "name": "broker-terminal-ui-tcp",
+    "private": true,
     "version": "2.2.7",
-    "engines":  {
-                    "node":  "\u003e=22",
-                    "npm":  "\u003e=10"
-                },
-    "description":  "Professional trading terminal",
-    "author":  "RTX",
-    "type":  "module",
-    "repository":  "github:rtx5-orrnn/rtx5-broker-webterminal-ui",
-    "scripts":  {
-                    "dev":  "vite --mode web",
-                    "dev:desktop":  "vite --mode desktop",
-                    "build":  "vite build --mode desktop",
-                    "build:desktop":  "vite build --mode desktop",
-                    "typecheck":  "tsc -b",
-                    "lint":  "eslint .",
-                    "test":  "vitest run",
-                    "preview":  "vite preview"
-                },
-    "build":  {
-                  "appId":  "com.rtx.terminal",
-                  "productName":  "Terminal",
-                  "artifactName":  "Terminal.Setup.${version}.${ext}",
-                  "directories":  {
-                                      "output":  "draft"
-                                  },
-                  "files":  [
-                                "dist/**/*",
-                                "electron.cjs",
-                                "electron-brand.cjs",
-                                "electron-network.cjs",
-                                "electron-startup.cjs",
-                                "desktop-splash.html",
-                                "preload.cjs",
-                                "build/icon.ico"
-                            ],
-                  "win":  {
-                              "target":  "nsis",
-                              "icon":  "build/icon.ico"
-                          },
-                  "nsis":  {
-                               "oneClick":  true,
-                               "perMachine":  false,
-                               "allowToChangeInstallationDirectory":  false,
-                               "createDesktopShortcut":  true,
-                               "createStartMenuShortcut":  true,
-                               "shortcutName":  "Terminal"
-                           },
-                  "publish":  {
-                                  "provider":  "github",
-                                  "owner":  "rtx5-orrnn",
-                                  "repo":  "rtx5-terminal-releases",
-                                  "private":  false,
-                                  "releaseType":  "release"
-                              }
-              },
-    "dependencies":  {
-                         "@fontsource-variable/plus-jakarta-sans":  "^5.2.8",
-                         "clsx":  "^2.1.1",
-                         "electron-updater":  "^6.8.9",
-                         "html2canvas-pro":  "^2.0.2",
-                         "i18next":  "^25.8.0",
-                         "i18next-browser-languagedetector":  "^8.2.0",
-                         "i18next-resources-to-backend":  "^1.2.1",
-                         "lightweight-charts":  "^5.1.0",
-                         "lucide-react":  "^0.562.0",
-                         "react":  "^19.2.0",
-                         "react-dom":  "^19.2.0",
-                         "react-i18next":  "^16.5.4",
-                         "tailwind-merge":  "^3.4.0",
-                         "zustand":  "^5.0.10"
-                     },
-    "devDependencies":  {
-                            "@eslint/js":  "^9.39.1",
-                            "@tailwindcss/postcss":  "^4.1.18",
-                            "@testing-library/jest-dom":  "^6.9.1",
-                            "@testing-library/react":  "^16.3.1",
-                            "@testing-library/user-event":  "^14.6.1",
-                            "@types/node":  "^24.10.1",
-                            "@types/react":  "^19.2.5",
-                            "@types/react-dom":  "^19.2.3",
-                            "@vitejs/plugin-react":  "^5.1.1",
-                            "@vitejs/plugin-react-swc":  "^4.3.3",
-                            "@vitest/ui":  "^4.1.11",
-                            "electron":  "^41.10.7",
-                            "electron-builder":  "^26.8.1",
-                            "eslint":  "^9.39.1",
-                            "eslint-plugin-react-hooks":  "^7.0.1",
-                            "eslint-plugin-react-refresh":  "^0.4.24",
-                            "fake-indexeddb":  "^6.2.5",
-                            "globals":  "^16.5.0",
-                            "jsdom":  "^27.4.0",
-                            "postcss":  "^8.5.6",
-                            "puppeteer":  "^25.0.4",
-                            "tailwindcss":  "^4.1.18",
-                            "typescript":  "~5.9.3",
-                            "typescript-eslint":  "^8.46.4",
-                            "vite":  "^7.2.4",
-                            "vitest":  "^4.1.11"
-                        },
-    "allowScripts":  {
-                         "esbuild@0.27.3":  true
-                     }
+    "engines": {
+        "node": ">=22",
+        "npm": ">=10"
+    },
+    "description": "Professional trading terminal",
+    "author": "RTX",
+    "type": "module",
+    "repository": "github:rtx5-orrnn/rtx5-broker-webterminal-ui",
+    "scripts": {
+        "dev": "vite --mode web",
+        "dev:desktop": "vite --mode desktop",
+        "build": "vite build --mode desktop",
+        "build:desktop": "vite build --mode desktop",
+        "typecheck": "tsc -b",
+        "lint": "eslint .",
+        "test": "vitest run",
+        "preview": "vite preview",
+        "bridge:tcp": "./web-terminal-server/rtx5-web-terminal-server",
+        "build:bridge": "cd web-terminal-server && go build -o rtx5-web-terminal-server ."
+    },
+    "dependencies": {
+        "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
+        "clsx": "^2.1.1",
+        "html2canvas-pro": "^2.0.2",
+        "i18next": "^27.1.4",
+        "i18next-browser-languagedetector": "^8.3.0",
+        "i18next-resources-to-backend": "^1.2.4",
+        "lightweight-charts": "^5.1.0",
+        "lucide-react": "^1.74.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "react-i18next": "^18.0.2",
+        "tailwind-merge": "^3.4.0",
+        "zustand": "^5.0.10"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@tailwindcss/postcss": "^4.1.18",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.1",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/node": "^24.19.2",
+        "@types/react": "^19.2.5",
+        "@types/react-dom": "^19.2.3",
+        "@vitejs/plugin-react": "^6.3.0",
+        "@vitejs/plugin-react-swc": "^4.3.3",
+        "@vitest/ui": "^5.1.0",
+        "eslint": "^10.15.0",
+        "eslint-plugin-react-hooks": "^7.0.1",
+        "eslint-plugin-react-refresh": "^0.5.8",
+        "fake-indexeddb": "^6.2.5",
+        "globals": "^17.14.0",
+        "jsdom": "^31.0.1",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^4.1.18",
+        "typescript": "~6.0.3",
+        "typescript-eslint": "^8.46.4",
+        "vite": "^8.3.8",
+        "vitest": "^5.1.0"
+    },
+    "allowScripts": {
+        "@swc/core@1.16.22": true,
+        "esbuild@0.28.2": true,
+        "fsevents@2.3.3": true
+    }
 }

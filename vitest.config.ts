@@ -1,7 +1,7 @@
 import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import testEnvironments from './config/vitest-environments.json'
+import testEnvironments from './config/vitest-environments.json' with { type: 'json' }
 
 const nodeTests = [...testEnvironments.logic, ...testEnvironments.presentation]
 
@@ -62,7 +62,7 @@ export const createTestConfig = (webOnly = false) => defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
 })

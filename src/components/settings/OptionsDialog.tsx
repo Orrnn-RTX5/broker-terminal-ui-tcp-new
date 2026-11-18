@@ -9,6 +9,7 @@ import { NotificationPreferences } from './NotificationPreferences';
 import { ThemeAppearanceSettings } from './ThemeAppearanceSettings';
 import { SettingsField, SettingsNotice, SettingsSection, SettingsToggle } from './OptionsControls';
 import { NEUTRAL_TERMINAL_TITLE } from '../../services/brokerDisplayName';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './options-dialog.css';
 
 interface OptionsDialogProps { isOpen: boolean; onClose: () => void; }
@@ -90,10 +91,11 @@ function OpenOptionsDialog({ onClose, activeTab, setActiveTab }: {
         event.preventDefault(); setActiveTab(TABS[next].id);
         dialogRef.current?.querySelector<HTMLButtonElement>(`#options-tab-${TABS[next].id}`)?.focus();
     };
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
     return createPortal(
         <div className="rtx-options-dialog-backdrop">
-            <div className="rtx-options-dialog text-[14px] font-normal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="options-title" aria-describedby="options-description" onKeyDown={(event) => event.stopPropagation()}>
-                <header className="options-header">
+            <div className="rtx-options-dialog text-[14px] font-normal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="options-title" aria-describedby="options-description" style={dragStyle} onKeyDown={(event) => event.stopPropagation()}>
+                <header className="options-header" {...dragHandleProps}>
                     <span className="options-header-icon"><Icon name="settings" size={22} /></span>
                     <div className="options-header-copy"><h2 className="rtx-dialog-title" id="options-title">{tr('Options')}</h2><p id="options-description">{tr('Personalize your terminal workspace')}</p></div>
                     <button className="options-close" onClick={handleCancel} aria-label={tr('Close options')}><Icon name="x-close" size={18} /></button>

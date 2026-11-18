@@ -105,12 +105,12 @@ export const resolveBrokerLoginPolicy = (
   }
   // A developer's localhost is shared by every broker's local frontend. It
   // cannot identify a broker, even if discovery lists a demo on that hostname.
-  const hostBroker = isLocalHostname(hostname)
-    ? undefined
-    : brokers.find((broker) => brokerMatchesHostname(broker, hostname));
-  const urlBroker = brokers.find((broker) =>
-    brokerMatchesTarget(broker, targetOrigin)
-    || (!isLocalHostname(hostname) && brokerMatchesHostname(broker, hostname)));
+  const hostMatches = isLocalHostname(hostname)
+    ? []
+    : brokers.filter((broker) => brokerMatchesHostname(broker, hostname));
+  const targetMatches = targetOrigin
+    ? brokers.filter((broker) => brokerMatchesTarget(broker, targetOrigin))
+    : [];
 
   // The broker of the active session — the one the Navigator shows after the
   // user selected/logged into a broker. New accounts (demo or real) belong to
@@ -121,16 +121,17 @@ export const resolveBrokerLoginPolicy = (
     return sessionId ? brokers.find((broker) => normalizeId(broker.broker_id) === sessionId) : undefined;
   })();
   if (!webDeployment && sessionBroker) {
-    if (hostBroker && normalizeId(hostBroker.broker_id) !== normalizeId(sessionBroker.broker_id)) {
+    if (hostMatches.length && !hostMatches.includes(sessionBroker)) {
       return failedPolicy('The active broker session does not match this terminal deployment URL.');
     }
     return readyPolicy(sessionBroker);
   }
 
-  if (urlBroker && runtimeBroker && normalizeId(urlBroker.broker_id) !== normalizeId(runtimeBroker.broker_id)) {
+  if (runtimeBroker && ((hostMatches.length && !hostMatches.includes(runtimeBroker))
+    || (targetMatches.length && !targetMatches.includes(runtimeBroker)))) {
     return failedPolicy('This terminal broker configuration does not match its deployment URL.');
   }
-  const broker = urlBroker || runtimeBroker;
+  const broker = runtimeBroker || targetMatches[0] || hostMatches[0];
   if (!broker || !runtimeId) {
     return failedPolicy('This terminal does not have a verified broker configured.');
   }

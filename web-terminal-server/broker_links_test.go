@@ -219,3 +219,24 @@ func TestSessionKeyIsStableWithinOneRequest(t *testing.T) {
 		t.Fatalf("the issued cookie's session sees %s, want tradex", id)
 	}
 }
+
+func TestCookielessXBrokerIDRoutingAndCanonicalID(t *testing.T) {
+	srv := &WebTerminalServer{
+		sessionTokens: make(map[string]string),
+		cachedBrokers: []DiscoveredBroker{
+			{BrokerID: "9010", BrokerName: "Delta", TCPAddr: "194.110.169.111:4443", Online: true},
+			{BrokerID: "orrnn", BrokerName: "Orrnn", TCPAddr: "51.195.188.172:4443", Online: true},
+		},
+	}
+	def := srv.setDefaultBroker("legacy-alias", "Legacy", "51.195.188.172:4443")
+	if got := srv.canonicalBrokerIDForLink(def); got != "orrnn" {
+		t.Fatalf("canonicalBrokerIDForLink(def) = %q, want %q", got, "orrnn")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/instruments", nil)
+	req.Header.Set("X-Broker-ID", "9010")
+	chosen := srv.linkForRequest(req)
+	if chosen == nil || chosen == def || chosen.id != "9010" || chosen.target != "194.110.169.111:4443" {
+		t.Fatalf("cookieless request with X-Broker-ID: 9010 resolved to %+v, want 9010 at 194.110.169.111:4443", chosen)
+	}
+}

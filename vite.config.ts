@@ -1,12 +1,12 @@
 import type { Plugin, ProxyOptions } from 'vite'
 import { defineConfig, loadEnv } from 'vite'
-import { validateWebBrokerEnvironment } from './viteWebEnv'
-import { createWebRuntimeConfig, webRuntimeConfigPlugin } from './viteWebRuntimeConfig'
-import { terminalPreloadPlugin } from './viteTerminalPreload'
-import { validateBrokerRuntimeConfig } from './src/config/brokerRuntimeConfig'
-import { extractBrokerDiscoveryList, isDirectoryBrokerSelectable } from './src/services/brokerDiscovery'
+import { validateWebBrokerEnvironment } from './viteWebEnv.ts'
+import { createWebRuntimeConfig, webRuntimeConfigPlugin } from './viteWebRuntimeConfig.ts'
+import { terminalPreloadPlugin } from './viteTerminalPreload.ts'
+import { validateBrokerRuntimeConfig } from './src/config/brokerRuntimeConfig.ts'
+import { extractBrokerDiscoveryList, isDirectoryBrokerSelectable } from './src/services/brokerDiscovery.ts'
 import react from '@vitejs/plugin-react'
-import { rtx5BuildInfo } from './viteRtx5BuildInfo'
+import { rtx5BuildInfo } from './viteRtx5BuildInfo.ts'
 import reactSwc from '@vitejs/plugin-react-swc'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import * as http from 'node:http'
@@ -15,13 +15,14 @@ import * as net from 'node:net'
 import { isIP, type Socket } from 'node:net'
 import * as tls from 'node:tls'
 import { resolve } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
 import {
   createPinnedConnectionOptions,
   normalizeProxyAccessOrigin,
   resolveProxyAddresses,
   type ResolvedProxyAddress,
-} from './viteBrokerProxyAddress'
+} from './viteBrokerProxyAddress.ts'
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -108,10 +109,24 @@ const configureWsProxy = (
   }
 }
 
-const copyProxyHeaders = (headers: IncomingHttpHeaders): IncomingHttpHeaders => {
+const PROXY_STRIPPED_REQUEST_HEADERS = new Set(['host', 'origin'])
+const PROXY_STRIPPED_RESPONSE_HEADERS = new Set([
+  'access-control-allow-origin',
+  'access-control-allow-credentials',
+  'access-control-allow-methods',
+  'access-control-allow-headers',
+  'access-control-expose-headers',
+  'access-control-max-age',
+])
+
+const copyProxyHeaders = (
+  headers: IncomingHttpHeaders,
+  strippedHeaders: ReadonlySet<string> = PROXY_STRIPPED_REQUEST_HEADERS,
+): IncomingHttpHeaders => {
   const nextHeaders: IncomingHttpHeaders = {}
   for (const [key, value] of Object.entries(headers)) {
-    if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase()) && key.toLowerCase() !== 'host') {
+    const lower = key.toLowerCase()
+    if (!HOP_BY_HOP_HEADERS.has(lower) && !strippedHeaders.has(lower)) {
       nextHeaders[key] = value
     }
   }
@@ -454,7 +469,7 @@ const forwardRequest = (
           clearConnectTimer()
           releaseHandshake()
 
-          const responseHeaders = copyProxyHeaders(proxyRes.headers)
+          const responseHeaders = copyProxyHeaders(proxyRes.headers, PROXY_STRIPPED_RESPONSE_HEADERS)
           res.writeHead(proxyRes.statusCode || 502, proxyRes.statusMessage, responseHeaders)
 
           if (!onResponseBody) {
@@ -542,6 +557,7 @@ const forwardRequest = (
 
     attemptForward(1)
   })
+  req.resume()
 }
 
 const isBrokerDiscoveryResponse = (prefix: string, target: URL): boolean => {
@@ -718,81 +734,106 @@ const bridgeWebSocketUpgrade = (
   attemptUpgradeConnect(1)
 }
 
+const attachDynamicBrokerWsUpgrade = (
+  httpServer: { on: (event: 'upgrade', listener: (req: IncomingMessage, socket: Socket, head: Buffer) => void) => unknown } | null | undefined,
+  prefix: string,
+  access: BrokerProxyAccess,
+): void => {
+  httpServer?.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
+    const requestUrl = req.url || ''
+    if (!requestUrl.startsWith(`${prefix}/`)) return
+
+    const pathAfterPrefix = requestUrl.slice(prefix.length + 1)
+    const slashIndex = pathAfterPrefix.indexOf('/')
+    const encodedOrigin = slashIndex >= 0 ? pathAfterPrefix.slice(0, slashIndex) : pathAfterPrefix
+    const targetPath = slashIndex >= 0 ? pathAfterPrefix.slice(slashIndex) : '/'
+
+    let target: URL
+    try {
+      const origin = new URL(decodeURIComponent(encodedOrigin))
+      if (origin.protocol !== 'ws:' && origin.protocol !== 'wss:') throw new Error('unsupported ws protocol')
+      if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') throw new Error('invalid ws origin')
+      const queryIndex = targetPath.indexOf('?')
+      origin.pathname = (queryIndex >= 0 ? targetPath.slice(0, queryIndex) : targetPath) || '/'
+      origin.search = queryIndex >= 0 ? targetPath.slice(queryIndex) : ''
+      target = origin
+    } catch {
+      ; (socket as Socket).destroy()
+      return
+    }
+
+    const clientSocket = socket as Socket
+    void validateProxyTarget(target, access)
+      .then((validation) => {
+        if (!validation.allowed) {
+          clientSocket.destroy()
+          return
+        }
+        bridgeWebSocketUpgrade(req, clientSocket, head as Buffer, target, validation.resolvedAddresses)
+      })
+      .catch(() => clientSocket.destroy())
+  })
+}
+
 const dynamicBrokerWsProxyPlugin = (prefix: string, access: BrokerProxyAccess): Plugin => ({
   name: 'rtx5-dynamic-broker-ws-proxy',
   configureServer(server) {
-    server.httpServer?.on('upgrade', (req, socket, head) => {
-      const requestUrl = req.url || ''
-      if (!requestUrl.startsWith(`${prefix}/`)) return
+    attachDynamicBrokerWsUpgrade(server.httpServer, prefix, access)
+  },
+  configurePreviewServer(server) {
+    attachDynamicBrokerWsUpgrade(server.httpServer, prefix, access)
+  },
+})
 
-      const pathAfterPrefix = requestUrl.slice(prefix.length + 1)
-      const slashIndex = pathAfterPrefix.indexOf('/')
-      const encodedOrigin = slashIndex >= 0 ? pathAfterPrefix.slice(0, slashIndex) : pathAfterPrefix
-      const targetPath = slashIndex >= 0 ? pathAfterPrefix.slice(slashIndex) : '/'
+const attachDynamicBrokerMiddleware = (
+  middlewares: { use: (handler: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => unknown },
+  prefixes: string[],
+  access: BrokerProxyAccess,
+): void => {
+  middlewares.use((req, res, next) => {
+    const requestUrl = req.url || ''
+    const prefix = prefixes.find((candidate) => requestUrl.startsWith(`${candidate}/`))
+    if (!prefix) {
+      next()
+      return
+    }
 
-      let target: URL
-      try {
-        const origin = new URL(decodeURIComponent(encodedOrigin))
-        if (origin.protocol !== 'ws:' && origin.protocol !== 'wss:') throw new Error('unsupported ws protocol')
-        if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') throw new Error('invalid ws origin')
-        const queryIndex = targetPath.indexOf('?')
-        origin.pathname = (queryIndex >= 0 ? targetPath.slice(0, queryIndex) : targetPath) || '/'
-        origin.search = queryIndex >= 0 ? targetPath.slice(queryIndex) : ''
-        target = origin
-      } catch {
-        ; (socket as Socket).destroy()
+    const target = parseDynamicProxyTarget(requestUrl, prefix)
+    if (!target) {
+      sendProxyError(res, 400, 'Invalid broker proxy target')
+      return
+    }
+
+    req.pause()
+    void (async () => {
+      const validation = await validateProxyTarget(target, access, prefix === '/__broker_discovery' ? 'discovery' : 'broker')
+      if (validation.allowed === false) {
+        req.resume()
+        sendProxyError(res, 403, validation.reason)
         return
       }
 
-      const clientSocket = socket as Socket
-      void validateProxyTarget(target, access)
-        .then((validation) => {
-          if (!validation.allowed) {
-            clientSocket.destroy()
-            return
-          }
-          bridgeWebSocketUpgrade(req, clientSocket, head as Buffer, target, validation.resolvedAddresses)
-        })
-        .catch(() => clientSocket.destroy())
+      forwardRequest(
+        req,
+        res,
+        target,
+        validation.resolvedAddresses,
+        isBrokerDiscoveryResponse(prefix, target) ? (body) => learnBrokerOrigins(body, access) : undefined
+      )
+    })().catch((error) => {
+      req.resume()
+      sendProxyError(res, 502, `Broker proxy validation failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-  },
-})
+  })
+}
 
 const dynamicBrokerProxyPlugin = (prefixes: string[], access: BrokerProxyAccess): Plugin => ({
   name: 'rtx5-dynamic-broker-proxy',
   configureServer(server) {
-    server.middlewares.use((req, res, next) => {
-      const requestUrl = req.url || ''
-      const prefix = prefixes.find((candidate) => requestUrl.startsWith(`${candidate}/`))
-      if (!prefix) {
-        next()
-        return
-      }
-
-      const target = parseDynamicProxyTarget(requestUrl, prefix)
-      if (!target) {
-        sendProxyError(res, 400, 'Invalid broker proxy target')
-        return
-      }
-
-      void (async () => {
-        const validation = await validateProxyTarget(target, access, prefix === '/__broker_discovery' ? 'discovery' : 'broker')
-        if (validation.allowed === false) {
-          sendProxyError(res, 403, validation.reason)
-          return
-        }
-
-        forwardRequest(
-          req,
-          res,
-          target,
-          validation.resolvedAddresses,
-          isBrokerDiscoveryResponse(prefix, target) ? (body) => learnBrokerOrigins(body, access) : undefined
-        )
-      })().catch((error) => {
-        sendProxyError(res, 502, `Broker proxy validation failed: ${error instanceof Error ? error.message : String(error)}`)
-      })
-    })
+    attachDynamicBrokerMiddleware(server.middlewares, prefixes, access)
+  },
+  configurePreviewServer(server) {
+    attachDynamicBrokerMiddleware(server.middlewares, prefixes, access)
   },
 })
 
@@ -819,14 +860,211 @@ const DEV_WATCH_IGNORED_DIRS = [
   'mt5-trading-panel', '.qwen', '.claude', '.github',
 ]
 
+const desktopTcpToolbarDevPlugin = (enabled: boolean): Plugin => {
+  if (!enabled) {
+    return { name: 'rtx5-desktop-tcp-toolbar-dev' }
+  }
+  return {
+    name: 'rtx5-desktop-tcp-toolbar-dev',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'script',
+          attrs: { src: '/rtx5-tcp-toolbar.js', defer: true },
+          injectTo: 'body',
+        },
+      ]
+    },
+  }
+}
+
+const localBinaryTcpBridgeDevPlugin = (
+  env: Record<string, string>,
+  backendTarget: string,
+  enabled: boolean,
+): Plugin => {
+  if (!enabled || !backendTarget) {
+    return { name: 'rtx5-local-binary-tcp-bridge' }
+  }
+
+  let parsedTarget: URL
+  try {
+    parsedTarget = new URL(backendTarget)
+  } catch {
+    return { name: 'rtx5-local-binary-tcp-bridge' }
+  }
+
+  if (
+    parsedTarget.protocol !== 'http:'
+    || (parsedTarget.hostname !== '127.0.0.1' && parsedTarget.hostname !== 'localhost')
+  ) {
+    return { name: 'rtx5-local-binary-tcp-bridge' }
+  }
+
+  const port = parsedTarget.port ? Number(parsedTarget.port) : 80
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { name: 'rtx5-local-binary-tcp-bridge' }
+  }
+
+  return {
+    name: 'rtx5-local-binary-tcp-bridge',
+    configureServer(server) {
+      server.httpServer?.once('listening', () => {
+        let settled = false
+        const probe = net.createConnection({ host: parsedTarget.hostname, port })
+        probe.setTimeout(400)
+
+        const startBridgeIfNeeded = () => {
+          if (settled) return
+          settled = true
+          probe.destroy()
+
+          const serverDir = resolve(process.cwd(), 'web-terminal-server')
+          const binName = process.platform === 'win32'
+            ? 'rtx5-web-terminal-server.exe'
+            : 'rtx5-web-terminal-server'
+          const binPath = resolve(serverDir, binName)
+          if (!existsSync(binPath)) {
+            console.warn(`[rtx5-tcp-bridge] Bridge binary not found at ${binPath}`)
+            return
+          }
+
+          const listenAddr = `${parsedTarget.hostname}:${port}`
+          const serverTcp = String(env.BROKER_TCP_ADDR || env.VITE_BROKER_TCP_ADDR || '51.195.188.172:4443').trim()
+          const superAdminTcp = String(env.SUPERADMIN_TCP_ADDR || env.VITE_SUPERADMIN_TCP_ADDR || '51.195.188.172:9100').trim()
+          const brokerId = String(env.BROKER_ID || env.VITE_BROKER_ID || 'orrnn').trim()
+          const brokerName = String(env.BROKER_NAME || env.VITE_BROKER_NAME || 'Orrnn').trim()
+
+          console.info(`[rtx5-tcp-bridge] Starting local Binary TCP bridge on ${listenAddr} -> ${serverTcp}`)
+          const child: ChildProcess = spawn(
+            binPath,
+            [
+              '-listen', listenAddr,
+              '-server', serverTcp,
+              '-superadmin', superAdminTcp,
+              '-broker-id', brokerId,
+              '-broker-name', brokerName,
+            ],
+            {
+              cwd: serverDir,
+              stdio: 'inherit',
+            },
+          )
+
+          const stopChild = () => {
+            if (!child.killed) {
+              child.kill()
+            }
+          }
+          child.on('error', (error) => {
+            console.warn(`[rtx5-tcp-bridge] Failed to start Binary TCP bridge: ${getErrorMessage(error)}`)
+          })
+          child.once('exit', () => {
+            process.off('exit', stopChild)
+          })
+          server.httpServer?.once('close', stopChild)
+          process.once('exit', stopChild)
+        }
+
+        probe.once('connect', () => {
+          if (settled) return
+          settled = true
+          probe.destroy()
+          console.info(`[rtx5-tcp-bridge] Using running Binary TCP bridge on ${parsedTarget.hostname}:${port}`)
+        })
+        probe.once('timeout', startBridgeIfNeeded)
+        probe.once('error', startBridgeIfNeeded)
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '');
   if (mode === 'web') validateWebBrokerEnvironment(env, process.cwd());
   const { backendTarget, discoveryTarget, brokerApiTarget, wsTarget } = getBrokerProxyTargets(env);
   const brokerProxyAccess = createBrokerProxyAccess(env);
+  const runtimeBackendTarget = String(env.BACKEND_TARGET || env.VITE_BACKEND_TARGET || mode || '').trim().toLowerCase();
+  const isDesktopServe = command === 'serve' && mode !== 'test' && !process.env.VITEST && runtimeBackendTarget === 'desktop';
 
   const appVersion = String(JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version ?? '')
+
+  const configureReverseProxy = (): NonNullable<ProxyOptions['configure']> => {
+    return (proxy) => {
+      proxy.on('proxyReq', (proxyReq) => {
+        proxyReq.removeHeader('origin')
+      })
+      proxy.on('proxyRes', (proxyRes) => {
+        for (const header of PROXY_STRIPPED_RESPONSE_HEADERS) {
+          delete proxyRes.headers[header]
+        }
+      })
+    }
+  }
+
+  const staticProxy = Object.fromEntries(Object.entries({
+    '/__broker_discovery': {
+      target: discoveryTarget,
+      changeOrigin: true,
+      secure: true,
+      rewrite: (path) => path.replace(/^\/__broker_discovery/, ''),
+      configure: configureReverseProxy(),
+    },
+    '/__broker_api': {
+      target: brokerApiTarget,
+      changeOrigin: true,
+      secure: true,
+      rewrite: (path) => path.replace(/^\/__broker_api/, ''),
+      configure: configureReverseProxy(),
+    },
+    '/__rtx5_binary_stream': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+    },
+    '/__rtx5_binary_account_sub': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+    },
+    '/__rtx5_binary_order_ws': {
+      target: wsTarget,
+      changeOrigin: true,
+      secure: true,
+      ws: true,
+      configure: configureWsProxy('rtx5-binary-order-ws'),
+    },
+    '/__rtx5_binary_order': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+    },
+    '/rtx5-tcp-toolbar.js': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+    },
+    '/api': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+      configure: configureReverseProxy(),
+      // NOTE: ws:true removed — it caused 503s by intercepting HTTP requests
+      // as WebSocket upgrades. WS connections use /fix-ws proxy below.
+    },
+    '/fix-ws': {
+      target: wsTarget,
+      changeOrigin: true,
+      secure: true,
+      ws: true,
+      configure: configureWsProxy('fix-ws'),
+    }
+    // '/__broker_feed_ws' upgrades are routed by dynamicBrokerWsProxyPlugin,
+    // which decodes the per-request broker origin (a static proxy target
+    // sent every broker's WebSocket to the .env broker — breaking live data
+    // whenever the runtime broker differs).
+  } satisfies Record<string, ProxyOptions>).filter(([, proxy]) => Boolean(proxy.target)))
 
   return {
     base: './',
@@ -844,11 +1082,22 @@ export default defineConfig(({ mode, command }) => {
       retiredServiceWorkerDevPlugin(),
       dynamicBrokerProxyPlugin(['/__broker_api', '/__broker_discovery'], brokerProxyAccess),
       dynamicBrokerWsProxyPlugin('/__broker_feed_ws', brokerProxyAccess),
+      desktopTcpToolbarDevPlugin(isDesktopServe && Boolean(backendTarget)),
+      localBinaryTcpBridgeDevPlugin(
+        env,
+        backendTarget,
+        isDesktopServe && env.VITE_AUTO_START_TCP_BRIDGE?.trim().toLowerCase() !== 'false',
+      ),
       // Dev server: SWC compiles React Fast Refresh several times faster than
       // Babel, which dominated cold first-page loads. Builds keep plugin-react
       // so production output is unchanged.
       command === 'serve' ? reactSwc() : react(),
     ],
+    preview: {
+      host: '127.0.0.1',
+      port: 4173,
+      proxy: staticProxy,
+    },
     server: {
       host: '127.0.0.1',
       port: 5173,
@@ -872,38 +1121,7 @@ export default defineConfig(({ mode, command }) => {
           './src/components/layout/TopToolbar.tsx',
         ],
       },
-      proxy: Object.fromEntries(Object.entries({
-        '/__broker_discovery': {
-          target: discoveryTarget,
-          changeOrigin: true,
-          secure: true,
-          rewrite: (path) => path.replace(/^\/__broker_discovery/, ''),
-        },
-        '/__broker_api': {
-          target: brokerApiTarget,
-          changeOrigin: true,
-          secure: true,
-          rewrite: (path) => path.replace(/^\/__broker_api/, ''),
-        },
-        '/api': {
-          target: backendTarget,
-          changeOrigin: true,
-          secure: true,
-          // NOTE: ws:true removed — it caused 503s by intercepting HTTP requests
-          // as WebSocket upgrades. WS connections use /fix-ws proxy below.
-        },
-        '/fix-ws': {
-          target: wsTarget,
-          changeOrigin: true,
-          secure: true,
-          ws: true,
-          configure: configureWsProxy('fix-ws'),
-        }
-        // '/__broker_feed_ws' upgrades are routed by dynamicBrokerWsProxyPlugin,
-        // which decodes the per-request broker origin (a static proxy target
-        // sent every broker's WebSocket to the .env broker — breaking live data
-        // whenever the runtime broker differs).
-      } satisfies Record<string, ProxyOptions>).filter(([, proxy]) => Boolean(proxy.target)))
+      proxy: staticProxy
     },
     optimizeDeps: {
       include: ['lightweight-charts', 'html2canvas-pro'],

@@ -1,4 +1,5 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { drawingManager } from '../services/drawingManager';
@@ -25,6 +26,7 @@ export function AnnotationEditor() {
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen: Boolean(edit), elementRef: dialogRef });
   const editRef = useRef<AnnotationEditDetail | null>(null);
   const fileRequest = useRef(0);
   useEffect(() => {
@@ -125,9 +127,9 @@ export function AnnotationEditor() {
       <div className="annotation-editor__inline-actions"><button type="button" onClick={cancel}>{tr("Cancel")}</button><button type="button" onClick={save}>{tr("OK")}</button></div>
     </div>, document.body);
   }
-  return createPortal(<div ref={dialogRef} className="annotation-editor" role="dialog" aria-label={tr("Edit annotation")}
+  return createPortal(<div ref={dialogRef} className="annotation-editor" style={dragStyle} role="dialog" aria-label={tr("Edit annotation")}
     onPointerDown={e => e.stopPropagation()} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') cancel(); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save(); }}>
-    <div style={{ marginBottom: 8 }}>{ANNOTATION_TOOLS.find(item => item.id === (edit.drawing.subtype || 'text'))?.label ?? 'Text'}</div>
+    <div style={{ marginBottom: 8 }} {...dragHandleProps}>{ANNOTATION_TOOLS.find(item => item.id === (edit.drawing.subtype || 'text'))?.label ?? 'Text'}</div>
     {!isImage && !isLink && <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
       <input type="color" aria-label={tr("Drawing color")} title={tr("Drawing color")} value={color} onChange={e => setColor(e.target.value)} style={{ width: 28 }} />
       <input type="color" aria-label={tr("Text color")} title={tr("Text color")} value={style?.textColor || (['price_note', 'price_label', 'callout', 'comment'].includes(edit.drawing.subtype ?? '') ? '#ffffff' : color)} onChange={e => setStyle({ ...style, textColor: e.target.value })} style={{ width: 28 }} />

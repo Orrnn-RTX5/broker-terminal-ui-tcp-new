@@ -124,4 +124,18 @@ describe('Navigator server groups', () => {
     expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();
     expect(new Set(useAppStore.getState().savedAccounts.map(a => a.server))).toEqual(new Set([BROKER_ID]));
   });
+
+  it('prefers the explicit broker name over a different server_name label', () => {
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__ = {
+      ...(window as RuntimeWindow).__RTX_RUNTIME_CONFIG__,
+      BROKER_NAME: 'Example Broker',
+      DEFAULT_MT5_SERVER: 'Example Broker',
+    };
+    localStorage.setItem('broker_name', 'Example Broker');
+    act(() => { recordBrokerServerIdentity({ server_name: 'Generic-Live' }); });
+    render(<NavigatorPanel />);
+
+    expect(screen.getAllByText('Example Broker')).toHaveLength(1);
+    expect(screen.queryByText('Generic-Live')).not.toBeInTheDocument();
+  });
 });

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -15,6 +16,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -997,12 +999,98 @@ func (c *WebTerminalServer) requestOrigin(r *http.Request) (httpOrigin, wsOrigin
 	return scheme + "://" + hostHeader, wsScheme + "://" + hostHeader, h, port
 }
 
+func isLoopbackBrowserOrigin(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(strings.Trim(parsed.Hostname(), "[]"))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost")
+}
+
+func setLoopbackCORSHeaders(h http.Header, origin string, reqHeaders string) {
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Access-Control-Allow-Credentials", "true")
+	h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	if strings.TrimSpace(reqHeaders) != "" {
+		h.Set("Access-Control-Allow-Headers", reqHeaders)
+	} else {
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, X-Requested-With, Origin, X-API-Key, X-Broker-ID, X-Request-ID")
+	}
+	h.Set("Access-Control-Max-Age", "86400")
+	h.Set("Vary", "Origin")
+}
+
+func applyLoopbackCORSHeaders(w http.ResponseWriter, r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	orig := strings.TrimSpace(r.Header.Get("Origin"))
+	if !isLoopbackBrowserOrigin(orig) {
+		return ""
+	}
+	setLoopbackCORSHeaders(w.Header(), orig, r.Header.Get("Access-Control-Request-Headers"))
+	return orig
+}
+
+// corsProtectedResponseWriter prevents upstream proxied headers from overwriting
+// or duplicating Access-Control-* headers for an allowed loopback browser origin.
+type corsProtectedResponseWriter struct {
+	http.ResponseWriter
+	origin      string
+	reqHeaders  string
+	wroteHeader bool
+}
+
+func (w *corsProtectedResponseWriter) enforceCORS() {
+	if w.wroteHeader || w.origin == "" {
+		return
+	}
+	w.wroteHeader = true
+	setLoopbackCORSHeaders(w.Header(), w.origin, w.reqHeaders)
+}
+
+func (w *corsProtectedResponseWriter) WriteHeader(statusCode int) {
+	w.enforceCORS()
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *corsProtectedResponseWriter) Write(p []byte) (int, error) {
+	w.enforceCORS()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *corsProtectedResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		w.enforceCORS()
+		f.Flush()
+	}
+}
+
+func (w *corsProtectedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("hijack not supported")
+}
+
 func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if allowedOrigin := applyLoopbackCORSHeaders(w, r); allowedOrigin != "" && r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	p := r.URL.Path
 	sessionKey := c.resolveClientSessionKey(w, r)
 	r = withSessionKey(r, sessionKey)
 	appKind := resolveWebAppKind(r)
-	link := c.linkForSession(sessionKey) // this page's broker (per-session broker targets)
+	link := c.linkForRequest(r) // this page's broker (per-session broker targets, with X-Broker-ID header lookup for cookieless calls)
 
 	switch p {
 	case "/__rtx5_binary_stream":
@@ -1464,13 +1552,26 @@ func (c *WebTerminalServer) proxyOverBinaryTCPForApp(w http.ResponseWriter, r *h
 	case "manager":
 		localLoopbackOrigin = "http://127.0.0.1:18402"
 	}
-	// Normalize Origin to loopback for internal backend services while mux_session echoes browser Origin
+	// Normalize Origin to loopback for internal backend services while preserving
+	// clean single-value CORS headers for loopback browser callers.
+	outWriter := w
 	if orig := strings.TrimSpace(r.Header.Get("Origin")); orig != "" {
-		w.Header().Set("Access-Control-Allow-Origin", orig)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if isLoopbackBrowserOrigin(orig) {
+			setLoopbackCORSHeaders(w.Header(), orig, r.Header.Get("Access-Control-Request-Headers"))
+			outWriter = &corsProtectedResponseWriter{
+				ResponseWriter: w,
+				origin:         orig,
+				reqHeaders:     r.Header.Get("Access-Control-Request-Headers"),
+			}
+		}
 		clone.Header.Set("Origin", localLoopbackOrigin)
 	}
-	sess.ProxyHTTP(w, clone, targetService)
+	if clone.Header.Get("X-Broker-ID") != "" {
+		if canonID := c.canonicalBrokerIDForLink(link); canonID != "" {
+			clone.Header.Set("X-Broker-ID", canonID)
+		}
+	}
+	sess.ProxyHTTP(outWriter, clone, targetService)
 }
 
 func classifySuperAdminRoute(r *http.Request) (service string, rewrittenPath string, matched bool) {

@@ -103,13 +103,26 @@ describe.each(['web', 'packaged desktop'] as const)('StatusBar in %s', (runtime)
     expect(screen.queryByText(runtime === 'web' ? 'v1.0.0' : 'v1.0.25')).toBeNull();
   });
 
-  it('always renders the RTX5 logo in the bottom-left status bar across all brokers', () => {
+  it('renders the broker logo in the bottom-left status bar and falls back when unavailable', () => {
     localStorage.setItem('broker_id', 'custom-broker');
     const { container } = render(<StatusBar wsRef={{ current: null }} />);
     const logo = container.querySelector('.rtx-status-bar__identity .rtx-status-bar__logo');
     expect(logo).toBeInTheDocument();
-    expect(logo).toHaveAttribute('src', toPublicAssetPath('favicon.png'));
+    expect(logo).toHaveAttribute('src', 'https://broker.example/custom-logo.png');
+
+    vi.mocked(useTerminalBrokerInfo).mockReturnValueOnce({
+      accountId: '---',
+      accountName: '',
+      serverName: 'Test Broker',
+      brokerName: 'Test Broker',
+      marginMode: 'Hedge',
+      logoUrl: '',
+      logoBaseCandidates: [],
+    });
     localStorage.removeItem('broker_id');
+    const fallbackRender = render(<StatusBar wsRef={{ current: null }} />);
+    const fallbackLogo = fallbackRender.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__logo');
+    expect(fallbackLogo).toHaveAttribute('src', toPublicAssetPath('favicon.png'));
   });
 
   it('hides and restores the bar while preserving the mounted connection control', () => {

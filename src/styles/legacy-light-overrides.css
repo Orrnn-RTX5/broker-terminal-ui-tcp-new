@@ -1695,9 +1695,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-connection-dropdown button.h
 
 /* === Shortcut Help Dialog Advanced Mode === */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-shortcut-dialog {
-  background: rgba(255, 255, 255, 0.85) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   border-color: rgba(226, 232, 240, 0.8) !important;
 }
 
@@ -1863,8 +1863,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light tr.rtx-trade-row td.text-red-400 
 
 /* === Open Account Dialog Light Mode (Advanced Untitled) === */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oad-backdrop {
-  background: rgba(255, 255, 255, 0.4) !important;
-  backdrop-filter: blur(8px) !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oad-shell {

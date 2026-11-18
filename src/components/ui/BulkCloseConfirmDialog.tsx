@@ -3,6 +3,7 @@ import { useBulkCloseConfirmStore } from '../../store/useBulkCloseConfirmStore';
 import { useAppStore, type Position } from '../../store/useAppStore';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { resolveAccountCurrencyDigits } from '../../utils/accountCurrency';
 import { readBackendPositionProfit, resolveTradeProfit } from '../BottomDock.trade';
 
@@ -72,6 +73,7 @@ export function BulkCloseConfirmDialog() {
         [...livePositions].sort((a, b) => b.pnl - a.pnl),
         [livePositions],
     );
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
     const profitableCount = livePositions.filter(p => p.pnl > 0).length;
     const losingCount = livePositions.filter(p => p.pnl < 0).length;
@@ -96,10 +98,10 @@ export function BulkCloseConfirmDialog() {
             onContextMenuCapture={(e) => { e.stopPropagation(); e.preventDefault(); }}
             onContextMenu={(e) => e.stopPropagation()}
         >
-            <div ref={dialogRef} tabIndex={-1} className="rtx-bulk-close-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-close-title">
+            <div ref={dialogRef} tabIndex={-1} className="rtx-bulk-close-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-close-title" style={dragStyle}>
 
                 {/* ─── Header ─── */}
-                <div className="rtx-bulk-close-dialog__header">
+                <div className="rtx-bulk-close-dialog__header" {...dragHandleProps}>
                     <div className="rtx-bulk-close-dialog__header-left">
                         <span id="bulk-close-title" className="rtx-bulk-close-dialog__title">{modeLabel}</span>
                         {symbol && (

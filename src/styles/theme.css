@@ -279,6 +279,38 @@ body {
   width: 0;
 }
 
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
+  flex: 1 1 auto;
+  justify-content: space-evenly;
+  justify-content: safe space-evenly;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
+  flex: 0 0 0px !important;
+  width: 0 !important;
+}
+
+.rtx-toolbar-brand {
+  align-items: center;
+  background: #27272d;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 6px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  width: 28px;
+}
+
+.rtx-toolbar-brand__logo {
+  display: block;
+  height: 20px;
+  object-fit: contain;
+  width: 20px;
+}
+
 .rtx-chart-toolbar-scroll {
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -567,7 +599,18 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
 
   .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
     flex: 1 1 auto;
-    justify-content: space-between;
+    justify-content: space-evenly;
+    justify-content: safe space-evenly;
+  }
+
+  .rtx-toolbar-brand {
+    height: clamp(24px, 1.85vw, 27px);
+    width: clamp(24px, 1.85vw, 27px);
+  }
+
+  .rtx-toolbar-brand__logo {
+    height: clamp(16px, 1.28vw, 19px);
+    width: clamp(16px, 1.28vw, 19px);
   }
 
   .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
@@ -625,7 +668,24 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1280x720"]
 ) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
   flex: 1 1 auto;
-  justify-content: space-between;
+  justify-content: space-evenly;
+  justify-content: safe space-evenly;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-brand {
+  height: 24px;
+  width: 24px;
+}
+
+:is(
+  [data-terminal-resolution="1366x768"],
+  [data-terminal-resolution="1280x720"]
+) .rtx-toolbar-brand__logo {
+  height: 16px;
+  width: 16px;
 }
 
 :is(
@@ -807,6 +867,16 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
     width: clamp(30px, 2.7vw, 36px);
   }
 
+  .rtx-toolbar-brand {
+    height: clamp(21px, 1.8vw, 24px);
+    width: clamp(21px, 1.8vw, 24px);
+  }
+
+  .rtx-toolbar-brand__logo {
+    height: clamp(14px, 1.25vw, 16px);
+    width: clamp(14px, 1.25vw, 16px);
+  }
+
   .rtx-toolbar-command-cluster {
     --rtx-toolbar-control-width: clamp(19.5px, 1.9vw, 24px);
     --rtx-toolbar-item-gap: clamp(1px, 0.18vw, 2.5px);
@@ -862,6 +932,24 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
     width: 28px;
   }
 
+  .rtx-toolbar-brand {
+    height: 20px;
+    width: 20px;
+  }
+
+  .rtx-toolbar-brand__logo {
+    height: 14px;
+    width: 14px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > span {
+    display: none;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search__field {
+    width: clamp(132px, 18vw, 185px);
+  }
+
   .rtx-toolbar-command-cluster {
     --rtx-toolbar-control-width: clamp(17.5px, 1.95vw, 19.5px);
     --rtx-toolbar-item-gap: 1px;
@@ -915,6 +1003,20 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
 @media (max-width: 860px) {
   .rtx-menu-launcher .rtx-application-menu-trigger {
     width: 24px;
+  }
+
+  .rtx-toolbar-brand {
+    height: 18px;
+    width: 18px;
+  }
+
+  .rtx-toolbar-brand__logo {
+    height: 12px;
+    width: 12px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search__field {
+    width: 118px;
   }
 
   .rtx-toolbar-command-cluster {

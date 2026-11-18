@@ -14,9 +14,9 @@ export function useTerminalStartupReady(part: StartupPart, ready: boolean) {
 }
 
 // The chart keeps its own loading surface. Do not leave the whole terminal
-// on the startup screen for a slow candle response; two seconds after the
-// workspace mounts, show it and let the remaining data fill in.
-const STARTUP_REVEAL_CAP_MS = 2_000;
+// on the startup screen for a slow candle response; once the single logo splash
+// finishes (600ms), show the workspace and let the remaining data fill in.
+const STARTUP_REVEAL_CAP_MS = 600;
 
 /** Keep the real workspace mounted and measured while its first data arrives. */
 export function TerminalStartupBoundary({

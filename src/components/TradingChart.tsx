@@ -95,6 +95,7 @@ import { TradingChartView } from '../features/trading-chart/presentation/Trading
 import { useTradingChartLivePriceOverlay } from '../features/trading-chart/presentation/useTradingChartLivePriceOverlay';
 import { useTradingChartLoadingPresentation } from '../features/trading-chart/presentation/useTradingChartLoadingPresentation';
 import { getCurrentClosedMarketRenderCandles, getCurrentClosedMarketSessionCloseSeconds } from '../utils/currentClosedMarketTail';
+import { subscribeBrokerWatermarkChanges } from '../utils/brokerWatermark';
 
 export type { ChartType, Timeframe } from '../types/chart';
 
@@ -282,6 +283,10 @@ export const TradingChart = React.memo(function TradingChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const containerRef = useRef<HTMLDivElement>(null); // Main chart refs
+  const [brokerWatermarkVersion, setBrokerWatermarkVersion] = useState(0);
+  useEffect(() => subscribeBrokerWatermarkChanges(() => {
+    setBrokerWatermarkVersion(prev => prev + 1);
+  }), []);
   const chartRef = useRef<IChartApi | null>(null);
   const timeScaleTimeframeRef = useRef(timeframe);
   timeScaleTimeframeRef.current = timeframe;
@@ -2731,7 +2736,7 @@ useTradingChartInitialization({
     const currentSettings = chartSettingsRef.current;
 
     // Apply global layout and grid
-    const gridRenderingOptions = getChartGridRenderingOptions(currentSettings, chartTheme);
+    const gridRenderingOptions = getChartGridRenderingOptions(chartSettings, chartTheme);
     chart.applyOptions({
       layout: {
         background: { type: ColorType.Solid, color: chartTheme.background },
@@ -2837,9 +2842,16 @@ useTradingChartInitialization({
     requestChartTradeOverlayRefresh(drawingRuntimeContextRef.current.contextId, 'rebuild');
   }, [
     areaTrendDirectionRef,
+    brokerWatermarkVersion,
     chartAxisFontSize,
+    chartSettings.backgroundLogoArea,
+    chartSettings.backgroundLogoFileDataUrl,
+    chartSettings.backgroundLogoMode,
+    chartSettings.backgroundLogoOpacity,
+    chartSettings.backgroundLogoUrl,
     chartSettings.gridLineStyle,
     chartSettings.gridType,
+    chartSettings.showBackgroundLogo,
     chartSettings.showGrid,
     chartSettings.showRealVolumes,
     chartSettings.showTickVolumes,
@@ -3122,7 +3134,47 @@ useTradingChartLiveCandleRuntime({
     };
   }, [isActive, refreshVisibleChartLayout, schedulePeriodSeparatorRender, symbol, timeframe]);
 
-  // Native autoSize handles resizing internally
+  // Native autoSize handles initial canvas sizing, while explicit ResizeObserver
+  // refits the chart surface, separators, drawings, and overlays whenever a
+  // sibling panel (such as the bottom Toolbox) is closed or resized.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+
+    let frameId: number | null = null;
+    let lastWidth = Math.round(el.offsetWidth);
+    let lastHeight = Math.round(el.offsetHeight);
+
+    const flushResize = () => {
+      frameId = null;
+      if (isDisposedRef.current || !chartRef.current) return;
+      const width = Math.round(el.offsetWidth);
+      const height = Math.round(el.offsetHeight);
+      if (width <= 0 || height <= 0) return;
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width;
+      lastHeight = height;
+      refreshVisibleChartLayout(false);
+      schedulePeriodSeparatorRender();
+      postInteractionCallbacksRef.current.layoutOverlay();
+    };
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      const measuredWidth = Math.round(entry?.contentRect?.width ?? el.offsetWidth);
+      const measuredHeight = Math.round(entry?.contentRect?.height ?? el.offsetHeight);
+      if (measuredWidth <= 0 || measuredHeight <= 0) return;
+      if (measuredWidth === lastWidth && measuredHeight === lastHeight) return;
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(flushResize);
+    });
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+    };
+  }, [refreshVisibleChartLayout, schedulePeriodSeparatorRender]);
 
   // Keyboard navigation retains the user's viewport while live prices update.
   useEffect(() => bindChartKeyboardScroll({
@@ -3451,6 +3503,9 @@ useTradingChartTradeRuntime({
     chartSettingsRef,
     clearLocalIndicators,
     containerRef,
+    currentCandleRef,
+    lastRenderedCandlesRef,
+    livePriceRef,
     seriesRef,
     loadHistory,
     localIndicatorManager,

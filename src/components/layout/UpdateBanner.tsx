@@ -97,7 +97,7 @@ export function UpdateBanner() {
     return (
         <div className="fixed top-3 right-3 z-[9999] animate-fadeInSlide">
             {phase === 'available' && (
-                <div className="min-w-[300px] rounded-lg border border-sky-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-sky-500/10 backdrop-blur-sm">
+                <div className="min-w-[300px] rounded-lg border border-sky-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-sky-500/10">
                     <div className="mb-3 flex items-start justify-between gap-4">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -127,7 +127,7 @@ export function UpdateBanner() {
             )}
 
             {phase === 'downloading' && (
-                <div className="min-w-[300px] rounded-lg border border-blue-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-blue-500/10 backdrop-blur-sm">
+                <div className="min-w-[300px] rounded-lg border border-blue-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-blue-500/10">
                     <div className="mb-2 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <div className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
@@ -145,7 +145,7 @@ export function UpdateBanner() {
             )}
 
             {phase === 'ready' && (
-                <div className="min-w-[300px] rounded-lg border border-emerald-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-emerald-500/10 backdrop-blur-sm">
+                <div className="min-w-[300px] rounded-lg border border-emerald-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-emerald-500/10">
                     <div className="flex items-center justify-between gap-4">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export function UpdateBanner() {
             )}
 
             {phase === 'error' && (
-                <div className="min-w-[300px] rounded-lg border border-red-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-red-500/10 backdrop-blur-sm">
+                <div className="min-w-[300px] rounded-lg border border-red-500/30 bg-[#1a1d23] px-4 py-3 shadow-2xl shadow-red-500/10">
                     <div className="flex items-center gap-2">
                         <div className="h-2 w-2 rounded-full bg-red-400" />
                         <span className="text-[12px] font-medium text-red-300">{tr("Update failed")}</span>

@@ -108,9 +108,9 @@ describe('TerminalStartupBoundary', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('auto-opens the pending workspace after 2 seconds without recovery buttons', () => {
+  it('auto-opens the pending workspace after 600ms without recovery buttons', () => {
     render(startup());
-    act(() => vi.advanceTimersByTime(1_999));
+    act(() => vi.advanceTimersByTime(599));
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Workspace state')).not.toBeVisible();
 

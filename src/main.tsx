@@ -1,6 +1,7 @@
 import './startup/webTcpRoutingReconcileEarly';
 import { mountApp } from './bootstrap';
 import { mountRtx5VersionBadge } from './components/mountRtx5VersionBadge';
+import { installBrowserContextMenuGuard } from './utils/browserContextMenuGuard';
 
 // ── Electron-only: Suppress all console output and runtime errors ──
 // In Electron, end users must never see red error overlays or console noise.
@@ -103,6 +104,8 @@ try {
 // Keep bootstrap statically discoverable from the first entry request.
 // Desktop builds include login here; web builds defer its code and styles
 // while their public terminal runtime loads through AppShell.
+installBrowserContextMenuGuard();
+
 try {
   mountApp();
 } catch (error) {

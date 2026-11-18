@@ -3,6 +3,7 @@ import { Icon } from '../ui/Icon';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { chartPrinter, type PrintPreferences, type ChartPrintData, type PageSize, type PageOrientation } from '../../services/chartPrinter';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './PrintPreviewDialog.css';
 
 export interface PrintPreviewDialogProps {
@@ -27,6 +28,7 @@ export const PrintPreviewDialog: React.FC<PrintPreviewDialogProps> = ({
   const viewportRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
   const printLock = useRef(false);
   useEffect(() => { if (providedPreferences) setPreferences(providedPreferences); }, [providedPreferences]);
   const dimensions = chartPrinter.getPageDimensions(preferences);
@@ -86,8 +88,8 @@ export const PrintPreviewDialog: React.FC<PrintPreviewDialogProps> = ({
   };
 
   return createPortal(<div className="rtx-print-backdrop" onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="rtx-print-title" data-shortcut-scope="local" className="rtx-print-preview" onKeyDown={handleKeyDown}>
-      <header className="rtx-print-preview__header">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="rtx-print-title" data-shortcut-scope="local" className="rtx-print-preview" style={dragStyle} onKeyDown={handleKeyDown}>
+      <header className="rtx-print-preview__header" {...dragHandleProps}>
         <div><h2 id="rtx-print-title">{tr("Print Preview")}</h2><p>{chartData ? `${chartData.symbol} | ${chartData.timeframe}` : tr("Preparing the active chart")}</p></div>
         <button ref={closeRef} onClick={onClose} aria-label={tr("Close print preview")} disabled={isPrinting}><Icon name="x-close" size="sm" /></button>
       </header>

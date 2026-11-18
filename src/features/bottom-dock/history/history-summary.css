@@ -28,6 +28,26 @@
   white-space: nowrap;
 }
 
+.rtx-withdrawal-summary-bar {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.rtx-history-tab .rtx-trade-table tbody tr.rtx-history-fill-row,
+.rtx-history-tab .rtx-trade-table tbody tr.rtx-history-fill-row > td,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-history-fill-row > td,
+html.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table tbody tr.rtx-history-fill-row > td {
+  border: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  height: inherit !important;
+  line-height: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+
 .rtx-history-summary-values {
   display: flex;
   align-items: center;

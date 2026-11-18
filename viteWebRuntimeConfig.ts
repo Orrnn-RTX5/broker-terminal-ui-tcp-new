@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite'
-import { selectBrokerRuntimeConfig, validateBrokerRuntimeConfig } from './src/config/brokerRuntimeConfig'
+import { selectBrokerRuntimeConfig, validateBrokerRuntimeConfig } from './src/config/brokerRuntimeConfig.ts'
 
 export type WebRuntimeConfig = {
   CONFIG_SOURCE: string

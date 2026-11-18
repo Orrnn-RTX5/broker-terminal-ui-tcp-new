@@ -1,6 +1,25 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useDesktopStartupReady } from './useDesktopStartupReady';
+
+const SPLASH_DURATION_MS = 550;
+let firstSplashStartedAt: number | null = null;
+
+function resolveSplashTiming(): { alreadyPlayed: boolean; delayMs: number } {
+  if (typeof performance === 'undefined') {
+    return { alreadyPlayed: false, delayMs: 0 };
+  }
+  const now = performance.now();
+  if (firstSplashStartedAt === null) {
+    firstSplashStartedAt = now;
+    return { alreadyPlayed: false, delayMs: 0 };
+  }
+  const elapsed = now - firstSplashStartedAt;
+  if (elapsed >= SPLASH_DURATION_MS) {
+    return { alreadyPlayed: true, delayMs: 0 };
+  }
+  return { alreadyPlayed: false, delayMs: Math.round(elapsed) };
+}
 
 interface TerminalLoadFallbackProps {
   sessionRestorePending?: boolean;
@@ -27,17 +46,20 @@ export function TerminalLoadFallback({
   const tr = useUiTranslation();
   useDesktopStartupReady(isError);
   const brandLabel = resolveBootBrandLabel();
+  const [splashTiming] = useState(resolveSplashTiming);
   return (
     <div
       className="rtx-terminal-loading"
       data-terminal-module-loading="true"
       data-session-restore-pending={sessionRestorePending ? 'true' : undefined}
+      data-rtx-splash-played={splashTiming.alreadyPlayed ? 'true' : undefined}
       role={isError ? 'alert' : 'status'}
       aria-live={isError ? 'assertive' : 'polite'}
       aria-busy={!isError}
     >
       <svg
         className="rtx-terminal-loading__icon"
+        style={splashTiming.delayMs > 0 ? { animationDelay: `-${splashTiming.delayMs}ms` } : undefined}
         viewBox="15 145 760 545"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"

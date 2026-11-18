@@ -9,6 +9,7 @@ export type BrokerRuntimeConfiguration = {
   feedBrokerId: string
   defaultMt5Server: string
   discoveryBaseUrl: string
+  explicitBrokerName: string
   brokerName: string
   brokerLogoUrl: string
   brokerLoginHeroUrl: string
@@ -179,12 +180,14 @@ export function validateBrokerRuntimeConfig(
       if (asset.protocol !== 'https:' || asset.username || asset.password) errors.push(`${label} must be a public HTTPS URL without credentials.`)
     } catch { errors.push(`${label} is not a valid HTTPS URL.`) }
   }
+  const explicitBrokerName = read('BROKER_NAME', 'VITE_BROKER_NAME')
   return {
     source, pinned: !options.desktop, valid: errors.length === 0,
     apiHost, apiHostExt, wsHost, brokerId,
     feedBrokerId: read('FEED_BROKER_ID', 'VITE_FEED_BROKER_ID') || brokerId,
     defaultMt5Server, discoveryBaseUrl,
-    brokerName: read('BROKER_NAME', 'VITE_BROKER_NAME') || defaultMt5Server || brokerId,
+    explicitBrokerName,
+    brokerName: explicitBrokerName || defaultMt5Server || brokerId,
     brokerLogoUrl, brokerLoginHeroUrl, brokerLoginHeroMobileUrl, brokerTermsUrl,
     extraDiscoveryUrls: options.desktop ? read('EXTRA_BROKER_DISCOVERY_URLS', 'VITE_EXTRA_BROKER_DISCOVERY_URLS').split(/[\s,]+/).filter(Boolean) : [],
     desktopReleaseApiUrl,

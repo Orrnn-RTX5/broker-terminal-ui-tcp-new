@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { ConnectionStatus } from '../ConnectionStatus';
+import { BrokerLogoImage } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
+import { toLocalDevProxyUrl } from '../../config/api';
+import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
 import { useDesktopUpdater } from '../../hooks/useDesktopUpdater';
 import { useTerminalBarsStore } from '../../store/useTerminalBarsStore';
 import {
     formatTerminalTitle,
+    getLogoUrl,
     getWebTerminalTitle,
     isSameTerminalLabel,
     useTerminalBrokerInfo,
@@ -31,7 +35,18 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
     const tr = useUiTranslation();
     const visible = useTerminalBarsStore(state => state.statusBarVisible);
     const brokerInfo = useTerminalBrokerInfo(symbol ?? '');
-    const statusBarLogoSrc = toPublicAssetPath('favicon.png');
+    const statusBarFallbackLogoSrc = toPublicAssetPath('favicon.png');
+    const resolvedBrokerLogoUrl = toLocalDevProxyUrl(
+        getLogoUrl(brokerInfo.logoUrl, brokerInfo.logoBaseCandidates),
+    );
+    const activeBrokerId = typeof window !== 'undefined'
+        ? String(
+            localStorage.getItem('broker_id')
+            || localStorage.getItem('rtx_broker_id')
+            || getRuntimeBrokerConfiguration().brokerId
+            || '',
+        ).trim()
+        : '';
 
     const [tcpInfo, setTcpInfo] = useState<TcpRuntimeStatus>(() => {
         if (typeof window === 'undefined') return {};
@@ -79,11 +94,16 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                 <div
                     className="rtx-status-bar__metric flex min-w-0 max-w-full items-center gap-2 overflow-hidden whitespace-nowrap font-normal"
                 >
-                    <img
-                        src={statusBarLogoSrc}
+                    <BrokerLogoImage
+                        broker={resolvedBrokerLogoUrl || activeBrokerId ? {
+                            broker_id: activeBrokerId,
+                            broker_name: brokerInfo.brokerName,
+                            logo_url: resolvedBrokerLogoUrl,
+                            server_url: brokerInfo.logoBaseCandidates?.[0],
+                        } : null}
                         alt={`${brokerInfo.brokerName} Logo`}
-                        draggable={false}
                         className="rtx-status-bar__logo h-4 w-4 shrink-0 rounded-sm object-contain"
+                        appFallbackUrl={statusBarFallbackLogoSrc}
                     />
                     <span className="rtx-status-bar__metric rtx-status-bar__title truncate whitespace-nowrap font-normal" title={tr(terminalTitle)}>{tr(terminalTitle)}</span>
                 </div>

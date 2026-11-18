@@ -152,4 +152,11 @@ describe('TopToolbar primary command cluster', () => {
     expect(searchCss).toContain('@media (max-width: 1500px), (max-height: 860px)');
     expect(searchCss).toContain('@media (max-width: 1320px)');
   });
+
+  it('places the RTX5 logo in the web navbar and evenly distributes all sections responsively', () => {
+    expect(toolbarSource).toContain('className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand"');
+    expect(toolbarSource).toContain("src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}");
+    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+\.rtx-toolbar-command-cluster\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?justify-content:\s*safe space-evenly;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-brand\s*\{[\s\S]*?height:\s*28px;[\s\S]*?width:\s*28px;/);
+  });
 });

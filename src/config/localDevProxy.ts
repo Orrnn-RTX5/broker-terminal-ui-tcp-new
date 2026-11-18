@@ -5,7 +5,7 @@ export const DEV_BROKER_DISCOVERY_PROXY_PREFIX = '/__broker_discovery';
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 const isLocalDevHostname = (hostname: string): boolean => {
-  const normalized = String(hostname || '').trim().toLowerCase();
+  const normalized = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
   return LOCAL_DEV_HOSTS.has(normalized) || normalized.endsWith('.localhost');
 };
 

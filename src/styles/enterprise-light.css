@@ -1009,7 +1009,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oad-btn-next:hover {
 
 /* Confirmation dialog was previously half dark and half white in light mode. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog-backdrop {
-  background: rgba(32, 36, 42, 0.28) !important;
+  background: transparent !important;
   backdrop-filter: none !important;
 }
 
@@ -1066,7 +1066,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm--dan
 /* Large settings and symbol surfaces use stable hooks instead of dark-class guesses. */
 html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-options-dialog-backdrop,
   .rtx-chart-template-dialog-backdrop) {
-  background: rgba(32, 36, 42, 0.28) !important;
+  background: transparent !important;
   backdrop-filter: none !important;
 }
 
@@ -1134,7 +1134,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-symbols-dialog :is(input, se
 
 /* Trade authentication follows the same restrained surfaces as the terminal. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-backdrop {
-  background: rgba(32, 36, 42, 0.28) !important;
+  background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

@@ -1,5 +1,7 @@
-import type { Plugin } from 'vite'
-import type { OutputBundle, OutputChunk } from 'rollup'
+import type { Plugin, Rolldown } from 'vite'
+
+type OutputBundle = Rolldown.OutputBundle
+type OutputChunk = Rolldown.OutputChunk
 
 type ChunkWithStyles = OutputChunk & { viteMetadata?: { importedCss?: Set<string> } }
 

@@ -3,6 +3,7 @@ import { isLightChartBackground } from '../features/trading-chart/presentation/c
 import type { ChartProperties } from '../store/useChartSettingsStore';
 import type { TradingViewChartTheme } from '../types/chart';
 import { FINE_CHART_GRID_CELL_SIZE_PX, SQUARE_CHART_GRID_CELL_SIZE_PX, type SquareChartGridOptions } from './squareChartGridPrimitive';
+import { isChartBackgroundLogoVisible, resolveActiveBrokerWatermarkCandidates } from './brokerWatermark';
 
 /** Select one background grid; scale guides track the chart's price/time ticks. */
 export const getChartGridRenderingOptions = (
@@ -21,10 +22,21 @@ export const getChartGridRenderingOptions = (
   const visible = settings.showGrid && scaleAligned;
   const squareVisible = settings.showGrid && !scaleAligned;
   const customLogoSrc = settings.backgroundLogoMode === 'url'
-    ? settings.backgroundLogoUrl
+    ? settings.backgroundLogoUrl?.trim()
     : settings.backgroundLogoMode === 'file'
-      ? settings.backgroundLogoFileDataUrl
+      ? settings.backgroundLogoFileDataUrl?.trim()
       : undefined;
+  const showLogo = isChartBackgroundLogoVisible({
+    showBackgroundLogo: settings.showBackgroundLogo !== false,
+    backgroundLogoMode: settings.backgroundLogoMode,
+  });
+  const brokerCandidates = showLogo && !customLogoSrc
+    ? resolveActiveBrokerWatermarkCandidates()
+    : [];
+  const resolvedLogoSrc = customLogoSrc || brokerCandidates[0];
+  const fallbackLogoSrcs = !customLogoSrc && brokerCandidates.length > 1
+    ? brokerCandidates.slice(1)
+    : undefined;
   return {
     nativeGrid: {
       vertLines: { color: colors.gridVertical, style, visible },
@@ -35,11 +47,12 @@ export const getChartGridRenderingOptions = (
       visible: squareVisible,
       ...(settings.showBackgroundLogo !== undefined || settings.backgroundLogoMode !== undefined
         ? {
-            showBackgroundLogo: settings.showBackgroundLogo !== false && settings.backgroundLogoMode !== 'none',
+            showBackgroundLogo: showLogo,
             ...(settings.backgroundLogoOpacity !== undefined
               ? { backgroundLogoOpacity: settings.backgroundLogoOpacity }
               : {}),
-            ...(customLogoSrc ? { backgroundLogoSrc: customLogoSrc } : {}),
+            ...(resolvedLogoSrc ? { backgroundLogoSrc: resolvedLogoSrc } : {}),
+            ...(fallbackLogoSrcs ? { backgroundLogoFallbacks: fallbackLogoSrcs } : {}),
           }
         : {}),
       ...(colors.background !== undefined

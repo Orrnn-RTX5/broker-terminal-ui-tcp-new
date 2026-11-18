@@ -3,6 +3,7 @@ import React, { useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useConfirmStore } from '../../store/useConfirmStore';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 
 export function ConfirmDialog() {
     const tr = useUiTranslation();
@@ -12,12 +13,13 @@ export function ConfirmDialog() {
     const titleId = useId();
     const messageId = useId();
     useDialogFocusScope({ isOpen, dialogRef, onClose: onCancel, initialFocusRef: cancelRef });
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
     if (!isOpen) return null;
 
     return createPortal(
         <div
-            className="rtx-confirm-dialog-backdrop fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[10060]"
+            className="rtx-confirm-dialog-backdrop fixed inset-0 bg-transparent flex items-center justify-center p-4 z-[10060]"
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
                     onCancel();
@@ -29,10 +31,10 @@ export function ConfirmDialog() {
             }}
             onContextMenu={(e) => e.stopPropagation()}
         >
-            <div ref={dialogRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={messageId} className="rtx-confirm-dialog flex flex-col w-full max-w-[420px] max-h-[calc(100dvh-32px)] bg-[#1e222d] border border-zinc-600 rounded shadow-2xl select-none overflow-hidden animate-in zoom-in-95 duration-200">
+            <div ref={dialogRef} tabIndex={-1} role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={messageId} style={dragStyle} className="rtx-confirm-dialog flex flex-col w-full max-w-[420px] max-h-[calc(100dvh-32px)] bg-[#1e222d] border border-zinc-600 rounded shadow-2xl select-none overflow-hidden animate-in zoom-in-95 duration-200">
 
                 {/* Title Bar */}
-                <div className="rtx-confirm-dialog__header flex shrink-0 items-center justify-between gap-2 px-4 py-2 bg-[#252a37] border-b border-zinc-600">
+                <div className="rtx-confirm-dialog__header flex shrink-0 items-center justify-between gap-2 px-4 py-2 bg-[#252a37] border-b border-zinc-600" {...dragHandleProps}>
                     <span id={titleId} className="min-w-0 break-words text-[13px] text-zinc-200 font-bold">{tr(title)}</span>
                     <button type="button" onClick={onCancel} aria-label={tr('Close dialog')} className="flex h-7 w-7 shrink-0 items-center justify-center text-zinc-400 hover:text-white transition-colors">✕</button>
                 </div>

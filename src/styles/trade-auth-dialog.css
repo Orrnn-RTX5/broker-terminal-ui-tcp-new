@@ -3,8 +3,8 @@
 .rtx-auth-backdrop {
   align-items: center;
   background: rgb(2 6 12 / 68%);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex;
   inset: 0;
   justify-content: center;

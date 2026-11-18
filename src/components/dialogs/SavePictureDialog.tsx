@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../ui/Icon';
 import { ChartExporter, type ChartExportOptions } from '../../services/chartExporter';
 import { isShortcutOwnedBy, shouldIgnoreShortcutEvent } from '../../services/keyboardShortcutManager';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './save-picture-dialog.css';
 
 export interface SavePictureDialogProps {
@@ -28,6 +29,7 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
   const tr = useUiTranslation();
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const [format, setFormat] = useState<ImageFormat>('png');
   const [quality, setQuality] = useState(0.92);
   const [scale, setScale] = useState(1);
@@ -100,7 +102,7 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
 
   return createPortal(
     <div
-      className="rtx-save-picture-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="rtx-save-picture-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-transparent animate-in fade-in duration-200"
       onClick={(e) => {
         e.stopPropagation();
         if (e.target === e.currentTarget && !isExporting) onClose();
@@ -116,6 +118,7 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
         aria-labelledby={titleId}
         aria-busy={isExporting}
         tabIndex={-1}
+        style={dragStyle}
         className="rtx-action-sheet rtx-save-picture-dialog animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(event) => {
@@ -140,7 +143,7 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
           }
         }}
       >
-        <div className="rtx-save-picture-header">
+        <div className="rtx-save-picture-header" {...dragHandleProps}>
           <h3 id={titleId}>{tr("Save Chart As Picture")}</h3>
           <button
             type="button"

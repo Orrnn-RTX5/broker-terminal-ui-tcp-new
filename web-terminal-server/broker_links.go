@@ -319,7 +319,64 @@ func (c *WebTerminalServer) linkForSession(sessionKey string) *brokerLink {
 }
 
 func (c *WebTerminalServer) linkForRequest(r *http.Request) *brokerLink {
-	return c.linkForSession(requestSessionKey(r))
+	sid := requestSessionKey(r)
+	if sid != "" {
+		c.linksMu.RLock()
+		b, ok := c.sessionBrokers[sid]
+		var chosen *brokerLink
+		if ok {
+			chosen = c.links[b.key]
+		}
+		c.linksMu.RUnlock()
+		if ok && chosen != nil {
+			return c.linkForSession(sid)
+		}
+	}
+	if r != nil {
+		if xbid := strings.TrimSpace(r.Header.Get("X-Broker-ID")); xbid != "" {
+			c.linksMu.RLock()
+			existing := c.links[linkKey(xbid, "")]
+			c.linksMu.RUnlock()
+			if existing != nil {
+				existing.touch()
+				return existing
+			}
+			c.mu.RLock()
+			var matched *DiscoveredBroker
+			for i := range c.cachedBrokers {
+				if strings.EqualFold(strings.TrimSpace(c.cachedBrokers[i].BrokerID), xbid) && strings.TrimSpace(c.cachedBrokers[i].TCPAddr) != "" {
+					b := c.cachedBrokers[i]
+					matched = &b
+					break
+				}
+			}
+			c.mu.RUnlock()
+			if matched != nil {
+				return c.ensureLink(matched.BrokerID, matched.BrokerName, matched.TCPAddr)
+			}
+		}
+	}
+	return c.linkForSession(sid)
+}
+
+func (c *WebTerminalServer) canonicalBrokerIDForLink(link *brokerLink) string {
+	if link == nil {
+		return ""
+	}
+	target := strings.TrimSpace(link.target)
+	if target != "" {
+		c.mu.RLock()
+		for _, b := range c.cachedBrokers {
+			if strings.EqualFold(strings.TrimSpace(b.TCPAddr), target) {
+				if bid := strings.TrimSpace(b.BrokerID); bid != "" {
+					c.mu.RUnlock()
+					return bid
+				}
+			}
+		}
+		c.mu.RUnlock()
+	}
+	return strings.TrimSpace(link.id)
 }
 
 // requestSessionKey reads the session key without creating one.

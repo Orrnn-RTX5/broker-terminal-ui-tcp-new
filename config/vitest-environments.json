@@ -72,6 +72,7 @@
     "src/test/timeframeBoundary.test.ts",
     "src/utils/accountSymbolUniverse.test.ts",
     "src/utils/brokerStreamSemantics.test.ts",
+    "src/utils/brokerWatermark.test.ts",
     "src/utils/candleHistory.test.ts",
     "src/utils/chartCandleCountdown.test.ts",
     "src/utils/chartGridStyle.test.ts",

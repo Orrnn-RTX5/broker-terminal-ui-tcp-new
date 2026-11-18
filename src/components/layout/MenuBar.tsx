@@ -9,6 +9,7 @@ import { FileMenu } from './FileMenu';
 import { useTranslation } from 'react-i18next';
 import { commandBus } from '../../services/commandBus';
 import { getColorSchemeDisplayLabel, normalizeColorSchemeName, useChartSettingsStore, type ChartProperties, type ColorScheme } from '../../store/useChartSettingsStore';
+import { isChartBackgroundLogoVisible, toggleChartBackgroundLogoInStore } from '../../utils/brokerWatermark';
 import { drawingManager } from '../../services/drawingManager';
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { useAppStore } from '../../store/useAppStore';
@@ -25,10 +26,15 @@ import { supportedLanguages } from '../../config/supportedLanguages';
 import { changeInterfaceLanguage } from '../../i18n';
 import { getTerminalShortcutHint, runTerminalShortcutAction } from '../../services/shortcutCatalog';
 import { getAppVersion } from '../../config/appVersion';
+import { toLocalDevProxyUrl } from '../../config/api';
+import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
+import { BrokerLogoImage } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
 import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
-import { brokerDisplayName, isBrokerName } from '../../services/brokerDisplayName';
-import { getWebTerminalTitle } from '../../hooks/useTerminalTitle';
+import { brokerDisplayName, isBrokerName, NEUTRAL_TERMINAL_TITLE } from '../../services/brokerDisplayName';
+import { getCachedBrokerDirectory } from '../../services/brokerDirectory';
+import { getCommittedBrokerAccountSessionScope } from '../../services/brokerSession';
+import { getLogoUrl, getWebTerminalTitle, isSameTerminalLabel, useTerminalBrokerInfo } from '../../hooks/useTerminalTitle';
 import { useThemeAppearanceStore } from '../../store/useThemeAppearanceStore';
 import { DARK_THEME_PRESETS, LIGHT_THEME_PRESETS } from '../../utils/themePresets';
 import { OPEN_THEME_SETTINGS_EVENT, ThemeSettingsDialog } from '../settings/ThemeAppearanceSettings';
@@ -90,6 +96,7 @@ export interface MenuBarProps {
     crosshairEnabled?: boolean;
     chartSymbol?: string;
     accountId?: string;
+    accountBrokerName?: string;
     profileSymbols?: readonly string[];
     onSetAdvancedViewEnabled?: (enabled: boolean) => void;
     onSetAdvancedFontSize?: (fontSize: 'small' | 'normal' | 'large') => void;
@@ -105,6 +112,7 @@ export const MenuBar = ({
     crosshairEnabled = false,
     chartSymbol,
     accountId,
+    accountBrokerName,
     profileSymbols,
     onSetAdvancedViewEnabled,
     onSetAdvancedFontSize,
@@ -139,17 +147,71 @@ export const MenuBar = ({
         window.addEventListener(BROKER_CHROME_EVENT, handleBrokerChrome);
         return () => window.removeEventListener(BROKER_CHROME_EVENT, handleBrokerChrome);
     }, []);
+    const brokerInfo = useTerminalBrokerInfo(chartSymbol ?? '');
+    const sessionScope = getCommittedBrokerAccountSessionScope();
+    const cachedDirectory = getCachedBrokerDirectory() || [];
+    const applicationMenuFallbackLogoSrc = toPublicAssetPath('brand/rtx5-chart-watermark.png');
+    const resolvedBrokerLogoUrl = toLocalDevProxyUrl(
+        getLogoUrl(brokerInfo.logoUrl, brokerInfo.logoBaseCandidates),
+    );
+    const rawChromeLogoUrl = toLocalDevProxyUrl(brokerChrome.logoUrl || '');
+    const applicationMenuBrokerId = brokerChrome.brokerId || (
+        typeof window !== 'undefined'
+            ? String(
+                localStorage.getItem('broker_id')
+                || localStorage.getItem('rtx_broker_id')
+                || sessionScope.brokerId
+                || getRuntimeBrokerConfiguration().brokerId
+                || '',
+            ).trim()
+            : ''
+    );
+    const storedBrokerName = typeof window !== 'undefined'
+        ? (localStorage.getItem('broker_name') || '').trim()
+        : '';
     const storedBrokerServer = typeof window !== 'undefined'
         ? (localStorage.getItem('rtx_broker_server') || localStorage.getItem('server_url') || '')
         : '';
-    const applicationMenuBrokerName = isBrokerName(brokerChrome.brokerName)
-        ? brokerChrome.brokerName
-        : (() => {
-            const candidate = brokerDisplayName(storedBrokerServer || brokerChrome.brokerId || '');
-            return isBrokerName(candidate) ? candidate : getWebTerminalTitle();
-        })();
-    const applicationMenuBrandTitle = tr(applicationMenuBrokerName);
-    const applicationMenuLogoSrc = toPublicAssetPath('brand/rtx5-chart-watermark.png');
+    const matchedDirectoryBroker = cachedDirectory.find((entry) => {
+        if (applicationMenuBrokerId && String(entry.broker_id || '').trim() === applicationMenuBrokerId) return true;
+        const entryServer = String(entry.server_url || '').trim().replace(/\/+$/, '').toLowerCase();
+        const scopeServer = String(sessionScope.serverUrl || storedBrokerServer || '').trim().replace(/\/+$/, '').toLowerCase();
+        return Boolean(entryServer && scopeServer && entryServer === scopeServer);
+    });
+    const directoryLogoUrl = toLocalDevProxyUrl(
+        getLogoUrl(
+            matchedDirectoryBroker?.logo_url,
+            [matchedDirectoryBroker?.server_url || '', sessionScope.serverUrl].filter(Boolean),
+        ),
+    );
+    const applicationMenuLogoUrl = rawChromeLogoUrl || resolvedBrokerLogoUrl || directoryLogoUrl;
+    const webTerminalTitle = getWebTerminalTitle();
+    const isSpecificBrokerLabel = (value?: string | null): value is string => {
+        const trimmed = String(value ?? '').trim();
+        if (!isBrokerName(trimmed)) return false;
+        if (isSameTerminalLabel(trimmed, NEUTRAL_TERMINAL_TITLE)) return false;
+        return !/^rtx\s*5?(?:[- ]?(?:live|demo|web|terminal))?$/i.test(trimmed);
+    };
+    const applicationMenuBrokerName = (() => {
+        const candidates = [
+            accountBrokerName,
+            brokerInfo.brokerName,
+            brokerChrome.brokerName,
+            storedBrokerName,
+            matchedDirectoryBroker?.broker_name,
+            brokerDisplayName(storedBrokerServer || applicationMenuBrokerId || ''),
+        ];
+        const specific = candidates.find(isSpecificBrokerLabel);
+        if (specific) return specific.trim();
+        return candidates.find((value) => isBrokerName(value))?.trim() || webTerminalTitle;
+    })();
+    const formatApplicationMenuBrandLabel = (brokerName: string): string => {
+        const trimmed = brokerName.trim();
+        if (!trimmed || trimmed === NEUTRAL_TERMINAL_TITLE) return trimmed;
+        if (/(?:-| )(?:live|demo)$/i.test(trimmed)) return trimmed;
+        return `${trimmed}-Live`;
+    };
+    const applicationMenuBrandTitle = tr(formatApplicationMenuBrandLabel(applicationMenuBrokerName));
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
     const [isSymbolsOpen, setIsSymbolsOpen] = useState(false);
@@ -616,7 +678,7 @@ export const MenuBar = ({
             { label: t('menu.charts.chartShift'), icon: <Icon name="chart-shift" size="sm" />, checked: menuChartProperties.chartShift, checkRole: 'checkbox', action: () => { const target = resolveChartTarget(); const s = useChartSettingsStore.getState(); const current = target.symbol ? (s.symbolProperties[target.symbol] || s.globalProperties) : s.globalProperties; const enabled = !current.chartShift; updateActiveChartProperty('chartShift', enabled, target.symbol); commandBus.dispatch({ type: 'SET_CHART_SHIFT', payload: { enabled, targetContextId: target.targetContextId } }); setActiveMenu(null); } },
             { label: t('menu.charts.volumes'), icon: <Icon name="bar-chart-3" size="sm" />, checked: menuChartProperties.showTickVolumes || menuChartProperties.showRealVolumes, checkRole: 'checkbox', action: () => { const target = resolveChartTarget(); const s = useChartSettingsStore.getState(); const current = target.symbol ? (s.symbolProperties[target.symbol] || s.globalProperties) : s.globalProperties; const visible = !(current.showTickVolumes || current.showRealVolumes); updateActiveChartProperty('showTickVolumes', visible, target.symbol); updateActiveChartProperty('showRealVolumes', false, target.symbol); setActiveMenu(null); } },
             { label: t('menu.charts.ohlc', 'Show OHLC'), shortcut: getTerminalShortcutHint('charts.ohlc'), icon: <Icon name="activity" size="sm" />, checked: menuChartProperties.showOHLC, checkRole: 'checkbox', action: () => { const target = resolveChartTarget(); const s = useChartSettingsStore.getState(); const current = target.symbol ? (s.symbolProperties[target.symbol] || s.globalProperties) : s.globalProperties; updateActiveChartProperty('showOHLC', !current.showOHLC, target.symbol); setActiveMenu(null); } },
-            { label: t('menu.charts.backgroundLogo', 'Background Logo'), icon: <Icon name="eye" size="sm" />, checked: menuChartProperties.showBackgroundLogo !== false, checkRole: 'checkbox', action: () => { const target = resolveChartTarget(); const s = useChartSettingsStore.getState(); const current = target.symbol ? (s.symbolProperties[target.symbol] || s.globalProperties) : s.globalProperties; updateActiveChartProperty('showBackgroundLogo', !(current.showBackgroundLogo ?? true), target.symbol); setActiveMenu(null); } },
+            { label: t('menu.charts.backgroundLogo', 'Background Logo'), icon: <Icon name="eye" size="sm" />, checked: isChartBackgroundLogoVisible(menuChartProperties), checkRole: 'checkbox', action: () => { const target = resolveChartTarget(); toggleChartBackgroundLogoInStore(target.symbol); setActiveMenu(null); } },
             { divider: true, label: '' },
             { label: t('menu.charts.zoomIn'), icon: <Icon name="zoom-in" size="sm" />, action: () => { const { targetContextId } = resolveChartTarget(); commandBus.dispatch({ type: 'ZOOM_IN', payload: { targetContextId } }); setActiveMenu(null); } },
             { label: t('menu.charts.zoomOut'), icon: <Icon name="zoom-out" size="sm" />, action: () => { const { targetContextId } = resolveChartTarget(); commandBus.dispatch({ type: 'ZOOM_OUT', payload: { targetContextId } }); setActiveMenu(null); } },
@@ -1259,12 +1321,22 @@ export const MenuBar = ({
                     }}
                 >
                     <div className="rtx-application-menu__brand" data-testid="application-menu-brand">
-                        <img
-                            src={applicationMenuLogoSrc}
-                            alt=""
+                        <BrokerLogoImage
+                            broker={
+                                applicationMenuLogoUrl || applicationMenuBrokerId
+                                    ? {
+                                        broker_id: applicationMenuBrokerId,
+                                        broker_name: applicationMenuBrokerName,
+                                        logo_url: applicationMenuLogoUrl,
+                                        server_url: brokerInfo.logoBaseCandidates?.[0]
+                                            || matchedDirectoryBroker?.server_url
+                                            || sessionScope.serverUrl,
+                                    }
+                                    : null
+                            }
+                            alt={`${applicationMenuBrandTitle} Logo`}
                             className="rtx-application-menu__brand-logo"
-                            decoding="async"
-                            draggable={false}
+                            appFallbackUrl={applicationMenuFallbackLogoSrc}
                         />
                         <span
                             dir="auto"

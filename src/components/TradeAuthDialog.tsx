@@ -16,6 +16,7 @@ import { parseTokenExpiresAt, setRefreshToken, setToken } from '../api/client';
 import { useAppStore } from '../store/useAppStore';
 import type { TradingAuthIntent } from '../services/tradingAuthGate';
 import { useBrokerLoginPolicy } from '../hooks/useBrokerLoginPolicy';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { assertTerminalConnectedToBroker, useDesktopDemoBroker } from '../hooks/useDesktopDemoBroker';
 import { updateDynamicUrls } from '../config/api';
 import { getRuntimeBrokerConfiguration, isElectronRuntime, normalizeBrokerInfoForTarget } from '../config/backendTarget.js';
@@ -127,6 +128,7 @@ function TradeAuthFlow({
   const [demoModes, setDemoModes] = useState<{ brokerId: string; modes: DemoRegistrationModes } | null>(null);
   const tr = useUiTranslation();
   const dialogRef = useRef<HTMLElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const demoRequestGenerationRef = useRef(0);
   const brokerId = brokerPolicy?.status === 'ready' ? brokerPolicy.brokerId : '';
@@ -465,6 +467,7 @@ function TradeAuthFlow({
         aria-labelledby="trade-auth-title"
         aria-describedby="trade-auth-description"
         className="rtx-auth-dialog"
+        style={dragStyle}
         data-mode={mode}
         onKeyDown={(event) => {
           if (!isDemo && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'ArrowRight')) {
@@ -510,7 +513,7 @@ function TradeAuthFlow({
           }
         }}
       >
-        <header className="rtx-auth-dialog__header">
+        <header className="rtx-auth-dialog__header" {...dragHandleProps}>
           <div className="rtx-auth-dialog__heading">
             <div className="rtx-auth-dialog__heading-copy">
               <h2 id="trade-auth-title" className="rtx-dialog-title rtx-auth-dialog__title">

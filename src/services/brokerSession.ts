@@ -26,7 +26,7 @@ import {
   normalizeBrokerInfoForTarget,
 } from '../config/backendTarget.js';
 import { isCleartextDowngradeAllowedHost } from '../config/urlSecurity';
-import { brokerDisplayName } from './brokerDisplayName';
+import { brokerDisplayName, isBrokerName } from './brokerDisplayName';
 import { normalizeBrokerThemeColor } from './brokerThemeColor';
 
 export type SessionChangeReason =
@@ -870,7 +870,9 @@ export function persistBrokerSessionDiscovery(
     || (normalizedInput as any).name
     || ''
   ).trim();
-  const resolvedBrokerName = brokerDisplayName(serverUrl || backendUrl || brokerId, rawBrokerName);
+  const resolvedBrokerName = isBrokerName(rawBrokerName)
+    ? rawBrokerName
+    : brokerDisplayName(serverUrl || backendUrl || brokerId, rawBrokerName);
   if (resolvedBrokerName && resolvedBrokerName !== 'Broker') {
     setLocalStorageItem('broker_name', resolvedBrokerName);
   }

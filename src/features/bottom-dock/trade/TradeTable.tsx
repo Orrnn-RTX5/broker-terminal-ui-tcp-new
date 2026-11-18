@@ -58,8 +58,8 @@ type TradeTableProps = {
   getPositionKey: (position: ToolboxTradePosition) => string;
   getTradePointsValue: (position: ToolboxTradePosition) => number | null;
   handleTradeContextMenu: (
-    event: ReactMouseEvent<HTMLTableRowElement>,
-    position: ToolboxTradePosition,
+    event: ReactMouseEvent<HTMLElement>,
+    position?: ToolboxTradePosition,
   ) => void;
   isColumnVisible: (key: TradeColumnKey) => boolean;
   liveEquity: number | null;
@@ -715,6 +715,7 @@ export function TradeTable({
   return (
     <div
       ref={scrollContainerRef}
+      onContextMenu={(event) => handleTradeContextMenu(event)}
       className={`rtx-trade-scroll flex flex-1 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
     >
       <table

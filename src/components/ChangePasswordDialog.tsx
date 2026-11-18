@@ -3,6 +3,7 @@ import { useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useDialogFocusScope } from '../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { ApiError } from '../api/client';
 import { tradeApi } from '../api/trade';
 
@@ -74,6 +75,7 @@ export function ChangePasswordDialog({ isOpen, onClose, accountLogin }: ChangePa
     const dialogRef = useRef<HTMLDivElement>(null);
     const initialFocusRef = useRef<HTMLInputElement>(null);
     useDialogFocusScope({ isOpen: isOpen && Boolean(accountLogin), dialogRef, onClose, initialFocusRef });
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen: isOpen && Boolean(accountLogin), elementRef: dialogRef });
 
     if (!isOpen || !accountLogin || typeof document === 'undefined') return null;
 
@@ -120,17 +122,18 @@ export function ChangePasswordDialog({ isOpen, onClose, accountLogin }: ChangePa
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-transparent p-4" onClick={onClose}>
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={`${dialogId}-title`}
                 tabIndex={-1}
+                style={dragStyle}
                 className="rtx-action-sheet bg-[#131316] border border-zinc-700 rounded-lg shadow-2xl flex flex-col w-[400px] max-w-full max-h-[calc(100dvh-32px)] overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
-                <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-[#191a1e]">
+                <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-[#191a1e]" {...dragHandleProps}>
                     <h2 id={`${dialogId}-title`} className="min-w-0 break-words text-zinc-200 font-medium">{tr("Change Password - ")}{accountLogin}</h2>
                     <button type="button" onClick={onClose} aria-label={tr("Close")} className="shrink-0 text-zinc-400 hover:text-white transition-colors">
                         ✕

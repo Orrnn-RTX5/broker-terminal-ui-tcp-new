@@ -1107,7 +1107,44 @@ html .navigator-panel .navigator-tree-item__row.navigator-tree-item__row--disabl
 /* Floating panel shadow */
 .floating-panel {
   box-shadow: var(--shadow-xl);
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Never blur or dim the background behind any open form sheet, action sheet, dialog, or menu */
+html:root:root :is(
+  [class*="-backdrop"],
+  [class*="__backdrop"],
+  .rtx-indicator-backdrop,
+  .rtx-save-picture-backdrop,
+  .rtx-chart-template-dialog-backdrop,
+  .rtx-confirm-dialog-backdrop,
+  .rtx-options-dialog-backdrop,
+  .rtx-theme-dialog-backdrop,
+  .rtx-bulk-close-backdrop,
+  .rtx-login-backdrop,
+  .rtx-auth-backdrop,
+  .rtx-auth-backdrop__dismiss,
+  .rtx-open-account-backdrop,
+  .rtx-popup-prices__backdrop,
+  .rtx-cp-backdrop,
+  .rtx-print-backdrop,
+  .rtx-shortcut-backdrop,
+  .rtx-symbols-dialog-backdrop,
+  .rtx-order-dialog-backdrop,
+  .rtx-oad-backdrop,
+  .rtx-action-feedback-backdrop,
+  .rtx-background-image-dialog-backdrop,
+  .rtx-history-period-backdrop,
+  .rtx-modify-overlay,
+  .rtx-bug-report-overlay
+),
+dialog::backdrop,
+.rtx-export-sheet::backdrop {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Professional input styling */
