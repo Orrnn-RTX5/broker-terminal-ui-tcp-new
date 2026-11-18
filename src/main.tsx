@@ -1,3 +1,4 @@
+import './startup/webTcpRoutingReconcileEarly';
 import { mountApp } from './bootstrap';
 import { mountRtx5VersionBadge } from './components/mountRtx5VersionBadge';
 
