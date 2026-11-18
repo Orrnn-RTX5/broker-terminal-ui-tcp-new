@@ -99,6 +99,28 @@ const INDICATOR_CATALOG: ReadonlyArray<{
   { id: 'ind-gator', name: 'Gator Oscillator', category: 'Bill Williams', menuCategory: 'Bill Williams', description: 'Bill Williams Alligator convergence/divergence dual histogram', keywords: ['gator', 'oscillator', 'bill williams', 'indicator'] },
 ];
 
+// Runs on every app-store update (each tick batch). The symbol set almost never
+// changes, so avoid keys()+sort()+join() allocations per update: walk the keys
+// once and reuse the previous sorted string while the set is unchanged.
+let lastTickSymbolsKey = '';
+let lastTickSymbolsSet = new Set<string>();
+const selectTickSymbolsKey = (state: { ticks?: Record<string, unknown> }): string => {
+  const ticks = state.ticks;
+  if (!ticks) return '';
+  let count = 0;
+  let unchanged = true;
+  for (const symbol in ticks) {
+    if (!Object.prototype.hasOwnProperty.call(ticks, symbol)) continue;
+    count += 1;
+    if (unchanged && !lastTickSymbolsSet.has(symbol)) unchanged = false;
+  }
+  if (unchanged && count === lastTickSymbolsSet.size) return lastTickSymbolsKey;
+  const keys = Object.keys(ticks);
+  lastTickSymbolsSet = new Set(keys);
+  lastTickSymbolsKey = keys.sort().join(',');
+  return lastTickSymbolsKey;
+};
+
 const normalizeToken = (val: string) => val.toLowerCase().replace(/[\s_-]+/g, '');
 
 const SINGLE_TOKEN_STOP_WORDS = new Set([
@@ -735,7 +757,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
   };
 
   const storeSymbols = useAppStore((state) => (state as { symbols?: Array<{ symbol?: string; description?: string; category?: string }> }).symbols);
-  const tickSymbolsKey = useAppStore((state) => Object.keys(state.ticks || {}).sort().join(','));
+  const tickSymbolsKey = useAppStore(selectTickSymbolsKey);
 
   const clearLocateTimers = useCallback(() => {
     if (rafRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {

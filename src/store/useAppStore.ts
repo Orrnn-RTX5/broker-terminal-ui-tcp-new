@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { pickAccountDisplayName } from '../utils/accountDisplayName';
 import type { TradingAccountType } from '../services/tradingAccountType';
-import { devtools, persist } from 'zustand/middleware';
+import { createJSONStorage, devtools, persist, type StateStorage } from 'zustand/middleware';
 import { formatJournalLoginMessage, useSystemJournalStore } from './useSystemJournalStore';
 import { hasTradeHistoryPositionLevelChanges, rememberTradeHistoryPositionLevels } from '../utils/tradeHistoryLevelCache';
 import { isOlderPositionVersion, mergePositionRecord } from '../services/positionStream';
@@ -845,6 +845,19 @@ let lastHistoryCachePositions: Position[] | null = null;
 let lastHistoryCacheAccountId: string | null | undefined;
 let lastHistoryCacheScope: ReturnType<typeof getCommittedBrokerAccountSessionScope> | null = null;
 
+// persist() calls setItem on every store update, including each tick batch.
+// The persisted slice is tiny and almost never changes, so skip the (sync)
+// localStorage write when the stored value is already identical. Comparing with
+// the real stored value stays correct if another writer touched the key.
+const dedupedLocalStorage: StateStorage = {
+  getItem: (name) => localStorage.getItem(name),
+  setItem: (name, value) => {
+    if (localStorage.getItem(name) === value) return;
+    localStorage.setItem(name, value);
+  },
+  removeItem: (name) => localStorage.removeItem(name),
+};
+
 export const useAppStore = create<AppState>()(
   devtools(
     persist(
@@ -1415,6 +1428,7 @@ export const useAppStore = create<AppState>()(
       }),
       {
         name: 'trading-app-storage',
+        storage: createJSONStorage(() => (typeof localStorage === 'undefined' ? undefined : dedupedLocalStorage)),
         partialize: (state) => ({
           // ⚠️  isAuthenticated intentionally NOT persisted.
           //     It must always start as false and only become true after

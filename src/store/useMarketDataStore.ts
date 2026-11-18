@@ -54,6 +54,12 @@ interface SymbolData {
   ohlcv15m: OHLCV[];
   ohlcv1h: OHLCV[];
   tickBuffer: Tick[];
+  /**
+   * Bumped on every accepted tick. The live path appends to `tickBuffer` in
+   * place (O(1)), so the array identity no longer changes per tick; readers
+   * that must re-run when ticks arrive select this counter as well.
+   */
+  tickBufferRevision?: number;
   lastAggregation: number;
 }
 
@@ -119,6 +125,7 @@ function createEmptySymbolData(): SymbolData {
     ohlcv15m: [],
     ohlcv1h: [],
     tickBuffer: [],
+    tickBufferRevision: 0,
     lastAggregation: 0,
   };
 }
@@ -277,6 +284,27 @@ export function appendBoundedTick(
   return [...ticks.slice(firstRetainedIndex), tick];
 }
 
+/**
+ * In-place variant of appendBoundedTick for the live tick path: O(1) per tick
+ * (no copy of the retained window). Mutates and returns `ticks`; it never holds
+ * more than `limit` entries, ordered oldest to newest. Only call it on an array
+ * owned by the store (never a snapshot handed to another consumer).
+ */
+export function pushBoundedTickInPlace(ticks: Tick[], tick: Tick, limit = MARKET_TICK_BUFFER_LIMIT): Tick[] {
+  if (limit <= 0) {
+    ticks.length = 0;
+    return ticks;
+  }
+  ticks.push(tick);
+  // V8 left-trims the backing store for shift() on arrays of this size, so
+  // this stays O(1) in practice; the length invariant (<= limit) is exact.
+  if (ticks.length > limit) {
+    if (ticks.length - limit === 1) ticks.shift();
+    else ticks.splice(0, ticks.length - limit);
+  }
+  return ticks;
+}
+
 interface PendingAggregation extends SymbolAggregationRequest {
   owner: number;
   revision: number;
@@ -297,6 +325,7 @@ const ownPendingAggregation = (request: SymbolAggregationRequest, isCorrection: 
 };
 
 const replaceSameTimestampTick = (ticks: readonly Tick[], tick: Tick): Tick[] => {
+  // Correction path is rare: it keeps the copy-on-write semantics (new array).
   const timestamp = getCanonicalTickTimestamp(tick);
   if (timestamp === null) return [...ticks];
   for (let index = ticks.length - 1; index >= 0; index -= 1) {
@@ -466,7 +495,7 @@ const applyMarketTick = (
     : data.currentTick;
   const tickBuffer = isCorrection
     ? replaceSameTimestampTick(data.tickBuffer, tick)
-    : appendBoundedTick(data.tickBuffer, tick);
+    : pushBoundedTickInPlace(data.tickBuffer, tick);
   const shouldAggregate = isCorrection || now - data.lastAggregation > 60_000;
   const shouldUpdateStats = isCorrection || !data.stats || now - data.stats.lastUpdate > 1_000;
   const stats = shouldUpdateStats
@@ -481,9 +510,12 @@ const applyMarketTick = (
       previousTick,
       stats,
       tickBuffer,
+      tickBufferRevision: (data.tickBufferRevision ?? 0) + 1,
       lastAggregation: shouldAggregate ? now : data.lastAggregation,
     },
-    aggregation: shouldAggregate ? { symbol, tickBuffer } : null,
+    // The live buffer is mutated in place, so the worker gets a snapshot
+    // (once per minute per symbol, or on a rare correction; never per tick).
+    aggregation: shouldAggregate ? { symbol, tickBuffer: tickBuffer.slice() } : null,
   };
 };
 
@@ -715,6 +747,7 @@ export const useMarketDataStore = create<MarketDataState>()(
                 [symbol]: {
                   ...data,
                   tickBuffer: [],
+                  tickBufferRevision: (data.tickBufferRevision ?? 0) + 1,
                 },
               },
             };

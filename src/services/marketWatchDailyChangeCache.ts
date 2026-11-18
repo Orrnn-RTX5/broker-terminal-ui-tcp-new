@@ -64,6 +64,9 @@ const FLUSH_DELAY_MS = 250;
 
 const entriesByScope = new Map<string, Map<string, MarketWatchDailyChangeCacheEntry>>();
 let loadedFromStorage = false;
+// Live entry count so the per-tick path can do an O(1) bound check instead of
+// collect + sort on every changed entry (same approach as marketWatchQuoteCache).
+let entryCount = 0;
 let dirty = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -171,6 +174,7 @@ const shouldReplaceLoadedEntry = (
 const deleteEntry = (scopeKey: string, symbol: string): boolean => {
   const scopedEntries = entriesByScope.get(scopeKey);
   if (!scopedEntries?.delete(symbol)) return false;
+  entryCount -= 1;
   if (scopedEntries.size === 0) entriesByScope.delete(scopeKey);
   return true;
 };
@@ -254,7 +258,9 @@ const ensureLoaded = (): void => {
     }
   });
 
-  if (pruneEntries()) markDirty();
+  const pruned = pruneEntries();
+  entryCount = collectEntries().length;
+  if (pruned) markDirty();
 };
 
 const readEntry = (
@@ -387,6 +393,7 @@ const rememberEntry = (
   }
 
   scopedEntries.set(normalizedSymbol, candidate);
+  if (!current) entryCount += 1;
   entriesByScope.set(normalizedScopeKey, scopedEntries);
   return true;
 };
@@ -404,7 +411,9 @@ export const rememberMarketWatchDailyChange = (
   const changed = rememberEntry(scopeKey, symbol, value, asOf, source, Date.now(), completedAt, change);
   if (!changed) return false;
 
-  pruneEntries();
+  // Existing-symbol updates are the hot path: expiry scans and sorting wait for
+  // the coalesced flush. Only growth past the memory bound trims now.
+  if (entryCount > MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES) pruneEntries();
   markDirty();
   return true;
 };
@@ -423,7 +432,7 @@ export const rememberMarketWatchDailyChanges = (
   });
 
   if (changedCount > 0) {
-    pruneEntries();
+    if (entryCount > MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES) pruneEntries();
     markDirty();
   }
   return changedCount;
@@ -484,6 +493,7 @@ export const resetMarketWatchDailyChangeCacheForTests = (
   if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
   entriesByScope.clear();
+  entryCount = 0;
   loadedFromStorage = false;
   dirty = false;
 

@@ -105,6 +105,30 @@ describe('MarketWatchTickChart', () => {
     expect(tagLabel('ask')).toBe('321.5');
   });
 
+  it('re-renders when live ticks are appended in place to the store buffer', () => {
+    const base = 1_800_000_000_000;
+    const send = (index: number) => useMarketDataStore.getState().updateTick('EURUSD', {
+      symbol: 'EURUSD',
+      bid: 1.1 + index / 10_000,
+      ask: 1.1002 + index / 10_000,
+      spread: 0.0002,
+      timestamp: base + index * 25,
+    }, { syncAppStore: false });
+    act(() => { send(0); send(1); });
+
+    const { container } = render(
+      <MarketWatchTickChart symbol="EURUSD" instrumentSources={[{ symbol: 'EURUSD', digits: 5 }]} />,
+    );
+    const count = () => Number(container.querySelector('svg[data-tick-count]')?.getAttribute('data-tick-count'));
+    const bufferRef = useMarketDataStore.getState().symbolData.EURUSD.tickBuffer;
+    expect(count()).toBe(2);
+
+    act(() => { send(2); send(3); send(4); });
+
+    expect(useMarketDataStore.getState().symbolData.EURUSD.tickBuffer).toBe(bufferRef);
+    expect(count()).toBe(5);
+  });
+
   it('ignores non-price rows instead of inventing chart values', () => {
     setTickBuffer('XAUUSD', [{
       symbol: 'XAUUSD',

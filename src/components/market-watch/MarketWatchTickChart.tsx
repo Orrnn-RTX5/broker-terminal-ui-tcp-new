@@ -147,6 +147,11 @@ export function MarketWatchTickChart({
   const tickBuffer = useMarketDataStore(state => (
     state.symbolData[normalizedSymbol]?.tickBuffer ?? EMPTY_TICKS
   ));
+  // The store appends to tickBuffer in place, so identity alone no longer
+  // signals new ticks; the revision counter does.
+  const tickBufferRevision = useMarketDataStore(state => (
+    state.symbolData[normalizedSymbol]?.tickBufferRevision ?? 0
+  ));
   const history = useMarketWatchTickHistory(normalizedSymbol, historyScopeKey);
   const digits = useMemo(
     () => readMarketWatchSymbolSpecification(...instrumentSources).digits,
@@ -160,7 +165,8 @@ export function MarketWatchTickChart({
     const firstLiveTime = live[0]?.timestamp ?? Number.POSITIVE_INFINITY;
     const earlier = history.filter(point => point.timestamp < firstLiveTime);
     return [...earlier, ...live].slice(-MARKET_WATCH_TICK_CHART_LIMIT);
-  }, [history, tickBuffer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- revision signals in-place appends
+  }, [history, tickBuffer, tickBufferRevision]);
 
   useEffect(() => {
     saveMarketWatchTickChartOptions(options);

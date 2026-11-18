@@ -284,6 +284,48 @@ describe('marketWatchDailyChangeCache', () => {
     expect(stored.entries).toHaveLength(MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES);
   });
 
+  it('does not collect or sort the cache on every changed tick of a known symbol', () => {
+    for (let index = 0; index < 40; index += 1) {
+      rememberMarketWatchDailyChange(scopeA, `SYMBOL${index}`, index, NOW, 'quote');
+    }
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    try {
+      for (let tickIndex = 1; tickIndex <= 200; tickIndex += 1) {
+        expect(rememberMarketWatchDailyChange(scopeA, `SYMBOL${tickIndex % 40}`, 1000 + tickIndex, NOW + tickIndex, 'quote')).toBe(true);
+      }
+      expect(rememberMarketWatchDailyChanges(scopeA, [
+        { symbol: 'SYMBOL1', value: 5_000, asOf: NOW + 1_000, source: 'quote' },
+      ])).toBe(1);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+
+    expect(readMarketWatchDailyChange(scopeA, 'SYMBOL1')).toBe(5_000);
+    expect(readMarketWatchDailyChange(scopeA, 'SYMBOL0')).toBe(1_200);
+    flushMarketWatchDailyChangeCache();
+    const stored = JSON.parse(localStorage.getItem(MARKET_WATCH_DAILY_CHANGE_CACHE_STORAGE_KEY) || '{}');
+    expect(stored.entries).toHaveLength(40);
+  });
+
+  it('keeps the batch path bounded and prunes only when a new key exceeds the cap', () => {
+    const rows = Array.from({ length: MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES + 25 }, (_, index) => ({
+      symbol: `SYM${index}`, value: index, asOf: NOW + index, source: 'quote' as const,
+    }));
+    expect(rememberMarketWatchDailyChanges(scopeA, rows)).toBe(rows.length);
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    try {
+      // Updates to retained symbols do not trigger any further prune/sort.
+      rememberMarketWatchDailyChange(scopeA, 'SYM524', 9_999, NOW + 9_999, 'quote');
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+    flushMarketWatchDailyChangeCache();
+    const stored = JSON.parse(localStorage.getItem(MARKET_WATCH_DAILY_CHANGE_CACHE_STORAGE_KEY) || '{}');
+    expect(stored.entries).toHaveLength(MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES);
+  });
+
   it('remembers a valid batch while rejecting invalid rows', () => {
     expect(rememberMarketWatchDailyChanges(scopeA, [
       { symbol: 'EURUSD', value: 0.5, asOf: NOW, source: 'history' },
