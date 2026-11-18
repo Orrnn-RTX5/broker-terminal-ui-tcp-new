@@ -751,44 +751,29 @@ func (s *WebTerminalServer) serveBinaryAccountSub(w http.ResponseWriter, r *http
 		http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	hub := link.binHub
 	canonicalLen := rtx5tcp.BinaryAccountSubHeaderSize + len(sub.AuthToken)
 	cp := make([]byte, canonicalLen)
 	copy(cp, rawBody[:canonicalLen])
-
 	trimmedTok := strings.TrimSpace(sub.AuthToken)
 	if len(trimmedTok) == 0 || sub.AccountLogin < 0 {
 		s.setSessionOrderToken(clientKey, "")
-		if hub != nil {
-			hub.bindClientAccount(clientKey, 0)
-		}
-	} else if sub.AccountLogin == 0 && len(trimmedTok) > 0 {
-		// Manager/Admin wildcard subscription (AccountLogin == 0 + valid AuthToken)
+		link.bindClientAccount(clientKey, 0, accountKey{}, false, nil, "")
+	} else {
+		// A login (AccountLogin > 0) or the manager/admin wildcard (AccountLogin == 0) with a token. The claim
+		// only becomes the tab's bound login for 0x3A once proven (gateway verify 200, or its own tunnel got
+		// an event for it); the app kind the client sent never grants anything.
 		s.setSessionOrderToken(clientKey, sub.AuthToken)
 		status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second)
-		if (verr == nil && status == http.StatusOK) || appKind == "manager" || appKind == "admin" {
-			if hub != nil {
-				hub.bindClientAccount(clientKey, -1)
-			}
+		verified := verr == nil && status == http.StatusOK
+		claim := sub.AccountLogin
+		if claim == 0 {
+			claim = -1
 		}
-	} else if sub.AccountLogin > 0 && len(trimmedTok) > 0 {
-		s.setSessionOrderToken(clientKey, sub.AuthToken)
-		if status, verr := rtx5tcp.RawGatewayVerifyAccountSub(cp, 3*time.Second); verr == nil && status == http.StatusOK {
-			if hub != nil {
-				hub.bindClientAccount(clientKey, sub.AccountLogin)
-			}
-		} else if hub != nil {
-			hub.bindClientAccount(clientKey, sub.AccountLogin)
-		}
-	}
-
-	if sess, err := link.getOrDialSession(); err == nil && sess != nil {
-		_ = sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
-	}
-	if appKind == "manager" || appKind == "admin" {
-		if appSess, err := s.getOrDialSessionForApp(link, appKind); err == nil && appSess != nil {
-			_ = appSess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, cp)
-		}
+		key := makeAccountKey(roleForAppKind(appKind), sub.AccountLogin, sub.AuthToken)
+		link.bindClientAccount(clientKey, claim, key, verified, cp, remoteIP(r))
+		// The subscription's own market tunnel (dialled in the background; the tab stays on its current
+		// source until it is up). No 0x3B is ever sent onto the shared guest tunnel.
+		link.setAccountSub(clientKey, remoteIP(r), key, cp)
 	}
 
 	w.Header().Set("Cache-Control", "no-store")

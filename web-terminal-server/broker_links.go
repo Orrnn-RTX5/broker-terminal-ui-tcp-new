@@ -44,8 +44,18 @@ type brokerLink struct {
 	dialMu, orderDialMu, managerDialMu, adminDialMu sync.Mutex
 	orderFastLaneUnsupported                        atomic.Bool
 
-	binHub   *webBinaryMarketHub
+	binHub   *webBinaryMarketHub // the guest/public market source (shared tunnel's cache and tabs)
 	lastUsed atomic.Int64
+
+	// Per-account market tunnels (account_tunnels.go). Lock order: srcMu -> acctMu.
+	srcMu      sync.RWMutex // Lock: market-source/binding changes; RLock: 0x3A delivery. Guards allSubs, bindings
+	allSubs    map[*webBinaryStreamSub]struct{}
+	bindings   map[string]sessionAcct // browser session -> the account it asked for
+	acctMu     sync.RWMutex
+	acct       map[accountKey]*accountTunnel
+	acctClosed bool                      // retired link: no new account tunnels
+	retry      map[accountKey]retryState // under srcMu: re-creation backoff of tunnels closed under a live claim
+	lastRefuse atomic.Int64
 }
 
 type sessionBinding struct {
@@ -137,7 +147,7 @@ func (l *brokerLink) getOrDialSession() (*rtx5tcp.MuxSession, error) {
 }
 
 func (l *brokerLink) getOrDialManagerSession() (*rtx5tcp.MuxSession, error) {
-	return l.dialSlot(&l.managerMux, &l.managerDialMu, rtx5tcp.RoleBrokerManagerClient, 8*time.Second, true)
+	return l.dialSlot(&l.managerMux, &l.managerDialMu, rtx5tcp.RoleBrokerManagerClient, 8*time.Second, false)
 }
 
 func (l *brokerLink) getOrDialAdminSession() (*rtx5tcp.MuxSession, error) {
@@ -182,6 +192,7 @@ func (l *brokerLink) rtt() (last, avg float64) {
 }
 
 func (l *brokerLink) closeAll() {
+	l.closeAccountTunnels()
 	l.mu.Lock()
 	sessions := []*rtx5tcp.MuxSession{l.activeMux, l.orderMux, l.managerMux, l.adminMux}
 	l.activeMux, l.orderMux, l.managerMux, l.adminMux = nil, nil, nil, nil
@@ -196,12 +207,9 @@ func (l *brokerLink) closeAll() {
 }
 
 func (l *brokerLink) hasStreamSubscribers() bool {
-	if l.binHub == nil {
-		return false
-	}
-	l.binHub.mu.RLock()
-	defer l.binHub.mu.RUnlock()
-	return len(l.binHub.subs) > 0
+	l.srcMu.RLock()
+	defer l.srcMu.RUnlock()
+	return len(l.allSubs) > 0
 }
 
 // ensureLink returns the link for this broker, creating it when needed. The broker on this
@@ -235,12 +243,13 @@ func (c *WebTerminalServer) ensureLink(brokerID, brokerName, target string) *bro
 	old := c.links[key]
 	local := isLoopbackTarget(target) || (c.localBrokerID != "" && strings.EqualFold(brokerID, c.localBrokerID))
 	l := &brokerLink{id: brokerID, name: brokerName, target: target, local: local, binHub: newWebBinaryMarketHub()}
+	l.binHub.tradeFan = l.deliverTradeAll
 	l.touch()
 	c.links[key] = l
 	c.linksMu.Unlock()
 
 	if old != nil {
-		old.closeAll() // the broker moved to another address
+		old.retire() // the broker moved to another address
 	}
 	if local && c.directGatewayPush {
 		// Direct :8190 RTO\x01 push stream (0.0 ms trade-event fanout when co-located with rtx5-gateway)
@@ -357,6 +366,7 @@ func (c *WebTerminalServer) activeLinks() []*brokerLink {
 // sessionBindingTTL. A link leaves the map only when no session choice refers to it.
 func (c *WebTerminalServer) pruneIdle(now time.Time) {
 	var closing []*brokerLink
+	retiring := make(map[*brokerLink]bool)
 	c.linksMu.Lock()
 	referenced := make(map[string]bool, len(c.links))
 	for sid, b := range c.sessionBrokers {
@@ -373,13 +383,22 @@ func (c *WebTerminalServer) pruneIdle(now time.Time) {
 		if now.Sub(time.Unix(0, l.lastUsed.Load())) > linkIdleTimeout {
 			if !referenced[k] {
 				delete(c.links, k)
+				retiring[l] = true
 			}
 			closing = append(closing, l)
 		}
 	}
 	c.linksMu.Unlock()
 	for _, l := range closing {
-		l.closeAll()
+		if retiring[l] {
+			l.retire() // left the map: nothing will prune its account tunnels any more
+		} else {
+			l.closeAll()
+		}
+	}
+	for _, l := range c.activeLinks() {
+		l.pruneAccountTunnels(now)
+		l.pruneBindings(now)
 	}
 }
 

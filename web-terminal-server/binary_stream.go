@@ -19,6 +19,73 @@ type webBinaryStreamSub struct {
 	prioCh       chan []byte
 	ch           chan []byte
 	closed       atomic.Bool
+
+	// src is the one market source (guest hub or an account tunnel's hub) this tab takes 0x21/0x22/depth
+	// frames from. It only changes under brokerLink.srcMu (see moveSubLocked); the hot path never reads it.
+	src atomic.Pointer[webBinaryMarketHub]
+	// Under brokerLink.srcMu only. claimLogin is the login the tab asked for; accountLogin (read by 0x3A
+	// delivery) is that login only once the claim is proven: the gateway verified the token or the tab's own
+	// account tunnel was accepted by :4443. acctKey names the tab's account tunnel (login + token hash).
+	claimLogin int64
+	acctKey    accountKey
+	verified   bool
+
+	// Recent 0x3A payload hashes (length + FNV-1a): the same event can arrive over an account tunnel and over
+	// the direct :8190 push loop; a tab must see it once. Touched only on the (rare) trade-event path.
+	tradeMu   sync.Mutex
+	tradeSeen map[uint64]int64
+}
+
+const (
+	tradeDedupeMax    = 64
+	tradeDedupeWindow = 2 * time.Second
+)
+
+// isDuplicateTradeEvent records the event hash and reports whether the same event was already delivered to
+// this tab within tradeDedupeWindow. At most tradeDedupeMax hashes are kept (expired ones go first, then the
+// oldest), so a burst of well over a handful of events is still deduplicated.
+func (s *webBinaryStreamSub) isDuplicateTradeEvent(sum uint64, now int64) bool {
+	s.tradeMu.Lock()
+	defer s.tradeMu.Unlock()
+	if at, ok := s.tradeSeen[sum]; ok && now-at < int64(tradeDedupeWindow) {
+		return true
+	}
+	if s.tradeSeen == nil {
+		s.tradeSeen = make(map[uint64]int64, tradeDedupeMax)
+	}
+	if len(s.tradeSeen) >= tradeDedupeMax {
+		for k, at := range s.tradeSeen {
+			if now-at >= int64(tradeDedupeWindow) {
+				delete(s.tradeSeen, k)
+			}
+		}
+		if len(s.tradeSeen) >= tradeDedupeMax {
+			var oldestK uint64
+			oldest := now + 1
+			for k, at := range s.tradeSeen {
+				if at < oldest {
+					oldestK, oldest = k, at
+				}
+			}
+			delete(s.tradeSeen, oldestK)
+		}
+	}
+	s.tradeSeen[sum] = now
+	return false
+}
+
+func fnv1a64(b []byte) uint64 {
+	// The length goes in first so payloads of different size never share a hash prefix state.
+	h := uint64(14695981039346656037)
+	for n := uint64(len(b)); n != 0; n >>= 8 {
+		h ^= n & 0xff
+		h *= 1099511628211
+	}
+	for _, c := range b {
+		h ^= uint64(c)
+		h *= 1099511628211
+	}
+	return h
 }
 
 type webBinaryMarketHub struct {
@@ -29,6 +96,31 @@ type webBinaryMarketHub struct {
 	loginByKey  map[string]int64
 	framesRx    atomic.Uint64
 	directOnce  sync.Once
+
+	// subs holds the tabs whose market source is THIS hub (guest hub or one account tunnel's hub).
+	// Account hubs only (set before the hub is shared, never changed afterwards):
+	//   tradeSink: the link's guest hub; 0x3A events from the account tunnel go through it.
+	//   onWarm:    called once per (re)dial on the first market frame; moves waiting tabs onto this hub.
+	// Guest hub only: tradePeers visits the account hubs a 0x3A event for eventLogin must also reach.
+	tradeSink *webBinaryMarketHub
+	onAuth    func()
+	acctOwner *accountTunnel // the account tunnel this hub belongs to (nil on the guest hub)
+	// committed: a market frame arrived after the ping barrier that follows this tunnel's latest 0x3B (so the
+	// access server has applied the subscription's gate); tabs only move onto a committed hub. armedAt: unix
+	// nanos from which market frames count (the time the barrier pong was back), 0 = barrier not passed. authed: a 0x3A for the
+	// subscription arrived, i.e. :4443 accepted the token.
+	committed atomic.Bool
+	armedAt   atomic.Int64
+	authed    atomic.Bool
+	// Encoded snapshot cache (under mu), valid while snapVer == ver: shared by every tab moved onto the hub.
+	snapPkts [][]byte
+	snapVer  uint64
+	snapOK   bool
+	// ver counts cache changes (under mu); a source switch uses it to detect a cache that moved while it
+	// encoded the snapshot outside the lock.
+	ver uint64
+	// Guest hub only: delivers a 0x3A event to every tab of the link whatever hub it is on (brokerLink).
+	tradeFan func(pkt []byte, eventLogin int64, sum uint64, now int64)
 }
 
 func newWebBinaryMarketHub() *webBinaryMarketHub {
@@ -47,6 +139,7 @@ func (h *webBinaryMarketHub) clearMarketCache() {
 	h.mu.Lock()
 	h.latestTicks = make(map[string]rtx5tcp.BinaryTick, 256)
 	h.latestDepth = make(map[string]rtx5tcp.BinaryDepth, 256)
+	h.ver++
 	h.mu.Unlock()
 }
 
@@ -107,6 +200,7 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 			for _, t := range ticks {
 				h.latestTicks[t.Symbol] = t
 			}
+			h.ver++
 			h.mu.Unlock()
 		}
 		h.framesRx.Add(1)
@@ -123,6 +217,7 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 			for _, d := range depths {
 				h.latestDepth[d.Symbol] = d
 			}
+			h.ver++
 			h.mu.Unlock()
 		}
 		h.framesRx.Add(1)
@@ -130,26 +225,42 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 
 	case rtx5tcp.FrameBinaryTradeEvent:
 		h.framesRx.Add(1)
-		h.broadcastTradeEvent(payload)
+		if len(payload) >= 10 {
+			h.noteAuthed(int64(binary.LittleEndian.Uint64(payload[2:10])))
+		}
+		if h.tradeSink != nil {
+			h.tradeSink.broadcastTradeEvent(payload)
+		} else {
+			h.broadcastTradeEvent(payload)
+		}
 	}
 }
 
+// noteAuthed proves the tunnel's subscription on its first matching 0x3A: the access server only pushes events
+// to a tunnel whose token it accepted (a rejected token can still receive the guest market feed, so market
+// frames prove nothing). It runs before the event is delivered, so the tab's claimed login is bound in time to
+// receive that very event. A login tunnel only counts an event of its own login; a wildcard tunnel any event.
+func (h *webBinaryMarketHub) noteAuthed(eventLogin int64) {
+	if h.onAuth == nil || h.authed.Load() {
+		return
+	}
+	if o := h.acctOwner; o != nil && o.login != 0 && eventLogin != o.login {
+		return
+	}
+	if h.authed.CompareAndSwap(false, true) {
+		h.onAuth()
+	}
+}
+
+// broadcastMarketPacket sends pkt to every tab whose market source is this hub. Sends are non-blocking channel
+// writes made under the read lock (no copy of the subscriber set); the write lock is only taken to move a tab
+// between sources, which is how a moved tab is guaranteed to receive nothing more from its old source.
 func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 	if len(pkt) == 0 {
 		return
 	}
 	h.mu.RLock()
-	if len(h.subs) == 0 {
-		h.mu.RUnlock()
-		return
-	}
-	subs := make([]*webBinaryStreamSub, 0, len(h.subs))
 	for s := range h.subs {
-		subs = append(subs, s)
-	}
-	h.mu.RUnlock()
-
-	for _, s := range subs {
 		if s.closed.Load() {
 			continue
 		}
@@ -158,10 +269,14 @@ func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 		default:
 		}
 	}
+	h.mu.RUnlock()
 }
 
 // broadcastTradeEvent isolates 0x3A private account/position events strictly by each browser tab's bound AccountLogin (bytes[2:10]),
 // while delivering all 0x3A events to verified Manager/Admin wildcard subscribers (boundLogin == -1).
+// Called on the link's guest hub; with a link it delivers to every tab of the link under srcMu.RLock, so a tab
+// gets the event whichever source it is on and a source switch can never make it miss one. A tab never gets the same event twice within
+// tradeDedupeWindow (an event can come over its account tunnel and the direct gateway push loop).
 func (h *webBinaryMarketHub) broadcastTradeEvent(payload []byte) {
 	if len(payload) < 10 {
 		return
@@ -171,40 +286,49 @@ func (h *webBinaryMarketHub) broadcastTradeEvent(payload []byte) {
 	if len(pkt) == 0 {
 		return
 	}
-
-	h.mu.RLock()
-	if len(h.subs) == 0 {
-		h.mu.RUnlock()
+	sum := fnv1a64(payload)
+	now := time.Now().UnixNano()
+	if h.tradeFan != nil {
+		h.tradeFan(pkt, eventLogin, sum, now)
 		return
 	}
-	subs := make([]*webBinaryStreamSub, 0, len(h.subs))
-	for s := range h.subs {
-		subs = append(subs, s)
-	}
-	h.mu.RUnlock()
+	h.deliverTradeEvent(pkt, eventLogin, sum, now)
+}
 
-	for _, s := range subs {
-		if s.closed.Load() {
-			continue
-		}
-		boundLogin := s.accountLogin.Load()
-		if boundLogin == 0 {
-			continue
-		}
-		if boundLogin > 0 && eventLogin > 0 && boundLogin != eventLogin {
-			continue
+// deliverTradeEvent sends the event to the tabs of this hub (a hub without a link, e.g. in tests).
+func (h *webBinaryMarketHub) deliverTradeEvent(pkt []byte, eventLogin int64, sum uint64, now int64) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for s := range h.subs {
+		s.deliverTradeEvent(pkt, eventLogin, sum, now)
+	}
+}
+
+// deliverTradeEvent applies the tab's login filter and dedupe, then queues the event on its priority channel.
+func (s *webBinaryStreamSub) deliverTradeEvent(pkt []byte, eventLogin int64, sum uint64, now int64) {
+	if s.closed.Load() {
+		return
+	}
+	boundLogin := s.accountLogin.Load()
+	if boundLogin == 0 {
+		return
+	}
+	if boundLogin > 0 && eventLogin > 0 && boundLogin != eventLogin {
+		return
+	}
+	if s.isDuplicateTradeEvent(sum, now) {
+		return
+	}
+	select {
+	case s.prioCh <- pkt:
+	default:
+		select {
+		case <-s.prioCh:
+		default:
 		}
 		select {
 		case s.prioCh <- pkt:
 		default:
-			select {
-			case <-s.prioCh:
-			default:
-			}
-			select {
-			case s.prioCh <- pkt:
-			default:
-			}
 		}
 	}
 }
@@ -217,14 +341,12 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	}
 
 	clientKey := s.resolveClientSessionKey(w, r)
-	appKind := resolveWebAppKind(r)
 	// Prices come from this page's own broker (per-session broker targets).
 	link := s.linkForSession(clientKey)
 	if link == nil || link.binHub == nil {
 		http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	hub := link.binHub
 	_, _ = link.getOrDialSession()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -239,30 +361,10 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		ch:        make(chan []byte, 2048),
 	}
 
-	hub.mu.Lock()
-	if boundLogin, exists := hub.loginByKey[clientKey]; exists {
-		sub.accountLogin.Store(boundLogin)
-	} else if (appKind == "manager" || appKind == "admin") && s.getSessionOrderToken(clientKey) != "" {
-		sub.accountLogin.Store(-1)
-		hub.loginByKey[clientKey] = -1
-	}
-	hub.subs[sub] = struct{}{}
-	snaps := make([]rtx5tcp.BinaryTick, 0, len(hub.latestTicks))
-	for _, bt := range hub.latestTicks {
-		snaps = append(snaps, bt)
-	}
-	depthSnaps := make([]rtx5tcp.BinaryDepth, 0, len(hub.latestDepth))
-	for _, bd := range hub.latestDepth {
-		depthSnaps = append(depthSnaps, bd)
-	}
-	hub.mu.Unlock()
-
-	defer func() {
-		sub.closed.Store(true)
-		hub.mu.Lock()
-		delete(hub.subs, sub)
-		hub.mu.Unlock()
-	}()
+	// Registers the tab on its market source (guest hub, or its account tunnel's hub when that is up) and
+	// returns that source's snapshot.
+	snaps, depthSnaps := link.attachSub(sub)
+	defer link.detachSub(sub)
 
 	bytesSent := 0
 	const chunk = 64

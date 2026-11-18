@@ -374,6 +374,7 @@ func main() {
 		srv.localTarget = initialTarget
 	}
 	srv.initHotUIOTAState()
+	configureAccountTunnelLimits()
 
 	// Sessions that never pick a broker use this server's own broker. The local broker's link
 	// starts the direct :8190 RTO\x01 push stream (0.0 ms trade-event fanout next to rtx5-gateway).
@@ -714,6 +715,7 @@ func keepLinkWarm(l *brokerLink, firstBoot bool) {
 			l.recordRTT(rtt)
 		}
 	}
+	l.keepAccountTunnelsWarm()
 	l.mu.RLock()
 	actSess, mgrSess, admSess := l.activeMux, l.managerMux, l.adminMux
 	l.mu.RUnlock()
