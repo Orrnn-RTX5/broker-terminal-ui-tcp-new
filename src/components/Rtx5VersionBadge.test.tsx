@@ -61,4 +61,29 @@ describe('RTX5 version badge placement', () => {
     expect(badge.style.position).toBe('fixed');
     expect(badge.getAttribute('data-rtx5-version-docked')).toBeNull();
   });
+
+  it('stays hidden while the startup loading splash screen is visible and docks once revealed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '1.15.3', commit: '5793f8b1234' }), { status: 200 })));
+    const loader = document.createElement('div');
+    loader.className = 'rtx-terminal-loading';
+    loader.setAttribute('data-terminal-module-loading', 'true');
+    document.body.appendChild(loader);
+    const slot = document.createElement('span');
+    slot.setAttribute('data-rtx5-version-slot', '');
+    try {
+      render(<Rtx5VersionBadge backendUrl="/api/v2/version" />);
+      expect(document.querySelector('[data-rtx5-version-badge]')).toBeNull();
+
+      loader.remove();
+      document.body.appendChild(slot);
+      await waitFor(() => {
+        const badge = slot.querySelector('[data-rtx5-version-badge]') as HTMLElement | null;
+        expect(badge).not.toBeNull();
+        expect(badge?.textContent).toMatch(/Backend v1\.15\.3 \(5793f8b\)/);
+      });
+    } finally {
+      loader.remove();
+      slot.remove();
+    }
+  });
 });

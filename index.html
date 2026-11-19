@@ -390,6 +390,8 @@
     [data-rtx-static-shell] { width: 100%; height: 100%; background: #050608; }
     [data-rtx-static-shell] > .rtx-terminal-loading { display: none; }
     html[data-rtx-initial-view="terminal"] [data-rtx-static-shell] > .rtx-terminal-loading { display: flex; }
+    body:has([data-terminal-startup="pending"], [data-terminal-module-loading="true"], .rtx-bootstrap-loader) [data-rtx5-version-badge]:not([data-rtx5-version-docked="true"]),
+    html[data-rtx-initial-view="terminal"] body:has([data-rtx-static-shell] > .rtx-terminal-loading) [data-rtx5-version-badge]:not([data-rtx5-version-docked="true"]) { display: none !important; }
 
     /* Light Theme instantaneous pre-paint styles */
     html.rtx-skin-untitled-light,

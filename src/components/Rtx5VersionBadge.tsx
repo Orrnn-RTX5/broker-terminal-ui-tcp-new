@@ -32,6 +32,7 @@ const dockedStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 const SLOT_CHECK_MS = 1000;
+const SPLASH_CHECK_MS = 100;
 
 type BackendBuild = { version?: string; commit?: string };
 
@@ -58,8 +59,13 @@ export function Rtx5VersionBadge({ backendUrl, refreshMs = REFRESH_MS }: { backe
     };
   }, [backendUrl, refreshMs]);
 
-  const slot = useVersionSlot();
+  const { slot, startupLoading } = useVersionBadgePlacement();
   const text = formatVersionBadge({ version: UI_VERSION, commit: UI_COMMIT }, backend);
+
+  // Never show the version badge over the initial splash/loading screen.
+  if (startupLoading) {
+    return null;
+  }
 
   // Inside the terminal the status bar offers a slot at its right end: show the badge there,
   // inline, so it never covers status bar text. Without a slot (login screen) it stays in the corner.
@@ -78,22 +84,54 @@ export function Rtx5VersionBadge({ backendUrl, refreshMs = REFRESH_MS }: { backe
   );
 }
 
-/** Element marked data-rtx5-version-slot, re-checked once a second (cheap; no DOM-wide observer). */
-function useVersionSlot(): HTMLElement | null {
-  const [slot, setSlot] = useState<HTMLElement | null>(findVersionSlot);
+/**
+ * Tracks the status-bar version slot and whether the initial splash/loading screen is active.
+ * Polls quickly while startup loading is visible so the badge appears cleanly right after reveal,
+ * then settles to a cheap once-a-second slot check (no DOM-wide MutationObserver during trading).
+ */
+function useVersionBadgePlacement(): { slot: HTMLElement | null; startupLoading: boolean } {
+  const [state, setState] = useState(() => ({
+    slot: findVersionSlot(),
+    startupLoading: isStartupLoadingActive(),
+  }));
+
   useEffect(() => {
     const check = () => {
-      const found = findVersionSlot();
-      setSlot((current) => (current === found ? current : found));
+      const nextSlot = findVersionSlot();
+      const nextLoading = isStartupLoadingActive();
+      setState((current) => (
+        current.slot === nextSlot && current.startupLoading === nextLoading
+          ? current
+          : { slot: nextSlot, startupLoading: nextLoading }
+      ));
     };
     check();
-    const timer = setInterval(check, SLOT_CHECK_MS);
+    const timer = setInterval(check, state.startupLoading ? SPLASH_CHECK_MS : SLOT_CHECK_MS);
     return () => clearInterval(timer);
-  }, []);
-  return slot;
+  }, [state.startupLoading]);
+
+  return state;
 }
 
 function findVersionSlot(): HTMLElement | null {
   if (typeof document === 'undefined') return null;
   return document.querySelector<HTMLElement>('[data-rtx5-version-slot]');
+}
+
+function isStartupLoadingActive(): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.querySelector('[data-terminal-startup="pending"], [data-terminal-module-loading="true"], .rtx-bootstrap-loader')) {
+    return true;
+  }
+  const loaders = document.querySelectorAll<HTMLElement>('.rtx-terminal-loading');
+  for (const loader of loaders) {
+    if (
+      loader.closest('[data-rtx-static-shell]')
+      && document.documentElement.getAttribute('data-rtx-initial-view') !== 'terminal'
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
 }

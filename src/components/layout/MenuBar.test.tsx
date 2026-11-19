@@ -1200,4 +1200,27 @@ describe('MenuBar Electron desktop menubar', () => {
         expect(screen.queryByRole('menu', { name: 'File menu' })).not.toBeInTheDocument();
         window.removeEventListener('rtx:order-feedback', feedbackSpy);
     });
+
+    it('opens the application menu to the right of the left rail when placed in rail mode', () => {
+        vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280);
+        vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
+        render(<MenuBar placement="rail" />);
+        const trigger = screen.getByRole('button', { name: 'Open application menu' });
+        expect(trigger.closest('.rtx-menu-launcher')).toHaveAttribute('data-placement', 'rail');
+        vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 42,
+            left: 0,
+            top: 42,
+            right: 38,
+            bottom: 72,
+            width: 38,
+            height: 30,
+            toJSON: () => ({}),
+        } as DOMRect);
+
+        fireEvent.click(trigger);
+        const menu = screen.getByRole('menu', { name: 'Application menu' });
+        expect(menu).toHaveStyle({ left: '42px', top: '42px' });
+    });
 });

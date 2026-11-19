@@ -249,7 +249,10 @@ describe('BottomDock History live-deal integration', () => {
         // Allow that cold mount to finish before asserting the financial behavior.
         const summary = await screen.findByRole('group', { name: 'History financial summary' }, { timeout: 5000 });
         await waitFor(() => expect(summary).toHaveTextContent('Profit: -735.27 Credit: 0.00 Deposit: 100 000.00 Withdrawal: 0.00 Balance: 99 264.73'));
-        expect(container.querySelector('.rtx-history-table tfoot')?.previousElementSibling?.tagName).toBe('TBODY');
+        const historyScroller = screen.getByLabelText('History records');
+        expect(historyScroller.contains(summary)).toBe(false);
+        expect(summary.closest('.rtx-history-summary-bar')).not.toBeNull();
+        expect(container.querySelector('.rtx-history-summary-bar .rtx-history-table tfoot')).not.toBeNull();
         expect(summary.querySelector('[class*="text-[#"]')).toBeNull();
         expect(screen.getByLabelText('Total gross profit')).toHaveTextContent('-730.28');
 
@@ -288,7 +291,9 @@ describe('BottomDock History live-deal integration', () => {
         await screen.findByText('1 records');
         const summary = screen.getByRole('group', { name: 'History financial summary' });
         await waitFor(() => expect(summary).toHaveTextContent('Profit: — Credit: — Deposit: — Withdrawal: — Balance: —'));
-        expect(within(summary).getByText('Deposit: —')).toHaveAttribute('title', 'Ledger unavailable');
+        const depositMetric = within(summary).getByText('Deposit:').closest('.rtx-history-summary-metric');
+        expect(depositMetric).toHaveTextContent('Deposit: —');
+        expect(depositMetric).toHaveAttribute('title', 'Ledger unavailable');
     });
 
     it('rejects a late ledger response from the previous account', async () => {

@@ -381,8 +381,7 @@ html:not(.rtx-skin-untitled-light) .rtx-trade-footer {
   border-top-color: var(--border-primary) !important;
   box-shadow: none !important;
   color: var(--text-primary);
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 10;
   flex-shrink: 0;
 }
@@ -850,13 +849,15 @@ html .rtx-bottom-dock__tabs {
     height: 12px !important;
   }
 
-  html .rtx-bottom-dock .rtx-trade-footer-metrics {
+  html .rtx-bottom-dock .rtx-trade-footer-metrics,
+  html .rtx-bottom-dock .rtx-history-summary-values {
     gap: 8px !important;
     overflow-x: auto !important;
     scrollbar-width: none !important;
   }
 
-  html .rtx-bottom-dock .rtx-trade-footer-metrics::-webkit-scrollbar {
+  html .rtx-bottom-dock .rtx-trade-footer-metrics::-webkit-scrollbar,
+  html .rtx-bottom-dock .rtx-history-summary-values::-webkit-scrollbar {
     display: none !important;
   }
 }
@@ -884,7 +885,8 @@ html .rtx-bottom-dock__tabs {
     font-size: 10.5px !important;
   }
 
-  html .rtx-bottom-dock .rtx-trade-footer-metrics {
+  html .rtx-bottom-dock .rtx-trade-footer-metrics,
+  html .rtx-bottom-dock .rtx-history-summary-values {
     gap: 6px !important;
   }
 }

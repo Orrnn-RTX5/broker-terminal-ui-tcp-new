@@ -40,7 +40,7 @@ import {
 } from '../services/brokerPresentation';
 import { resolveLoginHeroAsset, type LoginHeroAsset } from './welcomeHeroAssets';
 import { openAccountFeature } from '../startup/terminalFeatures';
-import { BrokerLogoImage, buildBrokerDirectoryLogoUrl } from './BrokerLogoImage';
+import { BrokerLogoImage, buildBrokerDirectoryLogoUrl, isPlaceholderBrokerLogoUrl } from './BrokerLogoImage';
 import { resolveLoginTitleBrandName } from './loginTitleBrand';
 import {
     beginLoginPerformanceMeasurement,
@@ -147,11 +147,12 @@ const readBrokerPresentationCache = (brokerId: string): BrokerPresentationCache 
     try {
         const parsed = JSON.parse(localStorage.getItem(BROKER_PRESENTATION_CACHE_KEY) || 'null') as Partial<BrokerPresentationCache> | null;
         if (!parsed || parsed.version !== 1 || String(parsed.brokerId || '') !== brokerId) return null;
+        const cachedLogoUrl = String(parsed.logoUrl || '').trim();
         return {
             version: 1,
             brokerId,
             brokerName: String(parsed.brokerName || brokerId),
-            logoUrl: String(parsed.logoUrl || ''),
+            logoUrl: isPlaceholderBrokerLogoUrl(cachedLogoUrl) ? '' : cachedLogoUrl,
             region: parsed.region ? String(parsed.region) : undefined,
             healthVerifiedAt: Number.isFinite(Number(parsed.healthVerifiedAt))
                 ? Number(parsed.healthVerifiedAt)
@@ -166,11 +167,13 @@ const writeBrokerPresentationCache = (broker: BrokerServerItem, healthVerifiedAt
     if (typeof window === 'undefined' || !broker.broker_id) return;
     try {
         const existing = readBrokerPresentationCache(String(broker.broker_id));
+        const rawBrokerLogo = String(broker.logo_url || '').trim();
+        const validBrokerLogo = isPlaceholderBrokerLogoUrl(rawBrokerLogo) ? '' : rawBrokerLogo;
         const cached: BrokerPresentationCache = {
             version: 1,
             brokerId: String(broker.broker_id),
             brokerName: String(broker.broker_name || broker.broker_id),
-            logoUrl: String(broker.logo_url || existing?.logoUrl || ''),
+            logoUrl: validBrokerLogo || existing?.logoUrl || '',
             region: broker.region ? String(broker.region) : undefined,
             healthVerifiedAt: healthVerifiedAt ?? existing?.healthVerifiedAt,
         };
@@ -202,6 +205,10 @@ const buildDesktopBrokerPreview = (
     const configuredBroker = configuredRuntimeBroker?.broker_id === savedBrokerId
         ? configuredRuntimeBroker
         : null;
+    const rawStoredLogoUrl = String(localStorage.getItem('logo_url') || '').trim();
+    const validStoredLogoUrl = isPlaceholderBrokerLogoUrl(rawStoredLogoUrl) ? '' : rawStoredLogoUrl;
+    const rawConfiguredLogoUrl = String(configuredBroker?.logo_url || '').trim();
+    const validConfiguredLogoUrl = isPlaceholderBrokerLogoUrl(rawConfiguredLogoUrl) ? '' : rawConfiguredLogoUrl;
     return {
         ...(configuredBroker || {}),
         broker_id: savedBrokerId,
@@ -212,8 +219,8 @@ const buildDesktopBrokerPreview = (
         server: savedBrokerId,
         server_url: configuredBroker?.server_url || '',
         logo_url: cachedPresentation?.logoUrl
-            || String(localStorage.getItem('logo_url') || '').trim()
-            || configuredBroker?.logo_url
+            || validStoredLogoUrl
+            || validConfiguredLogoUrl
             || buildBrokerDirectoryLogoUrl(savedBrokerId),
         region: cachedPresentation?.region || configuredBroker?.region,
         theme_color: normalizeBrokerThemeColor(localStorage.getItem('broker_theme_color'))
@@ -451,9 +458,10 @@ export const buildConfiguredRuntimeBroker = (): BrokerServerItem | undefined => 
     const storedBrokerId = typeof window === 'undefined'
         ? ''
         : String(localStorage.getItem('broker_id') || localStorage.getItem('rtx_broker_id') || '').trim();
-    const storedLogoUrl = typeof window !== 'undefined' && storedBrokerId === brokerId
+    const rawStoredLogoUrl = typeof window !== 'undefined' && storedBrokerId === brokerId
         ? String(localStorage.getItem('logo_url') || '').trim()
         : '';
+    const storedLogoUrl = isPlaceholderBrokerLogoUrl(rawStoredLogoUrl) ? '' : rawStoredLogoUrl;
 
     return {
         broker_id: brokerId,

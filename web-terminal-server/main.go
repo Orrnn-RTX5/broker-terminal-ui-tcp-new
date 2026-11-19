@@ -41,11 +41,14 @@ var tcpToolbarJS []byte
 var securityDrawerJS []byte
 
 type DiscoveredBroker struct {
-	BrokerID   string `json:"broker_id"`
-	BrokerName string `json:"broker_name"`
-	TCPAddr    string `json:"tcp_addr"`
-	Plan       string `json:"plan"`
-	Online     bool   `json:"online"`
+	BrokerID      string `json:"broker_id"`
+	BrokerName    string `json:"broker_name"`
+	TCPAddr       string `json:"tcp_addr"`
+	Plan          string `json:"plan"`
+	Online        bool   `json:"online"`
+	LogoURL       string `json:"logo_url,omitempty"`
+	LogoVersion   string `json:"logo_version,omitempty"`
+	LogoUpdatedAt string `json:"logo_updated_at,omitempty"`
 }
 
 type WebTerminalServer struct {
@@ -86,6 +89,9 @@ type WebTerminalServer struct {
 
 	sessionMu     sync.RWMutex
 	sessionTokens map[string]string
+
+	logoMu    sync.RWMutex
+	logoCache map[string]*cachedBrokerLogo
 
 	drawingHubOnce sync.Once
 	drawingHub     *drawingSyncHub
@@ -579,12 +585,20 @@ func (c *WebTerminalServer) superAdminCandidates() []string {
 		list = append(list, addr)
 	}
 
+	_, _, defTarget := c.linkIdentity(c.defaultLink())
+	defHost := ""
+	if h, _, err := net.SplitHostPort(strings.TrimSpace(defTarget)); err == nil && h != "" && !strings.EqualFold(h, "127.0.0.1") && !strings.EqualFold(h, "localhost") {
+		defHost = net.JoinHostPort(h, "9100")
+	}
+
 	if sa == "" || strings.EqualFold(sa, "185.126.217.108:9100") || strings.EqualFold(sa, "127.0.0.1:9100") || strings.EqualFold(sa, "localhost:9100") {
 		add("127.0.0.1:9100")
+		add(defHost)
 		add(sa)
 		add("185.126.217.108:9100")
 	} else {
 		add(sa)
+		add(defHost)
 		add("127.0.0.1:9100")
 		add("185.126.217.108:9100")
 	}
@@ -907,6 +921,7 @@ func (c *WebTerminalServer) refreshBrokerDirectory(initial bool) {
 	if err != nil || len(list) == 0 {
 		return
 	}
+	go c.warmBrokerDirectoryLogos(list)
 	if !initial {
 		return
 	}
@@ -1340,6 +1355,14 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		normP := strings.TrimPrefix(p, "/ext-api")
+		if brokerID, ok := extractBrokerLogoID(normP); ok {
+			c.serveDynamicBrokerLogo(w, r, link, brokerID)
+			return
+		}
+	}
+
 	if r.Method == http.MethodGet {
 		normP := strings.TrimPrefix(p, "/ext-api")
 		if normP == "/health" || normP == "/readiness" {
@@ -1365,10 +1388,6 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		if normP == "/api/v2/brokers" || normP == "/api/v1/brokers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
 			c.serveBrokerDirectoryPayload(w, r, link, false)
-			return
-		}
-		if (strings.HasPrefix(normP, "/api/v1/brokers/") || strings.HasPrefix(normP, "/api/v2/brokers/")) && strings.HasSuffix(normP, "/logo") {
-			c.serveEmbeddedBrokerLogo(w, r)
 			return
 		}
 		if strings.HasPrefix(normP, "/api/v2/depth/") && c.tryServeCachedDepthSnapshot(w, r) {
@@ -1468,13 +1487,22 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 			regionLabel = fmt.Sprintf("TCP %s", tcpAddr)
 		}
 		logoURL := httpOrigin + "/brand/terminal-icon.png"
-		switch appKind {
-		case "manager":
-			logoURL = httpOrigin + "/rtx5-logo.png"
-		case "admin":
-			logoURL = httpOrigin + "/admin-symbol.png"
+		logoVersion := ""
+		if bid := strings.TrimSpace(b.BrokerID); bid != "" {
+			logoVersion = c.getOrRefreshBrokerLogoVersion(r.Context(), link, bid, b.LogoVersion, b.LogoUpdatedAt)
+			logoURL = httpOrigin + "/api/v1/brokers/" + url.PathEscape(bid) + "/logo"
+			if logoVersion != "" {
+				logoURL += "?v=" + url.QueryEscape(logoVersion)
+			}
+		} else {
+			switch appKind {
+			case "manager":
+				logoURL = httpOrigin + "/rtx5-logo.png"
+			case "admin":
+				logoURL = httpOrigin + "/admin-symbol.png"
+			}
 		}
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"id":                    b.BrokerID,
 			"broker_id":             b.BrokerID,
 			"broker_name":           b.BrokerName,
@@ -1510,9 +1538,14 @@ func (c *WebTerminalServer) serveBrokerDirectoryPayload(w http.ResponseWriter, r
 			"active":                true,
 			"enabled":               true,
 			"created_at":            1700000000,
-		})
+		}
+		if logoVersion != "" {
+			item["logo_version"] = logoVersion
+		}
+		items = append(items, item)
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	if asArray {
 		writeJSON(w, http.StatusOK, items)
 		return
@@ -1820,10 +1853,15 @@ func (c *WebTerminalServer) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *ht
 		_ = f.Close()
 		if rerr == nil && len(data) > 0 {
 			w.Header().Set("Content-Type", "image/png")
-			w.Header().Set("Cache-Control", "public, max-age=300")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			if w.Header().Get("Access-Control-Allow-Origin") == "" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			w.Header().Set("X-RTX5-Broker-Logo-Source", "embedded")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(data)
+			if r.Method != http.MethodHead {
+				_, _ = w.Write(data)
+			}
 			return
 		}
 	}

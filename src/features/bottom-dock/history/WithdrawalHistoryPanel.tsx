@@ -73,7 +73,7 @@ export function WithdrawalHistoryPanel({
       )}
 
       <div
-        className="rtx-trade-scroll flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-700"
+        className="rtx-trade-scroll flex-1 min-h-0 overflow-auto scrollbar-thin scrollbar-thumb-zinc-700"
         aria-label={tr('Withdrawal history records')}
       >
         <table
@@ -194,9 +194,9 @@ export function WithdrawalHistoryPanel({
         </table>
       </div>
 
-      <div className="rtx-withdrawal-summary-bar shrink-0 z-10">
+      <div className="rtx-withdrawal-summary-bar shrink-0 z-10 overflow-hidden">
         <table
-          className="rtx-trade-table rtx-history-table w-full text-center border-collapse"
+          className="rtx-history-table rtx-history-summary-table w-full text-center border-collapse"
           style={{
             fontFamily: '"Segoe UI", Tahoma, Arial, sans-serif',
             fontVariantNumeric: 'tabular-nums',
@@ -213,13 +213,18 @@ export function WithdrawalHistoryPanel({
                     </svg>
                   </span>
                   <span className="rtx-history-summary-metric">
-                    {tr('Withdrawals')}: {withdrawals.length}{' '}
+                    <span className="rtx-history-summary-label">{tr('Withdrawals')}:</span>{' '}
+                    <span className="rtx-history-summary-value">{withdrawals.length}</span>{' '}
                   </span>
                   <span className="rtx-history-summary-metric">
-                    {tr('Withdrawal')}: {error && withdrawals.length === 0 ? '—' : formatMoney(totalWithdrawal)}{' '}
+                    <span className="rtx-history-summary-label">{tr('Withdrawal')}:</span>{' '}
+                    <span className={`rtx-history-summary-value ${!error && totalWithdrawal < 0 ? 'text-loss' : ''}`}>
+                      {error && withdrawals.length === 0 ? '—' : formatMoney(totalWithdrawal)}
+                    </span>{' '}
                   </span>
                   <span className="rtx-history-summary-metric">
-                    {tr('Balance')}: {formatSummaryMoney(accountBalance)}{' '}
+                    <span className="rtx-history-summary-label">{tr('Balance')}:</span>{' '}
+                    <span className="rtx-history-summary-value">{formatSummaryMoney(accountBalance)}</span>{' '}
                   </span>
                 </div>
               </td>

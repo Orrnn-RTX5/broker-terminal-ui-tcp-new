@@ -130,9 +130,10 @@ const resolveCommandTool = (payload: PayloadFor<'SELECT_TOOL'>): TrendLineToolId
 export interface WebDrawingToolsRailProps {
   selectedSymbol: string;
   orientation?: 'vertical' | 'horizontal';
+  onMenuSlotChange?: (slot: HTMLDivElement | null) => void;
 }
 
-export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical' }: WebDrawingToolsRailProps) {
+export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', onMenuSlotChange }: WebDrawingToolsRailProps) {
     const tr = useUiTranslation();
   const [lastToolId, setLastToolId] = useState<TrendLineToolId>(readStoredTool);
   const [activeTool, setActiveTool] = useState<ActiveTool | null>(null);
@@ -600,7 +601,7 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical' }
       // Switching flyouts is one click update, not a close on pointerdown
       // followed by a second mount on click.
       if (target instanceof Element && railRef.current?.contains(target)
-        && target.closest('button[aria-haspopup]')) return;
+        && target.closest('button.web-drawing-tools-rail__button[aria-haspopup]')) return;
       setMenuOpen(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1047,6 +1048,13 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical' }
       role="toolbar"
       aria-orientation={orientation}
     >
+      {orientation === 'vertical' && onMenuSlotChange && (
+        <div
+          ref={onMenuSlotChange}
+          className="web-drawing-tools-rail__menu-slot"
+          data-rtx-rail-menu-slot="true"
+        />
+      )}
       <div className="web-drawing-tools-rail__tools">
         <button
           className="web-drawing-tools-rail__button web-drawing-tools-rail__flyout-button"

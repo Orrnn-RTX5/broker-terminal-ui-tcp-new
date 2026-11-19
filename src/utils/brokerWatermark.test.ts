@@ -115,6 +115,9 @@ describe('broker watermark, logo toggle persistence, blur removal, draggable she
     globalThis.localStorage.setItem('logo_url', '/assets/logo.png');
     expect(resolveActiveBrokerWatermarkCandidates()).toEqual([]);
 
+    globalThis.localStorage.setItem('logo_url', 'http://127.0.0.1:18403/brand/terminal-icon.png');
+    expect(resolveActiveBrokerWatermarkCandidates()).toEqual([]);
+
     applyBrokerChrome({
       brokerId: 'broker-alpha',
       brokerName: 'Alpha Markets',

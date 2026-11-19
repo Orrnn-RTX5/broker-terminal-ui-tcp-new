@@ -27,6 +27,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -75,11 +76,14 @@ type AppConfig struct {
 }
 
 type DiscoveredBroker struct {
-	BrokerID   string `json:"broker_id"`
-	BrokerName string `json:"broker_name"`
-	TCPAddr    string `json:"tcp_addr"`
-	Plan       string `json:"plan"`
-	Online     bool   `json:"online"`
+	BrokerID      string `json:"broker_id"`
+	BrokerName    string `json:"broker_name"`
+	TCPAddr       string `json:"tcp_addr"`
+	Plan          string `json:"plan"`
+	Online        bool   `json:"online"`
+	LogoURL       string `json:"logo_url,omitempty"`
+	LogoVersion   string `json:"logo_version,omitempty"`
+	LogoUpdatedAt string `json:"logo_updated_at,omitempty"`
 }
 
 type DesktopClient struct {
@@ -108,12 +112,16 @@ type DesktopClient struct {
 	cachedBrokersAt          time.Time
 	activeMux                *rtx5tcp.MuxSession
 	orderMux                 *rtx5tcp.MuxSession
+	superAdminMux            *rtx5tcp.MuxSession
 	lastRTTMs                float64
 	avgRTTMs                 float64
 	uiCmd                    *exec.Cmd
 	dialMu                   sync.Mutex
 	orderDialMu              sync.Mutex
+	saDialMu                 sync.Mutex
 	dirRefreshMu             sync.Mutex
+	logoMu                   sync.RWMutex
+	logoCache                map[string]*cachedBrokerLogo
 	orderFastLaneUnsupported atomic.Bool
 	cachedOrderAuthToken     atomic.Value // stores string
 }
@@ -794,6 +802,7 @@ func (c *DesktopClient) refreshBrokerDirectory(initial bool) {
 	if err != nil || len(list) == 0 {
 		return
 	}
+	go c.warmBrokerDirectoryLogos(list)
 	if !initial {
 		return
 	}
@@ -1159,7 +1168,14 @@ func (c *DesktopClient) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Broker Directory Discovery, Direct TCP Health Check & Embedded Brand Logo Endpoints for Terminal / Admin / Manager
+	// 3. Broker Directory Discovery, Direct TCP Health Check & Dynamic Broker Logo Endpoints for Terminal / Admin / Manager
+	if c.cfg.Kind != KindSuperAdmin && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		normP := strings.TrimPrefix(p, "/ext-api")
+		if brokerID, ok := extractBrokerLogoID(normP); ok {
+			c.serveDynamicBrokerLogo(w, r, brokerID)
+			return
+		}
+	}
 	if c.cfg.Kind != KindSuperAdmin && r.Method == http.MethodGet {
 		normP := strings.TrimPrefix(p, "/ext-api")
 		if normP == "/health" {
@@ -1186,16 +1202,12 @@ func (c *DesktopClient) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if normP == "/api/v2/broker/servers" || normP == "/api/v1/broker/servers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
-			c.serveBrokerDirectoryPayload(w, true)
+			c.serveBrokerDirectoryPayload(w, r, true)
 			return
 		}
 		if normP == "/api/v2/brokers" || normP == "/api/v1/brokers" {
 			c.maybeRefreshBrokerDirectoryOnRequest()
-			c.serveBrokerDirectoryPayload(w, false)
-			return
-		}
-		if (strings.HasPrefix(normP, "/api/v1/brokers/") || strings.HasPrefix(normP, "/api/v2/brokers/")) && strings.HasSuffix(normP, "/logo") {
-			c.serveEmbeddedBrokerLogo(w, r)
+			c.serveBrokerDirectoryPayload(w, r, false)
 			return
 		}
 	}
@@ -1283,7 +1295,7 @@ func (c *DesktopClient) serveBrokerRuntimeConfigJS(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(js))
 }
 
-func (c *DesktopClient) serveBrokerDirectoryPayload(w http.ResponseWriter, asArray bool) {
+func (c *DesktopClient) serveBrokerDirectoryPayload(w http.ResponseWriter, r *http.Request, asArray bool) {
 	wsOrigin := strings.Replace(c.localOrigin, "http://", "ws://", 1)
 	list := c.getCachedBrokerDirectory()
 
@@ -1304,31 +1316,40 @@ func (c *DesktopClient) serveBrokerDirectoryPayload(w http.ResponseWriter, asArr
 			regionLabel = fmt.Sprintf("TCP %s", tcpAddr)
 		}
 		logoURL := ""
-		switch c.cfg.Kind {
-		case KindTerminal, KindMobile:
-			logoURL = c.localOrigin + "/brand/terminal-icon.png"
-		case KindManager:
-			logoURL = c.localOrigin + "/rtx5-logo.png"
-		case KindAdmin:
-			logoURL = c.localOrigin + "/admin-symbol.png"
+		logoVersion := ""
+		if bid := strings.TrimSpace(b.BrokerID); bid != "" {
+			logoVersion = c.getOrRefreshBrokerLogoVersion(r.Context(), bid, b.LogoVersion, b.LogoUpdatedAt)
+			logoURL = c.localOrigin + "/api/v1/brokers/" + url.PathEscape(bid) + "/logo"
+			if logoVersion != "" {
+				logoURL += "?v=" + url.QueryEscape(logoVersion)
+			}
+		} else {
+			switch c.cfg.Kind {
+			case KindTerminal, KindMobile:
+				logoURL = c.localOrigin + "/brand/terminal-icon.png"
+			case KindManager:
+				logoURL = c.localOrigin + "/rtx5-logo.png"
+			case KindAdmin:
+				logoURL = c.localOrigin + "/admin-symbol.png"
+			}
 		}
-		items = append(items, map[string]any{
-			"id":                  b.BrokerID,
-			"broker_id":           b.BrokerID,
-			"broker_name":         b.BrokerName,
-			"name":                b.BrokerName,
-			"server":              b.BrokerName,
-			"server_name":         displayServer,
-			"display_server":      displayServer,
-			"server_display":      displayServer,
-			"display_server_name": displayServer,
-			"logo_url":            logoURL,
-			"server_ip":           c.localHost,
-			"server_port":         c.localPort,
-			"protocol":            "http",
-			"server_url":          c.localOrigin,
-			"backend_url":         c.localOrigin,
-			"market_api_url":      c.localOrigin,
+		item := map[string]any{
+			"id":                    b.BrokerID,
+			"broker_id":             b.BrokerID,
+			"broker_name":           b.BrokerName,
+			"name":                  b.BrokerName,
+			"server":                b.BrokerName,
+			"server_name":           displayServer,
+			"display_server":        displayServer,
+			"server_display":        displayServer,
+			"display_server_name":   displayServer,
+			"logo_url":              logoURL,
+			"server_ip":             c.localHost,
+			"server_port":           c.localPort,
+			"protocol":              "http",
+			"server_url":            c.localOrigin,
+			"backend_url":           c.localOrigin,
+			"market_api_url":        c.localOrigin,
 			"API_HOST":              c.localOrigin,
 			"API_HOST_EXT":          c.localOrigin,
 			"ws_url":                wsOrigin + "/ws/v2",
@@ -1348,9 +1369,14 @@ func (c *DesktopClient) serveBrokerDirectoryPayload(w http.ResponseWriter, asArr
 			"active":                true,
 			"enabled":               true,
 			"created_at":            1700000000,
-		})
+		}
+		if logoVersion != "" {
+			item["logo_version"] = logoVersion
+		}
+		items = append(items, item)
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	if asArray {
 		writeJSON(w, http.StatusOK, items)
 		return
@@ -1613,9 +1639,15 @@ func (c *DesktopClient) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *http.R
 		_ = f.Close()
 		if rerr == nil && len(data) > 0 {
 			w.Header().Set("Content-Type", "image/png")
-			w.Header().Set("Cache-Control", "public, max-age=300")
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			if w.Header().Get("Access-Control-Allow-Origin") == "" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			w.Header().Set("X-RTX5-Broker-Logo-Source", "embedded")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(data)
+			if r.Method != http.MethodHead {
+				_, _ = w.Write(data)
+			}
 			return
 		}
 	}

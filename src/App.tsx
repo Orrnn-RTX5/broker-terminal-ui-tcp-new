@@ -5,6 +5,7 @@ import { getChartMarketSourceIdentity } from './utils/chartLoginTransition';
 import { getLogoUrl, getWebTerminalTitle, isSameTerminalLabel, useTerminalBrokerInfo } from './hooks/useTerminalTitle';
 import { brokerDisplayName } from './services/brokerDisplayName';
 import { applyBrokerChrome } from './services/brokerPresentation';
+import { getRuntimeBrokerConfiguration } from './config/backendTarget.js';
 import { ChartSymbolDropdown } from './components/ChartSymbolDropdown';
 import { translateUi } from './hooks/useUiTranslation';
 import { feedbackLabel, feedbackValue, feedbackSymbol, type UiMessage } from './utils/uiFeedback';
@@ -225,6 +226,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   // Public quotes and charts before login, in the browser and in RTX5-Terminal64.exe alike.
   const guestMarketAccess = true;
   const drawingSidebarVisible = useDrawingSidebarStore((state) => state.visible);
+  const [webRailMenuSlot, setWebRailMenuSlot] = useState<HTMLDivElement | null>(null);
 
   // A fresh handoff exists only in memory and only after WelcomeTerminal has
   // validated the response and committed the token. It is never restored from
@@ -1852,34 +1854,52 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const terminalBrokerInfo = useTerminalBrokerInfo(desktopToolbarSymbol);
 
   useEffect(() => {
-    if (!isAuthenticated || !accountId) return;
-
-    const tfLabel: Record<string, string> = {
-      '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
-      '1h': 'H1', '4h': 'H4', '1d': 'D1',
-    };
     const server = brokerDisplayName(terminalBrokerInfo.serverName, terminalBrokerInfo.brokerName);
-    const accountName = window.electron?.window ? terminalBrokerInfo.accountName : '';
-    const accountLabel = accountName ? `${accountId} - ${accountName}` : accountId;
-    const marginMode = terminalBrokerInfo.marginMode;
-    const broker = getWebTerminalTitle();
-    const tf         = tfLabel[timeframe] ?? timeframe.toUpperCase();
-    // FIX: Browser/Electron chrome follows the rendered active dock tab, not a
-    // stale Market Watch or pre-restore selection.
-    // Broker display name (discovery/runtime-config) renders once: the server
-    // segment drops out only when it repeats the displayed broker name, so an
-    // unconfigured broker still shows its server label exactly once.
-    const showServer = server && !isSameTerminalLabel(server, broker);
-    const title      = `${accountLabel} - ${showServer ? `${server} - ` : ''}${marginMode} - ${broker} - ${desktopToolbarSymbol},${tf}`;
+    const resolvedLogoUrl = getLogoUrl(terminalBrokerInfo.logoUrl, terminalBrokerInfo.logoBaseCandidates);
+    const runtimeBrokerId = (() => {
+      try {
+        return String(getRuntimeBrokerConfiguration().brokerId || '').trim();
+      } catch {
+        return '';
+      }
+    })();
+    const activeBrokerId = typeof window === 'undefined'
+      ? runtimeBrokerId
+      : String(window.localStorage.getItem('broker_id') || window.localStorage.getItem('rtx_broker_id') || runtimeBrokerId || '').trim();
+    const activeThemeColor = typeof window === 'undefined'
+      ? ''
+      : String(window.localStorage.getItem('broker_theme_color') || '');
 
-    document.title = title;
-    window.electron?.window?.setTitle(title);
-    applyBrokerChrome({
-      brokerId: typeof window === 'undefined' ? '' : String(window.localStorage.getItem('broker_id') || window.localStorage.getItem('rtx_broker_id') || ''),
-      brokerName: server,
-      logoUrl: getLogoUrl(terminalBrokerInfo.logoUrl, terminalBrokerInfo.logoBaseCandidates),
-      themeColor: typeof window === 'undefined' ? '' : String(window.localStorage.getItem('broker_theme_color') || ''),
-    });
+    if (isAuthenticated && accountId) {
+      const tfLabel: Record<string, string> = {
+        '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
+        '1h': 'H1', '4h': 'H4', '1d': 'D1',
+      };
+      const accountName = window.electron?.window ? terminalBrokerInfo.accountName : '';
+      const accountLabel = accountName ? `${accountId} - ${accountName}` : accountId;
+      const marginMode = terminalBrokerInfo.marginMode;
+      const broker = getWebTerminalTitle();
+      const tf         = tfLabel[timeframe] ?? timeframe.toUpperCase();
+      // FIX: Browser/Electron chrome follows the rendered active dock tab, not a
+      // stale Market Watch or pre-restore selection.
+      // Broker display name (discovery/runtime-config) renders once: the server
+      // segment drops out only when it repeats the displayed broker name, so an
+      // unconfigured broker still shows its server label exactly once.
+      const showServer = server && !isSameTerminalLabel(server, broker);
+      const title      = `${accountLabel} - ${showServer ? `${server} - ` : ''}${marginMode} - ${broker} - ${desktopToolbarSymbol},${tf}`;
+
+      document.title = title;
+      window.electron?.window?.setTitle(title);
+    }
+
+    if (isAuthenticated || activeBrokerId || resolvedLogoUrl) {
+      applyBrokerChrome({
+        brokerId: activeBrokerId,
+        brokerName: server,
+        logoUrl: resolvedLogoUrl,
+        themeColor: activeThemeColor,
+      });
+    }
   }, [isAuthenticated, accountId, desktopToolbarSymbol, timeframe, terminalBrokerInfo.accountName, terminalBrokerInfo.serverName, terminalBrokerInfo.brokerName, terminalBrokerInfo.logoUrl, terminalBrokerInfo.logoBaseCandidates, terminalBrokerInfo.marginMode]);
 
   // TODO: Replace with API call to /api/notifications
@@ -2193,6 +2213,8 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             accountBrokerName={terminalBrokerInfo.brokerName}
             feedStatus={activeMarketSnapshot}
             onRefreshConnection={refreshDesktopConnection}
+            webMenuSlot={drawingSidebarVisible && !window.electron?.window ? webRailMenuSlot : null}
+            expectWebMenuInRail={drawingSidebarVisible && !window.electron?.window}
             desktopDrawingTools={drawingSidebarVisible && Boolean(window.electron?.window) ? (
               <WebDrawingToolsRail selectedSymbol={desktopToolbarSymbol} orientation="horizontal" />
             ) : undefined}
@@ -2213,7 +2235,12 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             <AnnotationEditor />
             <AnnotationTableCellEditor />
             {/* Both runtimes share the full tool set; desktop places it above the workspace. */}
-            {drawingSidebarVisible && !window.electron?.window && <WebDrawingToolsRail selectedSymbol={desktopToolbarSymbol} />}
+            {drawingSidebarVisible && !window.electron?.window && (
+              <WebDrawingToolsRail
+                selectedSymbol={desktopToolbarSymbol}
+                onMenuSlotChange={setWebRailMenuSlot}
+              />
+            )}
             <WebDrawingSelectionToolbar />
             {/* Center Content: Chart + DOM + Account Panel */}
             <div className="flex-1 flex bg-[#0d0d11] relative min-w-0 overflow-hidden">

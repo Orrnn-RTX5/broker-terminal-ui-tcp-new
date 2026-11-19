@@ -48,6 +48,8 @@ interface TopToolbarProps {
     desktopDrawingTools?: React.ReactNode;
     accountBrokerName?: string;
     profileSymbols?: readonly string[];
+    webMenuSlot?: HTMLElement | null;
+    expectWebMenuInRail?: boolean;
 }
 
 import { MenuBar } from './MenuBar';
@@ -127,6 +129,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     desktopDrawingTools,
     accountBrokerName,
     profileSymbols,
+    webMenuSlot,
+    expectWebMenuInRail = false,
 }) => {
     const { state: toolbarState, dispatch: dispatchToolbar, syncState: syncToolbarState } = useToolbarState();
     const { dispatch: dispatchCommand } = useCommandBus();
@@ -264,6 +268,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                 desktopDrawingTools={desktopDrawingTools}
                 accountBrokerName={accountBrokerName}
                 profileSymbols={profileSymbols}
+                webMenuSlot={webMenuSlot}
+                expectWebMenuInRail={expectWebMenuInRail}
             />
 
         </div>
@@ -418,6 +424,8 @@ const MainToolbar = ({
     desktopDrawingTools,
     accountBrokerName,
     profileSymbols,
+    webMenuSlot,
+    expectWebMenuInRail = false,
 }: MainToolbarProps) => {
 
     const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
@@ -780,6 +788,7 @@ const MainToolbar = ({
             accountId={accountId}
             accountBrokerName={accountBrokerName}
             profileSymbols={profileSymbols}
+            placement={!isDesktopShell && Boolean(webMenuSlot) ? 'rail' : 'toolbar'}
             onSetAdvancedViewEnabled={setAdvancedViewEnabled}
             onSetAdvancedFontSize={(fontSize) => updateAdvancedOptions({ fontSize })}
             onSetFocusChart={(focusChart) => updateAdvancedOptions({ focusChart })}
@@ -823,7 +832,24 @@ const MainToolbar = ({
                     <div className="ml-auto shrink-0">{reportBugButton}</div>
                 </div>
             )}
-            {!isDesktopShell && menuBar}
+            {!isDesktopShell && (
+                <div className="rtx-toolbar-brand-slot">
+                    <div className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand">
+                        <img
+                            src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}
+                            alt="RTX5"
+                            className="rtx-toolbar-brand__logo"
+                            decoding="async"
+                            draggable={false}
+                        />
+                    </div>
+                </div>
+            )}
+            {!isDesktopShell && (
+                webMenuSlot
+                    ? ReactDOM.createPortal(menuBar, webMenuSlot)
+                    : (!expectWebMenuInRail ? menuBar : null)
+            )}
             {!isDesktopShell && <MT5Divider />}
             <div
                 className={isDesktopShell
@@ -846,18 +872,6 @@ const MainToolbar = ({
                         aria-label="Chart commands"
                         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                     >
-                        {!isDesktopShell && (
-                            <div className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand">
-                                <img
-                                    src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}
-                                    alt="RTX5"
-                                    className="rtx-toolbar-brand__logo"
-                                    decoding="async"
-                                    draggable={false}
-                                />
-                            </div>
-                        )}
-
                         {/* New Order & Last Symbol */}
                         <MT5Group label="Trading shortcuts" className="rtx-toolbar-group--trading">
 

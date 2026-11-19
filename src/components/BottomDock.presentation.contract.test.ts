@@ -84,21 +84,23 @@ describe('BottomDock trade type presentation', () => {
         expect(footer).not.toContain('rtx-trade-footer-actions');
     });
 
-    it('keeps the account summary under the last trade and sticky at the bottom when rows overflow', () => {
+    it('keeps both Positions and History summary bars fixed at the bottom outside vertical scrolling', () => {
         const tradeTab = tradeTableSource;
         const historySource = readFileSync(
             resolve(process.cwd(), 'src/features/bottom-dock/history/HistoryTab.tsx'),
             'utf8',
         );
 
+        expect(tradeTab).toContain('rtx-trade-table-panel');
         expect(tradeTab).toContain('rtx-trade-scroll');
-        expect(tradeTab).toContain('rtx-trade-footer sticky bottom-0 z-10');
-        expect(historySource).toContain('rtx-history-table__foot sticky bottom-0 z-10');
-        expect(historySource).toContain('rtx-history-summary-row sticky bottom-0 z-10');
+        expect(tradeTab).toContain('rtx-trade-footer z-10 shrink-0 overflow-hidden');
+        expect(tradeTab).not.toContain('rtx-trade-footer sticky bottom-0');
+        expect(historySource).toContain('rtx-history-summary-bar shrink-0 z-10 overflow-hidden');
+        expect(historySource).not.toContain('rtx-history-summary-row sticky bottom-0');
         expect(tradeTab.indexOf('rtx-trade-table')).toBeLessThan(tradeTab.indexOf('rtx-trade-footer'));
         expect(tradeTab.lastIndexOf('rtx-trade-scroll')).toBeLessThan(tradeTab.indexOf('rtx-trade-footer'));
-        expect(tradeTab).not.toContain('syncHorizontalScroll');
-        expect(tradeTab).not.toContain('footerScrollRef');
+        expect(tradeTab).toContain('syncFooterHorizontalScroll');
+        expect(tradeTab).toContain('footerScrollRef');
         expect(tradeTab).toContain('footerProfitColumnWidth');
         expect(tradeTab).toContain('footerCloseColumnWidth');
         expect(tradeTab).toContain('rtx-trade-footer-floating');
@@ -106,7 +108,7 @@ describe('BottomDock trade type presentation', () => {
         expect(tradeTab).toContain('justify-center');
     });
 
-    it('places the account summary directly below the columns when there are no open positions', () => {
+    it('keeps the account summary fixed at the bottom below the scroll container when there are no open positions', () => {
         const tradeTab = tradeTableSource;
         const loadingState = tradeTab.slice(
             tradeTab.indexOf('<tbody'),
@@ -115,7 +117,7 @@ describe('BottomDock trade type presentation', () => {
 
         expect(loadingState).toContain('loading || error');
         expect(loadingState).not.toContain('No open positions');
-        expect(tradeTab.indexOf('rtx-trade-footer')).toBeLessThan(tradeTab.indexOf('rtx-trade-empty-state'));
+        expect(tradeTab.indexOf('rtx-trade-empty-state')).toBeLessThan(tradeTab.indexOf('rtx-trade-footer'));
     });
 
     it('renders the Symbol cell as left-aligned text without the colored direction badge', () => {

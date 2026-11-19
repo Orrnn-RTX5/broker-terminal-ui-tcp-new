@@ -153,13 +153,17 @@ describe('TopToolbar primary command cluster', () => {
     expect(searchCss).toContain('@media (max-width: 1320px)');
   });
 
-  it('places the RTX5 logo in the web navbar and evenly distributes all sections responsively', () => {
+  it('places the RTX5 logo at the top-left slot and packs web navbar controls tightly on the left with Search and Report a Bug on the right', () => {
     const searchCss = readSource('src/components/layout/TopToolbarSearch.css');
+    expect(toolbarSource).toContain('className="rtx-toolbar-brand-slot"');
     expect(toolbarSource).toContain('className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand"');
     expect(toolbarSource).toContain("src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}");
-    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+\.rtx-toolbar-command-cluster\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?justify-content:\s*safe space-evenly;/);
-    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s*\{[\s\S]*?justify-content:\s*safe space-between;[\s\S]*?column-gap:\s*2px;/);
-    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+:is\(\s*\.rtx-chart-toolbar-scroll,\s*\.rtx-toolbar-command-cluster,\s*\.rtx-toolbar-group,\s*\.rtx-timeframe-strip\s*\)\s*\{\s*display:\s*contents;/);
+    expect(toolbarSource.indexOf('className="rtx-toolbar-brand-slot"')).toBeLessThan(
+      toolbarSource.indexOf('rtx-chart-toolbar-scroll'),
+    );
+    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+\.rtx-toolbar-command-cluster\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?justify-content:\s*flex-start;/);
+    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s*\{[\s\S]*?justify-content:\s*flex-start;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-brand-slot\s*\{[\s\S]*?width:\s*var\(--rtx-web-left-rail-width,\s*38px\);/);
     expect(themeCss).toMatch(/\.rtx-toolbar-brand\s*\{[\s\S]*?height:\s*28px;[\s\S]*?width:\s*28px;/);
 
     const laptopQueryIdx = themeCss.indexOf('@media (max-width: 1720px), (max-height: 920px)');

@@ -25,6 +25,7 @@ import type { BrokerServer } from '../../types/api';
 import { CountryCombobox } from './CountryCombobox';
 import './open-account-dialog.css';
 import { TradeAuthDialog } from '../TradeAuthDialog';
+import { buildBrokerDirectoryLogoUrl, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
 import { getCachedAccountSession, rememberAccountSession } from '../../services/accountSessionCache';
 import { loadSavedLogin, saveLogin, supportsSavedLogins } from '../../services/savedLogins';
 
@@ -46,31 +47,38 @@ const initials = (name: string) => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-const getLogoUrl = (url?: string) => {
-    if (!url) return '';
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-        return url;
+const getLogoUrl = (url?: string, brokerId?: string | number) => {
+    const raw = String(url || '').trim();
+    if (!raw || isPlaceholderBrokerLogoUrl(raw)) {
+        const discoveryBase = String(getRuntimeBrokerConfiguration()?.discoveryBaseUrl || BROKER_DISCOVERY_URL || '').trim();
+        return buildBrokerDirectoryLogoUrl(brokerId, discoveryBase);
+    }
+    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')) {
+        return raw;
     }
     const base = (BROKER_DISCOVERY_URL || '').replace(/\/$/, '');
-    const path = url.startsWith('/') ? url : `/${url}`;
+    const path = raw.startsWith('/') ? raw : `/${raw}`;
     return `${base}${path}`;
 };
 
 const BrokerAvatar: React.FC<{ broker: BrokerServer }> = ({ broker }) => {
-    const [hasError, setHasError] = useState(false);
-    
-    if (broker.logo_url && !hasError) {
+    const resolvedSrc = getLogoUrl(broker.logo_url, broker.broker_id);
+    const [failedSrc, setFailedSrc] = useState<string>('');
+    const hasError = Boolean(resolvedSrc && failedSrc === resolvedSrc);
+
+    if (resolvedSrc && !hasError) {
         return (
             <div className="rtx-open-account-dialog__logo">
                 <img
-                    src={getLogoUrl(broker.logo_url)}
+                    key={resolvedSrc}
+                    src={resolvedSrc}
                     alt=""
-                    onError={() => setHasError(true)}
+                    onError={() => setFailedSrc(resolvedSrc)}
                 />
             </div>
         );
     }
-    
+
     return (
         <div className="rtx-open-account-dialog__avatar rtx-open-account-dialog__initials" aria-hidden="true">
             {initials(broker.broker_name)}
@@ -79,17 +87,20 @@ const BrokerAvatar: React.FC<{ broker: BrokerServer }> = ({ broker }) => {
 };
 
 const DropdownBrokerLogo: React.FC<{ broker: BrokerServer; index: number }> = ({ broker, index }) => {
-    const [hasError, setHasError] = useState(false);
+    const resolvedSrc = getLogoUrl(broker.logo_url, broker.broker_id);
+    const [failedSrc, setFailedSrc] = useState<string>('');
+    const hasError = Boolean(resolvedSrc && failedSrc === resolvedSrc);
     const grad = GRADIENTS[index % GRADIENTS.length];
 
-    if (broker.logo_url && !hasError) {
+    if (resolvedSrc && !hasError) {
         return (
             <div className="w-5 h-5 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0 border border-white/10">
                 <img
-                    src={getLogoUrl(broker.logo_url)}
+                    key={resolvedSrc}
+                    src={resolvedSrc}
                     alt={broker.broker_name}
                     className="w-full h-full object-contain p-0.5"
-                    onError={() => setHasError(true)}
+                    onError={() => setFailedSrc(resolvedSrc)}
                 />
             </div>
         );
@@ -279,7 +290,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         };
         applyDirectory(cached || []);
         setLoadingBrokers(cached === null);
-        loadAppBrokerDirectory({ desktop: isDesktopBackendTarget() })
+        loadAppBrokerDirectory({ forceRefresh: true, desktop: isDesktopBackendTarget() })
             .then(rows => { if (active) applyDirectory(rows); })
             .catch(err => {
                 console.warn('[OpenAccountDialog] Could not load brokers:', err);

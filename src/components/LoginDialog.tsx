@@ -36,6 +36,7 @@ import {
     mergeBrokerPresentation,
 } from '../services/brokerPresentation';
 import { LAST_AUTHENTICATED_BROKER_ID_KEY, pickDiscoveryBroker, type BrokerServerItem } from './WelcomeTerminal';
+import { BrokerLogoImage } from './BrokerLogoImage';
 import { User, X, ChevronDown, LockKeyhole, Eye, EyeOff, LoaderCircle, Server, AlertCircle } from 'lucide-react';
 import '../styles/login-dialog.css';
 import { useSavedLogin } from '../hooks/useSavedLogin';
@@ -910,11 +911,13 @@ export function LoginDialog({
                         </div>
                         <div ref={dropdownRef}>
                             <div className="rtx-login-control">
-                                {selectedBroker?.logo_url ? (
-                                    <img
-                                        src={selectedBroker.logo_url}
+                                {selectedBroker ? (
+                                    <BrokerLogoImage
+                                        broker={selectedBroker}
                                         alt=""
                                         className="rtx-login-broker-logo"
+                                        appFallbackUrl=""
+                                        fallback={<Server size={17} className="rtx-login-field-icon" aria-hidden="true" />}
                                     />
                                 ) : <Server size={17} className="rtx-login-field-icon" aria-hidden="true" />}
                                 <input
@@ -954,17 +957,17 @@ export function LoginDialog({
                                                 data-selected={selectedBroker?.broker_id === item.broker_id}
                                             >
                                                 <div className="flex items-center gap-2 truncate">
-                                                    {item.logo_url ? (
-                                                        <img
-                                                            src={item.logo_url}
-                                                            alt=""
-                                                            className="w-[16px] h-[16px] rounded object-contain flex-shrink-0"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-[16px] h-[16px] rounded bg-white/5 flex items-center justify-center text-[10px] text-zinc-500 flex-shrink-0">
-                                                            B
-                                                        </div>
-                                                    )}
+                                                    <BrokerLogoImage
+                                                        broker={item}
+                                                        alt=""
+                                                        className="w-[16px] h-[16px] rounded object-contain flex-shrink-0"
+                                                        appFallbackUrl=""
+                                                        fallback={(
+                                                            <div className="w-[16px] h-[16px] rounded bg-white/5 flex items-center justify-center text-[10px] text-zinc-500 flex-shrink-0">
+                                                                B
+                                                            </div>
+                                                        )}
+                                                    />
                                                     <span className="truncate">{item.broker_name}</span>
                                                 </div>
                                                 {(item.tcp_addr || item.region) && (

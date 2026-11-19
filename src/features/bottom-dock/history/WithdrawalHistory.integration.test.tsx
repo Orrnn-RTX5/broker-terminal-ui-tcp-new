@@ -201,30 +201,24 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
     expect(screen.getByRole('button', { name: 'History' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('pins the History summary bar to the bottom when History rows do not fill the viewport height', async () => {
+  it('keeps the History summary bar fixed outside the scroll container and syncs horizontal scroll', async () => {
     vi.spyOn(tradeGatewayApi, 'getBalanceHistory').mockResolvedValue([]);
     render(<HistoryTab formatMoney={formatMoney} accountBalance={9_500} />);
 
     const scroller = await screen.findByLabelText('History records');
-    const table = scroller.querySelector('table.rtx-history-table') as HTMLTableElement;
-    const fillRow = scroller.querySelector('tr.rtx-history-fill-row') as HTMLTableRowElement;
-    expect(table).not.toBeNull();
-    expect(fillRow).not.toBeNull();
+    const summary = screen.getByRole('group', { name: 'History financial summary' });
+    const summaryBar = summary.closest('.rtx-history-summary-bar') as HTMLDivElement;
 
-    Object.defineProperty(scroller, 'clientHeight', { value: 280, configurable: true });
-    vi.spyOn(table, 'getBoundingClientRect').mockImplementation(() => {
-      const currentFill = fillRow.style.display === 'none' ? 0 : Number.parseFloat(fillRow.style.height || '0');
-      return { height: 100 + currentFill } as DOMRect;
-    });
-    vi.spyOn(fillRow, 'getBoundingClientRect').mockImplementation(() => ({
-      height: fillRow.style.display === 'none' ? 0 : Number.parseFloat(fillRow.style.height || '0'),
-    } as DOMRect));
+    expect(summaryBar).not.toBeNull();
+    expect(scroller.contains(summaryBar)).toBe(false);
+    expect(scroller.nextElementSibling).toBe(summaryBar);
+    expect(scroller.querySelector('tfoot')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 30 Days' }));
+    scroller.scrollTop = 240;
+    scroller.scrollLeft = 96;
+    fireEvent.scroll(scroller);
 
-    await waitFor(() => {
-      expect(fillRow.style.display).toBe('table-row');
-      expect(fillRow.style.height).toBe('180px');
-    });
+    expect(summaryBar.scrollLeft).toBe(96);
+    expect(scroller.contains(summaryBar)).toBe(false);
   });
 });
