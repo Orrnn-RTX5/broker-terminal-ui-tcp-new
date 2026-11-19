@@ -154,9 +154,29 @@ describe('TopToolbar primary command cluster', () => {
   });
 
   it('places the RTX5 logo in the web navbar and evenly distributes all sections responsively', () => {
+    const searchCss = readSource('src/components/layout/TopToolbarSearch.css');
     expect(toolbarSource).toContain('className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand"');
     expect(toolbarSource).toContain("src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}");
     expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+\.rtx-toolbar-command-cluster\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?justify-content:\s*safe space-evenly;/);
+    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s*\{[\s\S]*?justify-content:\s*safe space-between;[\s\S]*?column-gap:\s*2px;/);
+    expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+:is\(\s*\.rtx-chart-toolbar-scroll,\s*\.rtx-toolbar-command-cluster,\s*\.rtx-toolbar-group,\s*\.rtx-timeframe-strip\s*\)\s*\{\s*display:\s*contents;/);
     expect(themeCss).toMatch(/\.rtx-toolbar-brand\s*\{[\s\S]*?height:\s*28px;[\s\S]*?width:\s*28px;/);
+
+    const laptopQueryIdx = themeCss.indexOf('@media (max-width: 1720px), (max-height: 920px)');
+    const fullHdQueryIdx = themeCss.indexOf('@media (min-width: 1721px) and (max-width: 2199px)');
+    const bigDesktopQueryIdx = themeCss.indexOf('@media (min-width: 2200px)');
+    expect(laptopQueryIdx).toBeGreaterThan(-1);
+    expect(fullHdQueryIdx).toBeGreaterThan(laptopQueryIdx);
+    expect(bigDesktopQueryIdx).toBeGreaterThan(fullHdQueryIdx);
+    expect(themeCss).toContain('@media (max-width: 959px)');
+    expect(themeCss).toContain('@media (max-width: 640px)');
+
+    const searchLaptopIdx = searchCss.indexOf('@media (max-width: 1500px), (max-height: 860px)');
+    const searchFullHdIdx = searchCss.indexOf('@media (min-width: 1721px) and (max-width: 2199px)');
+    const searchBigDesktopIdx = searchCss.indexOf('@media (min-width: 2200px)');
+    expect(searchFullHdIdx).toBeGreaterThan(searchLaptopIdx);
+    expect(searchBigDesktopIdx).toBeGreaterThan(searchFullHdIdx);
+    expect(searchCss).toContain('@media (max-width: 959px)');
+    expect(searchCss).toContain('@media (max-width: 640px)');
   });
 });

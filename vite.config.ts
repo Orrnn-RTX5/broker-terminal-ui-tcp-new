@@ -906,6 +906,25 @@ const desktopTcpToolbarDevPlugin = (enabled: boolean): Plugin => {
   }
   return {
     name: 'rtx5-desktop-tcp-toolbar-dev',
+    configureServer(server) {
+      const localToolbarPath = resolve(process.cwd(), 'web-terminal-server', 'tcp_toolbar.js')
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url || '').split('?')[0]
+        if (pathname !== '/rtx5-tcp-toolbar.js' || !existsSync(localToolbarPath)) {
+          next()
+          return
+        }
+        try {
+          const source = readFileSync(localToolbarPath, 'utf8')
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+          res.setHeader('Cache-Control', 'no-store, max-age=0')
+          res.end(source)
+        } catch {
+          next()
+        }
+      })
+    },
     transformIndexHtml() {
       return [
         {

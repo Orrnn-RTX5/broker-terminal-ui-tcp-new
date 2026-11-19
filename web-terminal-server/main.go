@@ -1821,6 +1821,7 @@ func (c *WebTerminalServer) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *ht
 		if rerr == nil && len(data) > 0 {
 			w.Header().Set("Content-Type", "image/png")
 			w.Header().Set("Cache-Control", "public, max-age=300")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(data)
 			return

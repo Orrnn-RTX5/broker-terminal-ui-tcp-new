@@ -2506,52 +2506,9 @@ export function OrderPanelDialog({
         </div>
 
         <div className="rtx-order-dialog__content">
-          {/* Column 1: Left Mode & View Sidebar (cTrader-style emblem + vertical mode tabs) */}
+          {/* Column 1: Left Mode & View Sidebar (vertical mode tabs) */}
           <div className="rtx-order-dialog__sidebar" role="navigation" aria-label={tr("Order execution modes and panels")}>
             <div className="rtx-order-dialog__sidebar-top">
-              <div className="rtx-order-dialog__sidebar-brand" aria-hidden="true">
-                <div
-                  className="rtx-order-dialog__sidebar-emblem"
-                  data-testid="order-dialog-sidebar-emblem"
-                  data-light-skin={isAdvancedUntitledLight ? 'true' : 'false'}
-                  style={isAdvancedUntitledLight ? {
-                    background: 'radial-gradient(circle at 32% 28%, #ffffff 0%, #f8fafc 64%, #eef2f7 100%)',
-                    border: '1px solid #d0d7e2',
-                    boxShadow: '0 6px 16px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04), inset 0 1px 0 #ffffff',
-                  } : {
-                    background: 'radial-gradient(circle at 32% 28%, #2a3346 0%, #1c2230 68%, #141923 100%)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.55), inset 0 1px 1px rgba(255, 255, 255, 0.18), inset 0 -3px 8px rgba(0, 0, 0, 0.65)',
-                  }}
-                >
-                  <svg
-                    viewBox="0 0 512 512"
-                    width="62"
-                    height="62"
-                    className="rtx-order-dialog__sidebar-logo-svg"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <g
-                      className="rtx-order-dialog__sidebar-candle-neutral"
-                      fill={isAdvancedUntitledLight ? '#64748b' : '#e2e8f0'}
-                    >
-                      <rect x="144" y="224" width="17" height="175" rx="2" />
-                      <rect x="118" y="263" width="69" height="104" rx="4" />
-                      <rect x="352" y="170" width="16" height="217" rx="2" />
-                      <rect x="326" y="209" width="69" height="127" rx="4" />
-                    </g>
-                    <g
-                      className="rtx-order-dialog__sidebar-candle-accent"
-                      fill={isAdvancedUntitledLight ? '#2563eb' : '#4788ff'}
-                    >
-                      <rect x="248" y="114" width="16" height="238" rx="2" />
-                      <rect x="222" y="162" width="69" height="139" rx="4" />
-                    </g>
-                  </svg>
-                </div>
-              </div>
-
               <button
                 type="button"
                 data-testid="order-mode-market"

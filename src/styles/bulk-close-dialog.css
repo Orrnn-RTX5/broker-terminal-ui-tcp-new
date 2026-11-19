@@ -19,6 +19,13 @@
 
 /* ─── Dialog Container ─── */
 .rtx-bulk-close-dialog {
+  --rtx-bulk-close-red: #f28b82;
+  --rtx-bulk-close-red-bg: rgba(242, 139, 130, 0.10);
+  --rtx-bulk-close-red-border: rgba(242, 139, 130, 0.24);
+  --rtx-bulk-close-btn-bg: linear-gradient(180deg, #e57373 0%, #d95f5f 100%);
+  --rtx-bulk-close-btn-bg-hover: linear-gradient(180deg, #ec8484 0%, #e06d6d 100%);
+  --rtx-bulk-close-btn-border: rgba(242, 139, 130, 0.45);
+  --rtx-bulk-close-btn-border-hover: rgba(242, 139, 130, 0.6);
   background: var(--bg-secondary);
   color: var(--text-primary);
   border: 1px solid var(--border-secondary);
@@ -143,14 +150,14 @@
 }
 
 .rtx-bulk-close-dialog__stat-value--loss {
-  color: var(--color-loss);
+  color: var(--rtx-bulk-close-red);
 }
 
 .rtx-bulk-close-dialog__stat-divider {
   display: none;
 }
 
-/* ─── Breakdown Chips ─── */
+/* ─── Breakdown Items (text only, no pill background) ─── */
 .rtx-bulk-close-dialog__breakdown {
   display: inline-flex;
   align-items: center;
@@ -164,8 +171,10 @@
   --rtx-type-weight: 600;
   display: inline-flex;
   align-items: center;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
   font-size: 12px;
   font-weight: 600;
   line-height: 18px !important;
@@ -174,24 +183,27 @@
 
 .rtx-bulk-close-dialog__breakdown-item--profit {
   color: var(--color-profit);
-  background: var(--color-profit-dimmer);
-  border: 1px solid var(--color-profit-dim);
+  background: transparent;
+  border: none;
 }
 
 .rtx-bulk-close-dialog__breakdown-item--loss {
-  color: var(--color-loss);
-  background: var(--color-loss-dimmer);
-  border: 1px solid var(--color-loss-dim);
+  color: var(--rtx-bulk-close-red);
+  background: transparent;
+  border: none;
 }
 
 .rtx-bulk-close-dialog__breakdown-item--neutral {
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
+  background: transparent;
+  border: none;
 }
 
 .rtx-bulk-close-dialog__breakdown-sep {
-  display: none;
+  display: inline;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 /* ─── Position Preview Table ─── */
@@ -291,27 +303,25 @@
   text-align: right;
 }
 
-/* Direction badges */
+/* Direction labels (plain white text, no background) */
 .rtx-bulk-close-dialog__direction {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 700;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.03em;
 }
 
-.rtx-bulk-close-dialog__direction--buy {
-  background: var(--color-profit-dimmer);
-  color: var(--color-profit);
-  border: 1px solid var(--color-profit-dim);
-}
-
+.rtx-bulk-close-dialog__direction--buy,
 .rtx-bulk-close-dialog__direction--sell {
-  background: var(--color-loss-dimmer);
-  color: var(--color-loss);
-  border: 1px solid var(--color-loss-dim);
+  background: transparent;
+  color: #ffffff;
+  border: none;
 }
 
 /* P&L cell colors */
@@ -324,7 +334,7 @@
 }
 
 .rtx-bulk-close-dialog__cell-pnl--loss {
-  color: var(--color-loss);
+  color: var(--rtx-bulk-close-red);
 }
 
 .rtx-bulk-close-dialog__cell-pnl--neutral {
@@ -380,27 +390,27 @@
   gap: 8px;
   padding: 8px 22px;
   border-radius: 6px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+  border: 1px solid var(--rtx-bulk-close-btn-border);
+  background: var(--rtx-bulk-close-btn-bg);
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+  box-shadow: 0 2px 6px rgba(229, 115, 115, 0.16);
   letter-spacing: 0.01em;
 }
 
 .rtx-bulk-close-dialog__btn-confirm:hover {
-  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
-  border-color: rgba(239, 68, 68, 0.45);
-  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);
+  background: var(--rtx-bulk-close-btn-bg-hover);
+  border-color: var(--rtx-bulk-close-btn-border-hover);
+  box-shadow: 0 3px 10px rgba(229, 115, 115, 0.22);
   transform: translateY(-1px);
 }
 
 .rtx-bulk-close-dialog__btn-confirm:active {
   transform: translateY(0);
-  box-shadow: 0 1px 4px rgba(220, 38, 38, 0.2);
+  box-shadow: 0 1px 3px rgba(229, 115, 115, 0.14);
 }
 
 .rtx-bulk-close-dialog__btn-icon {
@@ -442,7 +452,7 @@
   }
 
   .rtx-bulk-close-dialog__table .rtx-bulk-close-dialog__cell-pnl--loss {
-    color: var(--color-loss) !important;
+    color: var(--rtx-bulk-close-red) !important;
   }
 
   .rtx-bulk-close-dialog__row:hover td {
@@ -456,7 +466,11 @@ html.rtx-skin-untitled-light .rtx-bulk-close-backdrop {
   -webkit-backdrop-filter: none;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bulk-close-backdrop .rtx-bulk-close-dialog {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bulk-close-backdrop .rtx-bulk-close-dialog,
+html.rtx-skin-untitled-light .rtx-bulk-close-dialog {
+  --rtx-bulk-close-red: #d96666;
+  --rtx-bulk-close-red-bg: rgba(229, 115, 115, 0.10);
+  --rtx-bulk-close-red-border: rgba(229, 115, 115, 0.28);
   background: var(--rtx-light-elevated) !important;
 }
 
@@ -471,11 +485,26 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bulk-close-dialog__stat
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
+html:root.rtx-advanced-view.rtx-skin-untitled-light :is(
+  .rtx-bulk-close-dialog__direction,
+  .rtx-bulk-close-dialog__direction--buy,
+  .rtx-bulk-close-dialog__direction--sell
+),
+html.rtx-skin-untitled-light :is(
+  .rtx-bulk-close-dialog__direction,
+  .rtx-bulk-close-dialog__direction--buy,
+  .rtx-bulk-close-dialog__direction--sell
+) {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-primary) !important;
+}
+
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm,
 html.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm,
 .rtx-bulk-close-dialog__btn-confirm {
-  background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%) !important;
-  border-color: #b91c1c !important;
+  background: var(--rtx-bulk-close-btn-bg, linear-gradient(180deg, #e57373 0%, #d95f5f 100%)) !important;
+  border-color: var(--rtx-bulk-close-btn-border, rgba(242, 139, 130, 0.45)) !important;
   color: #ffffff !important;
 }
 
@@ -486,9 +515,10 @@ html.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm :is(span, svg, 
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm:hover,
-html.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm:hover {
-  background: linear-gradient(180deg, var(--rtx-light-sell-hover, #b91c1c), var(--rtx-light-sell-pressed, #991b1b)) !important;
-  border-color: var(--rtx-light-sell-pressed, #991b1b) !important;
+html.rtx-skin-untitled-light .rtx-bulk-close-dialog__btn-confirm:hover,
+.rtx-bulk-close-dialog__btn-confirm:hover {
+  background: var(--rtx-bulk-close-btn-bg-hover, linear-gradient(180deg, #ec8484 0%, #e06d6d 100%)) !important;
+  border-color: var(--rtx-bulk-close-btn-border-hover, rgba(242, 139, 130, 0.6)) !important;
   color: #ffffff !important;
 }
 

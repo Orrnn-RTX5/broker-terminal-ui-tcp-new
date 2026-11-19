@@ -78,10 +78,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
       />,
     );
 
-    const sidebarEmblem = container.querySelector<HTMLElement>('[data-testid="order-dialog-sidebar-emblem"]');
-    expect(sidebarEmblem?.getAttribute('data-light-skin')).toBe('false');
-    expect(sidebarEmblem?.querySelector('.rtx-order-dialog__sidebar-candle-neutral')?.getAttribute('fill')).toBe('#e2e8f0');
-    expect(sidebarEmblem?.querySelector('.rtx-order-dialog__sidebar-candle-accent')?.getAttribute('fill')).toBe('#4788ff');
+    expect(container.querySelector('[data-testid="order-dialog-sidebar-emblem"]')).toBeNull();
     expect(screen.getByText('Order: XAUUSD - Gold vs US Dollar')).not.toBeNull();
     // Contract units come from the broker catalog contract size (0.01 x 100).
     expect(screen.getByText('1 XAUUSD')).not.toBeNull();
@@ -360,7 +357,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
     expect(trigger.getAttribute('title')).toBe('Area chart');
   });
 
-  it('switches the sidebar candlestick emblem to light surface styling in light theme', () => {
+  it('omits the sidebar candlestick emblem in light theme as well', () => {
     document.documentElement.classList.add('rtx-advanced-view', 'rtx-skin-untitled-light');
     try {
       render(
@@ -373,11 +370,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
         />,
       );
 
-      const emblem = screen.getByTestId('order-dialog-sidebar-emblem');
-      expect(emblem.getAttribute('data-light-skin')).toBe('true');
-      expect(emblem.style.background).toContain('255, 255, 255');
-      expect(emblem.querySelector('.rtx-order-dialog__sidebar-candle-neutral')?.getAttribute('fill')).toBe('#64748b');
-      expect(emblem.querySelector('.rtx-order-dialog__sidebar-candle-accent')?.getAttribute('fill')).toBe('#2563eb');
+      expect(screen.queryByTestId('order-dialog-sidebar-emblem')).toBeNull();
     } finally {
       document.documentElement.classList.remove('rtx-advanced-view', 'rtx-skin-untitled-light');
     }
