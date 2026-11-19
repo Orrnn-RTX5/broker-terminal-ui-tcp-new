@@ -1,9 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getStoredAccountLogin } from '../../../api/tradeGateway';
 import { ContextMenu, type ContextMenuItemConfig } from '../../../components/ui/ContextMenu';
 import { Icon } from '../../../components/ui/Icon';
 import { useUiTranslation } from '../../../hooks/useUiTranslation';
 import { useDialogFocusScope } from '../../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../../hooks/useDraggableSheet';
 import { useChartSettingsStore } from '../../../store/useChartSettingsStore';
 import { useAppStore, type Trade } from '../../../store/useAppStore';
 import { formatPrice, resolveSpecDigits } from '../../../utils/symbolUtils';
@@ -23,6 +24,7 @@ import {
 import { useHistoryDataController } from './useHistoryDataController';
 import { useHistoryVirtualWindow } from './useHistoryVirtualWindow';
 import { calculateHistoryFinancialSummary } from './historyFinancialSummary';
+import { WithdrawalHistoryPanel } from './WithdrawalHistoryPanel';
 import './history-summary.css';
 import './history-status.css';
 import {
@@ -50,24 +52,31 @@ type HistoryTabProps = {
     accountBalance?: number | null;
 };
 
+type HistorySectionTab = 'history' | 'withdrawals';
+
 export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance = null }: HistoryTabProps) {
     const tr = useUiTranslation();
     const accountId = useAppStore((state) => state.accountId);
     const activeChartSymbol = useAppStore((state) => state.selectedSymbol);
     const activeLogin = Number.parseInt(String(accountId ?? getStoredAccountLogin() ?? ''), 10);
     const activeScopeKey = getCurrentBrokerAccountSessionScopeKey();
+    const [historySection, setHistorySection] = useState<HistorySectionTab>('history');
     const {
         historyData,
         historyLoadedAt,
         loading,
+        balanceLoading,
         ordersPending,
         error,
         sessionResetVersion,
         fetchHistory,
+        refreshBalanceHistory,
         financialDealsAvailable,
         balanceHistory,
         balanceHistoryError,
-    } = useHistoryDataController(activeLogin, activeScopeKey);
+    } = useHistoryDataController(activeLogin, activeScopeKey, {
+        liveWithdrawalSync: historySection === 'withdrawals',
+    });
     const [historyView, setHistoryView] = useState<HistoryViewMode>('positions');
     const [periodFilter, setPeriodFilter] = useState<HistoryPeriodFilter>('all');
     const [symbolFilter, setSymbolFilter] = useState<HistorySymbolFilter>({ mode: 'all' });
@@ -79,6 +88,10 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         isOpen: customPeriodDialogOpen,
         dialogRef: customPeriodDialogRef,
         onClose: () => setCustomPeriodDialogOpen(false),
+    });
+    const customPeriodDrag = useDraggableSheet({
+        isOpen: customPeriodDialogOpen,
+        elementRef: customPeriodDialogRef,
     });
     const [customPeriodError, setCustomPeriodError] = useState<string | null>(null);
     const [historyContextMenu, setHistoryContextMenu] = useState<HistoryContextMenuState | null>(null);
@@ -127,6 +140,7 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setHistoryContextMenu(null);
         setSelectedTradeKey(null);
+        setHistorySection('history');
         setHistoryView('positions');
         setSymbolFilter({ mode: 'all' });
         setPeriodFilter('all');
@@ -242,6 +256,30 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         () => historyData.positions.filter(matchesCurrentHistoryFilters),
         [historyData.positions, matchesCurrentHistoryFilters],
     );
+
+    const filteredWithdrawals = useMemo(() => {
+        const { start, end } = periodRange;
+        const rows = (balanceHistory ?? []).filter((operation) => {
+            if (operation.type !== 'withdrawal') return false;
+            if (periodFilter === 'all') return true;
+            return (
+                operation.time !== null
+                && end !== null
+                && (start === null || operation.time >= start)
+                && operation.time <= end
+            );
+        });
+        return [...rows].sort((left, right) => {
+            const timeDiff = (right.time ?? 0) - (left.time ?? 0);
+            if (timeDiff !== 0) return timeDiff;
+            const leftNum = Number(left.id);
+            const rightNum = Number(right.id);
+            if (Number.isFinite(leftNum) && Number.isFinite(rightNum) && leftNum !== rightNum) {
+                return rightNum - leftNum;
+            }
+            return right.id.localeCompare(left.id);
+        });
+    }, [balanceHistory, periodFilter, periodRange]);
 
     const financialSummary = useMemo(() => {
         const { start, end } = periodRange;
@@ -625,10 +663,10 @@ ${rows}
                 disabled: !symbol,
                 action: () => window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } })),
             },
-            { label: 'Positions', checked: historyView === 'positions', action: () => setHistoryView('positions') },
-            { label: 'Deals', checked: historyView === 'deals', action: () => setHistoryView('deals') },
-            { label: 'Orders', checked: historyView === 'orders', action: () => setHistoryView('orders') },
-            { label: 'Orders & Deals', checked: historyView === 'orders-and-deals', action: () => setHistoryView('orders-and-deals') },
+            { label: 'Positions', checked: historySection === 'history' && historyView === 'positions', action: () => { setHistorySection('history'); setHistoryView('positions'); } },
+            { label: 'Deals', checked: historySection === 'history' && historyView === 'deals', action: () => { setHistorySection('history'); setHistoryView('deals'); } },
+            { label: 'Orders', checked: historySection === 'history' && historyView === 'orders', action: () => { setHistorySection('history'); setHistoryView('orders'); } },
+            { label: 'Orders & Deals', checked: historySection === 'history' && historyView === 'orders-and-deals', action: () => { setHistorySection('history'); setHistoryView('orders-and-deals'); } },
             { divider: true },
             { label: 'Symbols', submenu: symbolsSubmenu },
             {
@@ -719,6 +757,55 @@ ${rows}
         [historyView, periodFilter, symbolFilter, customPeriod, activeScopeKey, activeLogin]);
     const { scrollRef: historyScrollRef, window: historyVirtualWindow, onScroll: syncHistoryViewport }
         = useHistoryVirtualWindow(filteredOrders.length, historyViewportReset);
+    const historyFillRowRef = useRef<HTMLTableRowElement>(null);
+
+    useLayoutEffect(() => {
+        if (historySection !== 'history') return undefined;
+        const scroller = historyScrollRef.current;
+        if (!scroller) return undefined;
+
+        const syncBottomSummaryPosition = () => {
+            const fillRow = historyFillRowRef.current;
+            const table = scroller.querySelector<HTMLTableElement>('table.rtx-history-table');
+            if (!fillRow || !table) return;
+
+            const viewportHeight = scroller.clientHeight;
+            if (viewportHeight <= 0) {
+                fillRow.style.display = 'none';
+                fillRow.style.height = '0px';
+                return;
+            }
+
+            const currentFillHeight = fillRow.style.display === 'none'
+                ? 0
+                : fillRow.getBoundingClientRect().height;
+            const contentHeight = table.getBoundingClientRect().height - currentFillHeight;
+            const remainingHeight = Math.max(0, Math.floor(viewportHeight - contentHeight));
+
+            if (remainingHeight > 0) {
+                fillRow.style.display = 'table-row';
+                fillRow.style.height = `${remainingHeight}px`;
+            } else {
+                fillRow.style.display = 'none';
+                fillRow.style.height = '0px';
+            }
+        };
+
+        syncBottomSummaryPosition();
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncBottomSummaryPosition) : null;
+        observer?.observe(scroller);
+        return () => observer?.disconnect();
+    }, [
+        filteredOrders.length,
+        historyLoadedAt,
+        historyScrollRef,
+        historySection,
+        historyView,
+        historyVirtualWindow.bottomSpacerHeight,
+        loading,
+        ordersPending,
+        periodFilter,
+    ]);
     const visibleHistoryOrders = filteredOrders.slice(historyVirtualWindow.startIndex, historyVirtualWindow.endIndex);
     const historyRowsLoading = filteredOrders.length === 0 && (
         loading || (ordersPending && (historyView === 'orders' || historyView === 'orders-and-deals'))
@@ -728,8 +815,41 @@ ${rows}
     const cellDividerClass = '';
     const rowDividerClass = 'divide-y divide-zinc-800/90';
 
+    const activeToolbarLoading = historySection === 'withdrawals' ? balanceLoading : loading;
+    const activeToolbarCount = historySection === 'withdrawals' ? filteredWithdrawals.length : filteredOrders.length;
+    const activeToolbarSummary = historySection === 'withdrawals'
+        ? `${tr('Withdrawal History')} · ${tr(periodFilterLabel)}`
+        : `${tr(historyViewLabel)} · ${tr(symbolFilterLabel)} · ${tr(periodFilterLabel)}`;
+
     return (
-        <div className="rtx-history-tab h-full flex flex-col relative bg-[#131316] overflow-hidden">
+        <div
+            className="rtx-history-tab h-full flex flex-col relative bg-[#131316] overflow-hidden"
+            onContextMenu={(event) => handleHistoryContextMenu(event)}
+        >
+            <div className="rtx-trade-view-bar rtx-history-view-bar flex min-h-[28px] items-center gap-1 border-b border-zinc-800/80 px-2 py-0.5 pr-7">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setHistoryContextMenu(null);
+                        setHistorySection('history');
+                    }}
+                    aria-pressed={historySection === 'history'}
+                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${historySection === 'history' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                    {tr('History')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setHistoryContextMenu(null);
+                        setHistorySection('withdrawals');
+                    }}
+                    aria-pressed={historySection === 'withdrawals'}
+                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${historySection === 'withdrawals' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                    {tr('Withdrawal History')}{filteredWithdrawals.length > 0 ? ` (${filteredWithdrawals.length})` : ''}
+                </button>
+            </div>
             <div className="rtx-history-toolbar flex h-7 min-h-[28px] flex-nowrap items-center justify-between gap-1.5 px-1.5 py-0 border-b border-zinc-700 bg-[#191a1e] shrink-0 text-[11.5px] font-normal text-zinc-300 tabular-nums">
                 <div className="rtx-history-toolbar__periods flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto whitespace-nowrap" role="group" aria-label={tr('History time filters')}>
                     {HISTORY_PERIOD_PRESETS.map(([period, label]) => (
@@ -753,20 +873,38 @@ ${rows}
                     </button>
                 </div>
                 <div className="rtx-history-toolbar__meta flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap">
-                    <span className="rtx-history-toolbar__summary hidden h-[22px] shrink-0 items-center text-[11.5px] leading-[20px] font-normal text-zinc-400 lg:inline-flex">{tr(historyViewLabel)} · {tr(symbolFilterLabel)} · {tr(periodFilterLabel)}</span>
-                    <span className="rtx-history-toolbar__count inline-flex h-[22px] shrink-0 items-center whitespace-nowrap text-[11.5px] leading-[20px] font-normal text-zinc-400">{filteredOrders.length} {tr(" records")}</span>
+                    <span className="rtx-history-toolbar__summary hidden h-[22px] shrink-0 items-center text-[11.5px] leading-[20px] font-normal text-zinc-400 lg:inline-flex">{activeToolbarSummary}</span>
+                    <span className="rtx-history-toolbar__count inline-flex h-[22px] shrink-0 items-center whitespace-nowrap text-[11.5px] leading-[20px] font-normal text-zinc-400">{activeToolbarCount} {tr(" records")}</span>
                     <button
                         type="button"
-                        onClick={() => fetchHistory({ force: true })}
-                        disabled={loading}
+                        onClick={() => (
+                            historySection === 'withdrawals'
+                                ? void refreshBalanceHistory()
+                                : void fetchHistory({ force: true })
+                        )}
+                        disabled={activeToolbarLoading}
                         className="rtx-history-refresh-btn inline-flex h-[22px] shrink-0 items-center gap-1 px-1.5 py-0 text-[11.5px] leading-[20px] font-normal rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:cursor-wait disabled:opacity-50"
                     >
-                        <Icon name="refresh" size="xs" className={loading ? 'animate-spin' : ''} />
-                        {loading ? tr("Loading…") : tr("Refresh")}
+                        <Icon name="refresh" size="xs" className={activeToolbarLoading ? 'animate-spin' : ''} />
+                        {activeToolbarLoading ? tr("Loading…") : tr("Refresh")}
                     </button>
                 </div>
             </div>
 
+            {historySection === 'withdrawals' ? (
+                <WithdrawalHistoryPanel
+                    withdrawals={filteredWithdrawals}
+                    loading={balanceLoading || (balanceHistory === null && !balanceHistoryError)}
+                    error={balanceHistoryError}
+                    accountBalance={accountBalance}
+                    autoArrange={autoArrange}
+                    showGrid={showGrid}
+                    showMilliseconds={showMilliseconds}
+                    formatMoney={formatMoney}
+                    onRetry={() => void refreshBalanceHistory()}
+                />
+            ) : (
+                <>
             {displayError && filteredOrders.length > 0 && (
                 <div
                     role="status"
@@ -916,6 +1054,9 @@ ${rows}
                                 <td colSpan={Math.max(1, visibleColumnCount)} style={{ height: historyVirtualWindow.bottomSpacerHeight, padding: 0, border: 0, lineHeight: 0 }} />
                             </tr>
                         )}
+                        <tr ref={historyFillRowRef} aria-hidden="true" className="rtx-history-fill-row" style={{ display: 'none', height: '0px' }}>
+                            <td colSpan={Math.max(1, visibleColumnCount)} style={{ padding: 0, border: 0, lineHeight: 0 }} />
+                        </tr>
                     </tbody>
                     <tfoot className="rtx-history-table__foot sticky bottom-0 z-10">
                         <tr className="rtx-history-summary-row sticky bottom-0 z-10" aria-rowindex={filteredOrders.length + 2}>
@@ -953,6 +1094,8 @@ ${rows}
                     </tfoot>
                 </table>
             </div>
+                </>
+            )}
 
             {historyContextMenu && (
                 <ContextMenu
@@ -966,7 +1109,7 @@ ${rows}
 
             {customPeriodDialogOpen && (
                 <div
-                    className="rtx-history-period-backdrop fixed inset-0 z-[4100] flex items-center justify-center bg-black/45"
+                    className="rtx-history-period-backdrop fixed inset-0 z-[4100] flex items-center justify-center bg-transparent"
                     onMouseDown={(event) => {
                         if (event.target === event.currentTarget) setCustomPeriodDialogOpen(false);
                     }}
@@ -977,13 +1120,14 @@ ${rows}
                         aria-modal="true"
                         aria-label={tr('Custom history period')}
                         tabIndex={-1}
+                        style={customPeriodDrag.dragStyle}
                         className="rtx-history-period-dialog w-[360px] rounded-sm border border-zinc-600 bg-[#202126] p-4 text-[12px] text-zinc-200 shadow-2xl"
                         onSubmit={(event) => {
                             event.preventDefault();
                             applyCustomPeriod();
                         }}
                     >
-                        <div className="mb-3 text-[13px] font-semibold">{tr('Custom Period')}</div>
+                        <div className="mb-3 text-[13px] font-semibold" {...customPeriodDrag.dragHandleProps}>{tr('Custom Period')}</div>
                         <div className="grid grid-cols-2 gap-3">
                             <label className="flex flex-col gap-1">
                                 <span>{tr('From')}</span>

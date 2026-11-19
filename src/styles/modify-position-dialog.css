@@ -6,8 +6,8 @@
 .rtx-modify-overlay {
   align-items: center;
   background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex;
   inset: 0;
   justify-content: center;

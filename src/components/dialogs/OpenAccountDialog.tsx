@@ -3,6 +3,7 @@ import { getAuthenticatedAccountName } from '../../utils/accountDisplayName';
 import { getBrokerSavedAccountTypes, resolveTradingAccountType, type TradingAccountType } from '../../services/tradingAccountType';
 import React, { useState, useEffect, useRef } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { createPortal } from 'react-dom';
 import { X, Search, ChevronRight, ArrowRight, Building2, Shield, Globe, CheckCircle2, Copy, Loader2, MousePointer2 } from 'lucide-react';
 import { tradeApi } from '../../api/trade';
@@ -240,6 +241,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     const [createError, setCreateError] = useState('');
     const [validationError, setValidationError] = useState('');
     const dialogRef = useRef<HTMLDivElement>(null);
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
     const searchRef = useRef<HTMLInputElement>(null);
     const existingPasswordInputRef = useRef<HTMLInputElement>(null);
     const closeDialog = () => {
@@ -1202,10 +1204,11 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                 aria-labelledby="rtx-open-account-title"
                 aria-describedby="rtx-open-account-description"
                 data-step={step}
+                style={dragStyle}
                 className={`rtx-open-account-dialog ${isDesktopShell ? 'rtx-open-account-dialog--desktop' : ''} relative flex flex-col overflow-hidden`}
             >
                 {/* Header */}
-                <div className="rtx-open-account-dialog__header flex shrink-0 items-center justify-between gap-3">
+                <div className="rtx-open-account-dialog__header flex shrink-0 items-center justify-between gap-3" {...dragHandleProps}>
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                         {step === 0 && (
                             <div className="rtx-open-account-dialog__header-icon flex items-center justify-center" aria-hidden="true">

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { downloadMarketWatchCsv, type MarketWatchExportResult } from '../../utils/marketWatchExport';
 import { Icon } from '../ui/Icon';
 import '../../styles/market-watch-export-sheet.css';
@@ -24,6 +25,7 @@ export function MarketWatchExportSheet({ result, onDismiss }: MarketWatchExportS
   const failed = destination === 'failed';
   const title = failed ? tr('Export needs attention') : copied ? tr('Copied to clipboard') : tr('CSV download started');
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -50,6 +52,7 @@ export function MarketWatchExportSheet({ result, onDismiss }: MarketWatchExportS
     <dialog
       ref={dialogRef}
       className="rtx-export-sheet"
+      style={dragStyle}
       data-testid="market-watch-export-sheet"
       data-shortcut-scope="local"
       data-outcome={failed ? 'error' : 'success'}
@@ -68,7 +71,7 @@ export function MarketWatchExportSheet({ result, onDismiss }: MarketWatchExportS
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onDismiss();
       }}
     >
-      <header className="rtx-export-sheet__header">
+      <header className="rtx-export-sheet__header" {...dragHandleProps}>
         <span className={`rtx-export-sheet__result-icon${failed ? ' is-error' : ''}`} aria-hidden="true">
           <Icon name={failed ? 'alert-triangle' : 'check-circle'} size={24} />
         </span>

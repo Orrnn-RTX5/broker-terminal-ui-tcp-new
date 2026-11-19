@@ -360,15 +360,39 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-chart-context-men
   --ctx-item-active-bg: var(--bg-quaternary);
 }
 
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) :is(
+html:root :is(
+  [class*="-backdrop"],
+  [class*="__backdrop"],
   .rtx-auth-backdrop,
+  .rtx-auth-backdrop__dismiss,
   .rtx-login-backdrop,
   .rtx-modify-overlay,
+  .rtx-bug-report-overlay,
   .rtx-open-account-backdrop,
   .rtx-order-dialog-backdrop,
-  .rtx-options-dialog-backdrop
-) {
-  background-color: rgb(0 0 0 / 60%) !important;
+  .rtx-options-dialog-backdrop,
+  .rtx-confirm-dialog-backdrop,
+  .rtx-bulk-close-backdrop,
+  .rtx-cp-backdrop,
+  .rtx-print-backdrop,
+  .rtx-shortcut-backdrop,
+  .rtx-symbols-dialog-backdrop,
+  .rtx-oad-backdrop,
+  .rtx-action-feedback-backdrop,
+  .rtx-background-image-dialog-backdrop,
+  .rtx-history-period-backdrop,
+  .rtx-indicator-backdrop,
+  .rtx-save-picture-backdrop,
+  .rtx-chart-template-dialog-backdrop,
+  .rtx-theme-dialog-backdrop,
+  .rtx-popup-prices__backdrop
+),
+dialog::backdrop,
+.rtx-export-sheet::backdrop {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Preset-aware dark workspace surfaces when a Dark Theme preset or custom palette is active */

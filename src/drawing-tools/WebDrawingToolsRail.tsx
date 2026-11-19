@@ -13,6 +13,7 @@ import { activateActiveChartSource, getActiveChartSource, getActiveChartSourceId
 import { canZoomChartOut, useChartZoomStore } from '../store/useChartZoomStore';
 import { commandBus } from '../services/commandBus';
 import { drawingManager } from '../services/drawingManager';
+import { drawingSyncService } from '../services/drawingSyncService';
 import {
   defaultChartObjectState,
   getChartObjectState,
@@ -357,19 +358,31 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical' }
   };
 
   const applyHideScope = (scope: HideScope) => {
-    const contextId = getActiveChartSource()?.id;
+    const activeSource = getActiveChartSource();
+    const contextId = activeSource?.id;
     setMenuOpen(null);
     if (!contextId) return;
+    const registeredContext = drawingManager
+      .getRegisteredContextIdentities()
+      .find((candidate) => candidate.contextId === contextId);
+    const syncSymbol = registeredContext?.symbol || activeSource?.symbol || selectedSymbol;
+    const syncTimeframe = registeredContext?.timeframe || activeSource?.timeframe;
     const objectStateStore = useChartObjectStateStore.getState();
     const objectState = getChartObjectState(objectStateStore.byContext, contextId);
     if (scope === 'all') {
       const allHidden = objectState.drawingsHidden
         && objectState.indicatorsHidden
         && objectState.tradesHidden;
-      objectStateStore.setAllHidden(contextId, !allHidden);
+      const nextHidden = !allHidden;
+      objectStateStore.setAllHidden(contextId, nextHidden);
+      drawingSyncService.publishDrawingsVisibility(syncSymbol, syncTimeframe, nextHidden);
       return;
     }
-    if (scope === 'drawings') objectStateStore.setDrawingsHidden(contextId, !objectState.drawingsHidden);
+    if (scope === 'drawings') {
+      const nextHidden = !objectState.drawingsHidden;
+      objectStateStore.setDrawingsHidden(contextId, nextHidden);
+      drawingSyncService.publishDrawingsVisibility(syncSymbol, syncTimeframe, nextHidden);
+    }
     if (scope === 'indicators') objectStateStore.setIndicatorsHidden(contextId, !objectState.indicatorsHidden);
     if (scope === 'trades') objectStateStore.setTradesHidden(contextId, !objectState.tradesHidden);
   };

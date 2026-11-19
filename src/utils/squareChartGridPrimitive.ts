@@ -17,6 +17,7 @@ export interface SquareChartGridOptions {
   isLightBackground?: boolean;
   backgroundLogoOpacity?: number;
   backgroundLogoSrc?: string;
+  backgroundLogoFallbacks?: readonly string[];
   lineStyle?: 'dashed' | 'solid';
   dashPatternCssPx?: readonly [number, number];
   cellSizeCssPx: number;
@@ -27,8 +28,9 @@ export interface SquareChartGridOptions {
 
 export const RTX5_DEFAULT_CHART_WATERMARK_SRC = '/brand/rtx5-chart-watermark.png';
 const DEFAULT_WATERMARK_ASSET_PATH = '/brand/rtx5-chart-watermark.png?v=2';
-const DEFAULT_WATERMARK_OPACITY_PERCENT = 18;
+export const DEFAULT_WATERMARK_OPACITY_PERCENT = 36;
 const watermarkImageCache = new Map<string, HTMLImageElement>();
+const failedWatermarkUrls = new Set<string>();
 const lightWatermarkCanvasCache = new Map<string, HTMLCanvasElement>();
 const watermarkLoadListeners = new Set<() => void>();
 
@@ -49,26 +51,78 @@ const resolveDefaultWatermarkUrl = (): string => {
   return DEFAULT_WATERMARK_ASSET_PATH;
 };
 
-const getLoadedWatermarkImage = (customSrc?: string): HTMLImageElement | null => {
-  if (typeof Image === 'undefined') return null;
-  const src = customSrc?.trim() ? customSrc.trim() : resolveDefaultWatermarkUrl();
-  let img = watermarkImageCache.get(src);
-  if (!img) {
-    img = new Image();
-    img.decoding = 'async';
-    img.onload = () => {
-      for (const listener of watermarkLoadListeners) {
-        try {
-          listener();
-        } catch {
-          // Ignore disposed chart listeners.
-        }
-      }
-    };
-    img.src = src;
-    watermarkImageCache.set(src, img);
+const notifyWatermarkListeners = (): void => {
+  for (const listener of watermarkLoadListeners) {
+    try {
+      listener();
+    } catch {
+      // Ignore disposed chart listeners.
+    }
   }
-  return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0 ? img : null;
+};
+
+const resolveWatermarkCandidates = (
+  customSrc?: string,
+  fallbacks?: readonly string[],
+): string[] => {
+  const candidates: string[] = [];
+  const pushUnique = (value?: string) => {
+    const trimmed = value?.trim();
+    if (!trimmed || candidates.includes(trimmed)) return;
+    candidates.push(trimmed);
+  };
+  pushUnique(customSrc);
+  if (fallbacks) {
+    for (const fallback of fallbacks) {
+      pushUnique(fallback);
+    }
+  }
+  pushUnique(resolveDefaultWatermarkUrl());
+  return candidates;
+};
+
+interface LoadedWatermarkResult {
+  image: HTMLImageElement;
+  src: string;
+}
+
+const getLoadedWatermarkImage = (
+  customSrc?: string,
+  fallbacks?: readonly string[],
+): LoadedWatermarkResult | null | 'loading' => {
+  if (typeof Image === 'undefined') return null;
+  const candidates = resolveWatermarkCandidates(customSrc, fallbacks);
+  for (const src of candidates) {
+    if (failedWatermarkUrls.has(src)) continue;
+    let img = watermarkImageCache.get(src);
+    if (!img) {
+      img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+          notifyWatermarkListeners();
+        } else {
+          failedWatermarkUrls.add(src);
+          notifyWatermarkListeners();
+        }
+      };
+      img.onerror = () => {
+        failedWatermarkUrls.add(src);
+        notifyWatermarkListeners();
+      };
+      img.src = src;
+      watermarkImageCache.set(src, img);
+    }
+    if (img.complete) {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        return { image: img, src };
+      }
+      failedWatermarkUrls.add(src);
+      continue;
+    }
+    return 'loading';
+  }
+  return null;
 };
 
 const getLightTintedWatermarkSource = (
@@ -253,6 +307,7 @@ export const drawChartBackgroundWatermark = (
   isLightBackground = false,
   opacityPercent = DEFAULT_WATERMARK_OPACITY_PERCENT,
   customSrc?: string,
+  fallbackSrcs?: readonly string[],
 ): void => {
   const safeHpr = Number.isFinite(horizontalPixelRatio) && horizontalPixelRatio > 0 ? horizontalPixelRatio : 1;
   const safeVpr = Number.isFinite(verticalPixelRatio) && verticalPixelRatio > 0 ? verticalPixelRatio : 1;
@@ -267,10 +322,14 @@ export const drawChartBackgroundWatermark = (
   const centerXCss = cssWidth * 0.5;
   const centerYCss = cssHeight * 0.5;
 
-  const loadedImage = typeof context.drawImage === 'function'
-    ? getLoadedWatermarkImage(customSrc)
+  const loadedResult = typeof context.drawImage === 'function'
+    ? getLoadedWatermarkImage(customSrc, fallbackSrcs)
     : null;
-  if (loadedImage) {
+  if (loadedResult === 'loading') {
+    return;
+  }
+  if (loadedResult) {
+    const { image: loadedImage, src: loadedSrc } = loadedResult;
     const aspect = loadedImage.naturalWidth / Math.max(1, loadedImage.naturalHeight);
     const drawWidthCss = aspect >= 1 ? targetSizeCssPx : targetSizeCssPx * aspect;
     const drawHeightCss = aspect >= 1 ? targetSizeCssPx / aspect : targetSizeCssPx;
@@ -278,7 +337,7 @@ export const drawChartBackgroundWatermark = (
     const drawY = (centerYCss - drawHeightCss * 0.5) * safeVpr;
     const drawW = drawWidthCss * safeHpr;
     const drawH = drawHeightCss * safeVpr;
-    const isDefaultLogo = isDefaultBrandWatermarkSrc(customSrc);
+    const isDefaultLogo = isDefaultBrandWatermarkSrc(loadedSrc);
     const drawSource = isLightBackground && isDefaultLogo
       ? getLightTintedWatermarkSource(loadedImage, loadedImage.src)
       : loadedImage;
@@ -537,6 +596,7 @@ class SquareChartGridRenderer implements IPrimitivePaneRenderer {
           options.isLightBackground === true,
           options.backgroundLogoOpacity ?? DEFAULT_WATERMARK_OPACITY_PERCENT,
           options.backgroundLogoSrc,
+          options.backgroundLogoFallbacks,
         );
       }
       if (!options.visible) return;
@@ -631,7 +691,7 @@ export class SquareChartGridPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = requestUpdate;
     watermarkLoadListeners.add(this.handleWatermarkImageLoad);
     if (this.options.showBackgroundLogo) {
-      getLoadedWatermarkImage(this.options.backgroundLogoSrc);
+      getLoadedWatermarkImage(this.options.backgroundLogoSrc, this.options.backgroundLogoFallbacks);
     }
   }
 
@@ -653,13 +713,15 @@ export class SquareChartGridPrimitive implements ISeriesPrimitive<Time> {
   }
 
   applyOptions(options: Partial<SquareChartGridOptions>): void {
+    const clearStaleLogoSrc = 'visible' in options && !('backgroundLogoSrc' in options);
     this.options = {
       ...this.options,
       ...options,
+      ...(clearStaleLogoSrc ? { backgroundLogoSrc: undefined, backgroundLogoFallbacks: undefined } : {}),
       cellSizeCssPx: normalizeCellSize(options.cellSizeCssPx ?? this.options.cellSizeCssPx),
     };
     if (this.options.showBackgroundLogo) {
-      getLoadedWatermarkImage(this.options.backgroundLogoSrc);
+      getLoadedWatermarkImage(this.options.backgroundLogoSrc, this.options.backgroundLogoFallbacks);
     }
     this.requestUpdate?.();
   }

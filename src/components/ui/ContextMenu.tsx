@@ -59,8 +59,8 @@ const menuPanelStyle = (skin: MenuSkin): React.CSSProperties => skin === 'theme'
   boxShadow: skin === 'light'
     ? '0 14px 34px -4px rgba(15, 23, 42, 0.15), 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.03)'
     : '0 20px 48px -6px rgba(0, 0, 0, 0.78), 0 8px 20px -3px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-  backdropFilter: skin === 'light' ? 'none' : 'blur(16px)',
-  WebkitBackdropFilter: skin === 'light' ? 'none' : 'blur(16px)',
+  backdropFilter: 'none',
+  WebkitBackdropFilter: 'none',
 });
 
 // ============================================================================

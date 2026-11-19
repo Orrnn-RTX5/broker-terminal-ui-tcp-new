@@ -2,6 +2,7 @@ import { useRef, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './market-watch-save-set.css';
 
 interface MarketWatchSaveSetDialogProps {
@@ -23,11 +24,12 @@ export const MarketWatchSaveSetDialog: FC<MarketWatchSaveSetDialogProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   useDialogFocusScope({ isOpen, dialogRef, onClose: onCancel, initialFocusRef: inputRef });
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
   if (!isOpen) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/45 p-4"
+      className="fixed inset-0 z-[10040] flex items-center justify-center bg-transparent p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
@@ -39,10 +41,11 @@ export const MarketWatchSaveSetDialog: FC<MarketWatchSaveSetDialogProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={tr('Save Market Watch set')}
+        style={dragStyle}
         onSubmit={(event) => { event.preventDefault(); onSave(); }}
         className="rtx-market-watch-save-set w-[360px] max-w-full max-h-[calc(100dvh-32px)] overflow-y-auto border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4 text-[var(--text-primary)] shadow-2xl"
       >
-        <div className="rtx-market-watch-save-set__title mb-3 text-sm font-semibold">{tr('Save Market Watch set')}</div>
+        <div className="rtx-market-watch-save-set__title mb-3 text-sm font-semibold" {...dragHandleProps}>{tr('Save Market Watch set')}</div>
         <label className="mb-1 block text-xs text-[var(--text-secondary)]" htmlFor="market-watch-set-name">
           {tr('Set name')}
         </label>

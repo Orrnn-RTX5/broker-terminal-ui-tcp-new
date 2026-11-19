@@ -141,4 +141,54 @@ describe('ChartContextMenu one-click gate + prefill (SUI-T9/T10)', () => {
       });
     });
   });
+
+  it('shows Buy Limit at top and Buy Limit / Sell Stop in Trading when right-clicking below live price', async () => {
+    const { onOpenNewOrder } = renderMenu({
+      clickPrice: 3868.13,
+      livePrice: 3868.21,
+      priceDigits: 2,
+      defaultVolume: 0.01,
+    });
+
+    const topItem = screen.getByRole('menuitem', { name: 'Buy Limit 0.01' });
+    expect(topItem).toHaveTextContent('3868.13');
+    openTradingSubmenu();
+    expect(screen.getByRole('menuitem', { name: 'Sell Stop 0.01' })).toHaveTextContent('3868.13');
+    expect(screen.getByRole('menuitem', { name: 'New Order' })).toBeInTheDocument();
+
+    fireEvent.click(topItem);
+    await waitFor(() => {
+      expect(onOpenNewOrder).toHaveBeenCalledWith({
+        symbol: 'XAUUSD',
+        orderType: 'Buy Limit',
+        side: 'BUY',
+        price: 3868.13,
+      });
+    });
+  });
+
+  it('shows Sell Limit at top and Sell Limit / Buy Stop in Trading when right-clicking above live price', async () => {
+    const { onOpenNewOrder } = renderMenu({
+      clickPrice: 3868.86,
+      livePrice: 3868.21,
+      priceDigits: 2,
+      defaultVolume: 0.01,
+    });
+
+    const topItem = screen.getByRole('menuitem', { name: 'Sell Limit 0.01' });
+    expect(topItem).toHaveTextContent('3868.86');
+    openTradingSubmenu();
+    const buyStop = screen.getByRole('menuitem', { name: 'Buy Stop 0.01' });
+    expect(buyStop).toHaveTextContent('3868.86');
+
+    fireEvent.click(buyStop);
+    await waitFor(() => {
+      expect(onOpenNewOrder).toHaveBeenCalledWith({
+        symbol: 'XAUUSD',
+        orderType: 'Buy Stop',
+        side: 'BUY',
+        price: 3868.86,
+      });
+    });
+  });
 });

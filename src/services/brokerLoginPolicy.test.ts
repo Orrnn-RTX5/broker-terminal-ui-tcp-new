@@ -153,4 +153,17 @@ describe('broker login policy', () => {
       { broker_id: 'Nexa', server_url: 'https://nexa.orrnn.com' },
     ], { hostname: '127.0.0.1' })).toMatchObject({ status: 'error', brokerId: '' });
   });
+
+  it('allows multiple brokers sharing the local TCP bridge origin without directory-order mismatch', async () => {
+    runtimeWindow.__RTX_RUNTIME_CONFIG__ = {
+      BACKEND_TARGET: 'desktop', BROKER_ID: 'orrnn', API_HOST: 'http://127.0.0.1:18403',
+    };
+    const { resolveBrokerLoginPolicy } = await import('./brokerLoginPolicy');
+    expect(resolveBrokerLoginPolicy([
+      { broker_id: '9010', broker_name: 'Delta', server_url: 'http://127.0.0.1:18403' },
+      { broker_id: 'orrnn', broker_name: 'Orrnn', server_url: 'http://127.0.0.1:18403' },
+    ], { hostname: '127.0.0.1' })).toMatchObject({
+      status: 'ready', brokerId: 'orrnn', displayName: 'Orrnn', locked: true,
+    });
+  });
 });

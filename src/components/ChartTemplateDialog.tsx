@@ -143,7 +143,7 @@ export const ChartTemplateDialog: React.FC<ChartTemplateDialogProps> = ({
 
   return ReactDOM.createPortal(
     <div 
-      className="rtx-chart-template-dialog-backdrop fixed inset-0 z-[10001] flex items-center justify-center p-2 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+      className="rtx-chart-template-dialog-backdrop fixed inset-0 z-[10001] flex items-center justify-center p-2 bg-transparent animate-in fade-in duration-200"
       onContextMenuCapture={(e) => {
         e.stopPropagation();
         e.preventDefault();

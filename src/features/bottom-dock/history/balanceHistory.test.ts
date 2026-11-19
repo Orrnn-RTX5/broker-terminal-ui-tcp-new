@@ -12,12 +12,29 @@ describe('complete account balance history', () => {
     const api = vi.spyOn(tradeGatewayApi, 'getBalanceHistory')
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce([first[499], {
-        id: 500, type: 'withdrawal', amount: 25, time: '2026-10-01T08:00:00Z',
+        id: 500,
+        type: 'withdrawal',
+        amount: 25,
+        time: '2026-10-01T08:00:00Z',
+        status: 'completed',
+        method: 'Bank Wire',
+        comment: 'Payout #500',
+        currency: 'USD',
+        balance_after: 4975,
       }]);
     const result = await loadBalanceHistory(123);
     expect(result).toHaveLength(501);
     expect(result[0]).toMatchObject({ amount: 10, time: 1_790_836_200_000 });
-    expect(result[500]).toMatchObject({ type: 'withdrawal', amount: -25, time: Date.parse('2026-10-01T08:00:00Z') });
+    expect(result[500]).toMatchObject({
+      type: 'withdrawal',
+      amount: -25,
+      time: Date.parse('2026-10-01T08:00:00Z'),
+      status: 'completed',
+      method: 'Bank Wire',
+      comment: 'Payout #500',
+      currency: 'USD',
+      balanceAfter: 4975,
+    });
     expect(api).toHaveBeenNthCalledWith(2, 123, 500, 500);
   });
 

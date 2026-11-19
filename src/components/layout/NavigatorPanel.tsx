@@ -1,4 +1,4 @@
-import { brokerDisplayName } from '../../services/brokerDisplayName';
+import { brokerDisplayName, isBrokerName } from '../../services/brokerDisplayName';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useBrokerAccountSessionScope } from '../../hooks/useBrokerAccountSessionScope';
 import { Icon } from '../ui/Icon';
@@ -119,9 +119,22 @@ const buildBrokerLogoInfo = (
     add(broker?.logo_url || '');
     if (storedMatches) add(stored?.logoUrl || '');
     add(buildBrokerDirectoryLogoUrl(brokerId));
-    return { candidates, brokerName: brokerDisplayName(target.serverName,
+    const sessionBrokerId = getStoredNavigatorValue('broker_id') || getStoredNavigatorValue('rtx_broker_id');
+    const sessionBrokerName = getStoredNavigatorValue('broker_name');
+    const explicitBrokerNames: unknown[] = [
         ...owned.flatMap(source => [source.broker_name, 'name' in source ? source.name : '']),
-        broker?.name, storedMatches ? stored?.brokerName : '', brokerId) };
+        broker?.name,
+        storedMatches ? stored?.brokerName : '',
+        brokerId && sessionBrokerId && brokerId === sessionBrokerId ? sessionBrokerName : '',
+    ];
+    const resolvedBrokerName = explicitBrokerNames
+        .map(value => String(value ?? '').trim())
+        .find(isBrokerName);
+
+    return {
+        candidates,
+        brokerName: resolvedBrokerName || brokerDisplayName(target.serverName, brokerId),
+    };
 };
 
 export const NavigatorPanel: React.FC = () => {
@@ -254,7 +267,7 @@ export const NavigatorPanel: React.FC = () => {
         }>();
         for (const acc of visibleAccounts) {
             const info = logoFor(acc.server, acc);
-            const displayLabel = brokerDisplayName(acc.server, info.brokerName);
+            const displayLabel = info.brokerName || brokerDisplayName(acc.server);
             const groupKey = (displayLabel || acc.server).trim().toLowerCase();
             const existing = groups.get(groupKey);
             if (!existing) {
@@ -666,7 +679,7 @@ export const NavigatorPanel: React.FC = () => {
                         {/* Add Account Placeholder if empty */}
                         {visibleAccounts.length === 0 && (
                             <TreeItem
-                                label={brokerDisplayName(placeholderServer, logoFor(placeholderServer).brokerName)}
+                                label={logoFor(placeholderServer).brokerName || brokerDisplayName(placeholderServer)}
                                 icon={
                                     <BrokerServerIcon
                                         serverName={placeholderServer}
@@ -702,7 +715,7 @@ export const NavigatorPanel: React.FC = () => {
                             return (
                                 <ContextMenu key={`${sessionScope}:${accountKey(acc)}`} items={getAccountContextMenuItems(acc)} variant="theme">
                                     <TreeItem
-                                        label={`${acc.login}${acc.name && acc.name !== String(acc.login) ? `: ${acc.name}` : ''} · ${brokerDisplayName(acc.server, logoFor(acc.server, acc).brokerName)}`}
+                                        label={`${acc.login}${acc.name && acc.name !== String(acc.login) ? `: ${acc.name}` : ''} · ${logoFor(acc.server, acc).brokerName || brokerDisplayName(acc.server)}`}
                                         icon={<AccountIcon isActive={isActive} accountType={resolveDisplayAccountType(acc)} />}
                                         isFavorite
                                         accountActive={isActive}

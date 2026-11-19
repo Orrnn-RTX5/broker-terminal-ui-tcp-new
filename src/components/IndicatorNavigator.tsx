@@ -8,6 +8,7 @@ import { Icon } from './ui/Icon';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { isIndicatorSupported } from '../utils/indicatorSupport';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import './IndicatorNavigator.css';
 
 export interface IndicatorInfo {
@@ -164,6 +165,7 @@ export function IndicatorNavigator({ isOpen, onClose, onAddIndicator, initialCat
   const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory ?? null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const titleId = useId();
 
   useEffect(() => {
@@ -199,6 +201,7 @@ export function IndicatorNavigator({ isOpen, onClose, onAddIndicator, initialCat
       <div
         ref={dialogRef}
         className="rtx-indicator-dialog"
+        style={dragStyle}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -223,7 +226,7 @@ export function IndicatorNavigator({ isOpen, onClose, onAddIndicator, initialCat
         }}
       >
         {/* Header */}
-        <div className="rtx-indicator-header">
+        <div className="rtx-indicator-header" {...dragHandleProps}>
           <h2 id={titleId}>{tr("Indicators")}</h2>
           <button
             type="button"

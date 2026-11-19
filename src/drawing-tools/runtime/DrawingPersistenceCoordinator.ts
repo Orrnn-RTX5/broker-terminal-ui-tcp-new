@@ -22,7 +22,43 @@ export interface DrawingPersistenceCoordinatorOptions {
     identity: DrawingContextIdentity,
     reason: DrawingCollectionChangeReason,
   ) => void;
+  onVisibilityLoaded?: (
+    identity: DrawingContextIdentity,
+    drawingsHidden: boolean,
+  ) => void;
 }
+
+export const toDrawingModel = (drawing: ClientDrawing): Drawing => ({
+  id: drawing.id,
+  type: drawing.type as DrawingType,
+  points: drawing.points,
+  text: drawing.text,
+  annotation: drawing.annotation,
+  color: drawing.color,
+  lineWidth: drawing.lineWidth,
+  fillColor: drawing.fillColor,
+  fillOpacity: drawing.fillOpacity,
+  lineStyle: drawing.lineStyle,
+  selected: false as const,
+  locked: drawing.locked ?? false,
+  subtype: drawing.subtype,
+  channelOffset: drawing.channelOffset,
+  rayLeft: drawing.rayLeft,
+  rayRight: drawing.rayRight,
+  channelMidpointRatio: drawing.channelMidpointRatio,
+  regressionSource: drawing.regressionSource,
+  regressionUpperDeviation: drawing.regressionUpperDeviation,
+  regressionLowerDeviation: drawing.regressionLowerDeviation,
+  showRegressionPearson: drawing.showRegressionPearson,
+  pitchforkLevels: drawing.pitchforkLevels,
+  positionTargetPrice: drawing.positionTargetPrice,
+  positionStopPrice: drawing.positionStopPrice,
+  positionEndTime: drawing.positionEndTime,
+  positionEndLogicalIndex: drawing.positionEndLogicalIndex,
+  positionSizing: drawing.positionSizing,
+  seriesSnapshot: drawing.seriesSnapshot,
+  serverId: drawing.serverId ?? undefined,
+} as Drawing);
 
 /**
  * Owns browser/backend serialization for drawing documents.
@@ -52,12 +88,6 @@ export class DrawingPersistenceCoordinator {
   persistFor(identity: DrawingContextIdentity, drawings: Drawing[]): void {
     try {
       const key = buildDrawingStorageKey(identity);
-      drawings.filter(drawing => drawing.type === 'vline').forEach(drawing => {
-        const point = drawing.points[0];
-        console.log('[VLine][4-PERSIST] id=', drawing.id,
-          '| logicalIndex=', point?.logicalIndex,
-          '| will survive JSON?', point?.logicalIndex !== undefined);
-      });
       localStorage.setItem(key, JSON.stringify(drawings));
     } catch {
       // Drawings remain in memory when browser storage is unavailable.
@@ -71,10 +101,14 @@ export class DrawingPersistenceCoordinator {
     if (!identity?.symbol) return;
     const drawingContextKey = buildDrawingContextKey(identity);
     try {
+      if (typeof drawingApi.setNextDrawingTimeframe === 'function') {
+        drawingApi.setNextDrawingTimeframe(identity.timeframe);
+      }
       const serverId = await drawingApi.saveDrawing(
         drawing as unknown as ClientDrawing,
         identity.symbol,
       );
+      if (!serverId) return;
       const targetDrawings = this.options.documents.peek(drawingContextKey) || [];
       const index = targetDrawings.findIndex(candidate => candidate.id === drawing.id);
       if (index !== -1) {
@@ -93,61 +127,50 @@ export class DrawingPersistenceCoordinator {
     const drawingContextKey = buildDrawingContextKey(identity);
 
     try {
-      const drawings = await drawingApi.loadDrawings(identity.symbol);
-      if (drawings.length === 0) {
-        this.loadLocal(identity);
-        return;
+      const state = typeof drawingApi.loadDrawingState === 'function'
+        ? await drawingApi.loadDrawingState(identity.symbol, identity.timeframe)
+        : {
+          drawings: await drawingApi.loadDrawings(identity.symbol),
+          authoritative: false,
+        };
+
+      if (typeof state.drawingsHidden === 'boolean') {
+        this.options.onVisibilityLoaded?.(identity, state.drawingsHidden);
       }
 
-      const purgeKey = `drawings_purged_${drawingContextKey}`;
-      const shouldPurge = !sessionStorage.getItem(purgeKey);
-      if (shouldPurge) {
-        for (const drawing of drawings) {
-          if (drawing.serverId) {
-            await drawingApi.deleteDrawing(drawing.serverId).catch(() => {});
-          }
+      const drawings = Array.isArray(state.drawings) ? state.drawings : [];
+      if (!state.authoritative) {
+        if (drawings.length === 0) {
+          this.loadLocal(identity);
+          return;
         }
-        sessionStorage.setItem(purgeKey, '1');
-        this.options.documents.replace(drawingContextKey, []);
+        const existing = this.options.documents.peek(drawingContextKey) || [];
+        if (existing.length > 0) return;
+        const loadedDrawings = drawings.map(toDrawingModel);
+        this.options.documents.replace(drawingContextKey, loadedDrawings);
         this.options.renderAll();
+        this.persistFor(identity, loadedDrawings);
         this.options.dispatchChanged(identity, 'loaded');
         return;
       }
 
+      // Authoritative live server state for this authenticated account:
+      // synchronize with the server's drawings while preserving any still-unsaved
+      // local optimistic drawings and currently selected drawing state.
       const existing = this.options.documents.peek(drawingContextKey) || [];
-      if (existing.length > 0) return;
-      const loadedDrawings = drawings.map(drawing => ({
-        id: drawing.id,
-        type: drawing.type as DrawingType,
-        points: drawing.points,
-        text: drawing.text,
-        annotation: drawing.annotation,
-        color: drawing.color,
-        lineWidth: drawing.lineWidth,
-        fillColor: drawing.fillColor,
-        fillOpacity: drawing.fillOpacity,
-        lineStyle: drawing.lineStyle,
-        selected: false as const,
-        locked: drawing.locked ?? false,
-        subtype: drawing.subtype,
-        channelOffset: drawing.channelOffset,
-        channelMidpointRatio: drawing.channelMidpointRatio,
-        regressionSource: drawing.regressionSource,
-        regressionUpperDeviation: drawing.regressionUpperDeviation,
-        regressionLowerDeviation: drawing.regressionLowerDeviation,
-        showRegressionPearson: drawing.showRegressionPearson,
-        pitchforkLevels: drawing.pitchforkLevels,
-        positionTargetPrice: drawing.positionTargetPrice,
-        positionStopPrice: drawing.positionStopPrice,
-        positionEndTime: drawing.positionEndTime,
-        positionEndLogicalIndex: drawing.positionEndLogicalIndex,
-        positionSizing: drawing.positionSizing,
-        seriesSnapshot: drawing.seriesSnapshot,
-        serverId: drawing.serverId ?? undefined,
-      } as Drawing));
-      this.options.documents.replace(drawingContextKey, loadedDrawings);
+      const selectedIds = new Set(existing.filter(d => d.selected).map(d => d.id));
+      const serverModels = drawings.map(raw => {
+        const model = toDrawingModel(raw);
+        if (selectedIds.has(model.id)) model.selected = true;
+        return model;
+      });
+      const serverIds = new Set(serverModels.map(d => d.id));
+      const unsavedOptimistic = existing.filter(d => !d.serverId && !serverIds.has(d.id));
+      const merged = [...serverModels, ...unsavedOptimistic];
+
+      this.options.documents.replace(drawingContextKey, merged);
+      this.persistFor(identity, merged);
       this.options.renderAll();
-      this.persistFor(identity, loadedDrawings);
       this.options.dispatchChanged(identity, 'loaded');
     } catch {
       this.loadLocal(identity);
@@ -185,13 +208,6 @@ export class DrawingPersistenceCoordinator {
       if (!scopedRaw && legacyRaw) {
         localStorage.setItem(key, JSON.stringify(loadedDrawings));
       }
-      loadedDrawings.filter(drawing => drawing.type === 'vline').forEach(drawing => {
-        const point = drawing.points[0];
-        console.log('[VLine][4-RELOAD] id=', drawing.id,
-          '| logicalIndex=', point?.logicalIndex,
-          '| recovered?', point?.logicalIndex !== undefined,
-          '(undefined here means it was never saved or was stripped during JSON.parse)');
-      });
       this.options.renderAll();
       this.options.dispatchChanged(identity, 'loaded');
     } catch {
@@ -202,9 +218,31 @@ export class DrawingPersistenceCoordinator {
   async delete(
     serverId?: string,
     identity: DrawingContextIdentity | null = this.options.getCurrentIdentity(),
+    clientDrawingId?: string,
   ): Promise<void> {
-    if (serverId) await drawingApi.deleteDrawing(serverId).catch(() => {});
+    const targetId = serverId || clientDrawingId;
+    if (targetId && typeof drawingApi.deleteDrawing === 'function') {
+      await Promise.resolve(drawingApi.deleteDrawing(targetId)).catch(() => {});
+    }
     if (identity) this.persistFor(identity, this.options.getDrawings(identity));
+  }
+
+  async clear(
+    identity: DrawingContextIdentity | null = this.options.getCurrentIdentity(),
+    fallbackDeleteTargets: Array<{ id: string; serverId?: string }> = [],
+  ): Promise<void> {
+    if (!identity?.symbol) return;
+    if (typeof drawingApi.clearDrawings === 'function') {
+      await Promise.resolve(drawingApi.clearDrawings(identity.symbol, identity.timeframe)).catch(() => {});
+    } else {
+      for (const target of fallbackDeleteTargets) {
+        const id = target.serverId || target.id;
+        if (id && typeof drawingApi.deleteDrawing === 'function') {
+          await Promise.resolve(drawingApi.deleteDrawing(id)).catch(() => {});
+        }
+      }
+    }
+    this.persistFor(identity, this.options.getDrawings(identity));
   }
 
   saveSymbol(symbol: string): void {

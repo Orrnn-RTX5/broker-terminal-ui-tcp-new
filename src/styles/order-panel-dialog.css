@@ -1,7 +1,8 @@
 .rtx-order-dialog-backdrop {
   align-items: center;
   background: color-mix(in srgb, var(--bg-primary) 74%, transparent);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex;
   inset: 0;
   justify-content: center;

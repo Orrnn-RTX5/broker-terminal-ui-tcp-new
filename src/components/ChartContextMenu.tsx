@@ -9,16 +9,17 @@ import ReactDOM from 'react-dom';
 import type { ChartType, Timeframe } from '../types/chart';
 import type { IndicatorConfig } from '../services/indicatorManager';
 import { commandBus } from '../services/commandBus';
-import { useSettingsStore } from '../store/useSettingsStore';
+import { resolveDefaultTradeVolume, useSettingsStore } from '../store/useSettingsStore';
 import { useTemplates, useTemplateStore } from '../store/useTemplateStore';
 import type { ChartTemplate } from '../store/useTemplateStore';
 import type { ChartGridLineStyle, ChartGridType } from '../store/useChartSettingsStore';
+import { stripFloatPrecisionNoise } from '../utils/symbolUtils';
 import {
     CandlestickChart, BarChart2, LineChart, AreaChart, ZoomIn, ZoomOut,
     Grid3X3, RefreshCw, Camera, Settings, ChevronRight,
     Activity, AlignJustify, Volume2, Layers,
     Trash2, FileText, TrendingUp,
-    ArrowUpDown, Type, Shapes, MoveHorizontal, MoveVertical,
+    ArrowUp, ArrowDown, ArrowUpDown, PlusSquare, Type, Shapes, MoveHorizontal, MoveVertical,
     Eye, EyeOff, Image as ImageIcon,
 } from 'lucide-react';
 
@@ -51,12 +52,43 @@ const resolveChartClickPrice = (clickPrice: number | null | undefined): number |
     typeof clickPrice === 'number' && Number.isFinite(clickPrice) && clickPrice > 0 ? clickPrice : undefined
 );
 
+const resolveChartMenuPendingVolume = (explicitVolume?: number | null): string => {
+    let rawVolume = typeof explicitVolume === 'number' && Number.isFinite(explicitVolume) && explicitVolume > 0
+        ? explicitVolume
+        : undefined;
+    if (rawVolume === undefined) {
+        try {
+            const trade = useSettingsStore.getState()?.trade;
+            const lastUsed = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+                ? window.localStorage.getItem('lastLotSize')
+                : undefined;
+            rawVolume = resolveDefaultTradeVolume(trade, { lastUsedVolume: lastUsed });
+        } catch {
+            rawVolume = 0.01;
+        }
+    }
+    const clean = stripFloatPrecisionNoise(rawVolume);
+    return Number.isInteger(clean) ? clean.toFixed(2) : String(clean);
+};
+
+const formatContextualPendingPrice = (price: number, priceDigits?: number | null): { value: number; text: string } => {
+    const precision = typeof priceDigits === 'number' && Number.isInteger(priceDigits) && priceDigits >= 0
+        ? priceDigits
+        : null;
+    const rounded = precision !== null ? Number(price.toFixed(precision)) : stripFloatPrecisionNoise(price);
+    const text = precision !== null ? rounded.toFixed(precision) : String(rounded);
+    return { value: rounded, text };
+};
+
 interface ChartContextMenuProps {
     visible: boolean;
     x: number;
     y: number;
     symbol: string;
     clickPrice?: number | null;
+    livePrice?: number | null;
+    priceDigits?: number | null;
+    defaultVolume?: number | null;
     targetContextId: string;
     currentChartType: ChartType;
     currentTimeframe: Timeframe;
@@ -432,7 +464,7 @@ const Submenu = ({ children, label, icon, disabled }: {
                         padding: '4px 0',
                         minWidth: 200,
                         background: C_BG,
-                        backdropFilter: 'blur(16px) saturate(180%)',
+                        backdropFilter: 'none',
                         border: `1px solid ${C_BORDER}`,
                         borderRadius: 8,
                         boxShadow: 'var(--ctx-shadow, 0 12px 40px rgba(0,0,0,0.6))',
@@ -455,6 +487,9 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
     y,
     symbol,
     clickPrice,
+    livePrice,
+    priceDigits,
+    defaultVolume,
     targetContextId,
     currentChartType,
     currentTimeframe,
@@ -636,7 +671,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                 maxHeight: activeLayout.maxHeight,
                 padding: '4px 0',
                 background: C_BG,
-                backdropFilter: 'blur(16px) saturate(180%)',
+                backdropFilter: 'none',
                 border: `1px solid ${C_BORDER}`,
                 borderRadius: 6,
                 boxShadow: 'var(--ctx-shadow, 0 12px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.08))',
@@ -667,40 +702,131 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                 {symbol}
             </div>
 
-            {/* ── Pending Order (highlighted) ── */}
-            <MenuItem
-                icon={<FileText size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-red, #ff4d4f)' }} />}
-                label={tr("Pending Order")}
-                shortcut="F9"
-                highlight={false}
-                onClick={() => closeThen(() => { onOpenNewOrder(); })}
-            />
+            {/* ── Pending Order (contextual above/below live price line when available) ── */}
+            {(() => {
+                const rawClickPrice = resolveChartClickPrice(clickPrice);
+                const rawLivePrice = typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0
+                    ? livePrice
+                    : undefined;
+                const formattedPrice = rawClickPrice !== undefined
+                    ? formatContextualPendingPrice(rawClickPrice, priceDigits)
+                    : undefined;
+                const hasContextualRelation = formattedPrice !== undefined && rawLivePrice !== undefined;
+                const isAboveLivePrice = hasContextualRelation && formattedPrice.value >= rawLivePrice;
+                const pendingVolumeLabel = resolveChartMenuPendingVolume(defaultVolume);
 
-            {/* ── Trading submenu ── */}
-            <Submenu
-                label={tr("Trading")}
-                icon={<TrendingUp size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />}
-            >
-                <MenuItem label={tr("Buy Market")} onClick={() => closeThen(() => {
-                    if (isOneClickTradingEnabledFailClosed()) {
-                        window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'BUY', symbol } }));
-                        return;
-                    }
-                    openChartMarketDialog('BUY', symbol);
-                })} />
-                <MenuItem label={tr("Sell Market")} onClick={() => closeThen(() => {
-                    if (isOneClickTradingEnabledFailClosed()) {
-                        window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'SELL', symbol } }));
-                        return;
-                    }
-                    openChartMarketDialog('SELL', symbol);
-                })} />
-                <MenuSeparator />
-                <MenuItem label={tr("Buy Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Limit', side: 'BUY', price: resolveChartClickPrice(clickPrice) }); })} />
-                <MenuItem label={tr("Sell Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Limit', side: 'SELL', price: resolveChartClickPrice(clickPrice) }); })} />
-                <MenuItem label={tr("Buy Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Stop', side: 'BUY', price: resolveChartClickPrice(clickPrice) }); })} />
-                <MenuItem label={tr("Sell Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Stop', side: 'SELL', price: resolveChartClickPrice(clickPrice) }); })} />
-            </Submenu>
+                const primaryOrder: ChartPendingOrderDraft | null = hasContextualRelation
+                    ? (isAboveLivePrice
+                        ? { symbol, orderType: 'Sell Limit', side: 'SELL', price: formattedPrice.value }
+                        : { symbol, orderType: 'Buy Limit', side: 'BUY', price: formattedPrice.value })
+                    : null;
+                const secondaryOrder: ChartPendingOrderDraft | null = hasContextualRelation
+                    ? (isAboveLivePrice
+                        ? { symbol, orderType: 'Buy Stop', side: 'BUY', price: formattedPrice.value }
+                        : { symbol, orderType: 'Sell Stop', side: 'SELL', price: formattedPrice.value })
+                    : null;
+
+                const renderOrderArrowIcon = (side: 'BUY' | 'SELL') => (
+                    side === 'BUY'
+                        ? <ArrowUp size={13} strokeWidth={2} style={{ color: '#22c55e' }} />
+                        : <ArrowDown size={13} strokeWidth={2} style={{ color: 'var(--ctx-red, #ff4d4f)' }} />
+                );
+
+                return (
+                    <>
+                        {primaryOrder && formattedPrice ? (
+                            <MenuItem
+                                icon={renderOrderArrowIcon(primaryOrder.side)}
+                                label={`${tr(primaryOrder.orderType)} ${pendingVolumeLabel}`}
+                                shortcut={formattedPrice.text}
+                                onClick={() => closeThen(() => { onOpenNewOrder(primaryOrder); })}
+                            />
+                        ) : (
+                            <MenuItem
+                                icon={<FileText size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-red, #ff4d4f)' }} />}
+                                label={tr("Pending Order")}
+                                shortcut="F9"
+                                highlight={false}
+                                onClick={() => closeThen(() => { onOpenNewOrder(); })}
+                            />
+                        )}
+
+                        {/* ── Trading submenu ── */}
+                        <Submenu
+                            label={tr("Trading")}
+                            icon={<TrendingUp size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />}
+                        >
+                            {primaryOrder && secondaryOrder && formattedPrice ? (
+                                <>
+                                    <MenuItem
+                                        icon={renderOrderArrowIcon(primaryOrder.side)}
+                                        label={`${tr(primaryOrder.orderType)} ${pendingVolumeLabel}`}
+                                        shortcut={formattedPrice.text}
+                                        onClick={() => closeThen(() => { onOpenNewOrder(primaryOrder); })}
+                                    />
+                                    <MenuItem
+                                        icon={renderOrderArrowIcon(secondaryOrder.side)}
+                                        label={`${tr(secondaryOrder.orderType)} ${pendingVolumeLabel}`}
+                                        shortcut={formattedPrice.text}
+                                        onClick={() => closeThen(() => { onOpenNewOrder(secondaryOrder); })}
+                                    />
+                                    <MenuSeparator />
+                                    <MenuItem
+                                        icon={<PlusSquare size={13} strokeWidth={1.6} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />}
+                                        label={tr("New Order")}
+                                        shortcut="F9"
+                                        onClick={() => closeThen(() => { onOpenNewOrder(); })}
+                                    />
+                                    <MenuSeparator />
+                                    <MenuItem label={tr("Buy Market")} onClick={() => closeThen(() => {
+                                        if (isOneClickTradingEnabledFailClosed()) {
+                                            window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'BUY', symbol } }));
+                                            return;
+                                        }
+                                        openChartMarketDialog('BUY', symbol);
+                                    })} />
+                                    <MenuItem label={tr("Sell Market")} onClick={() => closeThen(() => {
+                                        if (isOneClickTradingEnabledFailClosed()) {
+                                            window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'SELL', symbol } }));
+                                            return;
+                                        }
+                                        openChartMarketDialog('SELL', symbol);
+                                    })} />
+                                </>
+                            ) : (
+                                <>
+                                    <MenuItem label={tr("Buy Market")} onClick={() => closeThen(() => {
+                                        if (isOneClickTradingEnabledFailClosed()) {
+                                            window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'BUY', symbol } }));
+                                            return;
+                                        }
+                                        openChartMarketDialog('BUY', symbol);
+                                    })} />
+                                    <MenuItem label={tr("Sell Market")} onClick={() => closeThen(() => {
+                                        if (isOneClickTradingEnabledFailClosed()) {
+                                            window.dispatchEvent(new CustomEvent('quickTrade', { detail: { side: 'SELL', symbol } }));
+                                            return;
+                                        }
+                                        openChartMarketDialog('SELL', symbol);
+                                    })} />
+                                    <MenuSeparator />
+                                    <MenuItem label={tr("Buy Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Limit', side: 'BUY', price: formattedPrice?.value }); })} />
+                                    <MenuItem label={tr("Sell Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Limit', side: 'SELL', price: formattedPrice?.value }); })} />
+                                    <MenuItem label={tr("Buy Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Stop', side: 'BUY', price: formattedPrice?.value }); })} />
+                                    <MenuItem label={tr("Sell Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Stop', side: 'SELL', price: formattedPrice?.value }); })} />
+                                    <MenuSeparator />
+                                    <MenuItem
+                                        icon={<PlusSquare size={13} strokeWidth={1.6} style={{ color: 'var(--ctx-blue, #74b9ff)' }} />}
+                                        label={tr("New Order")}
+                                        shortcut="F9"
+                                        onClick={() => closeThen(() => { onOpenNewOrder(); })}
+                                    />
+                                </>
+                            )}
+                        </Submenu>
+                    </>
+                );
+            })()}
 
             <MenuSeparator />
 

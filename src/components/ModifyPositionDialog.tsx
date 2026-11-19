@@ -1,4 +1,5 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 /**
  * MT5-style Modify Position Dialog
  * Opens from position Modify actions and S/L or T/P controls
@@ -392,6 +393,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
     const [showMiniChartGrid, setShowMiniChartGrid] = useState(true);
     const [showMiniChartPriceLines, setShowMiniChartPriceLines] = useState(true);
     const dialogRef = useRef<HTMLDivElement>(null);
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
     const onCloseRef = useRef(onClose);
     const initialLevelsRef = useRef({ sl: Number.parseFloat(sl) || 0, tp: Number.parseFloat(tp) || 0 });
     const isDialogVisible = isOpen && position !== null;
@@ -1462,10 +1464,11 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 aria-modal="true"
                 aria-labelledby={dialogTitleId}
                 tabIndex={-1}
+                style={dragStyle}
                 className={`rtx-modify-dialog ${dialogWidthClass}`}
             >
                 {/* Title Bar */}
-                <div className="rtx-modify-header">
+                <div className="rtx-modify-header" {...dragHandleProps}>
                     <div className="rtx-modify-title-group">
                         <span id={dialogTitleId} className="rtx-modify-title text-[14px] font-normal">
                             {tr("Position: #")}{position.id}

@@ -5,6 +5,7 @@ import { useKeyboardShortcutContext } from '../contexts/KeyboardShortcutContext'
 import { useUiTranslation } from '../hooks/useUiTranslation';
 import { keyboardShortcutManager, SHORTCUT_CATEGORIES } from '../services/keyboardShortcutManager';
 import { getShortcutHelpEntries, type ShortcutHelpEntry } from '../services/shortcutCatalog';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import './ShortcutHelpDialog.css';
 
 interface ShortcutHelpDialogProps {
@@ -31,6 +32,7 @@ export function ShortcutHelpDialog({ isOpen, onClose }: ShortcutHelpDialogProps)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const categoryRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const entries = useMemo(() => getShortcutHelpEntries(shortcuts), [shortcuts]);
@@ -111,8 +113,8 @@ export function ShortcutHelpDialog({ isOpen, onClose }: ShortcutHelpDialogProps)
       if (event.target === event.currentTarget) onClose();
     }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
-        data-shortcut-scope="local" className="rtx-shortcut-dialog" onKeyDown={handleKeyDown}>
-        <header className="rtx-shortcut-dialog__header">
+        data-shortcut-scope="local" className="rtx-shortcut-dialog" style={dragStyle} onKeyDown={handleKeyDown}>
+        <header className="rtx-shortcut-dialog__header" {...dragHandleProps}>
           <div><Keyboard size={18} aria-hidden="true" /><h2 id={titleId}>{tr('Keyboard Shortcuts')}</h2></div>
           <button type="button" className="rtx-shortcut-dialog__icon-button" onClick={onClose} aria-label={tr('Close')}>
             <X size={17} aria-hidden="true" />

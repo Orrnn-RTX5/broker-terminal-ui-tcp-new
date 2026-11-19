@@ -147,6 +147,7 @@ import {
   WebDrawingSelectionToolbar,
   WebDrawingToolsRail,
 } from './drawing-tools';
+import { drawingSyncService } from './services/drawingSyncService';
 import { StatusBar } from './components/layout/StatusBar';
 import { UpdateBanner } from './components/layout/UpdateBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
@@ -1841,7 +1842,9 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const workspaceCancelOrderWithoutConfirm = useCommittedCallback((id: string | number) => cancelPendingOrderWithoutConfirm(String(id)));
   const workspaceCloseBulk = useCommittedCallback(handleCloseBulk);
   useEffect(() => {
+    drawingSyncService.start();
     return () => {
+      drawingSyncService.stop();
       terminateWorker();
     };
   }, []);
@@ -2217,7 +2220,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
               {/* Chart Area */}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
 
-                <div className="flex-1 w-full h-full relative">
+                <div className="flex-1 flex flex-col w-full h-full min-h-0 relative">
                   <ErrorBoundary>
                     <DockWorkspace
                       globalChartType={chartType}

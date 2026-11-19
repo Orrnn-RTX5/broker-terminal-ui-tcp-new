@@ -118,7 +118,7 @@ interface WelcomeTerminalProps {
     onPreloadTerminalPresentation?: () => Promise<unknown> | void;
 }
 
-const buildBrokerApiV2BaseUrl = (value: string): string => `${normalizeBrokerServerUrl(value).replace(/\/$/, '')}/api/v2`;
+const buildBrokerApiV2BaseUrl = (value: string): string => `${toLocalDevProxyUrl(normalizeBrokerServerUrl(value).replace(/\/$/, ''))}/api/v2`;
 const RTX5_GREEN = '#80c33f';
 const LOGIN_FIELD_BORDER = '#24424a';
 const LOGIN_FIELD_FOCUS = '#35d8b2';
@@ -1171,7 +1171,10 @@ export function WelcomeTerminal({
 
     return (
         <div
-            onContextMenu={e => e.stopPropagation()}
+            onContextMenu={e => {
+                e.preventDefault();
+                e.stopPropagation();
+            }}
             onMouseDownCapture={e => {
                 const target = e.target as HTMLElement;
                 if (!target.closest('[data-welcome-card], [data-window-controls]')) {

@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DockLayout } from '../../services/dockManager';
 import { activateActiveChartSource, registerActiveChartSource } from '../../services/activeChartSource';
+import { applyBrokerChrome } from '../../services/brokerPresentation';
 
 // Repeated jsdom accessibility queries run more slowly on Windows.
 const menuInteractionTimeoutMs = process.platform === 'win32' ? 30000 : 10000;
@@ -468,6 +469,50 @@ describe('MenuBar hamburger launcher', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Language' }));
         expect(screen.queryByRole('menu', { name: 'Color Templates menu' })).not.toBeInTheDocument();
         expect(screen.getByRole('menu', { name: 'Language menu' })).toBeInTheDocument();
+    });
+
+    it('shows the connected broker name and broker logo in the application menu header', () => {
+        localStorage.setItem('broker_id', 'orrnn');
+        localStorage.setItem('broker_name', 'Orrnn');
+        localStorage.setItem('logo_url', 'https://orrnn.example/logo.svg');
+        try {
+            const view = render(<MenuBar accountBrokerName="Orrnn" />);
+            fireEvent.click(screen.getByRole('button', { name: 'Open application menu' }));
+
+            const brandHeader = screen.getByTestId('application-menu-brand');
+            const brandLogo = brandHeader.querySelector('img.rtx-application-menu__brand-logo');
+            const brandTitle = brandHeader.querySelector('.rtx-application-menu__brand-title');
+            expect(brandTitle).toHaveTextContent('Orrnn-Live');
+            expect(brandLogo).toHaveAttribute('src', 'https://orrnn.example/logo.svg');
+
+            act(() => {
+                applyBrokerChrome({
+                    brokerId: 'orrnn',
+                    brokerName: 'RTX5-Live',
+                    logoUrl: 'https://orrnn.example/chrome-logo.png',
+                });
+            });
+            expect(brandTitle).toHaveTextContent('Orrnn-Live');
+            expect(brandHeader.querySelector('img.rtx-application-menu__brand-logo')).toHaveAttribute(
+                'src',
+                'https://orrnn.example/chrome-logo.png',
+            );
+
+            view.rerender(<MenuBar />);
+            act(() => {
+                applyBrokerChrome({
+                    brokerId: 'acme',
+                    brokerName: 'Acme',
+                    logoUrl: 'https://acme.example/logo.png',
+                });
+            });
+            expect(brandTitle).toHaveTextContent('Acme-Live');
+        } finally {
+            localStorage.removeItem('broker_id');
+            localStorage.removeItem('broker_name');
+            localStorage.removeItem('logo_url');
+            applyBrokerChrome({});
+        }
     });
 
     it('keeps the specialized File menu and closes after a leaf action', () => {

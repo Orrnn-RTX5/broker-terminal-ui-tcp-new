@@ -95,6 +95,7 @@ type PendingOrdersPanelProps = {
   onCancelBulkOrders?: (tickets: number[]) => Promise<void> | void;
   onCancelOrderWithoutConfirm?: (ticket: number) => Promise<void> | void;
   headerActionsHost?: HTMLElement | null;
+  onEmptyContextMenu?: (event: React.MouseEvent<HTMLElement>) => void;
 };
 
 export const PendingOrdersPanel = memo(function PendingOrdersPanel({
@@ -103,6 +104,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
   onCancelBulkOrders,
   onCancelOrderWithoutConfirm,
   headerActionsHost,
+  onEmptyContextMenu,
 }: PendingOrdersPanelProps) {
   const tr = useUiTranslation();
   const storeOrders = useAppStore((s) => s.orders);
@@ -182,7 +184,10 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
 
   if (orders.length === 0) {
     return (
-      <div className="text-xs text-zinc-500 text-center py-4">
+      <div
+        className="flex flex-1 min-h-0 items-center justify-center text-xs text-zinc-500 text-center py-4"
+        onContextMenu={onEmptyContextMenu}
+      >
         {error ? <span className="text-red-400">{error}</span> : tr('No pending orders')}
       </div>
     );
@@ -239,7 +244,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
           {error}
         </div>
       )}
-      <div className="overflow-auto min-h-0">
+      <div className="flex-1 overflow-auto min-h-0" onContextMenu={onEmptyContextMenu}>
         <table className="rtx-pending-orders-table w-full min-w-[820px] table-fixed border-collapse text-xs tabular-nums">
           <colgroup>
             <col className="w-[8.5%]" />

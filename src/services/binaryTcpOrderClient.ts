@@ -1516,7 +1516,7 @@ export function encodeBinaryOrderExtrasTlv(
   action = 0,
   rawTrailingStop?: number | null,
   rawTrailingStep?: number | null,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   let commentBytes: Uint8Array = EMPTY_BYTES;
   if (rawComment !== undefined && rawComment !== null) {
     if (typeof rawComment !== 'string') {
@@ -1763,7 +1763,7 @@ function encodeHttpBinaryOrderReqFromValidated(
 function encodeWsModeAOrderFrameFromValidated(
   reqId: number,
   validated: ValidatedBinaryOrderReq,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const extrasLen = validated.extrasBytes.byteLength;
   const totalBytes = WS_FAST_ORDER_FRAME_SIZE + (extrasLen > 0 ? 2 + extrasLen : 0);
   const buffer = new ArrayBuffer(totalBytes);
@@ -1783,7 +1783,7 @@ function encodeWsInlineTokenOrderFrame(
   reqId: number,
   validated: ValidatedBinaryOrderReq,
   token: string,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   const tokenBytes = getCachedTokenUtf8Bytes(token);
   const tokenLen = Math.min(tokenBytes.byteLength, 0xffff);
   const extrasLen = validated.extrasBytes.byteLength;

@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { useThemeAppearanceStore } from '../../store/useThemeAppearanceStore';
 import {
   DARK_THEME_PRESETS,
@@ -387,6 +388,7 @@ interface ThemeSettingsDialogProps {
 
 export const ThemeSettingsDialog: React.FC<ThemeSettingsDialogProps> = ({ isOpen, onClose }) => {
   const tr = useUiTranslation();
+  const { dragStyle, dragHandleProps, setSheetElement } = useDraggableSheet({ isOpen });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -410,12 +412,14 @@ export const ThemeSettingsDialog: React.FC<ThemeSettingsDialogProps> = ({ isOpen
       }}
     >
       <div
+        ref={setSheetElement}
         className="rtx-theme-dialog"
+        style={dragStyle}
         role="dialog"
         aria-modal="true"
         aria-label={tr('Appearance & Theme Settings')}
       >
-        <header className="rtx-theme-dialog__header">
+        <header className="rtx-theme-dialog__header" {...dragHandleProps}>
           <div className="rtx-theme-dialog__title-wrap">
             <h2 className="rtx-theme-dialog__title">{tr('Appearance & Themes')}</h2>
           </div>

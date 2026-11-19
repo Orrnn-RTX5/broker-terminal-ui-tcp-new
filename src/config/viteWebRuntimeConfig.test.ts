@@ -1,7 +1,6 @@
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-import type { ViteDevServer } from 'vite'
-import type { PluginContext } from 'rollup'
+import type { Rolldown, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   createWebRuntimeConfig,
@@ -264,7 +263,7 @@ describe('environment-based web runtime configuration', () => {
     const plugin = webRuntimeConfigPlugin(achieverEnvironment)
     const emitFile = vi.fn()
     if (typeof plugin.generateBundle !== 'function') throw new Error('Missing build hook')
-    plugin.generateBundle.call({ emitFile } as unknown as PluginContext, {} as never, {}, true)
+    plugin.generateBundle.call({ emitFile } as unknown as Rolldown.PluginContext, {} as never, {}, true)
 
     expect(emitFile).toHaveBeenCalledWith(expect.objectContaining({ type: 'asset', fileName: 'runtime-config.js' }))
     expect(executeConfig(emitFile.mock.calls.find(([asset]) => asset.fileName === 'runtime-config.js')![0].source).RUNTIME_CONFIG).toEqual(expect.objectContaining({ BROKER_ID: 'achiever-financials' }))

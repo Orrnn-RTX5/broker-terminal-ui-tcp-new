@@ -15,6 +15,8 @@ import { FINE_CHART_GRID_CELL_SIZE_PX, SQUARE_CHART_GRID_CELL_SIZE_PX } from '..
 import type { ChartType } from '../../types/chart';
 import { commandBus } from '../../services/commandBus';
 import { isShortcutOwnedBy, shouldIgnoreShortcutEvent } from '../../services/keyboardShortcutManager';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
+import { isChartBackgroundLogoVisible } from '../../utils/brokerWatermark';
 import './chart-properties-dialog.css';
 
 interface ChartPropertiesDialogProps {
@@ -175,6 +177,7 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
   const initialChartTypeRef = useRef<ChartType | null>(null);
   const initialSyncQuoteColorsRef = useRef<boolean>(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -349,7 +352,7 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-transparent"
         onClick={onClose}
       />
       
@@ -359,10 +362,11 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="chart-properties-title"
+        style={dragStyle}
         className="rtx-cp-shell relative bg-[#1e1e1e] border border-[#333] rounded shadow-2xl flex flex-col pointer-events-auto select-none animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
-        <div className="rtx-cp-header flex items-center justify-between px-3 py-2 border-b border-[#333]">
+        <div className="rtx-cp-header flex items-center justify-between px-3 py-2 border-b border-[#333]" {...dragHandleProps}>
           <span id="chart-properties-title" className="rtx-cp-title text-xs font-medium text-[#ccc]">{tr("Properties of ")}{symbol},{timeframe}</span>
           <div className="flex items-center gap-1">
             <button className="rtx-cp-btn-icon w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded text-[#999] hover:text-white transition-colors">
@@ -431,7 +435,11 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                         <input
                           type="checkbox"
                           className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444] cursor-pointer w-3.5 h-3.5"
-                          checked={showState[key as keyof typeof showState] as boolean}
+                          checked={
+                            key === 'showBackgroundLogo'
+                              ? isChartBackgroundLogoVisible(showState)
+                              : (showState[key as keyof typeof showState] as boolean)
+                          }
                           onChange={(e) => {
                             updateActiveChartProperty(key, e.target.checked);
                           }}

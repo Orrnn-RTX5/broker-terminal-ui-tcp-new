@@ -3,6 +3,7 @@ import { Bug, CheckCircle2, ChevronDown, FileText, LoaderCircle, Paperclip, Send
 import '../styles/bug-report-dialog.css';
 
 import { useUiTranslation } from '../hooks/useUiTranslation';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import {
     BugReportForm,
     BugReportReceipt,
@@ -60,6 +61,7 @@ export function BugReportDialog({ isOpen, onClose, context = {} }: BugReportDial
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const titleInputRef = useRef<HTMLInputElement | null>(null);
     const dialogRef = useRef<HTMLDivElement | null>(null);
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
     useEffect(() => {
         if (!isOpen) return;
@@ -154,6 +156,7 @@ export function BugReportDialog({ isOpen, onClose, context = {} }: BugReportDial
                 ref={dialogRef}
                 tabIndex={-1}
                 className="rtx-bug-report-dialog"
+                style={dragStyle}
                 onClick={(event) => event.stopPropagation()}
                 onKeyDown={(event) => {
                     if (event.key === 'Escape') {
@@ -179,7 +182,7 @@ export function BugReportDialog({ isOpen, onClose, context = {} }: BugReportDial
                 aria-label={tr('Report a Bug')}
                 aria-describedby="terminal-bug-introduction"
             >
-                <div className="rtx-bug-report-header">
+                <div className="rtx-bug-report-header" {...dragHandleProps}>
                     <span className="rtx-bug-report-emblem" aria-hidden="true"><Bug size={20} strokeWidth={1.5} /></span>
                     <div className="rtx-bug-report-heading">
                         <h2>{tr('Report a Bug')}</h2>

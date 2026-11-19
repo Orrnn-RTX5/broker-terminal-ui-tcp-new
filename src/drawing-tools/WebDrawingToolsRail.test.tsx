@@ -907,6 +907,10 @@ describe('WebDrawingToolsRail', () => {
     expect(css).toMatch(/\.web-drawing-tools-tooltip\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*10030;/);
     expect(css).toContain('border-top: 1px solid var(--border-secondary);');
     expect(css).toContain('@media (max-height: 620px)');
+    expect(css).toContain('@media (max-height: 480px), (max-width: 768px)');
+    expect(css).toMatch(
+      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?justify-content:\s*safe space-evenly;/
+    );
   });
 
   it('ignores Cursor and saved events owned by another chart context', () => {

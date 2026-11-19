@@ -1,4 +1,5 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
+import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { getAuthenticatedAccountName } from '../utils/accountDisplayName';
 import { resolveTradingAccountType } from '../services/tradingAccountType';
 /**
@@ -61,7 +62,7 @@ interface LoginDialogProps {
     lockedBrokerDisplayName?: string;
 }
 
-const buildBrokerApiV2BaseUrl = (value: string): string => `${normalizeBrokerServerUrl(value).replace(/\/$/, '')}/api/v2`;
+const buildBrokerApiV2BaseUrl = (value: string): string => `${toLocalDevProxyUrl(normalizeBrokerServerUrl(value).replace(/\/$/, ''))}/api/v2`;
 
 const isAbortError = (err: unknown): boolean =>
     err instanceof DOMException
@@ -138,6 +139,7 @@ export function LoginDialog({
     const passwordInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
     healthStatusRef.current = healthStatus;
 
@@ -728,6 +730,7 @@ export function LoginDialog({
                 aria-labelledby={`${dialogId}-title`}
                 aria-describedby={`${dialogId}-description`}
                 className="rtx-login-dialog rtx-login-dialog--polished"
+                style={dragStyle}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={event => {
                     if (event.key !== 'Tab') return;
@@ -738,7 +741,7 @@ export function LoginDialog({
                     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
                 }}
             >
-                <header className="rtx-login-header">
+                <header className="rtx-login-header" {...dragHandleProps}>
                     <div className="rtx-login-heading">
                         <div className="rtx-login-mark" aria-hidden="true">
                             <User size={20} strokeWidth={2} />

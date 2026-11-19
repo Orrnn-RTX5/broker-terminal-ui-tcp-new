@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -100,6 +100,16 @@ describe('canonical broker development proxy policy', () => {
     const config = await viteConfig({ mode: 'test', command: 'serve' });
     const proxies = config.server!.proxy!;
     expect((proxies['/__broker_api'] as { target: string }).target).toBe(base.API_HOST);
+    expect((proxies['/__rtx5_binary_stream'] as { target: string }).target).toBe(base.API_HOST);
+    expect((proxies['/__rtx5_binary_account_sub'] as { target: string }).target).toBe(base.API_HOST);
+    expect((proxies['/__rtx5_binary_order_ws'] as { target: string; ws: boolean })).toMatchObject({ target: base.WS_HOST, ws: true });
+    expect((proxies['/__rtx5_binary_order'] as { target: string }).target).toBe(base.API_HOST);
+    expect((proxies['/rtx5-tcp-toolbar.js'] as { target: string }).target).toBe(base.API_HOST);
+    expect(config.preview?.proxy).toBeTruthy();
+    expect((config.preview!.proxy!['/__broker_api'] as { target: string }).target).toBe(base.API_HOST);
+    expect((config.preview!.proxy!['/api'] as { target: string }).target).toBe(base.API_HOST);
+    const proxyKeys = Object.keys(proxies);
+    expect(proxyKeys.indexOf('/__rtx5_binary_order_ws')).toBeLessThan(proxyKeys.indexOf('/__rtx5_binary_order'));
     for (const proxy of Object.values(proxies)) expect((proxy as { secure: boolean }).secure).toBe(true);
     const source = readFileSync(resolve('vite.config.ts'), 'utf8');
     expect(source).not.toMatch(/rejectUnauthorized:\s*false|secure:\s*false/);

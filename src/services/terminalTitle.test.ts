@@ -3,6 +3,7 @@ import {
   formatTerminalTitle,
   getWebTerminalTitle,
 } from '../hooks/useTerminalTitle';
+import { clearKnownBrokerServerName, recordBrokerServerIdentity } from './brokerServerIdentity';
 
 type RuntimeWindow = Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> };
 
@@ -16,6 +17,7 @@ const setRuntimeBroker = (brokerName: string) => {
 };
 
 afterEach(() => {
+  clearKnownBrokerServerName();
   delete (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__;
 });
 
@@ -50,5 +52,23 @@ describe('white-label terminal title (ds-16)', () => {
     expect(fallback).toBe('Web Terminal - 100043 - local-dev - Hedge - EURUSD,M15');
     expect(fallback.match(/local-dev/g)).toHaveLength(1);
     expect(fallback).not.toMatch(/RTX/);
+  });
+
+  it('prefers explicit BROKER_NAME over recorded server_name even when DEFAULT_MT5_SERVER matches BROKER_NAME', () => {
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__ = {
+      BACKEND_TARGET: 'web',
+      BROKER_ID: 'acme',
+      BROKER_NAME: 'Acme Broker',
+      DEFAULT_MT5_SERVER: 'Acme Broker',
+      API_HOST: 'https://acme.example.com',
+    };
+    recordBrokerServerIdentity({ server_name: 'Generic-Live' });
+    expect(getWebTerminalTitle()).toBe('Acme Broker');
+    const title = formatTerminalTitle(
+      { accountId: '200010', brokerName: 'Acme Broker', marginMode: 'Hedge' },
+      'EURUSD',
+      'm1',
+    );
+    expect(title).toBe('Acme Broker - 200010 - Hedge - EURUSD,M1');
   });
 });

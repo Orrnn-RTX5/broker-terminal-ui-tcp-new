@@ -1,0 +1,1 @@
+var e=e=>String(e??``).trim().toUpperCase(),t=(t,n)=>{let r=e(n);if(!r)return;let i=Object.keys(t).find(t=>e(t)===r);return i===void 0?void 0:t[i]};export{t as n,e as t};

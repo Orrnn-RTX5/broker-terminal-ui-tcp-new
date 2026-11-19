@@ -263,7 +263,7 @@ export const defaultChartProperties: ChartProperties = {
   showGrid: true,
   showBackgroundLogo: true,
   backgroundLogoMode: "default",
-  backgroundLogoOpacity: 18,
+  backgroundLogoOpacity: 36,
   backgroundLogoArea: "chart",
   backgroundLogoUrl: "",
   backgroundLogoFileName: "",
@@ -289,6 +289,8 @@ const PERIOD_SEPARATORS_DEFAULT_MIGRATION_VERSION = 1;
 const CHART_SHIFT_DEFAULT_MIGRATION_VERSION = 1;
 const OHLC_DEFAULT_MIGRATION_VERSION = 1;
 const BLUE_RED_DEFAULT_MIGRATION_VERSION = 1;
+const BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION = 1;
+const PREVIOUS_DEFAULT_BACKGROUND_LOGO_OPACITY = 18;
 
 export const clampChartOpacityPercent = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
@@ -389,11 +391,23 @@ export const normalizeChartProperties = (properties?: PersistedChartProperties |
         ...(rawSavedColors.grid === "rgba(255,255,255,0.06)" ? { grid: defaultChartProperties.colors.grid } : {}),
       }
     : rawSavedColors;
+  const rawShowBackgroundLogo = properties?.showBackgroundLogo;
+  const rawBackgroundLogoMode = properties?.backgroundLogoMode;
+  const normalizedShowBackgroundLogo =
+    rawShowBackgroundLogo === false || rawBackgroundLogoMode === "none"
+      ? false
+      : (rawShowBackgroundLogo ?? defaultChartProperties.showBackgroundLogo);
+  const normalizedBackgroundLogoMode: ChartBackgroundLogoMode = normalizedShowBackgroundLogo
+    ? (rawBackgroundLogoMode && rawBackgroundLogoMode !== "none"
+        ? rawBackgroundLogoMode
+        : defaultChartProperties.backgroundLogoMode ?? "default")
+    : "none";
   const normalized: ChartProperties = {
     ...defaultChartProperties,
     ...(properties ?? {}),
     colorScheme,
-    showBackgroundLogo: properties?.showBackgroundLogo ?? defaultChartProperties.showBackgroundLogo,
+    showBackgroundLogo: normalizedShowBackgroundLogo,
+    backgroundLogoMode: normalizedBackgroundLogoMode,
     gridType: properties?.gridType === "scale" || properties?.gridType === "mt5" ? properties.gridType : "square",
     gridLineStyle: properties?.gridLineStyle === "solid" ? "solid" : "dashed",
     showTradeHistoryBoxes: properties?.showTradeHistoryBoxes ?? defaultChartProperties.showTradeHistoryBoxes,
@@ -577,6 +591,43 @@ export const applyOhlcDefaultMigration = (
       ]),
     ),
     ohlcDefaultMigrationVersion: OHLC_DEFAULT_MIGRATION_VERSION,
+  };
+};
+
+const upgradeDefaultBackgroundLogoOpacity = (properties: ChartProperties): ChartProperties => {
+  const current = properties.backgroundLogoOpacity;
+  if (current === undefined || current === PREVIOUS_DEFAULT_BACKGROUND_LOGO_OPACITY) {
+    return { ...properties, backgroundLogoOpacity: defaultChartProperties.backgroundLogoOpacity };
+  }
+  return properties;
+};
+
+export const applyBackgroundLogoOpacityDefaultMigration = (
+  globalProperties: ChartProperties,
+  symbolProperties: Record<string, ChartProperties>,
+  migrationVersion?: number,
+): {
+  globalProperties: ChartProperties;
+  symbolProperties: Record<string, ChartProperties>;
+  backgroundLogoOpacityDefaultMigrationVersion: number;
+} => {
+  if ((migrationVersion ?? 0) >= BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION) {
+    return {
+      globalProperties,
+      symbolProperties,
+      backgroundLogoOpacityDefaultMigrationVersion: BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION,
+    };
+  }
+
+  return {
+    globalProperties: upgradeDefaultBackgroundLogoOpacity(globalProperties),
+    symbolProperties: Object.fromEntries(
+      Object.entries(symbolProperties).map(([symbol, properties]) => [
+        symbol,
+        upgradeDefaultBackgroundLogoOpacity(properties),
+      ]),
+    ),
+    backgroundLogoOpacityDefaultMigrationVersion: BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION,
   };
 };
 
@@ -1127,6 +1178,7 @@ interface ChartSettingsState {
   chartShiftDefaultMigrationVersion: number;
   ohlcDefaultMigrationVersion: number;
   blueRedDefaultMigrationVersion: number;
+  backgroundLogoOpacityDefaultMigrationVersion: number;
 
   updateGlobalProperty: <K extends keyof ChartProperties>(
     key: K,
@@ -1154,6 +1206,37 @@ interface ChartSettingsState {
   resetSymbolToDefaults: (symbol: string) => void;
   resetToDefaults: () => void;
 }
+
+const applyChartPropertyUpdate = <K extends keyof ChartProperties>(
+  base: ChartProperties,
+  key: K,
+  value: ChartProperties[K],
+): ChartProperties => {
+  if (key === "showBackgroundLogo") {
+    const visible = Boolean(value);
+    const restoredMode: ChartBackgroundLogoMode =
+      base.backgroundLogoMode && base.backgroundLogoMode !== "none"
+        ? base.backgroundLogoMode
+        : "default";
+    return {
+      ...base,
+      showBackgroundLogo: visible,
+      backgroundLogoMode: visible ? restoredMode : "none",
+    };
+  }
+  if (key === "backgroundLogoMode") {
+    const mode = value as ChartBackgroundLogoMode;
+    return {
+      ...base,
+      backgroundLogoMode: mode,
+      showBackgroundLogo: mode !== "none",
+    };
+  }
+  return {
+    ...base,
+    [key]: value,
+  };
+};
 
 export const selectChartPropertiesForQuote = (
   state: Pick<ChartSettingsState, "globalProperties" | "symbolProperties" | "activeColorSymbol"> & {
@@ -1209,11 +1292,12 @@ export const useChartSettingsStore = create<ChartSettingsState>()(
       chartShiftDefaultMigrationVersion: CHART_SHIFT_DEFAULT_MIGRATION_VERSION,
       ohlcDefaultMigrationVersion: OHLC_DEFAULT_MIGRATION_VERSION,
       blueRedDefaultMigrationVersion: BLUE_RED_DEFAULT_MIGRATION_VERSION,
+      backgroundLogoOpacityDefaultMigrationVersion: BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION,
 
       updateGlobalProperty: (key, value) => {
         set((state) => ({
           ...(key === "colorScheme" || key === "colors" ? { activeColorSymbol: null } : {}),
-          globalProperties: { ...state.globalProperties, [key]: value },
+          globalProperties: applyChartPropertyUpdate(state.globalProperties, key, value),
         }));
       },
 
@@ -1275,10 +1359,7 @@ export const useChartSettingsStore = create<ChartSettingsState>()(
             ...(key === "colorScheme" || key === "colors" ? { activeColorSymbol: symbol } : {}),
             symbolProperties: {
               ...state.symbolProperties,
-              [symbol]: {
-                ...baseProperties,
-                [key]: value,
-              },
+              [symbol]: applyChartPropertyUpdate(baseProperties, key, value),
             },
           };
         });
@@ -1379,6 +1460,7 @@ export const useChartSettingsStore = create<ChartSettingsState>()(
           chartShiftDefaultMigrationVersion: CHART_SHIFT_DEFAULT_MIGRATION_VERSION,
           ohlcDefaultMigrationVersion: OHLC_DEFAULT_MIGRATION_VERSION,
           blueRedDefaultMigrationVersion: BLUE_RED_DEFAULT_MIGRATION_VERSION,
+          backgroundLogoOpacityDefaultMigrationVersion: BACKGROUND_LOGO_OPACITY_DEFAULT_MIGRATION_VERSION,
         });
       },
     }),
@@ -1407,13 +1489,18 @@ export const useChartSettingsStore = create<ChartSettingsState>()(
           periodMigrated.symbolProperties,
           persistedState?.ohlcDefaultMigrationVersion,
         );
+        const watermarkOpacityMigrated = applyBackgroundLogoOpacityDefaultMigration(
+          ohlcMigrated.globalProperties,
+          ohlcMigrated.symbolProperties,
+          persistedState?.backgroundLogoOpacityDefaultMigrationVersion,
+        );
         const needsPaletteMigration = (persistedState?.blueRedDefaultMigrationVersion ?? 0) < BLUE_RED_DEFAULT_MIGRATION_VERSION;
         const resolvedGlobalProperties = needsPaletteMigration
-          ? migrateDefaultPalette(ohlcMigrated.globalProperties)
-          : ohlcMigrated.globalProperties;
+          ? migrateDefaultPalette(watermarkOpacityMigrated.globalProperties)
+          : watermarkOpacityMigrated.globalProperties;
         const resolvedSymbolProperties = needsPaletteMigration
-          ? Object.fromEntries(Object.entries(ohlcMigrated.symbolProperties).map(([symbol, properties]) => [symbol, migrateDefaultPalette(properties)]))
-          : ohlcMigrated.symbolProperties;
+          ? Object.fromEntries(Object.entries(watermarkOpacityMigrated.symbolProperties).map(([symbol, properties]) => [symbol, migrateDefaultPalette(properties)]))
+          : watermarkOpacityMigrated.symbolProperties;
         const persistedActiveSymbol = persistedState?.activeColorSymbol?.trim();
         const resolvedActiveColorSymbol = (persistedActiveSymbol && resolvedSymbolProperties[persistedActiveSymbol])
           ? persistedActiveSymbol
@@ -1428,7 +1515,7 @@ export const useChartSettingsStore = create<ChartSettingsState>()(
           chartShiftDefaultMigrationVersion: chartShiftMigrated.chartShiftDefaultMigrationVersion,
           periodSeparatorsDefaultMigrationVersion: periodMigrated.periodSeparatorsDefaultMigrationVersion,
           ohlcDefaultMigrationVersion: ohlcMigrated.ohlcDefaultMigrationVersion,
-          ...ohlcMigrated,
+          ...watermarkOpacityMigrated,
           blueRedDefaultMigrationVersion: BLUE_RED_DEFAULT_MIGRATION_VERSION,
           globalProperties: resolvedGlobalProperties,
           symbolProperties: resolvedSymbolProperties,

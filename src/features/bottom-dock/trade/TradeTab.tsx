@@ -111,7 +111,7 @@ export const TradeTab = memo(function TradeTab({
     const [modifyPositionContext, setModifyPositionContext] = useState<ModifyPositionContext | null>(null);
     const modifyPosition = modifyPositionContext?.position ?? null;
     const [sortState, setSortState] = useState<TradeSortState>(null);
-    const [tradeContextMenu, setTradeContextMenu] = useState<{ x: number; y: number; position: ToolboxTradePosition } | null>(null);
+    const [tradeContextMenu, setTradeContextMenu] = useState<{ x: number; y: number; position?: ToolboxTradePosition } | null>(null);
     const [footerMetricMenu, setFooterMetricMenu] = useState<{
         x: number;
         y: number;
@@ -924,33 +924,38 @@ ${rows}
         }
     }, [positions, accountId]);
 
-    const handleTradeContextMenu = useCallback((event: React.MouseEvent<HTMLTableRowElement>, position: ToolboxTradePosition) => {
+    const handleTradeContextMenu = useCallback((event: React.MouseEvent<HTMLElement>, position?: ToolboxTradePosition) => {
         event.preventDefault();
         event.stopPropagation();
-        setSelectedPositionKey(getPositionKey(position));
+        if (position) setSelectedPositionKey(getPositionKey(position));
         setTradeContextMenu({ x: event.clientX, y: event.clientY, position });
     }, [getPositionKey]);
 
-    const buildTradeContextMenuItems = (position: ToolboxTradePosition): ContextMenuItemConfig[] => {
-        const symbol = String(position.symbol ?? '');
+    const buildTradeContextMenuItems = (position?: ToolboxTradePosition): ContextMenuItemConfig[] => {
+        const activeChartSymbol = String(useAppStore.getState().selectedSymbol || '').trim();
+        const symbol = String(position?.symbol ?? (activeChartSymbol || livePositions[0]?.symbol || '')).trim();
+        const hasPosition = Boolean(position);
+        const hasPositions = positions.length > 0;
         // Close-by is offered only while an opposite-side same-symbol
         // counterpart is present; the lowest-ticket one is named (see
         // findCloseByCounterpart). Otherwise the item stays hidden.
-        const closeByCounterpart = findCloseByCounterpart(position, positions);
+        const closeByCounterpart = position ? findCloseByCounterpart(position, positions) : null;
         const closeByTicket = closeByCounterpart ? readCloseByLegTicket(closeByCounterpart) : null;
         return [
             {
                 label: 'Pending Order',
                 shortcut: 'F9',
                 icon: <Icon name="plus" size="xs" />,
-                action: () => window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } })),
+                disabled: !symbol,
+                action: () => { if (symbol) window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } })); },
             },
             {
                 label: 'Close Position',
                 icon: <Icon name="check" size="xs" />,
-                action: () => onClosePosition(position.id),
+                disabled: !hasPosition,
+                action: () => { if (position) onClosePosition(position.id); },
             },
-            ...(closeByTicket ? [{
+            ...(closeByTicket && position ? [{
                 label: `Close by #${closeByTicket}`,
                 icon: <Icon name="check" size="xs" />,
                 action: () => void handleCloseByPosition(position),
@@ -958,16 +963,17 @@ ${rows}
             {
                 label: 'Modify or Delete',
                 icon: <Icon name="settings" size="xs" />,
-                action: () => openModifyPosition(position),
+                disabled: !hasPosition,
+                action: () => { if (position) openModifyPosition(position); },
             },
             { divider: true },
             {
                 label: 'Bulk Operations',
                 submenu: [
-                    { label: 'Close All', action: () => onCloseBulk?.('ALL') },
-                    { label: 'Close In-Profit', action: () => onCloseBulk?.('WINNERS') },
-                    { label: 'Close In-Loss', action: () => onCloseBulk?.('LOSERS') },
-                    { label: `Close All ${symbol}`, action: () => onCloseBulk?.('ALL', symbol) },
+                    { label: 'Close All', disabled: !hasPositions, action: () => onCloseBulk?.('ALL') },
+                    { label: 'Close In-Profit', disabled: !hasPositions, action: () => onCloseBulk?.('WINNERS') },
+                    { label: 'Close In-Loss', disabled: !hasPositions, action: () => onCloseBulk?.('LOSERS') },
+                    ...(symbol ? [{ label: `Close All ${symbol}`, disabled: !positions.some(p => p.symbol === symbol), action: () => onCloseBulk?.('ALL', symbol) }] : []),
                 ],
             },
             { divider: true },
@@ -975,23 +981,27 @@ ${rows}
                 label: 'Depth of Market',
                 shortcut: 'B',
                 icon: <Icon name="box" size="xs" />,
-                action: () => window.dispatchEvent(new CustomEvent('openDepthOfMarket', { detail: { symbol } })),
+                disabled: !symbol,
+                action: () => { if (symbol) window.dispatchEvent(new CustomEvent('openDepthOfMarket', { detail: { symbol } })); },
             },
             {
                 label: 'Open Chart',
                 shortcut: 'Space',
                 icon: <Icon name="line-chart" size="xs" />,
-                action: () => window.dispatchEvent(new CustomEvent('openChart', { detail: { symbol } })),
+                disabled: !symbol,
+                action: () => { if (symbol) window.dispatchEvent(new CustomEvent('openChart', { detail: { symbol } })); },
             },
             { divider: true },
             {
                 label: 'Trailing Stop',
                 submenu: (() => {
-                    const currentTrail = Number(
-                        (position as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
-                        ?? (position as { trailingStop?: unknown }).trailingStop
-                        ?? 0,
-                    );
+                    const currentTrail = position
+                        ? Number(
+                            (position as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
+                            ?? (position as { trailingStop?: unknown }).trailingStop
+                            ?? 0,
+                        )
+                        : 0;
                     const hasAnyTrail = positions.some(
                         (p) => Number(
                             (p as { trailing_stop?: unknown; trailingStop?: unknown }).trailing_stop
@@ -1000,6 +1010,7 @@ ${rows}
                         ) > 0,
                     );
                     const setPosTrailing = async (points: number) => {
+                        if (!position) return;
                         try {
                             await api.positions.modifyPosition(position.id, {
                                 trailing_stop: points,
@@ -1039,13 +1050,15 @@ ${rows}
                         },
                         {
                             label: 'None',
-                            checked: !Number.isFinite(currentTrail) || currentTrail <= 0,
+                            checked: hasPosition && (!Number.isFinite(currentTrail) || currentTrail <= 0),
+                            disabled: !hasPosition,
                             action: () => void setPosTrailing(0),
                         },
                         { divider: true },
                         ...[50, 55, 60, 65, 70, 75, 80, 85, 90, 95].map(points => ({
                             label: `${points} points`,
-                            checked: currentTrail === points,
+                            checked: hasPosition && currentTrail === points,
+                            disabled: !hasPosition,
                             action: () => void setPosTrailing(points),
                         })),
                     ];
@@ -1100,7 +1113,8 @@ ${rows}
                 submenu: [
                     {
                         label: `Add ${symbol} Deals`,
-                        action: () => setShowTradeLevelsForSymbol(symbol, true),
+                        disabled: !symbol,
+                        action: () => { if (symbol) setShowTradeLevelsForSymbol(symbol, true); },
                     },
                     {
                         label: 'Delete All Deals',
@@ -1158,7 +1172,11 @@ ${rows}
     }, [ensureTradeLevelsVisibleForLivePositions, showOnChartsAutoUpdate, livePositions]);
 
     return (
-        <div ref={tradeTabRef} className="rtx-trade-tab h-full cursor-default flex flex-col relative bg-[#131316] overflow-hidden">
+        <div
+            ref={tradeTabRef}
+            className="rtx-trade-tab h-full cursor-default flex flex-col relative bg-[#131316] overflow-hidden"
+            onContextMenu={(event) => handleTradeContextMenu(event)}
+        >
             <div className="rtx-trade-view-bar flex min-h-[28px] items-center gap-1 border-b border-zinc-800/80 px-2 py-0.5 pr-7">
                 <button
                     type="button"
@@ -1185,6 +1203,7 @@ ${rows}
                     onCancelBulkOrders={onCancelBulkOrders}
                     onCancelOrderWithoutConfirm={onCancelOrderWithoutConfirm}
                     headerActionsHost={pendingHeaderActionsHost}
+                    onEmptyContextMenu={(event) => handleTradeContextMenu(event)}
                 />
             ) : (
             <TradeTable

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { OutputBundle, OutputChunk } from 'rollup';
+import type { Rolldown } from 'vite';
 import { terminalPreloadAssets } from '../../viteTerminalPreload';
+
+type OutputBundle = Rolldown.OutputBundle;
+type OutputChunk = Rolldown.OutputChunk;
 
 const chunk = (fileName: string, source: string | null, imports: string[] = [], dynamicImports: string[] = []) => ({
   type: 'chunk', fileName, facadeModuleId: source, imports, dynamicImports,

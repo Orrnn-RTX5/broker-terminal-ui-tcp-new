@@ -371,7 +371,8 @@
     * { box-sizing: border-box; }
 
     .rtx-terminal-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; min-height: 0; padding: 24px; background: #0a0c10; color: #94a3b8; text-align: center; select-none: none; user-select: none; }
-    .rtx-terminal-loading__icon { width: clamp(260px, 32vmin, 380px); height: auto; aspect-ratio: 760 / 545; overflow: visible; animation: rtx-terminal-icon-flash 1.4s ease-in-out infinite; }
+    .rtx-terminal-loading__icon { width: clamp(260px, 32vmin, 380px); height: auto; aspect-ratio: 760 / 545; overflow: visible; animation: rtx-terminal-icon-flash 0.55s ease-out 1 forwards; }
+    [data-rtx-splash-played="true"] .rtx-terminal-loading__icon { animation: none; opacity: 1; transform: scale(1); filter: drop-shadow(0 0 10px rgba(124, 198, 35, 0.2)); }
     .rtx-terminal-loading__icon-wing { fill: #e2e8f0; }
     .rtx-terminal-loading__icon-five { fill: #7cc623; }
     .rtx-terminal-loading[role="status"] .rtx-terminal-loading__brand,
@@ -383,7 +384,7 @@
     .rtx-terminal-loading__actions button { min-height: 36px; padding: 8px 14px; border: 1px solid #454550; border-radius: 6px; background: #202026; color: inherit; font: inherit; cursor: pointer; }
     .rtx-terminal-loading__actions button:hover { border-color: currentColor; }
     .rtx-terminal-loading__actions button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 3px; }
-    @keyframes rtx-terminal-icon-flash { 0%, 100% { opacity: 0.32; transform: scale(0.94); filter: drop-shadow(0 0 0 rgba(124, 198, 35, 0)); } 50% { opacity: 1; transform: scale(1.04); filter: drop-shadow(0 0 18px rgba(124, 198, 35, 0.36)); } }
+    @keyframes rtx-terminal-icon-flash { 0% { opacity: 0.35; transform: scale(0.94); filter: drop-shadow(0 0 0 rgba(124, 198, 35, 0)); } 60% { opacity: 1; transform: scale(1.03); filter: drop-shadow(0 0 18px rgba(124, 198, 35, 0.36)); } 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 10px rgba(124, 198, 35, 0.2)); } }
     @media (prefers-reduced-motion: reduce) { .rtx-terminal-loading__icon { animation: none; } }
 
     [data-rtx-static-shell] { width: 100%; height: 100%; background: #050608; }

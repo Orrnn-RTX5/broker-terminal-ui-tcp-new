@@ -7,6 +7,7 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { Icon } from '../ui/Icon';
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './legacy-action-sheets.css';
 import { createPortal } from 'react-dom';
 import {
@@ -43,6 +44,7 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const fieldId = useId();
   useDialogFocusScope({ isOpen: true, dialogRef, onClose: onCancel, initialFocusRef: cancelRef, closeOnEscape: !isSaving });
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
 
   // Load preferences on mount
   useEffect(() => {
@@ -101,7 +103,7 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
 
   return createPortal(
     <div
-        className="fixed inset-0 bg-black/50 flex items-center justify-center p-2 z-[9999]"
+        className="fixed inset-0 bg-transparent flex items-center justify-center p-2 z-[9999]"
         onClick={(e) => {
             e.stopPropagation();
             if (e.target === e.currentTarget) onCancel();
@@ -117,11 +119,12 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
             aria-labelledby={`${fieldId}-title`}
             data-shortcut-scope="local"
             tabIndex={-1}
+            style={dragStyle}
             className="rtx-action-sheet rtx-legacy-sheet bg-[#131316] [.rtx-advanced-view_&]:bg-white border border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 rounded-lg shadow-2xl w-[480px] max-w-full animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[calc(100dvh-16px)] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header */}
-            <div className="rtx-legacy-sheet__header flex items-center justify-between px-4 py-3 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0">
+            <div className="rtx-legacy-sheet__header flex items-center justify-between px-4 py-3 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0" {...dragHandleProps}>
                 <div className="flex items-center gap-2">
                     <Icon name="settings" size="md" className="text-blue-400 [.rtx-advanced-view_&]:text-indigo-600" />
                     <h2 id={`${fieldId}-title`} className="text-sm font-semibold text-zinc-100 [.rtx-advanced-view_&]:text-gray-900">{tr("Print Setup")}</h2>

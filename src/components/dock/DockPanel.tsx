@@ -189,7 +189,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
       )}
 
       {/* Keep chart state mounted while its window is minimized. */}
-        <div hidden={minimized} className="dock-panel__content flex-1 overflow-hidden min-h-0 min-w-0 relative">
+        <div hidden={minimized} className={cn('dock-panel__content flex-1 overflow-hidden min-h-0 min-w-0 relative', !minimized && 'flex flex-col')}>
           {children || (
             <div className="flex items-center justify-center h-full text-zinc-500 p-4">
               <p className="text-xs">{tr(panel.title)}</p>

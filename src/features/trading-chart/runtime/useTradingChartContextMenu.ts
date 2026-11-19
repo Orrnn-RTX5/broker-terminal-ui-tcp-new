@@ -13,15 +13,17 @@ import { captureFullPage } from '../../../services/screenshotService';
 import { commandBus } from '../../../services/commandBus';
 import type { IndicatorManager } from '../../../services/indicatorManager';
 import { useChartSettingsStore, type ChartProperties } from '../../../store/useChartSettingsStore';
+import { toggleChartBackgroundLogoInStore } from '../../../utils/brokerWatermark';
 import type { ChartTemplate } from '../../../store/useTemplateStore';
 import type { AddChartIndicatorRequest } from '../model/indicatorRequest';
-import type { ChartType, Timeframe } from '../../../types/chart';
+import type { Candle, ChartType, Timeframe } from '../../../types/chart';
 
 export interface TradingChartContextMenuState {
   visible: boolean;
   x: number;
   y: number;
   clickPrice?: number;
+  livePrice?: number;
 }
 
 interface UseTradingChartContextMenuStateResult {
@@ -117,6 +119,9 @@ interface UseTradingChartContextMenuControllerOptions {
   chartSettingsRef: MutableRefObject<ChartProperties>;
   clearLocalIndicators: () => void;
   containerRef?: RefObject<HTMLDivElement | null>;
+  currentCandleRef?: RefObject<Candle | null>;
+  lastRenderedCandlesRef?: RefObject<Candle[]>;
+  livePriceRef?: RefObject<number | null>;
   seriesRef?: RefObject<ISeriesApi<SeriesType> | null>;
   loadHistory: (symbol: string, timeframe: Timeframe) => Promise<void>;
   localIndicatorManager: IndicatorManager;
@@ -146,6 +151,9 @@ export function useTradingChartContextMenuController({
   chartSettingsRef,
   clearLocalIndicators,
   containerRef,
+  currentCandleRef,
+  lastRenderedCandlesRef,
+  livePriceRef,
   seriesRef,
   loadHistory,
   localIndicatorManager,
@@ -199,8 +207,15 @@ export function useTradingChartContextMenuController({
       clickPrice = undefined;
     }
 
-    setCtxMenu({ visible: true, x: event.clientX, y: event.clientY, clickPrice });
-  }, [activeChartSourceId, containerRef, seriesRef, setCtxMenu]);
+    const rawLivePrice = livePriceRef?.current
+      ?? currentCandleRef?.current?.close
+      ?? lastRenderedCandlesRef?.current?.at(-1)?.close;
+    const livePrice = typeof rawLivePrice === 'number' && Number.isFinite(rawLivePrice) && rawLivePrice > 0
+      ? rawLivePrice
+      : undefined;
+
+    setCtxMenu({ visible: true, x: event.clientX, y: event.clientY, clickPrice, livePrice });
+  }, [activeChartSourceId, containerRef, currentCandleRef, lastRenderedCandlesRef, livePriceRef, seriesRef, setCtxMenu]);
 
   const closeCtxMenu = useCallback(() => {
     setCtxMenu(previous => ({ ...previous, visible: false }));
@@ -259,11 +274,7 @@ export function useTradingChartContextMenuController({
   }, [symbol]);
 
   const handleCtxToggleBackgroundLogo = useCallback(() => {
-    const store = useChartSettingsStore.getState();
-    const currentProperties = store.symbolProperties[symbol] || store.globalProperties;
-    const next = !(currentProperties.showBackgroundLogo ?? true);
-    store.updateSymbolProperty(symbol, 'showBackgroundLogo', next);
-    store.updateSymbolProperty(symbol, 'backgroundLogoMode', next ? 'default' : 'none');
+    toggleChartBackgroundLogoInStore(symbol);
   }, [symbol]);
 
   const handleCtxOpenBackgroundImage = useCallback(() => {

@@ -9,6 +9,8 @@ import {
   type ChartProperties,
 } from '../../store/useChartSettingsStore';
 import { RTX5_DEFAULT_CHART_WATERMARK_SRC } from '../../utils/squareChartGridPrimitive';
+import { getPrimaryBrokerWatermarkUrl } from '../../utils/brokerWatermark';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 
 export interface ChartBackgroundImageDialogProps {
   isOpen: boolean;
@@ -41,7 +43,7 @@ function readSnapshot(props: ChartProperties): SnapshotState {
     backgroundLogoOpacity:
       typeof props.backgroundLogoOpacity === 'number' && Number.isFinite(props.backgroundLogoOpacity)
         ? Math.min(100, Math.max(1, Math.round(props.backgroundLogoOpacity)))
-        : 18,
+        : 36,
     backgroundLogoArea: props.backgroundLogoArea ?? 'chart',
     backgroundLogoUrl: props.backgroundLogoUrl ?? '',
     backgroundLogoFileName: props.backgroundLogoFileName ?? '',
@@ -58,6 +60,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
   const tr = useUiTranslation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialSnapshotRef = useRef<SnapshotState | null>(null);
+  const { dragStyle, dragHandleProps, setSheetElement } = useDraggableSheet({ isOpen });
 
   const [mode, setMode] = useState<ChartBackgroundLogoMode>('default');
   const [opacity, setOpacity] = useState<number>(18);
@@ -156,7 +159,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
 
   const palette = isLightTheme
     ? {
-        backdrop: 'rgba(15, 23, 42, 0.28)',
+        backdrop: 'transparent',
         surface: '#ffffff',
         surfaceBorder: '#cfd8e3',
         shadow: '0 20px 50px rgba(15, 23, 42, 0.18)',
@@ -182,7 +185,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         secondaryBtnText: '#1e293b',
       }
     : {
-        backdrop: 'rgba(0, 0, 0, 0.25)',
+        backdrop: 'transparent',
         surface: '#2d2e32',
         surfaceBorder: '#45474d',
         shadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
@@ -208,10 +211,12 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         secondaryBtnText: '#ffffff',
       };
 
-  const defaultWatermarkDisplayUrl =
+  const defaultBrokerWatermarkUrl = getPrimaryBrokerWatermarkUrl();
+  const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
     typeof window !== 'undefined' && window.location?.origin
       ? `${window.location.origin}${RTX5_DEFAULT_CHART_WATERMARK_SRC}`
-      : RTX5_DEFAULT_CHART_WATERMARK_SRC;
+      : RTX5_DEFAULT_CHART_WATERMARK_SRC
+  );
 
   const handleCancel = () => {
     const snap = initialSnapshotRef.current;
@@ -335,6 +340,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
       }}
     >
       <div
+        ref={setSheetElement}
         role="dialog"
         aria-modal="true"
         aria-label={`${tr('Background image')} - ${symbol}, ${timeframe}`}
@@ -348,11 +354,13 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
           color: palette.bodyText,
           overflow: 'hidden',
           userSelect: 'none',
+          ...dragStyle,
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Native-style Window Title Bar */}
         <div
+          onMouseDown={dragHandleProps.onMouseDown}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -364,12 +372,18 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
             color: palette.titleBarText,
             fontSize: 12,
             fontWeight: 400,
+            ...dragHandleProps.style,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <img
-              src={RTX5_DEFAULT_CHART_WATERMARK_SRC}
+              src={defaultBrokerWatermarkUrl || RTX5_DEFAULT_CHART_WATERMARK_SRC}
               alt=""
+              onError={(event) => {
+                if (event.currentTarget.getAttribute('src') !== RTX5_DEFAULT_CHART_WATERMARK_SRC) {
+                  event.currentTarget.setAttribute('src', RTX5_DEFAULT_CHART_WATERMARK_SRC);
+                }
+              }}
               style={{ width: 14, height: 14, objectFit: 'contain', background: '#18181b', borderRadius: 2, padding: 1 }}
             />
             <span>{tr('Background image')} - RTX5</span>

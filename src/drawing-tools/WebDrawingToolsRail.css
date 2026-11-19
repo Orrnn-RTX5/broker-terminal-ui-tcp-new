@@ -121,6 +121,27 @@
   background: var(--border-primary);
 }
 
+.web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
+  flex: 1 1 auto;
+  justify-content: space-evenly;
+  justify-content: safe space-evenly;
+  gap: 2px;
+  padding: 4px 0 2px;
+}
+
+.web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools .web-drawing-tools-rail__separator {
+  margin: 0;
+}
+
+.web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+  padding: 0 0 6px;
+  gap: 4px;
+}
+
+.web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
+  margin: 2px 0;
+}
+
 .web-drawing-tools-rail__toggle {
   border-top: 1px solid var(--border-secondary);
 }
@@ -502,15 +523,13 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding-top: 7px;
-    padding-bottom: 4px;
-    gap: 6px;
+    padding: 2px 0;
+    gap: 2px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding-top: 2px;
-    padding-bottom: 7px;
-    gap: 6px;
+    padding: 0 0 4px;
+    gap: 4px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
@@ -534,8 +553,12 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
     width: 24px;
-    margin: 4px 0;
+    margin: 0;
     background: color-mix(in srgb, var(--text-secondary) 28%, var(--border-primary));
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
+    margin: 2px 0;
   }
 }
 
@@ -551,15 +574,13 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding-top: 6px;
-    padding-bottom: 3px;
-    gap: 5px;
+    padding: 2px 0;
+    gap: 2px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding-top: 2px;
-    padding-bottom: 6px;
-    gap: 5px;
+    padding: 0 0 3px;
+    gap: 3px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
@@ -583,7 +604,11 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
     width: 22px;
-    margin: 3px 0;
+    margin: 0;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
+    margin: 1px 0;
   }
 
   .web-drawing-tools-menu__item {
@@ -597,25 +622,61 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
 @media (max-height: 620px) {
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding-top: 5px;
-    padding-bottom: 2px;
-    gap: 3.5px;
+    padding: 2px 0;
+    gap: 2px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding-top: 1px;
-    padding-bottom: 5px;
-    gap: 3.5px;
+    padding: 0 0 2px;
+    gap: 2px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
-    height: 26px;
-    min-height: 26px;
-    flex: 0 0 26px;
+    height: 25px;
+    min-height: 25px;
+    flex: 0 0 25px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    margin: 2px 0;
+    margin: 0;
+  }
+}
+
+@media (max-height: 480px), (max-width: 768px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    width: 34px;
+    min-width: 34px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    width: 33px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
+    width: 33px;
+    height: 23px;
+    min-height: 23px;
+    flex: 0 0 23px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    width: 18px;
+    margin: 0;
   }
 }
 

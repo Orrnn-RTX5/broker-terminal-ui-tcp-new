@@ -120,7 +120,12 @@ describe('DockContainer split sizing', () => {
 
     await waitFor(() => {
       expect(container.querySelector('[data-dock-panel="toolbox"]')).toBeNull();
-      expect(container.querySelector<HTMLElement>('[data-dock-child="chart"]')?.style.flexGrow).toBe('1');
+      const chartSlot = container.querySelector<HTMLElement>('[data-dock-child="chart"]');
+      expect(chartSlot?.style.flexGrow).toBe('1');
+      const chartContent = chartSlot?.querySelector<HTMLElement>('.dock-panel__content');
+      expect(chartContent?.className).toContain('flex-col');
+      expect(chartContent?.className).toContain('flex-1');
+      expect(chartContent?.className).toContain('min-h-0');
     });
 
     expect(container.querySelector<HTMLElement>('[data-dock-child="market-watch"]')?.style.flexGrow).toBe('0.5');

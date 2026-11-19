@@ -10,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 
 import { getTrendLineToolFromDrawing } from '../../drawing-tools/toolCatalog';
 import {
@@ -133,6 +134,7 @@ export const ChartObjectsDialog: React.FC<ChartObjectsDialogProps> = ({
     const tr = useUiTranslation();
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -245,7 +247,7 @@ export const ChartObjectsDialog: React.FC<ChartObjectsDialogProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[10020] flex items-center justify-center bg-transparent p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -257,10 +259,11 @@ export const ChartObjectsDialog: React.FC<ChartObjectsDialogProps> = ({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         data-testid="chart-objects-dialog"
+        style={dragStyle}
         className="rtx-chart-objects-dialog flex w-full max-w-[780px] flex-col overflow-hidden rounded-md border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-[var(--text-primary)] shadow-2xl"
         onMouseDown={event => event.stopPropagation()}
       >
-        <header className="rtx-chart-objects-dialog__header flex items-start justify-between gap-4 border-b border-[var(--border-primary)] bg-[var(--bg-tertiary)] px-5 py-4">
+        <header className="rtx-chart-objects-dialog__header flex items-start justify-between gap-4 border-b border-[var(--border-primary)] bg-[var(--bg-tertiary)] px-5 py-4" {...dragHandleProps}>
           <div className="flex min-w-0 items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[var(--color-info-dim)] bg-[var(--color-info-dim)] text-[var(--color-info)]">
               <Icon name="chart-list" size="sm" />

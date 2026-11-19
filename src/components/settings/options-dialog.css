@@ -8,7 +8,8 @@ html:root .rtx-options-dialog-backdrop {
   justify-content: center;
   padding: 24px;
   background: rgb(0 0 0 / 60%);
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html:root .rtx-options-dialog {

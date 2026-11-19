@@ -7,6 +7,7 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { Icon } from '../ui/Icon';
 import React, { useState, useRef, useId, useEffect } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import './legacy-action-sheets.css';
 import { createPortal } from 'react-dom';
 import type { Workspace } from '../../services/api';
@@ -41,6 +42,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
     const backRef = useRef<HTMLButtonElement>(null);
     const titleId = useId();
     useDialogFocusScope({ isOpen: true, dialogRef, onClose: onCancel, initialFocusRef: nameRef, closeOnEscape: !isSaving });
+    const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
     useEffect(() => {
         // Replacing the name field must leave focus on a safe action, not the page.
         (showOverwriteWarning ? backRef.current : nameRef.current)?.focus({ preventScroll: true });
@@ -122,7 +124,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
 
     return createPortal(
         <div 
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-2 z-[9999]"
+            className="fixed inset-0 bg-transparent flex items-center justify-center p-2 z-[9999]"
             onClick={(e) => {
                 e.stopPropagation();
                 if (e.target === e.currentTarget) onCancel();
@@ -143,11 +145,12 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                 aria-labelledby={titleId}
                 data-shortcut-scope="local"
                 tabIndex={-1}
+                style={dragStyle}
                 className="rtx-action-sheet rtx-legacy-sheet bg-[#131316] [.rtx-advanced-view_&]:bg-white border border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 rounded-lg shadow-2xl w-[420px] max-w-full max-h-[calc(100dvh-16px)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-3 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg">
+                <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-3 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg" {...dragHandleProps}>
                     <div className="flex items-center gap-2">
                         <Icon name="save" size="md" className="text-blue-400 [.rtx-advanced-view_&]:text-indigo-600" />
                         <h2 id={titleId} className="text-sm font-semibold text-zinc-100 [.rtx-advanced-view_&]:text-gray-900">

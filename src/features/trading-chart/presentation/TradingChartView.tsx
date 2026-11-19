@@ -16,6 +16,7 @@ import type { IndicatorConfig } from '../../../services/indicatorManager';
 import { activateActiveChartSource } from '../../../services/activeChartSource';
 import type { SymbolMarketStatusState } from '../../../hooks/useSymbolMarketStatus';
 import { getChartDirectionalQuoteColors, type ChartProperties } from '../../../store/useChartSettingsStore';
+import { isChartBackgroundLogoVisible } from '../../../utils/brokerWatermark';
 import type { ChartTemplate } from '../../../store/useTemplateStore';
 import type {
   ChartType,
@@ -41,6 +42,7 @@ interface ChartContextMenuState {
   x: number;
   y: number;
   clickPrice?: number;
+  livePrice?: number;
 }
 
 interface TradingChartViewProps {
@@ -158,7 +160,7 @@ return (
     <div
       className="rtx-chart-wrapper relative w-full h-full bg-[#0d0d0d]"
       data-chart-context-id={activeChartSourceId}
-      data-show-background-logo={chartSettings.showBackgroundLogo !== false ? 'true' : 'false'}
+      data-show-background-logo={isChartBackgroundLogoVisible(chartSettings) ? 'true' : 'false'}
       dir="ltr"
       data-cursor="select"
       onContextMenu={handleContextMenu}
@@ -623,6 +625,8 @@ return (
         x={ctxMenu.x}
         y={ctxMenu.y}
         clickPrice={ctxMenu.clickPrice}
+        livePrice={ctxMenu.livePrice}
+        priceDigits={priceDigits}
         symbol={symbol}
         targetContextId={activeChartSourceId}
         currentChartType={localChartType}
@@ -638,7 +642,7 @@ return (
         showTradeHistory={ctxShowTradeHistory}
         showTradeHistoryLine={ctxShowTradeHistoryLine}
         showOHLC={chartSettings.showOHLC}
-        showBackgroundLogo={chartSettings.showBackgroundLogo !== false}
+        showBackgroundLogo={isChartBackgroundLogoVisible(chartSettings)}
         onChangeChartType={handleCtxChartTypeChange}
         onChangeTimeframe={handleCtxTimeframeChange}
         onToggleOneClickTrading={toggleOneClickTrading}

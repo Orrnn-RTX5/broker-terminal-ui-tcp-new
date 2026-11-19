@@ -22,7 +22,8 @@ import {
 } from '../../store/useChartSettingsStore';
 import { useDrawingToolPreferencesStore } from '../../store/useDrawingToolPreferencesStore';
 import type { NormalizedMarketStatus } from '../../utils/marketStatus';
-import { RTX5_API_URL, normalizeBrokerServerUrl, normalizeServerUrl } from '../../config/api';
+import { RTX5_API_URL, normalizeBrokerServerUrl, normalizeServerUrl, toLocalDevProxyUrl } from '../../config/api';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { getAccessToken } from '../../services/brokerSession';
 import { isConfiguredBrokerEndpoint, isDesktopBackendTarget } from '../../config/backendTarget.js';
 import { getActiveChartCommandTarget, getPanelIdFromChartContextId } from '../../services/chartCommandTarget';
@@ -31,6 +32,7 @@ import { getDockPanelChartType, findChartPanel } from '../../services/chartTypeC
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import type { DesktopFeedSnapshot } from './desktopToolbarStatus';
 import { TopToolbarSearch } from './TopToolbarSearch';
+import { toPublicAssetPath } from '../welcomeHeroAssets';
 
 interface TopToolbarProps {
     chartType: ChartType;
@@ -440,6 +442,10 @@ const MainToolbar = ({
     }, []);
     const historyOverlayRef = useRef<HTMLDivElement>(null);
     const historyOverlayDropdownRef = useRef<HTMLDivElement>(null);
+    const historyOverlayDrag = useDraggableSheet({
+        isOpen: showHistoryOverlayMenu,
+        elementRef: historyOverlayDropdownRef,
+    });
     const accountId = useAppStore((s) => s.accountId) || '';
     const isAuthenticated = useAppStore((s) => s.isAuthenticated);
     const savedAccounts = useAppStore((s) => s.savedAccounts);
@@ -749,7 +755,7 @@ const MainToolbar = ({
         // Fire-and-forget the backend logout API (don't wait)
         const logoutBase = getLogoutBase().replace(/\/$/, '');
         const token = getAccessToken();
-        if (token && isConfiguredBrokerEndpoint(`${logoutBase}/api/logout`)) fetch(`${logoutBase}/api/logout`, {
+        if (token && isConfiguredBrokerEndpoint(`${logoutBase}/api/logout`)) fetch(toLocalDevProxyUrl(`${logoutBase}/api/logout`), {
             method: 'POST',
             redirect: 'error',
             headers: {
@@ -772,6 +778,7 @@ const MainToolbar = ({
             crosshairEnabled={toolbarState.crosshairEnabled}
             chartSymbol={symbol}
             accountId={accountId}
+            accountBrokerName={accountBrokerName}
             profileSymbols={profileSymbols}
             onSetAdvancedViewEnabled={setAdvancedViewEnabled}
             onSetAdvancedFontSize={(fontSize) => updateAdvancedOptions({ fontSize })}
@@ -839,6 +846,18 @@ const MainToolbar = ({
                         aria-label="Chart commands"
                         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                     >
+                        {!isDesktopShell && (
+                            <div className="rtx-toolbar-brand" data-testid="toolbar-rtx5-brand">
+                                <img
+                                    src={toPublicAssetPath('brand/rtx5-chart-watermark.png')}
+                                    alt="RTX5"
+                                    className="rtx-toolbar-brand__logo"
+                                    decoding="async"
+                                    draggable={false}
+                                />
+                            </div>
+                        )}
+
                         {/* New Order & Last Symbol */}
                         <MT5Group label="Trading shortcuts" className="rtx-toolbar-group--trading">
 
@@ -952,11 +971,11 @@ const MainToolbar = ({
                                         id={TRADE_HISTORY_OVERLAY_DIALOG_ID}
                                         ref={historyOverlayDropdownRef}
                                         className="rtx-menu-surface rtx-history-overlay-menu fixed z-[9999]"
-                                        style={getTradeHistoryOverlayPosition(historyOverlayRef.current)}
+                                        style={{ ...getTradeHistoryOverlayPosition(historyOverlayRef.current), ...historyOverlayDrag.dragStyle }}
                                         role="dialog"
                                         aria-labelledby={TRADE_HISTORY_OVERLAY_TITLE_ID}
                                     >
-                                        <div className="rtx-history-overlay-menu__header">
+                                        <div className="rtx-history-overlay-menu__header" {...historyOverlayDrag.dragHandleProps}>
                                             <span className="rtx-history-overlay-menu__header-icon" aria-hidden="true">
                                                 <History size={18} strokeWidth={1.75} />
                                             </span>

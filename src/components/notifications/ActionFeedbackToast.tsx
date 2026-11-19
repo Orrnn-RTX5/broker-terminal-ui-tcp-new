@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
+import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { formatUiMessage, type UiMessage } from '../../utils/uiFeedback';
 import { Icon, type IconName } from '../ui/Icon';
 import type { MarketWatchExportResult } from '../../utils/marketWatchExport';
@@ -270,6 +271,7 @@ function PositionCloseReceipt({
   );
   const dismissRef = useRef<HTMLButtonElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const { dragStyle, dragHandleProps, setSheetElement } = useDraggableSheet();
 
   // Esc belongs to the topmost layer, so it closes the receipt and stops there.
   useEffect(() => {
@@ -356,16 +358,18 @@ function PositionCloseReceipt({
       />
       <div className="rtx-action-feedback-region rtx-action-feedback-region--center">
         <section
+          ref={setSheetElement}
           aria-describedby={summaryId}
           aria-labelledby={titleId}
           aria-modal="true"
           className={className}
+          style={dragStyle}
           data-testid="action-feedback-toast"
           data-tone={tone}
           onKeyDown={trapFocus}
           role="dialog"
         >
-          <header className="rtx-action-feedback__header">
+          <header className="rtx-action-feedback__header" {...dragHandleProps}>
             <span className="rtx-action-feedback__icon" aria-hidden="true">
               <Icon name={iconName} size="md" />
             </span>
