@@ -757,54 +757,83 @@ ${rows}
         [historyView, periodFilter, symbolFilter, customPeriod, activeScopeKey, activeLogin]);
     const { scrollRef: historyScrollRef, window: historyVirtualWindow, onScroll: syncHistoryViewport }
         = useHistoryVirtualWindow(filteredOrders.length, historyViewportReset);
-    const historyFillRowRef = useRef<HTMLTableRowElement>(null);
+    const historyTableRef = useRef<HTMLTableElement>(null);
+    const historySummaryBarRef = useRef<HTMLDivElement>(null);
+    const historySummaryTableRef = useRef<HTMLTableElement>(null);
+    const historySummaryColgroupRef = useRef<HTMLTableColElement>(null);
+
+    const syncHistorySummaryHorizontalScroll = useCallback(() => {
+        const scroller = historyScrollRef.current;
+        const summaryBar = historySummaryBarRef.current;
+        if (!scroller || !summaryBar) return;
+        summaryBar.scrollLeft = scroller.scrollLeft;
+    }, [historyScrollRef]);
+
+    const handleHistoryScroll = useCallback(() => {
+        syncHistoryViewport();
+        syncHistorySummaryHorizontalScroll();
+    }, [syncHistoryViewport, syncHistorySummaryHorizontalScroll]);
 
     useLayoutEffect(() => {
         if (historySection !== 'history') return undefined;
         const scroller = historyScrollRef.current;
-        if (!scroller) return undefined;
+        const table = historyTableRef.current;
+        const summaryBar = historySummaryBarRef.current;
+        const summaryTable = historySummaryTableRef.current;
+        const colgroup = historySummaryColgroupRef.current;
+        if (!scroller || !table || !summaryBar || !summaryTable || !colgroup) return undefined;
 
-        const syncBottomSummaryPosition = () => {
-            const fillRow = historyFillRowRef.current;
-            const table = scroller.querySelector<HTMLTableElement>('table.rtx-history-table');
-            if (!fillRow || !table) return;
+        const syncHistorySummaryLayout = () => {
+            const scrollbarGutter = Math.max(0, scroller.offsetWidth - scroller.clientWidth);
+            summaryBar.style.paddingRight = scrollbarGutter > 0 ? `${scrollbarGutter}px` : '';
 
-            const viewportHeight = scroller.clientHeight;
-            if (viewportHeight <= 0) {
-                fillRow.style.display = 'none';
-                fillRow.style.height = '0px';
-                return;
-            }
+            const headerCells = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead tr th'));
+            const summaryCols = Array.from(colgroup.querySelectorAll<HTMLTableColElement>('col'));
+            const leadingColumnCount = visibleColumnCount - summaryTrailingColumns;
+            const tableWidth = table.getBoundingClientRect().width;
 
-            const currentFillHeight = fillRow.style.display === 'none'
-                ? 0
-                : fillRow.getBoundingClientRect().height;
-            const contentHeight = table.getBoundingClientRect().height - currentFillHeight;
-            const remainingHeight = Math.max(0, Math.floor(viewportHeight - contentHeight));
+            if (tableWidth > 0 && headerCells.length === visibleColumnCount && summaryCols.length === summaryTrailingColumns + 1) {
+                summaryTable.style.width = `${tableWidth}px`;
+                summaryTable.style.minWidth = `${tableWidth}px`;
 
-            if (remainingHeight > 0) {
-                fillRow.style.display = 'table-row';
-                fillRow.style.height = `${remainingHeight}px`;
+                let leadingWidth = 0;
+                for (let index = 0; index < leadingColumnCount; index += 1) {
+                    leadingWidth += headerCells[index].getBoundingClientRect().width;
+                }
+                summaryCols[0].style.width = `${leadingWidth}px`;
+                for (let index = 0; index < summaryTrailingColumns; index += 1) {
+                    const colWidth = headerCells[leadingColumnCount + index].getBoundingClientRect().width;
+                    summaryCols[index + 1].style.width = `${colWidth}px`;
+                }
             } else {
-                fillRow.style.display = 'none';
-                fillRow.style.height = '0px';
+                summaryTable.style.width = '';
+                summaryTable.style.minWidth = '';
+                for (const col of summaryCols) {
+                    col.style.width = '';
+                }
             }
+
+            summaryBar.scrollLeft = scroller.scrollLeft;
         };
 
-        syncBottomSummaryPosition();
-        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncBottomSummaryPosition) : null;
+        syncHistorySummaryLayout();
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncHistorySummaryLayout) : null;
         observer?.observe(scroller);
+        observer?.observe(table);
         return () => observer?.disconnect();
     }, [
+        autoArrange,
+        columnVisibility,
         filteredOrders.length,
         historyLoadedAt,
         historyScrollRef,
         historySection,
         historyView,
-        historyVirtualWindow.bottomSpacerHeight,
         loading,
         ordersPending,
         periodFilter,
+        summaryTrailingColumns,
+        visibleColumnCount,
     ]);
     const visibleHistoryOrders = filteredOrders.slice(historyVirtualWindow.startIndex, historyVirtualWindow.endIndex);
     const historyRowsLoading = filteredOrders.length === 0 && (
@@ -916,14 +945,15 @@ ${rows}
 
             <div
                 ref={historyScrollRef}
-                className="rtx-trade-scroll flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-700"
+                className="rtx-trade-scroll flex-1 min-h-0 overflow-auto scrollbar-thin scrollbar-thumb-zinc-700"
                 aria-label={tr('History records')}
-                onScroll={syncHistoryViewport}
+                onScroll={handleHistoryScroll}
                 onContextMenu={(event) => handleHistoryContextMenu(event)}
             >
                 <table
+                    ref={historyTableRef}
                     className="rtx-trade-table rtx-history-table w-full text-center border-collapse"
-                    aria-rowcount={filteredOrders.length + 2}
+                    aria-rowcount={filteredOrders.length + 1}
                     data-auto-arrange={autoArrange ? 'true' : 'false'}
                     data-grid={showGrid ? 'true' : 'false'}
                     style={{
@@ -1054,13 +1084,36 @@ ${rows}
                                 <td colSpan={Math.max(1, visibleColumnCount)} style={{ height: historyVirtualWindow.bottomSpacerHeight, padding: 0, border: 0, lineHeight: 0 }} />
                             </tr>
                         )}
-                        <tr ref={historyFillRowRef} aria-hidden="true" className="rtx-history-fill-row" style={{ display: 'none', height: '0px' }}>
-                            <td colSpan={Math.max(1, visibleColumnCount)} style={{ padding: 0, border: 0, lineHeight: 0 }} />
-                        </tr>
                     </tbody>
-                    <tfoot className="rtx-history-table__foot sticky bottom-0 z-10">
-                        <tr className="rtx-history-summary-row sticky bottom-0 z-10" aria-rowindex={filteredOrders.length + 2}>
-                            <td colSpan={visibleColumnCount - summaryTrailingColumns}>
+                </table>
+            </div>
+
+            <div
+                ref={historySummaryBarRef}
+                className="rtx-history-summary-bar shrink-0 z-10 overflow-hidden"
+            >
+                <table
+                    ref={historySummaryTableRef}
+                    className="rtx-history-table rtx-history-summary-table w-full text-center border-collapse"
+                    style={{
+                        fontFamily: '"Segoe UI", Tahoma, Arial, sans-serif',
+                        fontVariantNumeric: 'tabular-nums',
+                        tableLayout: 'fixed',
+                    }}
+                >
+                    <colgroup ref={historySummaryColgroupRef}>
+                        <col />
+                        {isColumnVisible('commission') && <col />}
+                        {isColumnVisible('swap') && <col />}
+                        {isColumnVisible('fee') && <col />}
+                        <col />
+                        {isColumnVisible('changePercent') && <col />}
+                        {isColumnVisible('magicNumber') && <col />}
+                        {isColumnVisible('comment') && <col />}
+                    </colgroup>
+                    <tfoot className="rtx-history-table__foot">
+                        <tr className="rtx-history-summary-row">
+                            <td>
                                 <div role="group" aria-label={tr('History financial summary')} className="rtx-history-summary-values">
                                     <span className="rtx-history-summary-status" aria-hidden="true">
                                         <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -1079,13 +1132,16 @@ ${rows}
                                             label === 'Balance' ? tr('Account balance unavailable')
                                                 : label === 'Profit' ? tr('Complete backend deal history unavailable')
                                                     : balanceHistoryError ?? tr(balanceHistory === null ? 'Balance history loading' : 'Balance history timestamps unavailable')
-                                        ) : undefined}>{tr(label)}: {formatSummaryMoney(value)}{' '}</span>
+                                        ) : undefined}>
+                                            <span className="rtx-history-summary-label">{tr(label)}:</span>{' '}
+                                            <span className="rtx-history-summary-value">{formatSummaryMoney(value)}</span>{' '}
+                                        </span>
                                     ))}
                                 </div>
                             </td>
-                            {isColumnVisible('commission') && <td aria-label={tr('Total commission')}>{formatSummaryMoney(financialSummary.commission)}</td>}
-                            {isColumnVisible('swap') && <td aria-label={tr('Total swap')}>{formatSummaryMoney(financialSummary.swap)}</td>}
-                            {isColumnVisible('fee') && <td aria-label={tr('Total fee')}>{formatSummaryMoney(financialSummary.fee)}</td>}
+                            {isColumnVisible('commission') && <td className={moneyColor(financialSummary.commission)} aria-label={tr('Total commission')}>{formatSummaryMoney(financialSummary.commission)}</td>}
+                            {isColumnVisible('swap') && <td className={moneyColor(financialSummary.swap)} aria-label={tr('Total swap')}>{formatSummaryMoney(financialSummary.swap)}</td>}
+                            {isColumnVisible('fee') && <td className={moneyColor(financialSummary.fee)} aria-label={tr('Total fee')}>{formatSummaryMoney(financialSummary.fee)}</td>}
                             <td className={moneyColor(financialSummary.grossProfit)} aria-label={tr('Total gross profit')}>{formatSummaryMoney(financialSummary.grossProfit)}</td>
                             {isColumnVisible('changePercent') && <td />}
                             {isColumnVisible('magicNumber') && <td />}

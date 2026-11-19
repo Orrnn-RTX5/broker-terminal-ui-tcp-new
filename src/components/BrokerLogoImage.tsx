@@ -40,7 +40,7 @@ const normalizeLogoBaseUrl = (value: unknown): string => {
 };
 
 export const isPlaceholderBrokerLogoUrl = (value: unknown): boolean =>
-  /(?:^|\/)assets\/logo\.png(?:[?#].*)?$/i.test(String(value || '').trim());
+  /(?:^|\/)(?:assets\/logo\.png|brand\/terminal-icon\.png|brand\/rtx5-app-icon\.png)(?:[?#].*)?$/i.test(String(value || '').trim());
 
 /** Deployment branding belongs only to its configured web broker. */
 export const getConfiguredBrokerLogoUrl = (brokerId: string | number | null | undefined): string => {

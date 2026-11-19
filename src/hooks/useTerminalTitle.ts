@@ -214,6 +214,41 @@ type BrokerDetails = [BrokerTitleConfig | null, BrokerServer[], { brokers: Broke
 // HeaderBar and StatusBar both mount this hook; share one in-flight fetch per server.
 let detailsCache: { key: string; promise: Promise<BrokerDetails> } | null = null;
 
+// Shared tab-focus / visibility refresh trigger so Super Admin logo updates reflect
+// live across the chart watermark, account tree, status bar, and menus without reloading.
+const BROKER_METADATA_REVALIDATE_MIN_GAP_MS = 5_000;
+let brokerMetadataRefreshTick = 0;
+let lastBrokerMetadataRefreshAt = 0;
+const brokerMetadataRefreshListeners = new Set<() => void>();
+let brokerMetadataListenersBound = false;
+
+const notifyBrokerMetadataRefresh = () => {
+    const now = Date.now();
+    if (now - lastBrokerMetadataRefreshAt < BROKER_METADATA_REVALIDATE_MIN_GAP_MS) return;
+    lastBrokerMetadataRefreshAt = now;
+    brokerMetadataRefreshTick += 1;
+    brokerMetadataRefreshListeners.forEach((listener) => listener());
+};
+
+const bindBrokerMetadataRefreshEvents = () => {
+    if (brokerMetadataListenersBound || typeof window === 'undefined' || typeof document === 'undefined') return;
+    brokerMetadataListenersBound = true;
+    window.addEventListener('focus', notifyBrokerMetadataRefresh);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            notifyBrokerMetadataRefresh();
+        }
+    });
+};
+
+const subscribeBrokerMetadataRefresh = (listener: () => void) => {
+    bindBrokerMetadataRefreshEvents();
+    brokerMetadataRefreshListeners.add(listener);
+    return () => { brokerMetadataRefreshListeners.delete(listener); };
+};
+
+const getBrokerMetadataRefreshTick = () => brokerMetadataRefreshTick;
+
 const extractServersArray = (raw: unknown): BrokerServer[] => {
     if (Array.isArray(raw)) return raw as BrokerServer[];
     if (raw && typeof raw === 'object') {
@@ -346,6 +381,11 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
     useEffect(() => onSessionChange(reason => {
         if (reason !== 'token_rotation') setSessionRevision(value => value + 1);
     }), []);
+    const metadataRefreshTick = useSyncExternalStore(
+        subscribeBrokerMetadataRefresh,
+        getBrokerMetadataRefreshTick,
+        getBrokerMetadataRefreshTick,
+    );
     const accountId = useAppStore((s) => s.accountId) || '---';
     const rawSavedAccounts = useAppStore((s) => s.savedAccounts);
     const savedAccounts = Array.isArray(rawSavedAccounts) ? rawSavedAccounts : [];
@@ -355,6 +395,7 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
     const serverName = storedServer || activeAccount?.server || DEFAULT_BROKER_SERVER;
     const brokerId = getStoredBrokerId();
     const infoKey = `${brokerId}|${serverName}|${accountId}|${sessionRevision}`;
+    const detailsFetchKey = `${infoKey}|r${metadataRefreshTick}`;
 
     const [resolvedKey, setResolvedKey] = useState(infoKey);
     const [brokerName, setBrokerName] = useState<string>(() => getExplicitConfiguredBrokerName() || brokerDisplayName(serverName));
@@ -366,17 +407,20 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
     const [logoBaseCandidates, setLogoBaseCandidates] = useState<string[]>([]);
 
     useEffect(() => {
-        let active = true;
         const initialExplicit = getExplicitConfiguredBrokerName();
         setResolvedKey(infoKey);
         setBrokerName(initialExplicit || brokerDisplayName(serverName));
         setHasExplicitBroker(Boolean(initialExplicit));
         setLogoUrl(getStoredLogoUrl());
         setLogoBaseCandidates([]);
+    }, [infoKey, serverName]);
+
+    useEffect(() => {
+        let active = true;
 
         const fetchDetails = async () => {
             try {
-                const [config, rawServers, brokersData] = await fetchBrokerDetails(infoKey);
+                const [config, rawServers, brokersData] = await fetchBrokerDetails(detailsFetchKey);
 
                 if (!active) return;
 
@@ -402,11 +446,14 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                         .map((v) => normalizeHeaderText(v))
                         .find((v) => Boolean(v) && !isPlaceholderBrokerLogoUrl(v)) || '';
 
-                const finalLogoUrl = pickValidLogoUrl(
-                    getConfiguredBrokerLogoUrl(brokerId),
+                const freshServerLogoUrl = pickValidLogoUrl(
                     matchedServer?.logo_url,
                     matchedBroker?.logo_url,
                     config?.logo_url,
+                );
+                const finalLogoUrl = pickValidLogoUrl(
+                    getConfiguredBrokerLogoUrl(brokerId),
+                    freshServerLogoUrl,
                     getStoredHeaderValue('logo_url'),
                     getStoredLogoUrl(),
                 );
@@ -417,6 +464,22 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                         matchedServer.backend_url || '',
                         matchedServer.market_api_url || '',
                     ];
+                }
+
+                if (
+                    freshServerLogoUrl
+                    && isDesktopBackendTarget()
+                    && typeof window !== 'undefined'
+                    && (!brokerId || getStoredBrokerId() === brokerId)
+                ) {
+                    const currentStored = getStoredHeaderValue('logo_url');
+                    if (currentStored !== freshServerLogoUrl) {
+                        try {
+                            window.localStorage.setItem('logo_url', freshServerLogoUrl);
+                        } catch {
+                            // Storage can be restricted in hardened browser contexts.
+                        }
+                    }
                 }
 
                 const explicitName = pickExplicitBrokerName(config, matchedServer, brokersList, brokerId);
@@ -447,7 +510,7 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
             active = false;
             cancelScheduledDetails();
         };
-    }, [infoKey, serverName, brokerId]);
+    }, [detailsFetchKey, infoKey, serverName, brokerId]);
 
     // Account mode: read once per account/session; unknown until the signed
     // snapshot for this login answers. The read is per symbol and can fail for

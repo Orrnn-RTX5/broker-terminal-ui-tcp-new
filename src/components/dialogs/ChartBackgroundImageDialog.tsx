@@ -9,7 +9,7 @@ import {
   type ChartProperties,
 } from '../../store/useChartSettingsStore';
 import { RTX5_DEFAULT_CHART_WATERMARK_SRC } from '../../utils/squareChartGridPrimitive';
-import { getPrimaryBrokerWatermarkUrl } from '../../utils/brokerWatermark';
+import { getPrimaryBrokerWatermarkUrl, subscribeBrokerWatermarkChanges } from '../../utils/brokerWatermark';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 
 export interface ChartBackgroundImageDialogProps {
@@ -211,7 +211,13 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         secondaryBtnText: '#ffffff',
       };
 
-  const defaultBrokerWatermarkUrl = getPrimaryBrokerWatermarkUrl();
+  const [brokerWatermarkTick, setBrokerWatermarkTick] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    return subscribeBrokerWatermarkChanges(() => setBrokerWatermarkTick(v => v + 1));
+  }, [isOpen]);
+
+  const defaultBrokerWatermarkUrl = brokerWatermarkTick >= 0 ? getPrimaryBrokerWatermarkUrl() : undefined;
   const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
     typeof window !== 'undefined' && window.location?.origin
       ? `${window.location.origin}${RTX5_DEFAULT_CHART_WATERMARK_SRC}`

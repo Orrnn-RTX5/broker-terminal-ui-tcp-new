@@ -406,4 +406,28 @@ describe('toolbar selection synchronization', () => {
     expect(screen.queryByRole('dialog', { name: 'Trade History' })).not.toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('portals the web application menu into the left rail slot and places the RTX5 logo at the top-left slot', () => {
+    Object.defineProperty(window, 'electron', { configurable: true, writable: true, value: undefined });
+    const railSlot = document.createElement('div');
+    railSlot.className = 'web-drawing-tools-rail__menu-slot';
+    document.body.appendChild(railSlot);
+    try {
+      const { container } = render(
+        <TopToolbar {...toolbarProps()} webMenuSlot={railSlot} expectWebMenuInRail />,
+      );
+      const mainToolbar = container.querySelector('.rtx-main-toolbar') as HTMLElement;
+      const brandSlot = mainToolbar.querySelector('.rtx-toolbar-brand-slot') as HTMLElement;
+      expect(brandSlot).toBeInTheDocument();
+      expect(mainToolbar.firstElementChild).toBe(brandSlot);
+      expect(brandSlot.querySelector('[data-testid="toolbar-rtx5-brand"]')).toBeInTheDocument();
+
+      const launcherButton = within(railSlot).getByRole('button', { name: 'Open application menu' });
+      expect(launcherButton).toBeInTheDocument();
+      expect(launcherButton.closest('.rtx-menu-launcher')).toHaveAttribute('data-placement', 'rail');
+      expect(mainToolbar.contains(launcherButton)).toBe(false);
+    } finally {
+      railSlot.remove();
+    }
+  });
 });

@@ -142,6 +142,8 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock table
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
   .rtx-trade-footer,
+  .rtx-history-summary-bar,
+  .rtx-withdrawal-summary-bar,
   .rtx-exposure-account-bar
 ) {
   background: var(--rtx-toolbox-summary) !important;
@@ -536,6 +538,8 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
   .navigator-panel__header,
   .rtx-bottom-dock__tabs,
   .rtx-trade-footer,
+  .rtx-history-summary-bar,
+  .rtx-withdrawal-summary-bar,
   .rtx-status-bar,
   .rtx-top-chrome,
   .rtx-main-toolbar,

@@ -419,5 +419,29 @@ describe('Trade row updates', () => {
     const emptyState = view.container.querySelector('.rtx-trade-empty-state');
     expect(emptyState).toHaveClass('flex-1', 'min-h-0');
     expect(emptyState).toHaveTextContent('No open positions');
+    const footer = view.container.querySelector('.rtx-trade-footer');
+    expect(scrollContainer.contains(footer)).toBe(false);
+    expect(scrollContainer.nextElementSibling).toBe(footer);
+  });
+
+  it('keeps the account summary footer fixed outside the scroll container and syncs horizontal scroll', () => {
+    const props = createProps([confirmedPosition(100)]);
+    const view = render(<TradeTable {...props} />);
+    const panel = view.container.querySelector('.rtx-trade-table-panel') as HTMLDivElement;
+    const scrollContainer = view.container.querySelector('.rtx-trade-scroll') as HTMLDivElement;
+    const footer = view.container.querySelector('.rtx-trade-footer') as HTMLDivElement;
+
+    expect(panel).toHaveClass('flex', 'flex-1', 'min-h-0', 'flex-col', 'overflow-hidden');
+    expect(Array.from(panel.children)).toEqual([scrollContainer, footer]);
+    expect(scrollContainer.contains(footer)).toBe(false);
+
+    scrollContainer.scrollTop = 180;
+    scrollContainer.scrollLeft = 84;
+    fireEvent.scroll(scrollContainer);
+    expect(footer.scrollLeft).toBe(84);
+
+    view.rerender(<TradeTable {...props} displayedLivePositions={[]} loading={false} />);
+    expect(Array.from(panel.children)).toEqual([scrollContainer, footer]);
+    expect(scrollContainer.querySelector('.rtx-trade-empty-state')).not.toBeNull();
   });
 });

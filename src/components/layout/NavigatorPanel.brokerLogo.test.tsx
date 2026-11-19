@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NavigatorPanel } from './NavigatorPanel';
 import { useAppStore, type SavedAccount } from '../../store/useAppStore';
 import { commitBrokerAccountSessionScope } from '../../services/brokerSession';
+import { applyBrokerChrome } from '../../services/brokerPresentation';
 import type { BrokerDiscoveryItem } from '../../services/brokerDiscovery';
 
 const brokerApiMocks = vi.hoisted(() => ({ getServers: vi.fn(), getBrokers: vi.fn() }));
@@ -177,5 +178,32 @@ describe('Navigator broker logo ownership', () => {
     await act(async () => { resolveOld([{ ...alpha, logo_url: 'https://late.example/alpha.png' }]); });
     expect(screen.getByRole('img', { name: 'Beta Trading Logo' })).toHaveAttribute('src', 'https://images.example/beta.png');
     expect(document.querySelector('img[src*="late.example"]')).toBeNull();
+  });
+
+  it('refreshes the Accounts tree broker logo live when broker chrome broadcasts a newer Super Admin logo version', async () => {
+    authenticate(nexa);
+    directoryMocks.getCachedBrokerDirectory.mockReturnValue([
+      { ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=old' },
+    ]);
+    brokerApiMocks.getServers
+      .mockResolvedValueOnce([{ ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=old' }])
+      .mockResolvedValueOnce([{ ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=new' }]);
+
+    render(<NavigatorPanel />);
+    expect(await screen.findByRole('img', { name: 'Nexa Logo' }))
+      .toHaveAttribute('src', 'https://directory.example/api/v1/brokers/Nexa/logo?v=old');
+
+    act(() => {
+      applyBrokerChrome({
+        brokerId: nexa.broker_id,
+        brokerName: nexa.broker_name,
+        logoUrl: 'https://directory.example/api/v1/brokers/Nexa/logo?v=new',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: 'Nexa Logo' }))
+        .toHaveAttribute('src', 'https://directory.example/api/v1/brokers/Nexa/logo?v=new');
+    });
   });
 });

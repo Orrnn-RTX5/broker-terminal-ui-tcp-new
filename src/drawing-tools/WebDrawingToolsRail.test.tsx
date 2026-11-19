@@ -898,10 +898,11 @@ describe('WebDrawingToolsRail', () => {
     });
   });
 
-  it('matches the reference rail dimensions with a compact fallback and unclipped portals', () => {
+  it('uses narrow tightly-packed rail dimensions with a menu slot above cursors and unclipped portals', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/drawing-tools/WebDrawingToolsRail.css'), 'utf8');
-    expect(css).toMatch(/\.web-drawing-tools-rail\s*\{[\s\S]*?width:\s*53px;[\s\S]*?min-width:\s*53px;/);
-    expect(css).toMatch(/\.web-drawing-tools-rail__button\s*\{[\s\S]*?width:\s*52px;[\s\S]*?height:\s*38px;[\s\S]*?min-height:\s*38px;/);
+    expect(css).toMatch(/\.web-drawing-tools-rail\s*\{[\s\S]*?width:\s*var\(--rtx-web-left-rail-width,\s*38px\);[\s\S]*?min-width:\s*var\(--rtx-web-left-rail-width,\s*38px\);/);
+    expect(css).toMatch(/\.web-drawing-tools-rail__menu-slot\s*\{[\s\S]*?flex:\s*0 0 auto;/);
+    expect(css).toMatch(/\.web-drawing-tools-rail__button\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*30px;[\s\S]*?min-height:\s*30px;/);
     expect(css).toMatch(/\.web-drawing-tools-rail__tools\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overflow-y:\s*auto;/);
     expect(css).toMatch(/\.web-drawing-tools-rail__footer\s*\{[\s\S]*?flex:\s*0 0 auto;/);
     expect(css).toMatch(/\.web-drawing-tools-tooltip\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*10030;/);
@@ -909,8 +910,32 @@ describe('WebDrawingToolsRail', () => {
     expect(css).toContain('@media (max-height: 620px)');
     expect(css).toContain('@media (max-height: 480px), (max-width: 768px)');
     expect(css).toMatch(
-      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?justify-content:\s*safe space-evenly;/
+      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?flex:\s*0 1 auto;[\s\S]*?justify-content:\s*flex-start;/
     );
+  });
+
+  it('mounts the application menu slot directly above the cursor tool in vertical mode and closes open flyouts when clicking it', () => {
+    const onMenuSlotChange = vi.fn();
+    const { container } = render(
+      <WebDrawingToolsRail selectedSymbol="XAUUSD" onMenuSlotChange={onMenuSlotChange} />,
+    );
+    const rail = container.querySelector('.web-drawing-tools-rail') as HTMLElement;
+    const menuSlot = rail.querySelector('[data-rtx-rail-menu-slot="true"]') as HTMLDivElement;
+    const tools = rail.querySelector('.web-drawing-tools-rail__tools') as HTMLDivElement;
+    const cursorsButton = tools.querySelector('[data-rail-menu="cursors"]') as HTMLButtonElement;
+    expect(menuSlot).toBeInTheDocument();
+    expect(onMenuSlotChange).toHaveBeenCalledWith(menuSlot);
+    expect(menuSlot.nextElementSibling).toBe(tools);
+    expect(tools.firstElementChild).toBe(cursorsButton);
+
+    const mockLauncher = document.createElement('button');
+    mockLauncher.setAttribute('aria-haspopup', 'menu');
+    menuSlot.appendChild(mockLauncher);
+
+    openTrendMenu();
+    expect(screen.getByRole('menu', { name: 'Lines, channels, and pitchforks' })).toBeInTheDocument();
+    fireEvent.pointerDown(mockLauncher);
+    expect(screen.queryByRole('menu', { name: 'Lines, channels, and pitchforks' })).not.toBeInTheDocument();
   });
 
   it('ignores Cursor and saved events owned by another chart context', () => {

@@ -28,7 +28,7 @@ import { getTerminalShortcutHint, runTerminalShortcutAction } from '../../servic
 import { getAppVersion } from '../../config/appVersion';
 import { toLocalDevProxyUrl } from '../../config/api';
 import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
-import { BrokerLogoImage } from '../BrokerLogoImage';
+import { BrokerLogoImage, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
 import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
 import { brokerDisplayName, isBrokerName, NEUTRAL_TERMINAL_TITLE } from '../../services/brokerDisplayName';
@@ -98,6 +98,7 @@ export interface MenuBarProps {
     accountId?: string;
     accountBrokerName?: string;
     profileSymbols?: readonly string[];
+    placement?: 'toolbar' | 'rail';
     onSetAdvancedViewEnabled?: (enabled: boolean) => void;
     onSetAdvancedFontSize?: (fontSize: 'small' | 'normal' | 'large') => void;
     onSetFocusChart?: (enabled: boolean) => void;
@@ -114,6 +115,7 @@ export const MenuBar = ({
     accountId,
     accountBrokerName,
     profileSymbols,
+    placement = 'toolbar',
     onSetAdvancedViewEnabled,
     onSetAdvancedFontSize,
     onSetFocusChart,
@@ -154,7 +156,9 @@ export const MenuBar = ({
     const resolvedBrokerLogoUrl = toLocalDevProxyUrl(
         getLogoUrl(brokerInfo.logoUrl, brokerInfo.logoBaseCandidates),
     );
-    const rawChromeLogoUrl = toLocalDevProxyUrl(brokerChrome.logoUrl || '');
+    const rawChromeLogoUrl = isPlaceholderBrokerLogoUrl(brokerChrome.logoUrl)
+        ? ''
+        : toLocalDevProxyUrl(brokerChrome.logoUrl || '');
     const applicationMenuBrokerId = brokerChrome.brokerId || (
         typeof window !== 'undefined'
             ? String(
@@ -332,6 +336,15 @@ export const MenuBar = ({
         const updateMenuPosition = () => {
             const rect = menuButtonRef.current?.getBoundingClientRect();
             if (!rect) return;
+            const isRailPlacement = placement === 'rail'
+                || Boolean(menuButtonRef.current?.closest('.web-drawing-tools-rail'));
+            if (isRailPlacement) {
+                setMenuPosition({
+                    top: Math.max(4, Math.min(rect.top, window.innerHeight - 250)),
+                    left: Math.max(4, Math.min(rect.right + 4, window.innerWidth - 264)),
+                });
+                return;
+            }
             setMenuPosition({
                 top: Math.min(rect.bottom + 2, Math.max(4, window.innerHeight - 250)),
                 left: Math.max(4, Math.min(rect.left, window.innerWidth - 264)),
@@ -354,7 +367,7 @@ export const MenuBar = ({
             window.removeEventListener('scroll', updateMenuPosition, true);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [closeMenu, isFileDialogOpen, isMenuOpen]);
+    }, [closeMenu, isFileDialogOpen, isMenuOpen, placement]);
 
     const globalChartProperties = useChartSettingsStore(state => state.globalProperties);
     const symbolChartProperties = useChartSettingsStore(state => state.symbolProperties);
@@ -1253,6 +1266,7 @@ export const MenuBar = ({
 
             {!isElectronDesktop && <div
                 ref={menuRef}
+                data-placement={placement}
                 className="rtx-menu-launcher flex h-[40px] shrink-0 items-center"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >

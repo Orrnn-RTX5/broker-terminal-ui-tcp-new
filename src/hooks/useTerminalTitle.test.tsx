@@ -408,3 +408,34 @@ it('drops a known mode on logout', async () => {
     act(() => { useAppStore.setState({ isAuthenticated: false }); });
     expect(result.current.marginMode).toBe(UNKNOWN_MARGIN_MODE);
 });
+
+it('revalidates and updates broker logo_url on window focus after a Super Admin logo change', async () => {
+    localStorage.setItem('broker_id', 'orrnn');
+    localStorage.setItem('logo_url', 'http://127.0.0.1:18403/brand/terminal-icon.png');
+    vi.mocked(brokerV2Api.getServers)
+        .mockResolvedValueOnce([{
+            broker_id: 'orrnn',
+            broker_name: 'Orrnn',
+            server: 'Orrnn',
+            server_url: 'http://127.0.0.1:18403',
+            logo_url: 'http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=111111111111',
+        } as never])
+        .mockResolvedValueOnce([{
+            broker_id: 'orrnn',
+            broker_name: 'Orrnn',
+            server: 'Orrnn',
+            server_url: 'http://127.0.0.1:18403',
+            logo_url: 'http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=222222222222',
+        } as never]);
+
+    const { result } = renderHook(useTerminalBrokerInfo);
+    await waitFor(() => expect(result.current.logoUrl).toBe('http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=111111111111'));
+
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+    try {
+        act(() => { window.dispatchEvent(new Event('focus')); });
+        await waitFor(() => expect(result.current.logoUrl).toBe('http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=222222222222'));
+    } finally {
+        dateNowSpy.mockRestore();
+    }
+});

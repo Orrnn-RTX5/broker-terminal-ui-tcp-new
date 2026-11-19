@@ -3,8 +3,8 @@
   position: relative;
   z-index: 25;
   display: flex;
-  width: 53px;
-  min-width: 53px;
+  width: var(--rtx-web-left-rail-width, 38px);
+  min-width: var(--rtx-web-left-rail-width, 38px);
   height: 100%;
   flex-direction: column;
   align-items: center;
@@ -16,14 +16,90 @@
   font-family: var(--font-sans);
 }
 
+.web-drawing-tools-rail__menu-slot {
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0 0;
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-menu-launcher {
+  display: flex;
+  width: 100%;
+  height: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger::before {
+  content: '';
+  position: absolute;
+  inset: 1px 4px;
+  z-index: -1;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:is(:hover, :focus-visible) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-primary);
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:is(:hover, :focus-visible)::before {
+  background: var(--bg-quaternary);
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--web-drawing-accent);
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger.is-open {
+  background: transparent;
+  border-color: transparent;
+  color: var(--web-drawing-accent);
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger.is-open::before {
+  background: color-mix(in srgb, var(--web-drawing-accent) 12%, var(--bg-secondary));
+}
+
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  stroke-width: 1.7;
+}
+
 .web-drawing-tools-rail__button {
   position: relative;
   isolation: isolate;
   display: flex;
-  width: 52px;
-  height: 38px;
-  min-height: 38px;
-  flex: 0 0 38px;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  flex: 0 0 30px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -37,6 +113,7 @@
 /* Match the application menu's stationary press feedback. The global button
    scale otherwise makes these triggers and their menu rows shrink on press. */
 .web-drawing-tools-rail__button:active,
+.web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:active,
 .web-drawing-tools-menu button:active {
   transform: none;
 }
@@ -44,17 +121,18 @@
 .web-drawing-tools-rail__button::before {
   content: '';
   position: absolute;
-  inset: 2px 9px;
+  inset: 1px 4px;
   z-index: -1;
   border-radius: 4px;
   pointer-events: none;
 }
 
-.web-drawing-tools-rail__glyph {
+.web-drawing-tools-rail__glyph,
+.web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
   display: block;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
 }
 
 .web-drawing-tools-rail__button:hover,
@@ -91,7 +169,7 @@
 .web-drawing-tools-rail__tools,
 .web-drawing-tools-rail__footer {
   display: flex;
-  width: 52px;
+  width: 100%;
   flex-direction: column;
   align-items: center;
 }
@@ -113,33 +191,32 @@
 }
 
 .web-drawing-tools-rail__separator {
-  width: 32px;
+  width: 22px;
   height: 1px;
   min-height: 1px;
-  margin: 6px 0;
+  margin: 2px 0;
   flex: 0 0 1px;
   background: var(--border-primary);
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-  flex: 1 1 auto;
-  justify-content: space-evenly;
-  justify-content: safe space-evenly;
-  gap: 2px;
-  padding: 4px 0 2px;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 1px 0 2px;
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools .web-drawing-tools-rail__separator {
-  margin: 0;
+  margin: 2px 0;
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-  padding: 0 0 6px;
-  gap: 4px;
+  padding: 0 0 4px;
+  gap: 1px;
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
-  margin: 2px 0;
+  margin: 1px 0 2px;
 }
 
 .web-drawing-tools-rail__toggle {
@@ -176,7 +253,7 @@
 
 .web-drawing-tools-rail__flyout-mark {
   position: absolute;
-  right: 4px;
+  right: 2px;
   top: 50%;
   transform: translateY(-50%);
   width: 4px;
@@ -513,86 +590,43 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
 @media (max-height: 920px), (max-width: 1720px) {
   .web-drawing-tools-rail[data-orientation='vertical'] {
-    width: 42px;
-    min-width: 42px;
+    width: var(--rtx-web-left-rail-width, 36px);
+    min-width: var(--rtx-web-left-rail-width, 36px);
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    width: 41px;
+    width: 100%;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 2px 0;
-    gap: 2px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding: 0 0 4px;
-    gap: 4px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
-    width: 41px;
-    height: 32px;
-    min-height: 32px;
-    flex: 0 0 32px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before {
-    inset: 2px 5px;
-    border-radius: 5px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
-    width: 21px;
-    height: 21px;
-    flex: 0 0 21px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    width: 24px;
-    margin: 0;
-    background: color-mix(in srgb, var(--text-secondary) 28%, var(--border-primary));
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
-    margin: 2px 0;
-  }
-}
-
-@media (max-height: 720px), (max-width: 1440px) {
-  .web-drawing-tools-rail[data-orientation='vertical'] {
-    width: 38px;
-    min-width: 38px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    width: 37px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 2px 0;
-    gap: 2px;
+    padding: 1px 0;
+    gap: 1px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
     padding: 0 0 3px;
-    gap: 3px;
+    gap: 1px;
   }
 
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
-    width: 37px;
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
+    width: 100%;
     height: 28px;
     min-height: 28px;
     flex: 0 0 28px;
   }
 
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before {
-    inset: 2px 4px;
-    border-radius: 5px;
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger::before {
+    inset: 1px 3px;
+    border-radius: 4px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger > svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
@@ -603,8 +637,67 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    width: 22px;
-    margin: 0;
+    width: 20px;
+    margin: 1px 0;
+    background: color-mix(in srgb, var(--text-secondary) 28%, var(--border-primary));
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
+    margin: 1px 0;
+  }
+}
+
+@media (max-height: 720px), (max-width: 1440px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    width: var(--rtx-web-left-rail-width, 34px);
+    min-width: var(--rtx-web-left-rail-width, 34px);
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    width: 100%;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
+    padding: 1px 0;
+    gap: 1px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    padding: 0 0 2px;
+    gap: 1px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
+    width: 100%;
+    height: 26px;
+    min-height: 26px;
+    flex: 0 0 26px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger::before {
+    inset: 1px 3px;
+    border-radius: 4px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger > svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    width: 18px;
+    margin: 1px 0;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
@@ -622,49 +715,26 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
 @media (max-height: 620px) {
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 2px 0;
-    gap: 2px;
+    padding: 1px 0;
+    gap: 0;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
     padding: 0 0 2px;
-    gap: 2px;
+    gap: 0;
   }
 
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
-    height: 25px;
-    min-height: 25px;
-    flex: 0 0 25px;
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
+    height: 24px;
+    min-height: 24px;
+    flex: 0 0 24px;
   }
 
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
-    width: 17px;
-    height: 17px;
-    flex: 0 0 17px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    margin: 0;
-  }
-}
-
-@media (max-height: 480px), (max-width: 768px) {
-  .web-drawing-tools-rail[data-orientation='vertical'] {
-    width: 34px;
-    min-width: 34px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    width: 33px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button {
-    width: 33px;
-    height: 23px;
-    min-height: 23px;
-    flex: 0 0 23px;
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger > svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
@@ -675,8 +745,51 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    width: 18px;
-    margin: 0;
+    margin: 1px 0;
+  }
+}
+
+@media (max-height: 480px), (max-width: 768px) {
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    width: var(--rtx-web-left-rail-width, 32px);
+    min-width: var(--rtx-web-left-rail-width, 32px);
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
+    width: 100%;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
+    width: 100%;
+    height: 22px;
+    min-height: 22px;
+    flex: 0 0 22px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button::before,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger::before {
+    inset: 1px 2px;
+    border-radius: 3px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger > svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__glyph,
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button > svg:not(.web-drawing-tools-rail__flyout-mark) {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+  }
+
+  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
+    width: 16px;
+    margin: 1px 0;
   }
 }
 

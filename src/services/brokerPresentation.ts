@@ -102,7 +102,7 @@ export const buildBrokerPresentationUrl = (
 };
 
 export const isPlaceholderBrokerLogoUrl = (value: unknown): boolean =>
-  /(?:^|\/)assets\/logo\.png(?:[?#].*)?$/i.test(String(value || '').trim());
+  /(?:^|\/)(?:assets\/logo\.png|brand\/terminal-icon\.png|brand\/rtx5-app-icon\.png)(?:[?#].*)?$/i.test(String(value || '').trim());
 
 /** Resolve a broker-provided asset against that broker's own origin. */
 export const resolveBrokerPresentationAssetUrl = (

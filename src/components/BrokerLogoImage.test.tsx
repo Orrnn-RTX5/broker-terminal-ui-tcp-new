@@ -52,13 +52,21 @@ describe('BrokerLogoImage', () => {
     ]);
   });
 
-  it('treats /assets/logo.png as an unconfigured placeholder and falls back to /api/v1/brokers/:id/logo', () => {
+  it('treats /assets/logo.png and generic /brand/terminal-icon.png as placeholders and falls back to /api/v1/brokers/:id/logo', () => {
     expect(buildBrokerLogoCandidates(
       { ...testBroker, logo_url: '/assets/logo.png' },
       'https://fxtrustsuperbackned.orrnn.com',
       '/brand/terminal-icon.png',
     )).toEqual([
       'https://fxtrustsuperbackned.orrnn.com/api/v1/brokers/TEST/logo',
+      '/brand/terminal-icon.png',
+    ]);
+    expect(buildBrokerLogoCandidates(
+      { ...testBroker, logo_url: 'http://127.0.0.1:18403/brand/terminal-icon.png' },
+      'http://127.0.0.1:18403',
+      '/brand/terminal-icon.png',
+    )).toEqual([
+      'http://127.0.0.1:18403/api/v1/brokers/TEST/logo',
       '/brand/terminal-icon.png',
     ]);
   });

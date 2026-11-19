@@ -302,20 +302,33 @@ html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail {
   color: var(--rtx-light-text-secondary);
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-brand-slot {
+  border-right-color: var(--rtx-light-line-border, #64748b);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button,
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
   color: var(--rtx-light-text);
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true'] {
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true'],
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger.is-open {
   background: transparent !important;
   color: var(--rtx-light-accent-strong) !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button:is(:hover, :focus-visible) {
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button:is(:hover, :focus-visible),
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:is(:hover, :focus-visible) {
   background: transparent !important;
+  border-color: transparent !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true']::before {
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger:is(:hover, :focus-visible)::before {
+  background: var(--rtx-light-hover);
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button[data-active='true']::before,
+html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger.is-open::before {
   background: var(--rtx-light-accent-soft);
 }
 
@@ -803,9 +816,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer {
   background: var(--rtx-light-panel-header) !important;
   border-top-color: var(--rtx-light-line-border, #64748b) !important;
   box-shadow: none !important;
-  position: sticky;
-  bottom: 0;
+  position: relative;
   z-index: 10;
+  flex-shrink: 0;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-trade-footer-status,

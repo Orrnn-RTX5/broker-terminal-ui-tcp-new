@@ -2,7 +2,7 @@ import { brokerDisplayName, isBrokerName } from '../../services/brokerDisplayNam
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useBrokerAccountSessionScope } from '../../hooks/useBrokerAccountSessionScope';
 import { Icon } from '../ui/Icon';
-import React, { lazy, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { lazy, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppStore, type SavedAccount } from '../../store/useAppStore';
 import { ArrowDownToLine, ArrowUpFromLine, FileCode } from 'lucide-react';
 import { ContextMenu, type ContextMenuItemConfig } from '../ui/ContextMenu';
@@ -19,6 +19,7 @@ import { getToken, parseTokenExpiresAt, setRefreshToken, setToken } from '../../
 import { normalizeBrokerServerUrl, toLocalDevProxyUrl } from '../../config/api';
 import { getRuntimeDiscoveryBaseUrl, isDesktopBackendTarget, resolveBrokerExtApiUrl } from '../../config/backendTarget.js';
 import { buildBrokerDirectoryLogoUrl, getConfiguredBrokerLogoUrl, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
+import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
 import { getCachedBrokerDirectory, loadAppBrokerDirectory } from '../../services/brokerDirectory';
 import { runAfterTerminalReady } from '../../startup/runAfterTerminalReady';
 import { openWebTrader } from '../../services/webTrader';
@@ -100,7 +101,7 @@ const buildBrokerLogoInfo = (
     brokers: Broker[],
     stored?: StoredBrokerLogo,
 ): BrokerLogoInfo => {
-    const matches = [...directoryBrokers, ...servers].filter(server => matchesBrokerServer(server, target));
+    const matches = [...servers, ...directoryBrokers].filter(server => matchesBrokerServer(server, target));
     const matchedIds = new Set(matches.map(server => normalizeNavigatorText(server.broker_id)).filter(Boolean));
     // An unbound legacy label shared by multiple brokers is ambiguous.
     const owned = !target.brokerId && matchedIds.size > 1 ? [] : matches;
@@ -302,6 +303,23 @@ export const NavigatorPanel: React.FC = () => {
         ? `${storedBrokerLogo.brokerId}|${storedBrokerLogo.serverUrl}|${storedBrokerLogo.logoUrl}`
         : '';
 
+    const lastChromeLogoRef = useRef<string>(getBrokerChrome().logoUrl || '');
+    const [chromeLogoRefreshTick, setChromeLogoRefreshTick] = useState(0);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+        const onBrokerChrome = (event: Event) => {
+            const detail = (event as CustomEvent<BrokerChromeState>).detail;
+            const nextLogo = normalizeNavigatorText(detail?.logoUrl);
+            if (nextLogo && nextLogo !== lastChromeLogoRef.current) {
+                lastChromeLogoRef.current = nextLogo;
+                setChromeLogoRefreshTick(n => n + 1);
+            }
+        };
+        window.addEventListener(BROKER_CHROME_EVENT, onBrokerChrome);
+        return () => window.removeEventListener(BROKER_CHROME_EVENT, onBrokerChrome);
+    }, []);
+
     useEffect(() => {
         let active = true;
         const targets = JSON.parse(serverLogoKey) as BrokerLogoTarget[];
@@ -311,7 +329,9 @@ export const NavigatorPanel: React.FC = () => {
                 buildBrokerLogoInfo(target, directory, brokerServers, brokers, storedBrokerLogo)]));
             setBrokerLogoState({ scope: logoScopeKey, logos });
         };
-        update(getCachedBrokerDirectory() || [], [], []);
+        if (chromeLogoRefreshTick === 0) {
+            update(getCachedBrokerDirectory() || [], [], []);
+        }
 
         const loadBrokerLogos = async () => {
             try {
@@ -326,8 +346,8 @@ export const NavigatorPanel: React.FC = () => {
                 const safeBrokerServers = Array.isArray(brokerServers) ? brokerServers : [];
                 update(cachedDirectory, safeBrokerServers, brokers);
 
-                if (cachedDirectory.length === 0) {
-                    loadAppBrokerDirectory({ desktop: isDesktopBackendTarget() })
+                if (cachedDirectory.length === 0 || (chromeLogoRefreshTick > 0 && isDesktopBackendTarget())) {
+                    loadAppBrokerDirectory({ forceRefresh: chromeLogoRefreshTick > 0, desktop: isDesktopBackendTarget() })
                         .then((directoryBrokers) => {
                             if (!active || !directoryBrokers?.length) return;
                             update(directoryBrokers, safeBrokerServers, brokers);
@@ -346,7 +366,7 @@ export const NavigatorPanel: React.FC = () => {
             cancelScheduledLogos();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [serverLogoKey, logoScopeKey, storedBrokerLogoKey]);
+    }, [serverLogoKey, logoScopeKey, storedBrokerLogoKey, chromeLogoRefreshTick]);
 
     const { hasDemoAndRealAccounts } = useMemo(
         () => getBrokerSavedAccountTypes(visibleAccounts),

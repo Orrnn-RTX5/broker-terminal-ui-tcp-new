@@ -1,6 +1,7 @@
 import {
   Fragment,
   memo,
+  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -590,6 +591,15 @@ export function TradeTable({
 }: TradeTableProps) {
   const tr = useUiTranslation();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const footerScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const syncFooterHorizontalScroll = useCallback(() => {
+    const scroller = scrollContainerRef.current;
+    const footer = footerScrollRef.current;
+    if (!scroller || !footer) return;
+    footer.scrollLeft = scroller.scrollLeft;
+  }, []);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -598,6 +608,24 @@ export function TradeTable({
       container.scrollTop = 0;
     }
   }, [displayedLivePositions.length]);
+
+  useLayoutEffect(() => {
+    const scroller = scrollContainerRef.current;
+    const footer = footerScrollRef.current;
+    if (!scroller || !footer) return undefined;
+
+    const syncFooterLayout = () => {
+      const scrollbarGutter = Math.max(0, scroller.offsetWidth - scroller.clientWidth);
+      footer.style.paddingRight = scrollbarGutter > 0 ? `${scrollbarGutter}px` : '';
+      footer.scrollLeft = scroller.scrollLeft;
+    };
+
+    syncFooterLayout();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncFooterLayout) : null;
+    observer?.observe(scroller);
+    if (tableRef.current) observer?.observe(tableRef.current);
+    return () => observer?.disconnect();
+  }, [displayedLivePositions.length, visibleTradeTableWidth]);
 
   const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
   const toColumnWidthStyle = (width: number) => (
@@ -713,48 +741,61 @@ export function TradeTable({
   ]);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      onContextMenu={(event) => handleTradeContextMenu(event)}
-      className={`rtx-trade-scroll flex flex-1 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
-    >
-      <table
-        className="rtx-trade-table w-full shrink-0 text-center border-collapse table-fixed"
-        style={{ minWidth: visibleTradeTableWidth, fontFamily: '"Segoe UI", Tahoma, Arial, sans-serif', fontVariantNumeric: 'tabular-nums' }}
-      >
-        <colgroup>
-          <col style={{ width: toColumnWidthStyle(columnWidths.symbol) }} />
-          {visibleTradeColumns.map(column => (
-            <col key={column.key} style={{ width: toColumnWidthStyle(columnWidths[column.key]) }} />
-          ))}
-          <col style={{ width: toColumnWidthStyle(closeColumnWidth) }} />
-        </colgroup>
-        <thead className="rtx-trade-table__head sticky top-0 bg-[#17181c] text-[#c9cfdb] z-10 font-normal text-[12px] leading-[18px] uppercase border-y border-zinc-700/70 select-none shadow-[0_1px_0_0_rgba(255,255,255,0.04)]">
-          <tr className="h-[30px]">
-            {renderSortableHeader('symbol', 'Symbol', 'symbol')}
-            {visibleTradeColumns.map(column => {
-              if (column.key === 'ticket') return renderSortableHeader('ticket', column.label, 'ticket');
-              if (column.key === 'time') return renderSortableHeader('time', column.label, 'time_create');
-              if (column.key === 'profit') return renderSortableHeader('profit', column.label, 'profit');
-              return renderHeader(column);
-            })}
-            <th
-              className="pl-2.5 pr-4 py-[3px] text-center whitespace-nowrap"
-              style={{ width: toColumnWidthStyle(closeColumnWidth) }}
-              aria-label={tr('Close position')}
-              title={tr(TRADE_COLUMN_HOVER_COMMENTS.close)}
-            >
-              <span className="block px-2 whitespace-nowrap">{tr('Actions')}</span>
-            </th>
-          </tr>
-        </thead>
-        {tableBody}
-      </table>
-
-      {/* Account summary stays sticky at the bottom when positions overflow. */}
+    <div className="rtx-trade-table-panel flex flex-1 min-h-0 flex-col overflow-hidden">
       <div
-        className="rtx-trade-footer sticky bottom-0 z-10 shrink-0 bg-[#191a1e] border-t border-zinc-700 w-full text-[13px] font-normal text-zinc-300 tabular-nums"
-        style={{ minWidth: `max(100%, ${visibleTradeTableWidth}px)` }}
+        ref={scrollContainerRef}
+        onScroll={syncFooterHorizontalScroll}
+        onContextMenu={(event) => handleTradeContextMenu(event)}
+        className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
+      >
+        <table
+          className="rtx-trade-table w-full shrink-0 text-center border-collapse table-fixed"
+          ref={tableRef}
+          style={{ minWidth: visibleTradeTableWidth, fontFamily: '"Segoe UI", Tahoma, Arial, sans-serif', fontVariantNumeric: 'tabular-nums' }}
+        >
+          <colgroup>
+            <col style={{ width: toColumnWidthStyle(columnWidths.symbol) }} />
+            {visibleTradeColumns.map(column => (
+              <col key={column.key} style={{ width: toColumnWidthStyle(columnWidths[column.key]) }} />
+            ))}
+            <col style={{ width: toColumnWidthStyle(closeColumnWidth) }} />
+          </colgroup>
+          <thead className="rtx-trade-table__head sticky top-0 bg-[#17181c] text-[#c9cfdb] z-10 font-normal text-[12px] leading-[18px] uppercase border-y border-zinc-700/70 select-none shadow-[0_1px_0_0_rgba(255,255,255,0.04)]">
+            <tr className="h-[30px]">
+              {renderSortableHeader('symbol', 'Symbol', 'symbol')}
+              {visibleTradeColumns.map(column => {
+                if (column.key === 'ticket') return renderSortableHeader('ticket', column.label, 'ticket');
+                if (column.key === 'time') return renderSortableHeader('time', column.label, 'time_create');
+                if (column.key === 'profit') return renderSortableHeader('profit', column.label, 'profit');
+                return renderHeader(column);
+              })}
+              <th
+                className="pl-2.5 pr-4 py-[3px] text-center whitespace-nowrap"
+                style={{ width: toColumnWidthStyle(closeColumnWidth) }}
+                aria-label={tr('Close position')}
+                title={tr(TRADE_COLUMN_HOVER_COMMENTS.close)}
+              >
+                <span className="block px-2 whitespace-nowrap">{tr('Actions')}</span>
+              </th>
+            </tr>
+          </thead>
+          {tableBody}
+        </table>
+
+        {displayedLivePositions.length === 0 && !loading && !error && (
+          <div
+            className="rtx-trade-empty-state flex flex-1 min-h-0 w-max min-w-full items-center justify-center text-center text-xs italic text-zinc-400"
+            style={{ minWidth: `max(100%, ${visibleTradeTableWidth}px)` }}
+          >
+            {tr('No open positions')}
+          </div>
+        )}
+      </div>
+
+      {/* Account summary stays fixed at the bottom outside vertical scrolling. */}
+      <div
+        ref={footerScrollRef}
+        className="rtx-trade-footer z-10 shrink-0 overflow-hidden bg-[#191a1e] border-t border-zinc-700 w-full text-[13px] font-normal text-zinc-300 tabular-nums"
         data-metrics-publication-token={account?.publicationToken}
         data-metrics-calculation-version={account?.calculationVersion}
         data-metrics-margin-calculation-version={account?.marginCalculationVersion}
@@ -825,14 +866,6 @@ export function TradeTable({
           <span className="rtx-trade-footer-close-spacer shrink-0" style={{ width: footerCloseColumnWidth, flex: `0 0 ${footerCloseColumnWidth}` }} aria-hidden="true" />
         </div>
       </div>
-      {displayedLivePositions.length === 0 && !loading && !error && (
-        <div
-          className="rtx-trade-empty-state flex flex-1 min-h-0 w-max min-w-full items-center justify-center text-center text-xs italic text-zinc-400"
-          style={{ minWidth: `max(100%, ${visibleTradeTableWidth}px)` }}
-        >
-          {tr('No open positions')}
-        </div>
-      )}
     </div>
   );
 }
