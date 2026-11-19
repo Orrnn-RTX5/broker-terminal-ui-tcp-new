@@ -245,4 +245,13 @@ describe('BulkCloseConfirmDialog', () => {
     expect(within(dialog).getByText('#75181621')).toBeInTheDocument();
     expect(within(dialog).queryByText(/more positions? not shown/i)).not.toBeInTheDocument();
   });
+
+  it('uses softened light-red tones instead of deep crimson and keeps direction/breakdown text-only across all bulk close action sheets', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/bulk-close-dialog.css'), 'utf8');
+    expect(css).toContain('--rtx-bulk-close-red: #f28b82;');
+    expect(css).toContain('--rtx-bulk-close-btn-bg: linear-gradient(180deg, #e57373 0%, #d95f5f 100%);');
+    expect(css).not.toMatch(/#(?:dc2626|b91c1c|991b1b)/i);
+    expect(css).toMatch(/\.rtx-bulk-close-dialog__direction--buy,\s*\.rtx-bulk-close-dialog__direction--sell\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*#ffffff;[\s\S]*?border:\s*none;/);
+    expect(css).toMatch(/\.rtx-bulk-close-dialog__breakdown-item\s*\{[\s\S]*?border:\s*none;[\s\S]*?background:\s*transparent;/);
+  });
 });

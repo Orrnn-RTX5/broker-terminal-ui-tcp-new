@@ -7,6 +7,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { removeSolidBackgroundFromRgba } from './watermarkBackgroundRemoval';
 
 export const SQUARE_CHART_GRID_CELL_SIZE_PX = 64;
 export const FINE_CHART_GRID_CELL_SIZE_PX = 32;
@@ -31,8 +32,22 @@ const DEFAULT_WATERMARK_ASSET_PATH = '/brand/rtx5-chart-watermark.png?v=2';
 export const DEFAULT_WATERMARK_OPACITY_PERCENT = 36;
 const watermarkImageCache = new Map<string, HTMLImageElement>();
 const failedWatermarkUrls = new Set<string>();
+const corsFallbackWatermarkUrls = new Set<string>();
 const lightWatermarkCanvasCache = new Map<string, HTMLCanvasElement>();
+const bgRemovedWatermarkCache = new Map<string, HTMLCanvasElement | HTMLImageElement>();
 const watermarkLoadListeners = new Set<() => void>();
+const MAX_WATERMARK_PROCESS_DIM_PX = 512;
+
+const shouldAttemptAnonymousCors = (src: string): boolean => {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+  if (corsFallbackWatermarkUrls.has(src)) return false;
+  if (!/^https?:\/\//i.test(src)) return false;
+  try {
+    return new URL(src, document.baseURI).origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+};
 
 export const isDefaultBrandWatermarkSrc = (customSrc?: string): boolean => {
   const trimmed = customSrc?.trim();
@@ -98,6 +113,10 @@ const getLoadedWatermarkImage = (
     if (!img) {
       img = new Image();
       img.decoding = 'async';
+      const useCors = shouldAttemptAnonymousCors(src);
+      if (useCors) {
+        img.crossOrigin = 'anonymous';
+      }
       img.onload = () => {
         if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
           notifyWatermarkListeners();
@@ -107,6 +126,12 @@ const getLoadedWatermarkImage = (
         }
       };
       img.onerror = () => {
+        if (useCors && !corsFallbackWatermarkUrls.has(src)) {
+          corsFallbackWatermarkUrls.add(src);
+          watermarkImageCache.delete(src);
+          notifyWatermarkListeners();
+          return;
+        }
         failedWatermarkUrls.add(src);
         notifyWatermarkListeners();
       };
@@ -123,6 +148,69 @@ const getLoadedWatermarkImage = (
     return 'loading';
   }
   return null;
+};
+
+const getBackgroundRemovedWatermarkSource = (
+  img: HTMLImageElement,
+  srcKey: string,
+  isLightBackground: boolean,
+): HTMLCanvasElement | HTMLImageElement => {
+  if (typeof document === 'undefined') return img;
+  const cacheKey = `${srcKey}|${isLightBackground ? 'light' : 'dark'}`;
+  const cached = bgRemovedWatermarkCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const naturalW = img.naturalWidth;
+    const naturalH = img.naturalHeight;
+    if (naturalW < 4 || naturalH < 4) {
+      bgRemovedWatermarkCache.set(cacheKey, img);
+      return img;
+    }
+
+    const scale = Math.min(1, MAX_WATERMARK_PROCESS_DIM_PX / Math.max(naturalW, naturalH));
+    const procW = Math.max(4, Math.round(naturalW * scale));
+    const procH = Math.max(4, Math.round(naturalH * scale));
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = procW;
+    workCanvas.height = procH;
+    const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    if (!workCtx) {
+      bgRemovedWatermarkCache.set(cacheKey, img);
+      return img;
+    }
+
+    workCtx.drawImage(img, 0, 0, procW, procH);
+    const imageData = workCtx.getImageData(0, 0, procW, procH);
+    const result = removeSolidBackgroundFromRgba(imageData.data, procW, procH, {
+      isLightBackground,
+    });
+
+    if (!result.removed) {
+      bgRemovedWatermarkCache.set(cacheKey, img);
+      return img;
+    }
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = result.width;
+    outCanvas.height = result.height;
+    const outCtx = outCanvas.getContext('2d');
+    if (!outCtx) {
+      bgRemovedWatermarkCache.set(cacheKey, img);
+      return img;
+    }
+
+    const outImageData = outCtx.createImageData(result.width, result.height);
+    outImageData.data.set(result.data);
+    outCtx.putImageData(outImageData, 0, 0);
+    bgRemovedWatermarkCache.set(cacheKey, outCanvas);
+    return outCanvas;
+  } catch {
+    // Tainted cross-origin image without CORS headers: cache raw image cleanly.
+    bgRemovedWatermarkCache.set(cacheKey, img);
+    return img;
+  }
 };
 
 const getLightTintedWatermarkSource = (
@@ -330,17 +418,19 @@ export const drawChartBackgroundWatermark = (
   }
   if (loadedResult) {
     const { image: loadedImage, src: loadedSrc } = loadedResult;
-    const aspect = loadedImage.naturalWidth / Math.max(1, loadedImage.naturalHeight);
+    const isDefaultLogo = isDefaultBrandWatermarkSrc(loadedSrc);
+    const drawSource = isDefaultLogo
+      ? (isLightBackground ? getLightTintedWatermarkSource(loadedImage, loadedImage.src) : loadedImage)
+      : getBackgroundRemovedWatermarkSource(loadedImage, loadedSrc, isLightBackground);
+    const sourceWidth = 'naturalWidth' in drawSource ? drawSource.naturalWidth : drawSource.width;
+    const sourceHeight = 'naturalHeight' in drawSource ? drawSource.naturalHeight : drawSource.height;
+    const aspect = sourceWidth / Math.max(1, sourceHeight);
     const drawWidthCss = aspect >= 1 ? targetSizeCssPx : targetSizeCssPx * aspect;
     const drawHeightCss = aspect >= 1 ? targetSizeCssPx / aspect : targetSizeCssPx;
     const drawX = (centerXCss - drawWidthCss * 0.5) * safeHpr;
     const drawY = (centerYCss - drawHeightCss * 0.5) * safeVpr;
     const drawW = drawWidthCss * safeHpr;
     const drawH = drawHeightCss * safeVpr;
-    const isDefaultLogo = isDefaultBrandWatermarkSrc(loadedSrc);
-    const drawSource = isLightBackground && isDefaultLogo
-      ? getLightTintedWatermarkSource(loadedImage, loadedImage.src)
-      : loadedImage;
 
     context.save();
     context.globalAlpha = isLightBackground && isDefaultLogo
