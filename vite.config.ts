@@ -1035,6 +1035,13 @@ export default defineConfig(({ mode, command }) => {
       ws: true,
       configure: configureWsProxy('rtx5-binary-order-ws'),
     },
+    '/__rtx5_drawing_ws': {
+      target: wsTarget,
+      changeOrigin: true,
+      secure: true,
+      ws: true,
+      configure: configureWsProxy('rtx5-drawing-ws'),
+    },
     '/__rtx5_binary_order': {
       target: backendTarget,
       changeOrigin: true,

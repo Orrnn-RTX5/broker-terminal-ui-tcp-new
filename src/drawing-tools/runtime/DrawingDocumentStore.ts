@@ -52,6 +52,11 @@ export class DrawingDocumentStore {
     return true;
   }
 
+  /** Clears load markers when switching accounts or re-synchronizing live state. */
+  clearLoaded(): void {
+    this.loadedContexts.clear();
+  }
+
   private stackFor(
     stacks: Map<string, DrawingHistoryEntry[]>,
     contextKey: string,

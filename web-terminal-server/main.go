@@ -87,6 +87,9 @@ type WebTerminalServer struct {
 	sessionMu     sync.RWMutex
 	sessionTokens map[string]string
 
+	drawingHubOnce sync.Once
+	drawingHub     *drawingSyncHub
+
 	otaMu               sync.RWMutex
 	otaSyncMu           sync.Mutex
 	otaChannel          string
@@ -1022,7 +1025,7 @@ func setLoopbackCORSHeaders(h http.Header, origin string, reqHeaders string) {
 	if strings.TrimSpace(reqHeaders) != "" {
 		h.Set("Access-Control-Allow-Headers", reqHeaders)
 	} else {
-		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, X-Requested-With, Origin, X-API-Key, X-Broker-ID, X-Request-ID")
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, X-Requested-With, Origin, X-API-Key, X-Broker-ID, X-Request-ID, X-Client-ID")
 	}
 	h.Set("Access-Control-Max-Age", "86400")
 	h.Set("Vary", "Origin")
@@ -1107,6 +1110,10 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "/__rtx5_binary_account_sub":
 		c.serveBinaryAccountSub(w, r)
+		return
+
+	case "/__rtx5_drawing_ws":
+		c.serveDrawingSyncWS(w, r)
 		return
 
 	case "/rtx5-tcp-toolbar.js":
@@ -1323,6 +1330,12 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if p == "/runtime-config.js" {
 		c.serveBrokerRuntimeConfigJS(w, r)
+		return
+	}
+
+	normDrawingPath := strings.TrimPrefix(p, "/ext-api")
+	if normDrawingPath == "/api/fix/drawings" || strings.HasPrefix(normDrawingPath, "/api/fix/drawings/") {
+		c.serveDrawingSyncHTTP(w, r, normDrawingPath)
 		return
 	}
 

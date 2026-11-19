@@ -66,6 +66,7 @@ import {
 } from '../drawing-tools/toolDefaults';
 import { getForecastingMeasurementTool } from '../drawing-tools/forecastingMeasurementToolCatalog';
 import { getAnnotationTool, annotationTable } from '../drawing-tools/annotationToolCatalog';
+import { useChartObjectStateStore } from '../store/useChartObjectStateStore';
 
 export type {
   AnnotationStyle,
@@ -481,6 +482,12 @@ export class DrawingManager {
   private scrollLockCallbacksByContext: Map<string, ScrollLockCallbacks> = new Map();
   private readonly globalEventBindings: DrawingGlobalEventBindings;
   private readonly persistence: DrawingPersistenceCoordinator;
+  private onChartContextBoundListener: ((identity: DrawingContextIdentity) => void) | null = null;
+
+  /** Subscribes to newly bound or updated chart contexts for live sync hydration. */
+  setOnChartContextBound(listener: ((identity: DrawingContextIdentity) => void) | null): void {
+    this.onChartContextBoundListener = listener;
+  }
 
   constructor() {
     this.persistence = new DrawingPersistenceCoordinator({
@@ -491,6 +498,10 @@ export class DrawingManager {
       resolveContextIdentity: contextId => this.resolveTargetContextIdentity(contextId),
       renderAll: () => this.renderAll(),
       dispatchChanged: (identity, reason) => this.dispatchDrawingsChanged(identity, reason),
+      onVisibilityLoaded: (identity, drawingsHidden) => {
+        useChartObjectStateStore.getState().setDrawingsHidden(identity.contextId, drawingsHidden);
+        this.setDrawingsVisible(identity.contextId, !drawingsHidden);
+      },
     });
     this.globalEventBindings = new DrawingGlobalEventBindings(window, {
       pointerMove: this.onGlobalPointerMove,
@@ -631,6 +642,9 @@ export class DrawingManager {
     } else if (identityChanged) {
       this.renderContext(overlayContainer);
     }
+    if (nextSymbol) {
+      this.onChartContextBoundListener?.(identity);
+    }
   }
 
   /** Create or heal the SVG overlay. Tries stored container, then document.body as last resort. */
@@ -737,17 +751,23 @@ export class DrawingManager {
   }
 
   setAllDrawingsLocked(locked: boolean, targetContextId?: string): number {
-    let changed = 0;
+    const identity = this.resolveTargetContextIdentity(targetContextId);
+    const updated: Drawing[] = [];
     this.getDrawings(targetContextId).forEach((drawing) => {
       if (drawing.locked === locked) return;
       drawing.locked = locked;
-      changed += 1;
+      updated.push(drawing);
     });
-    if (changed > 0) {
+    if (updated.length > 0) {
       this.persistCurrentContext(targetContextId);
+      if (identity) {
+        updated.forEach((drawing) => {
+          void this.saveToBackend(drawing, identity);
+        });
+      }
       this.renderAll();
     }
-    return changed;
+    return updated.length;
   }
 
   setDrawingsVisible(contextId: string, visible: boolean): void {
@@ -1335,7 +1355,7 @@ export class DrawingManager {
       this.renderAll();
       if (persist) {
         this.persistLocalFor(identity, []);
-        deleteInfo.forEach(({ id, serverId }) => void this.deleteFromBackend(id, serverId, identity));
+        void this.persistence.clear(identity, deleteInfo);
       }
       const detail = {
         contextId: identity.contextId,
@@ -2203,8 +2223,229 @@ export class DrawingManager {
     serverId?: string,
     identity: DrawingContextIdentity | null = this.currentContextIdentity,
   ): Promise<void> {
-    void id;
-    await this.persistence.delete(serverId, identity);
+    await this.persistence.delete(serverId, identity, id);
+  }
+
+  /** Returns all currently mounted chart identities for live multi-device sync. */
+  getRegisteredContextIdentities(): DrawingContextIdentity[] {
+    const out: DrawingContextIdentity[] = [];
+    for (const context of this.chartContexts.values()) {
+      out.push(this.identityForContext(context));
+    }
+    return out;
+  }
+
+  /** Clears load markers so account switches reload authoritative remote drawings. */
+  resetLoadedContexts(): void {
+    this.documents.clearLoaded();
+  }
+
+  private matchesRemoteScope(
+    identity: DrawingContextIdentity,
+    symbol?: string,
+    timeframe?: string,
+  ): boolean {
+    const targetSym = String(symbol || '').trim().toUpperCase();
+    const targetTf = String(timeframe || '').trim().toUpperCase();
+    if (targetSym && targetSym !== '*' && identity.symbol.trim().toUpperCase() !== targetSym) {
+      return false;
+    }
+    if (targetTf && targetTf !== '*' && identity.timeframe.trim().toUpperCase() !== targetTf) {
+      return false;
+    }
+    return true;
+  }
+
+  private resolveHiddenFromMap(
+    hiddenMap: Record<string, boolean>,
+    symbol: string,
+    timeframe: string,
+  ): boolean | undefined {
+    const sym = symbol.trim().toUpperCase();
+    const tf = timeframe.trim().toUpperCase();
+    if (sym && tf && `${sym}::${tf}` in hiddenMap) return Boolean(hiddenMap[`${sym}::${tf}`]);
+    if (sym && `${sym}::*` in hiddenMap) return Boolean(hiddenMap[`${sym}::*`]);
+    if ('*' in hiddenMap) return Boolean(hiddenMap['*']);
+    return undefined;
+  }
+
+  /** Applies a live remote drawing create/update without echoing back to HTTP. */
+  applyRemoteUpsert(
+    symbol: string,
+    timeframe: string | undefined,
+    remoteDrawing: Drawing,
+  ): void {
+    const contexts = this.getRegisteredContextIdentities().filter(identity =>
+      this.matchesRemoteScope(identity, symbol, timeframe),
+    );
+    if (contexts.length === 0) return;
+
+    const seenKeys = new Set<string>();
+    let changed = false;
+    for (const identity of contexts) {
+      const key = buildDrawingContextKey(identity);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      if (this.draggingId && (this.draggingId === remoteDrawing.id || this.draggingId === remoteDrawing.serverId)) {
+        continue;
+      }
+
+      const drawings = this.getDrawingsFor(identity);
+      const idx = drawings.findIndex(
+        candidate => candidate.id === remoteDrawing.id
+          || (remoteDrawing.serverId && candidate.serverId === remoteDrawing.serverId),
+      );
+      const nextDrawing: Drawing = {
+        ...remoteDrawing,
+        selected: idx !== -1 ? Boolean(drawings[idx].selected) : false,
+      };
+      if (idx !== -1) {
+        drawings[idx] = nextDrawing;
+      } else {
+        drawings.push(nextDrawing);
+      }
+      this.persistLocalFor(identity, drawings);
+      this.dispatchDrawingsChanged(identity, idx !== -1 ? 'updated' : 'added');
+      changed = true;
+    }
+    if (changed) {
+      this.renderAll();
+    }
+  }
+
+  /** Applies a live remote drawing delete without echoing back to HTTP. */
+  applyRemoteDelete(
+    drawingId: string,
+    clientDrawingId?: string,
+    symbol?: string,
+    timeframe?: string,
+  ): void {
+    const contexts = this.getRegisteredContextIdentities().filter(identity =>
+      this.matchesRemoteScope(identity, symbol, timeframe),
+    );
+    if (contexts.length === 0) return;
+
+    const seenKeys = new Set<string>();
+    let changed = false;
+    for (const identity of contexts) {
+      const key = buildDrawingContextKey(identity);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      const drawings = this.getDrawingsFor(identity);
+      const idx = drawings.findIndex(
+        candidate => candidate.id === drawingId
+          || candidate.serverId === drawingId
+          || (clientDrawingId && (candidate.id === clientDrawingId || candidate.serverId === clientDrawingId)),
+      );
+      if (idx === -1) continue;
+      const [removed] = drawings.splice(idx, 1);
+      this.persistLocalFor(identity, drawings);
+      if (removed.selected) {
+        window.dispatchEvent(new CustomEvent('drawing:selection-cleared', {
+          detail: { contextId: identity.contextId, drawingId: removed.id },
+        }));
+      }
+      window.dispatchEvent(new CustomEvent('drawing:deleted', {
+        detail: {
+          id: removed.id,
+          contextId: identity.contextId,
+          symbol: identity.symbol,
+          timeframe: identity.timeframe,
+        },
+      }));
+      this.dispatchDrawingsChanged(identity, 'deleted');
+      changed = true;
+    }
+    if (changed) {
+      this.renderAll();
+    }
+  }
+
+  /** Applies a live remote clear-all event without echoing back to HTTP. */
+  applyRemoteClear(symbol?: string, timeframe?: string): void {
+    const contexts = this.getRegisteredContextIdentities().filter(identity =>
+      this.matchesRemoteScope(identity, symbol, timeframe),
+    );
+    if (contexts.length === 0) return;
+
+    const seenKeys = new Set<string>();
+    for (const identity of contexts) {
+      const key = buildDrawingContextKey(identity);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      this.documents.replace(key, []);
+      this.persistLocalFor(identity, []);
+      const detail = {
+        contextId: identity.contextId,
+        symbol: identity.symbol,
+        timeframe: identity.timeframe,
+      };
+      window.dispatchEvent(new CustomEvent('drawings:cleared', { detail }));
+      window.dispatchEvent(new CustomEvent('drawing:selection-cleared', { detail }));
+      this.dispatchDrawingsChanged(identity, 'cleared');
+    }
+    this.renderAll();
+  }
+
+  /** Applies a live remote hide/show toggle across all matching open charts. */
+  applyRemoteVisibility(
+    symbol: string | undefined,
+    timeframe: string | undefined,
+    drawingsHidden: boolean,
+  ): void {
+    const contexts = this.getRegisteredContextIdentities().filter(identity =>
+      this.matchesRemoteScope(identity, symbol, timeframe),
+    );
+    if (contexts.length === 0) return;
+
+    const store = useChartObjectStateStore.getState();
+    for (const identity of contexts) {
+      store.setDrawingsHidden(identity.contextId, drawingsHidden);
+      this.setDrawingsVisible(identity.contextId, !drawingsHidden);
+    }
+    this.renderAll();
+  }
+
+  /** Reconciles all mounted charts against an authoritative server snapshot. */
+  applyRemoteSnapshot(
+    items: Array<{ symbol: string; timeframe?: string; drawing: Drawing }>,
+    hiddenMap: Record<string, boolean>,
+  ): void {
+    const contexts = this.getRegisteredContextIdentities();
+    if (contexts.length === 0) return;
+
+    const seenKeys = new Set<string>();
+    const store = useChartObjectStateStore.getState();
+    for (const identity of contexts) {
+      const hidden = this.resolveHiddenFromMap(hiddenMap, identity.symbol, identity.timeframe);
+      if (hidden !== undefined) {
+        store.setDrawingsHidden(identity.contextId, hidden);
+        this.setDrawingsVisible(identity.contextId, !hidden);
+      }
+
+      const key = buildDrawingContextKey(identity);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      const existing = this.documents.peek(key) || [];
+      const selectedIds = new Set(existing.filter(d => d.selected).map(d => d.id));
+      const matchingRemote = items
+        .filter(item => this.matchesRemoteScope(identity, item.symbol, item.timeframe))
+        .map(item => ({
+          ...item.drawing,
+          selected: selectedIds.has(item.drawing.id),
+        }));
+      const remoteIds = new Set(matchingRemote.map(d => d.id));
+      const unsavedLocal = existing.filter(d => !d.serverId && !remoteIds.has(d.id));
+      const merged = [...matchingRemote, ...unsavedLocal];
+      this.documents.replace(key, merged);
+      this.persistLocalFor(identity, merged);
+      this.dispatchDrawingsChanged(identity, 'loaded');
+    }
+    this.renderAll();
   }
 
   saveToStorage(symbol: string): void {

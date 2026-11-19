@@ -256,7 +256,7 @@ export const TradingChart = React.memo(function TradingChart({
   indicatorStorageScopeRef.current = indicatorStorageScope;
   const loadedIndicatorStorageScopeRef = useRef<string | null>(null);
   const indicatorSequenceRef = useRef(0);
-  const drawingAccountScope = !isDesktopBackendTarget() ? brokerAccountSessionScope : undefined;
+  const drawingAccountScope = brokerAccountSessionScope || undefined;
   const chartQuoteSourceId = useMemo(() => {
     // FIX: Demand ownership retains the exact broker symbol, including suffixes.
     const normalizedSymbol = encodeURIComponent(symbol.trim().toUpperCase() || 'UNKNOWN');
