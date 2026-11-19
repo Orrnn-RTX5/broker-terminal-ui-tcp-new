@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   height: 100%;
-  padding: 0 2px 0 6px;
+  padding: 0;
   flex-shrink: 0;
 }
 
@@ -18,7 +18,7 @@
   display: block;
   width: 1px;
   height: 18px;
-  margin-left: 6px;
+  margin-inline: clamp(6px, 0.48vw, 14px);
   background: rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
@@ -115,7 +115,7 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-search {
-  padding: 0 2px 0 4px;
+  padding: 0;
 }
 
 :is(
@@ -123,7 +123,7 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-search::after {
-  margin-left: 4px;
+  margin-inline: 6px;
 }
 
 :is(
@@ -153,15 +153,15 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
 
 @media (max-width: 1720px), (max-height: 920px) {
   .rtx-toolbar-search {
-    padding: 0 2px 0 3px;
+    padding: 0;
   }
 
   .rtx-toolbar-search::after {
-    margin-left: 3px;
+    margin-inline: clamp(5px, 0.42vw, 9px);
   }
 
   .rtx-toolbar-search__field {
-    width: clamp(160px, 12vw, 220px);
+    width: clamp(148px, 11vw, 196px);
     height: 24px;
     padding: 0 6px 0 7px;
     gap: 5px;
@@ -178,14 +178,14 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-search {
-  padding: 0 2px 0 3px;
+  padding: 0;
 }
 
 :is(
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-search::after {
-  margin-left: 3px;
+  margin-inline: 5px;
 }
 
 :is(
@@ -212,16 +212,16 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
 
 @media (max-width: 1500px), (max-height: 860px) {
   .rtx-toolbar-search {
-    padding: 0 2px 0 3px;
+    padding: 0;
   }
 
   .rtx-toolbar-search::after {
-    margin-left: 3px;
+    margin-inline: 5px;
     height: 15px;
   }
 
   .rtx-toolbar-search__field {
-    width: clamp(146px, 11.8vw, 180px);
+    width: clamp(134px, 10.2vw, 164px);
     height: 23px;
     padding: 0 5px 0 6px;
     gap: 4px;
@@ -248,15 +248,15 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
 
 @media (max-width: 1320px) {
   .rtx-toolbar-search {
-    padding: 0 1px 0 2px;
+    padding: 0;
   }
 
   .rtx-toolbar-search::after {
-    margin-left: 2px;
+    margin-inline: 4px;
   }
 
   .rtx-toolbar-search__field {
-    width: clamp(118px, 11.2vw, 152px);
+    width: clamp(104px, 10vw, 144px);
     height: 22px;
     padding: 0 4px 0 5px;
     gap: 3px;
@@ -264,34 +264,59 @@ html:root .rtx-toolbar-search .rtx-toolbar-search__input::placeholder {
 
   html:root .rtx-toolbar-search .rtx-toolbar-search__input,
   html:root .rtx-toolbar-search .rtx-toolbar-search__input:is(:hover, :focus, :focus-visible) {
-    --rtx-type-size: 9.8px;
-    font-size: 9.8px !important;
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 959px) {
   .rtx-toolbar-search__field {
-    width: clamp(86px, 10vw, 108px);
-    padding: 0 3px 0 4px;
-    gap: 2.5px;
+    width: 100%;
+    height: 24px;
+    padding: 0 6px 0 7px;
+    gap: 4px;
   }
 
   html:root .rtx-toolbar-search .rtx-toolbar-search__input,
   html:root .rtx-toolbar-search .rtx-toolbar-search__input:is(:hover, :focus, :focus-visible) {
-    font-size: 9.5px;
+    --rtx-type-size: 11px;
+    font-size: 11px !important;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .rtx-toolbar-search__field {
-    width: clamp(68px, 9.2vw, 86px);
-    padding: 0 2px 0 3px;
-    gap: 2px;
+    width: 100%;
+    height: 24px;
+    padding: 0 5px 0 6px;
+    gap: 3px;
   }
 
   html:root .rtx-toolbar-search .rtx-toolbar-search__input,
   html:root .rtx-toolbar-search .rtx-toolbar-search__input:is(:hover, :focus, :focus-visible) {
-    font-size: 8.5px;
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+  }
+}
+
+/* Full HD & Big Desktop widths override max-height compact widths while preserving compact height when viewport height <= 920px. */
+@media (min-width: 1721px) and (max-width: 2199px) {
+  .rtx-toolbar-search {
+    padding: 0;
+  }
+
+  .rtx-toolbar-search__field {
+    width: clamp(185px, 11.8vw, 250px);
+  }
+}
+
+@media (min-width: 2200px) {
+  .rtx-toolbar-search {
+    padding: 0;
+  }
+
+  .rtx-toolbar-search__field {
+    width: clamp(230px, 12.2vw, 380px);
   }
 }
 

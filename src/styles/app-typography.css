@@ -238,6 +238,32 @@ html:root .rtx-timeframe-option[aria-checked='true'] {
   --rtx-type-weight: var(--rtx-font-weight-body);
 }
 
+@media (min-width: 1721px) and (max-width: 2199px) and (min-height: 921px) {
+  html:root .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) :is(
+    .rtx-toolbar-action,
+    .rtx-toolbar-action > span,
+    .rtx-toolbar-icon-button,
+    .rtx-timeframe-option,
+    .rtx-timeframe-option[aria-checked='true'],
+    .rtx-report-bug-button,
+    .rtx-report-bug-button > span
+  ) {
+    --rtx-type-size: clamp(12px, 0.72vw, 13.5px);
+  }
+
+  html:root .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-symbol-badge {
+    --rtx-type-size: 10px;
+    --rtx-type-weight: 600;
+  }
+}
+
+@media (min-width: 2200px) and (min-height: 921px) {
+  html:root .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-symbol-badge {
+    --rtx-type-size: 11px;
+    --rtx-type-weight: 600;
+  }
+}
+
 /* Text fits the chrome at every supported font preference. */
 html:root .dock-panel__title {
   line-height: var(--rtx-ui-line-height) !important;
@@ -358,6 +384,7 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root .rtx-main-toolbar :is(
+    .rtx-menu-launcher .rtx-application-menu-trigger,
     .rtx-toolbar-action,
     .rtx-toolbar-icon-button,
     .rtx-timeframe-option,
@@ -609,7 +636,12 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 959px) {
+  html:root .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+    height: auto !important;
+    min-height: 32px !important;
+  }
+
   html:root .rtx-main-toolbar :is(
     .rtx-toolbar-action,
     .rtx-toolbar-action > span,
@@ -619,31 +651,15 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-report-bug-button,
     .rtx-report-bug-button > span
   ) {
-    --rtx-type-size: 9px;
+    --rtx-type-size: 11px;
   }
 
   html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 8px;
+    --rtx-type-size: 9px;
   }
 }
 
 @media (max-width: 860px) {
-  html:root .rtx-main-toolbar :is(
-    .rtx-toolbar-action,
-    .rtx-toolbar-action > span,
-    .rtx-toolbar-icon-button,
-    .rtx-timeframe-option,
-    .rtx-timeframe-option[aria-checked='true'],
-    .rtx-report-bug-button,
-    .rtx-report-bug-button > span
-  ) {
-    --rtx-type-size: 8.5px;
-  }
-
-  html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 7.5px;
-  }
-
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency) {
     --rtx-type-size: 9px;

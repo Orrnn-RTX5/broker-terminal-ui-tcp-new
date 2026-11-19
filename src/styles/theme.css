@@ -285,9 +285,78 @@ body {
   justify-content: safe space-evenly;
 }
 
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+  --rtx-toolbar-control-width: 34px;
+  --rtx-toolbar-item-gap: 10px;
+  --rtx-toolbar-group-gap: 10px;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  justify-content: safe space-between;
+  column-gap: 2px;
+  row-gap: 4px;
+  padding-inline: clamp(8px, 0.65vw, 18px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+/* Match the left drawing-tools rail's uniform spacing: flatten scroll, cluster,
+   group, and timeframe wrappers in the web navbar so EVERY individual element
+   from the 3-line menu icon through timeframe MN (plus Search and Report a Bug)
+   gets identical equal spacing across laptops, MacBooks, and big desktops. */
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) :is(
+  .rtx-chart-toolbar-scroll,
+  .rtx-toolbar-command-cluster,
+  .rtx-toolbar-group,
+  .rtx-timeframe-strip
+) {
+  display: contents;
+}
+
 .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
+  display: none !important;
   flex: 0 0 0px !important;
   width: 0 !important;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-menu-launcher {
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-menu-launcher .rtx-application-menu-trigger {
+  height: 32px;
+  width: max(28px, var(--rtx-toolbar-control-width, 34px));
+  border-radius: var(--radius-sm);
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-menu-launcher .rtx-application-menu-trigger > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search {
+  height: auto;
+  padding: 0;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search::after {
+  display: none;
+}
+
+.rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button {
+  margin-inline: 0;
 }
 
 .rtx-toolbar-brand {
@@ -527,19 +596,15 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1600x900"],
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
-) .rtx-menu-launcher .rtx-application-menu-trigger {
-  width: 48px;
-}
-
+) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
 :is(
   [data-terminal-resolution="1600x900"],
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-command-cluster {
-  --rtx-toolbar-control-width: 32px;
-  --rtx-toolbar-item-gap: 6.5px;
+  --rtx-toolbar-control-width: 30px;
+  --rtx-toolbar-item-gap: 6px;
   --rtx-toolbar-group-gap: 8px;
-  padding-inline: 8px;
 }
 
 :is(
@@ -566,9 +631,9 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
 }
 
 :is(
@@ -586,90 +651,64 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-report-bug-button {
-  margin-inline: 6px;
+  margin-inline: 0;
   padding-inline: 8px;
   gap: 5.5px;
   font-size: 12.5px;
 }
 
 @media (max-width: 1720px), (max-height: 920px) {
-  .rtx-menu-launcher .rtx-application-menu-trigger {
-    width: clamp(40px, 2.75vw, 52px);
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(25px, 1.72vw, 31px);
+    --rtx-toolbar-item-gap: clamp(3.5px, 0.34vw, 6.5px);
+    --rtx-toolbar-group-gap: clamp(8px, 0.72vw, 14px);
   }
 
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
-    flex: 1 1 auto;
-    justify-content: space-evenly;
-    justify-content: safe space-evenly;
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-menu-launcher .rtx-application-menu-trigger > svg {
+    width: 18px;
+    height: 18px;
   }
 
   .rtx-toolbar-brand {
-    height: clamp(24px, 1.85vw, 27px);
-    width: clamp(24px, 1.85vw, 27px);
+    height: clamp(24px, 1.65vw, 27px);
+    width: clamp(24px, 1.65vw, 27px);
   }
 
   .rtx-toolbar-brand__logo {
-    height: clamp(16px, 1.28vw, 19px);
-    width: clamp(16px, 1.28vw, 19px);
-  }
-
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
-    flex: 0 0 0px !important;
-    width: 0 !important;
-  }
-
-  .rtx-toolbar-command-cluster {
-    --rtx-toolbar-control-width: clamp(27px, 2vw, 33px);
-    --rtx-toolbar-item-gap: clamp(6.5px, 0.56vw, 9.5px);
-    --rtx-toolbar-group-gap: clamp(9px, 0.78vw, 14px);
-    padding-inline: clamp(6px, 0.55vw, 10px) clamp(8px, 0.7vw, 12px);
+    height: clamp(16px, 1.15vw, 19px);
+    width: clamp(16px, 1.15vw, 19px);
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action {
-    padding: 0 clamp(6px, 0.5vw, 9px);
-    font-size: clamp(11.5px, 0.8vw, 12.5px);
-    gap: clamp(4.5px, 0.36vw, 6px);
+    padding: 0 clamp(5.5px, 0.45vw, 8.5px);
+    font-size: clamp(11.5px, 0.78vw, 12.5px);
+    gap: clamp(4px, 0.34vw, 5.5px);
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
-    gap: clamp(5px, 0.4vw, 6.5px);
-    padding-inline: clamp(6px, 0.48vw, 8px);
+    gap: clamp(4.5px, 0.36vw, 6px);
+    padding-inline: clamp(5.5px, 0.44vw, 7.5px);
   }
 
   .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-    width: clamp(22px, 1.6vw, 26px);
-    height: clamp(22px, 1.6vw, 26px);
-    flex: 0 0 clamp(22px, 1.6vw, 26px);
+    width: clamp(21px, 1.5vw, 24px);
+    height: clamp(21px, 1.5vw, 24px);
+    flex: 0 0 clamp(21px, 1.5vw, 24px);
   }
 
   .rtx-timeframe-strip .rtx-timeframe-option {
-    min-width: clamp(25px, 1.85vw, 30px);
-    padding-inline: clamp(5.5px, 0.44vw, 7.5px);
-    font-size: clamp(11.5px, 0.8vw, 12.5px);
+    min-width: clamp(23px, 1.6vw, 28px);
+    padding-inline: clamp(4.5px, 0.35vw, 6.5px);
+    font-size: clamp(11.5px, 0.78vw, 12.5px);
   }
 
   .rtx-report-bug-button {
-    margin-inline: clamp(3px, 0.34vw, 7px);
-    padding-inline: clamp(5px, 0.42vw, 7.5px);
-    gap: clamp(4px, 0.32vw, 5.5px);
-    font-size: clamp(11.5px, 0.8vw, 12.5px);
+    margin-inline: 0;
+    padding-inline: clamp(5px, 0.42vw, 8px);
+    gap: clamp(4px, 0.3vw, 5.5px);
+    font-size: clamp(11.5px, 0.78vw, 12.5px);
   }
-}
-
-:is(
-  [data-terminal-resolution="1366x768"],
-  [data-terminal-resolution="1280x720"]
-) .rtx-menu-launcher .rtx-application-menu-trigger {
-  width: 40px;
-}
-
-:is(
-  [data-terminal-resolution="1366x768"],
-  [data-terminal-resolution="1280x720"]
-) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster {
-  flex: 1 1 auto;
-  justify-content: space-evenly;
-  justify-content: safe space-evenly;
 }
 
 :is(
@@ -691,19 +730,14 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
 :is(
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
-) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-command-cluster + div[aria-hidden='true'] {
-  flex: 0 0 0px !important;
-  width: 0 !important;
-}
-
+) .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
 :is(
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-toolbar-command-cluster {
-  --rtx-toolbar-control-width: 28px;
-  --rtx-toolbar-item-gap: 7.5px;
-  --rtx-toolbar-group-gap: 11px;
-  padding-inline: 8px 10px;
+  --rtx-toolbar-control-width: 26px;
+  --rtx-toolbar-item-gap: 4.5px;
+  --rtx-toolbar-group-gap: 8px;
 }
 
 :is(
@@ -745,8 +779,8 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-timeframe-strip .rtx-timeframe-option {
-  min-width: 26px;
-  padding-inline: 6px;
+  min-width: 25px;
+  padding-inline: 5.5px;
   font-size: 11.5px;
 }
 
@@ -754,70 +788,62 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   [data-terminal-resolution="1366x768"],
   [data-terminal-resolution="1280x720"]
 ) .rtx-report-bug-button {
-  margin-inline: 3px;
+  margin-inline: 0;
   padding-inline: 5.5px;
   gap: 4px;
   font-size: 11.5px;
 }
 
 @media (max-width: 1500px) {
-  .rtx-menu-launcher .rtx-application-menu-trigger {
-    width: clamp(36px, 2.7vw, 42px);
-  }
-
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
   .rtx-toolbar-command-cluster {
-    --rtx-toolbar-control-width: clamp(26px, 1.98vw, 29px);
-    --rtx-toolbar-item-gap: clamp(6px, 0.55vw, 8.5px);
-    --rtx-toolbar-group-gap: clamp(8.5px, 0.78vw, 12px);
-    padding-inline: clamp(6px, 0.55vw, 9px) clamp(8px, 0.7vw, 11px);
+    --rtx-toolbar-control-width: clamp(23px, 1.68vw, 26px);
+    --rtx-toolbar-item-gap: clamp(2.5px, 0.25vw, 4.2px);
+    --rtx-toolbar-group-gap: clamp(6px, 0.6vw, 11px);
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action {
-    padding: 0 clamp(6px, 0.5vw, 7.5px);
+    padding: 0 clamp(5px, 0.44vw, 7px);
     font-size: 11.5px;
-    gap: 4.5px;
+    gap: 4px;
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
-    gap: 5px;
-    padding-inline: 6px;
+    gap: 4.5px;
+    padding-inline: 5.5px;
   }
 
   .rtx-toolbar-symbol-badge {
-    min-width: 34px;
+    min-width: 32px;
     padding: 0 4px;
     font-size: 9px;
   }
 
   .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-    width: clamp(21px, 1.58vw, 23px);
-    height: clamp(21px, 1.58vw, 23px);
-    flex: 0 0 clamp(21px, 1.58vw, 23px);
+    width: clamp(19.5px, 1.45vw, 22px);
+    height: clamp(19.5px, 1.45vw, 22px);
+    flex: 0 0 clamp(19.5px, 1.45vw, 22px);
   }
 
   .rtx-timeframe-strip .rtx-timeframe-option {
-    min-width: clamp(24px, 1.85vw, 27px);
-    padding-inline: clamp(5px, 0.44vw, 6.5px);
+    min-width: clamp(21px, 1.52vw, 25px);
+    padding-inline: clamp(3.5px, 0.3vw, 5.5px);
     font-size: 11.5px;
   }
 
   .rtx-report-bug-button {
-    margin-inline: 3px;
+    margin-inline: 0;
     padding-inline: 5px;
     gap: 3.5px;
     font-size: 11.5px;
   }
 }
 
-[data-terminal-resolution="1280x720"] .rtx-menu-launcher .rtx-application-menu-trigger {
-  width: 36px;
-}
-
+[data-terminal-resolution="1280x720"] .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
 [data-terminal-resolution="1280x720"] .rtx-toolbar-command-cluster {
-  --rtx-toolbar-control-width: 26px;
-  --rtx-toolbar-item-gap: 6px;
-  --rtx-toolbar-group-gap: 9px;
-  padding-inline: 6px 8px;
+  --rtx-toolbar-control-width: 24px;
+  --rtx-toolbar-item-gap: 3.5px;
+  --rtx-toolbar-group-gap: 7px;
 }
 
 [data-terminal-resolution="1280x720"] .rtx-toolbar-command-cluster .rtx-toolbar-action {
@@ -844,13 +870,13 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
 }
 
 [data-terminal-resolution="1280x720"] .rtx-timeframe-strip .rtx-timeframe-option {
-  min-width: 24px;
-  padding-inline: 5px;
+  min-width: 23px;
+  padding-inline: 4.5px;
   font-size: 11px;
 }
 
 [data-terminal-resolution="1280x720"] .rtx-report-bug-button {
-  margin-inline: 3px;
+  margin-inline: 0;
   padding-inline: 4.5px;
   gap: 3px;
   font-size: 11px;
@@ -863,61 +889,57 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
 }
 
 @media (max-width: 1320px) {
-  .rtx-menu-launcher .rtx-application-menu-trigger {
-    width: clamp(30px, 2.7vw, 36px);
-  }
-
   .rtx-toolbar-brand {
-    height: clamp(21px, 1.8vw, 24px);
-    width: clamp(21px, 1.8vw, 24px);
+    height: clamp(21px, 1.75vw, 24px);
+    width: clamp(21px, 1.75vw, 24px);
   }
 
   .rtx-toolbar-brand__logo {
-    height: clamp(14px, 1.25vw, 16px);
-    width: clamp(14px, 1.25vw, 16px);
+    height: clamp(14px, 1.2vw, 16px);
+    width: clamp(14px, 1.2vw, 16px);
   }
 
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar),
   .rtx-toolbar-command-cluster {
-    --rtx-toolbar-control-width: clamp(19.5px, 1.9vw, 24px);
-    --rtx-toolbar-item-gap: clamp(1px, 0.18vw, 2.5px);
-    --rtx-toolbar-group-gap: clamp(2px, 0.28vw, 4px);
-    padding-inline: clamp(2.5px, 0.3vw, 4px);
+    --rtx-toolbar-control-width: clamp(20.5px, 1.78vw, 24px);
+    --rtx-toolbar-item-gap: clamp(1.5px, 0.2vw, 3px);
+    --rtx-toolbar-group-gap: clamp(5px, 0.55vw, 10px);
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action {
-    padding: 0 clamp(3px, 0.34vw, 5px);
-    font-size: clamp(10px, 0.92vw, 11px);
-    gap: 2.5px;
+    padding: 0 clamp(3.5px, 0.36vw, 5.5px);
+    font-size: clamp(10.5px, 0.9vw, 11px);
+    gap: 3px;
   }
 
   .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
-    gap: 2.5px;
-    padding-inline: clamp(3px, 0.34vw, 4.5px);
+    gap: 3px;
+    padding-inline: clamp(3.5px, 0.36vw, 5px);
   }
 
   .rtx-toolbar-symbol-badge {
-    min-width: 26px;
-    padding: 0 2.5px;
+    min-width: 28px;
+    padding: 0 3px;
     font-size: 8.5px;
   }
 
   .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-    width: clamp(17.5px, 1.65vw, 21px);
-    height: clamp(17.5px, 1.65vw, 21px);
-    flex: 0 0 clamp(17.5px, 1.65vw, 21px);
+    width: clamp(17.5px, 1.58vw, 20.5px);
+    height: clamp(17.5px, 1.58vw, 20.5px);
+    flex: 0 0 clamp(17.5px, 1.58vw, 20.5px);
   }
 
   .rtx-timeframe-strip .rtx-timeframe-option {
-    min-width: clamp(17px, 1.62vw, 21px);
-    padding-inline: clamp(2px, 0.24vw, 3.5px);
-    font-size: clamp(10px, 0.92vw, 11px);
+    min-width: clamp(19px, 1.58vw, 22.5px);
+    padding-inline: clamp(2.5px, 0.26vw, 4.5px);
+    font-size: clamp(10.5px, 0.9vw, 11px);
   }
 
   .rtx-report-bug-button {
-    margin-inline: 2px;
-    padding-inline: clamp(3.5px, 0.35vw, 5px);
-    gap: 2.5px;
-    font-size: clamp(10px, 0.92vw, 11px);
+    margin-inline: 0;
+    padding-inline: clamp(4px, 0.38vw, 5.5px);
+    gap: 3px;
+    font-size: clamp(10.5px, 0.9vw, 11px);
   }
 
   .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
@@ -927,145 +949,251 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   }
 }
 
-@media (max-width: 980px) {
-  .rtx-menu-launcher .rtx-application-menu-trigger {
-    width: 28px;
+@media (max-width: 1040px) and (min-width: 960px) {
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > span {
+    display: none;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button {
+    gap: 0;
+    padding-inline: 5px;
+  }
+}
+
+/* Tablet & Half-Screen Responsive Wrap (<= 959px): wrap individual controls
+   cleanly into equally spaced rows with zero clipped or hidden controls. */
+@media (max-width: 959px) {
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 32px;
+    padding: 4px 10px;
+    column-gap: 6px;
+    row-gap: 4px;
+    overflow-x: visible;
+    --rtx-toolbar-control-width: 26px;
+    --rtx-toolbar-item-gap: 4px;
+    --rtx-toolbar-group-gap: 8px;
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: 26px;
+    --rtx-toolbar-item-gap: 4px;
+    --rtx-toolbar-group-gap: 8px;
   }
 
   .rtx-toolbar-brand {
-    height: 20px;
-    width: 20px;
+    height: 24px;
+    width: 24px;
   }
 
   .rtx-toolbar-brand__logo {
-    height: 14px;
-    width: 14px;
+    height: 16px;
+    width: 16px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search {
+    flex: 1 1 150px;
+    max-width: 280px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search__field {
+    width: 100%;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 4px;
+  }
+
+  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+
+  .rtx-toolbar-symbol-badge {
+    min-width: 30px;
+    padding: 0 3.5px;
+    font-size: 9px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: 24px;
+    padding-inline: 5px;
+    font-size: 11px;
+  }
+
+  .rtx-report-bug-button {
+    margin-inline: 0;
+    padding-inline: 6px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+  }
+}
+
+/* Mobile Responsive Wrap (<= 640px): compact touch-friendly rows equally
+   distributed across 100% viewport width down to 320px. */
+@media (max-width: 640px) {
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+    padding: 4px 8px;
+    column-gap: 4px;
+    row-gap: 4px;
+    --rtx-toolbar-control-width: 24px;
+    --rtx-toolbar-item-gap: 2px;
+    --rtx-toolbar-group-gap: 6px;
+  }
+
+  .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: 24px;
+    --rtx-toolbar-item-gap: 2px;
+    --rtx-toolbar-group-gap: 6px;
+  }
+
+  .rtx-toolbar-brand {
+    height: 22px;
+    width: 22px;
+  }
+
+  .rtx-toolbar-brand__logo {
+    height: 15px;
+    width: 15px;
+  }
+
+  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+  }
+
+  /* Keep M1..MN together as a single evenly distributed row on narrow phones. */
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-timeframe-strip {
+    display: flex;
+    height: auto;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: 22px;
+    padding-inline: 4px;
+    font-size: 10.5px;
+  }
+
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search {
+    flex: 1 1 120px;
+    max-width: none;
   }
 
   .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > span {
     display: none;
   }
 
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search__field {
-    width: clamp(132px, 18vw, 185px);
-  }
-
-  .rtx-toolbar-command-cluster {
-    --rtx-toolbar-control-width: clamp(17.5px, 1.95vw, 19.5px);
-    --rtx-toolbar-item-gap: 1px;
-    --rtx-toolbar-group-gap: 2px;
-    padding-inline: 2px;
-  }
-
-  .rtx-toolbar-command-cluster .rtx-toolbar-action {
-    padding: 0 2.5px;
-    font-size: 9.5px;
-    gap: 2px;
-  }
-
-  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
-    gap: 2px;
-    padding-inline: 2.5px;
-  }
-
-  .rtx-toolbar-symbol-badge {
-    min-width: 24px;
-    padding: 0 2px;
-    font-size: 8px;
-  }
-
-  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-    width: 16px;
-    height: 16px;
-    flex: 0 0 16px;
-  }
-
-  .rtx-timeframe-strip .rtx-timeframe-option {
-    min-width: 16px;
-    padding-inline: 1.5px;
-    font-size: 9.5px;
-  }
-
-  .rtx-report-bug-button {
-    margin-inline: 1.5px;
-    padding-inline: 3px;
-    gap: 2px;
-    font-size: 9.5px;
-  }
-
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
-    width: 12.5px;
-    height: 12.5px;
-    flex: 0 0 12.5px;
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button {
+    gap: 0;
+    padding-inline: 6px;
   }
 }
 
-@media (max-width: 860px) {
-  .rtx-menu-launcher .rtx-application-menu-trigger {
+/* === Full HD & Big Desktop Uniform Per-Element Scaling (>= 1721px, 1920px, 2560px, 3440px, 4K, 5K) ===
+   Placed after laptop max-width/max-height rules so wide viewports with compact
+   browser height (e.g. 1920x900, 2560x860) retain uniform per-element equal
+   spacing without overriding explicit [data-terminal-resolution] presets. */
+@media (min-width: 1721px) and (max-width: 2199px) {
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+    --rtx-toolbar-control-width: clamp(28px, 1.65vw, 34px);
+    --rtx-toolbar-item-gap: clamp(5px, 0.45vw, 10px);
+    --rtx-toolbar-group-gap: clamp(12px, 0.95vw, 22px);
+    padding-inline: clamp(10px, 0.7vw, 16px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(28px, 1.65vw, 34px);
+    --rtx-toolbar-item-gap: clamp(5px, 0.45vw, 10px);
+    --rtx-toolbar-group-gap: clamp(12px, 0.95vw, 22px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 clamp(6px, 0.45vw, 9px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: clamp(6px, 0.4vw, 8px);
+    padding-inline: clamp(6px, 0.42vw, 8px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: clamp(26px, 1.6vw, 32px);
+    padding-inline: clamp(5px, 0.36vw, 7.5px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-report-bug-button {
+    margin-inline: 0;
+    padding-inline: clamp(6px, 0.45vw, 9px);
+  }
+}
+
+@media (min-width: 2200px) {
+  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) {
+    --rtx-toolbar-control-width: clamp(34px, 1.5vw, 40px);
+    --rtx-toolbar-item-gap: clamp(9px, 0.58vw, 26px);
+    --rtx-toolbar-group-gap: clamp(16px, 0.95vw, 36px);
+    padding-inline: clamp(14px, 0.8vw, 24px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster {
+    --rtx-toolbar-control-width: clamp(34px, 1.5vw, 40px);
+    --rtx-toolbar-item-gap: clamp(9px, 0.58vw, 26px);
+    --rtx-toolbar-group-gap: clamp(16px, 0.95vw, 36px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster .rtx-toolbar-action {
+    padding: 0 clamp(8px, 0.45vw, 12px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
+    gap: clamp(7px, 0.38vw, 10px);
+    padding-inline: clamp(8px, 0.42vw, 12px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-timeframe-strip .rtx-timeframe-option {
+    min-width: clamp(32px, 1.45vw, 40px);
+    padding-inline: clamp(6.5px, 0.38vw, 10px);
+  }
+
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-report-bug-button {
+    margin-inline: 0;
+    padding-inline: clamp(8px, 0.45vw, 12px);
+  }
+}
+
+@media (min-width: 1721px) and (max-height: 920px) {
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-brand {
+    height: 24px;
     width: 24px;
   }
 
-  .rtx-toolbar-brand {
-    height: 18px;
-    width: 18px;
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-brand__logo {
+    height: 16px;
+    width: 16px;
   }
 
-  .rtx-toolbar-brand__logo {
-    height: 12px;
-    width: 12px;
-  }
-
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-toolbar-search__field {
-    width: 118px;
-  }
-
-  .rtx-toolbar-command-cluster {
-    --rtx-toolbar-control-width: clamp(15px, 1.95vw, 17px);
-    --rtx-toolbar-item-gap: 0.5px;
-    --rtx-toolbar-group-gap: 1.5px;
-    padding-inline: 1.5px;
-  }
-
-  .rtx-toolbar-command-cluster .rtx-toolbar-action {
-    padding: 0 2px;
-    font-size: 8.5px;
-    gap: 1.5px;
-  }
-
-  .rtx-toolbar-command-cluster .rtx-toolbar-action--last-symbol {
-    gap: 1.5px;
-    padding-inline: 2px;
-  }
-
-  .rtx-toolbar-symbol-badge {
-    min-width: 22px;
-    padding: 0 1.5px;
-    font-size: 7.5px;
-  }
-
-  .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 14px;
-  }
-
-  .rtx-timeframe-strip .rtx-timeframe-option {
-    min-width: 14px;
-    padding-inline: 1px;
-    font-size: 8.5px;
-  }
-
-  .rtx-report-bug-button {
-    margin-inline: 1px;
-    padding-inline: 2.5px;
-    gap: 1.5px;
-    font-size: 8.5px;
-  }
-
-  .rtx-main-toolbar:not(.rtx-desktop-main-toolbar) .rtx-report-bug-button > svg {
-    width: 11px;
-    height: 11px;
-    flex: 0 0 11px;
+  :where(.rtx-main-toolbar:not(.rtx-desktop-main-toolbar)) .rtx-toolbar-icon-button svg.rtx-chart-command-icon {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
   }
 }
 
