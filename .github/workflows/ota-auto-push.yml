@@ -78,6 +78,24 @@ jobs:
           go run . -ci-app terminal -ci-dist ../../dist -ci-exe /tmp/RTX5-Terminal64.exe -version "$VER" -push-tcp "51.195.188.172:9100"
           go run . -ci-app web-terminal-linux -ci-web-bin /tmp/rtx5-web-terminal-server -version "$VER" -push-tcp "51.195.188.172:9100"
 
+      - name: Deploy Web Suite Binary to VPS via SSH (rtx5-web-suite)
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          if [ -z "$VPS_SSH_KEY" ] || [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ]; then
+            echo "VPS SSH secrets not configured; skipping direct VPS deploy."
+            exit 0
+          fi
+          KEY_FILE="$(mktemp)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SSH_OPTS="-i $KEY_FILE -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+          scp $SSH_OPTS /tmp/rtx5-web-terminal-server "${VPS_USER}@${VPS_HOST}:/opt/rtx5-web-suite/rtx5-web-suite.ci.new"
+          ssh $SSH_OPTS "${VPS_USER}@${VPS_HOST}" "sudo chmod 755 /opt/rtx5-web-suite/rtx5-web-suite.ci.new && sudo mv -f /opt/rtx5-web-suite/rtx5-web-suite.ci.new /opt/rtx5-web-suite/rtx5-web-suite && sudo systemctl restart rtx5-web-suite && sleep 2 && sudo systemctl is-active --quiet rtx5-web-suite && ls -lh /opt/rtx5-web-suite/rtx5-web-suite"
+
       - name: Build Linux Native Client (.deb & .tar.gz)
         run: |
           sudo apt-get update
