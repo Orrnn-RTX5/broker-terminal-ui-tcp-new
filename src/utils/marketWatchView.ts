@@ -121,6 +121,7 @@ export type MarketWatchSortMode = 'symbol' | 'industry' | 'sector' | 'gainers' |
 export interface MarketWatchOptions {
   useSystemColors: boolean;
   showMilliseconds: boolean;
+  showLiveChangeActualValue: boolean;
   autoRemoveExpired: boolean;
   autoArrange: boolean;
   showGrid: boolean;
@@ -155,6 +156,7 @@ export const DEFAULT_MARKET_WATCH_COLUMNS: MarketWatchColumnId[] = [
 export const DEFAULT_MARKET_WATCH_OPTIONS: MarketWatchOptions = {
   useSystemColors: true,
   showMilliseconds: false,
+  showLiveChangeActualValue: false,
   autoRemoveExpired: false,
   autoArrange: true,
   showGrid: true,
@@ -217,6 +219,9 @@ export const normalizeMarketWatchOptions = (value: unknown): MarketWatchOptions 
     showMilliseconds: typeof record.showMilliseconds === 'boolean'
       ? record.showMilliseconds
       : DEFAULT_MARKET_WATCH_OPTIONS.showMilliseconds,
+    showLiveChangeActualValue: typeof record.showLiveChangeActualValue === 'boolean'
+      ? record.showLiveChangeActualValue
+      : DEFAULT_MARKET_WATCH_OPTIONS.showLiveChangeActualValue,
     autoRemoveExpired: typeof record.autoRemoveExpired === 'boolean'
       ? record.autoRemoveExpired
       : DEFAULT_MARKET_WATCH_OPTIONS.autoRemoveExpired,

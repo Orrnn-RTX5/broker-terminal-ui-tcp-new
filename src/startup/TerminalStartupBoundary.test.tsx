@@ -143,4 +143,25 @@ describe('TerminalStartupBoundary', () => {
 
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('keeps the logo splash visible for its minimum duration when document boot timestamp is present', () => {
+    const win = window as Window & { __RTX_SPLASH_STARTED_AT_MS__?: number };
+    const perfSpy = vi.spyOn(performance, 'now').mockReturnValue(100);
+    win.__RTX_SPLASH_STARTED_AT_MS__ = 0;
+    try {
+      render(startup({ dataReady: true, marketWatchReady: true, chartReady: true }));
+      // At t=100ms, 450ms of the 550ms splash remains even though data is already ready.
+      expect(screen.getByRole('status')).toBeVisible();
+      expect(screen.getByLabelText('Workspace state')).not.toBeVisible();
+
+      perfSpy.mockReturnValue(550);
+      act(() => vi.advanceTimersByTime(450));
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Workspace state')).toBeVisible();
+    } finally {
+      delete win.__RTX_SPLASH_STARTED_AT_MS__;
+      perfSpy.mockRestore();
+    }
+  });
 });

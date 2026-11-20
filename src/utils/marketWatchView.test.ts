@@ -98,6 +98,7 @@ describe('marketWatchView storage', () => {
     expect(normalized).toEqual({
       useSystemColors: false,
       showMilliseconds: DEFAULT_MARKET_WATCH_OPTIONS.showMilliseconds,
+      showLiveChangeActualValue: DEFAULT_MARKET_WATCH_OPTIONS.showLiveChangeActualValue,
       autoRemoveExpired: false,
       autoArrange: true,
       showGrid: DEFAULT_MARKET_WATCH_OPTIONS.showGrid,

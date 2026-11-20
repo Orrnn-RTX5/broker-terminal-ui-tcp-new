@@ -13,6 +13,9 @@
   <script>
     (function prepareInstantShellAndMetrics() {
       var root = document.documentElement;
+      if (typeof window.__RTX_SPLASH_STARTED_AT_MS__ !== 'number') {
+        window.__RTX_SPLASH_STARTED_AT_MS__ = typeof performance !== 'undefined' ? performance.now() : 0;
+      }
       var metrics = {};
       var pendingInteraction = null;
       var pendingInteractionTimer = 0;
@@ -370,8 +373,8 @@
     body { margin: 0; overflow: hidden; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; font-weight: 400; line-height: 20px; }
     * { box-sizing: border-box; }
 
-    .rtx-terminal-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; min-height: 0; padding: 24px; background: #0a0c10; color: #94a3b8; text-align: center; select-none: none; user-select: none; }
-    .rtx-terminal-loading__icon { width: clamp(260px, 32vmin, 380px); height: auto; aspect-ratio: 760 / 545; overflow: visible; animation: rtx-terminal-icon-flash 0.55s ease-out 1 forwards; }
+    .rtx-terminal-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; min-height: 0; padding: 24px; background: #0a0c10; color: #94a3b8; text-align: center; user-select: none; }
+    .rtx-terminal-loading__icon { display: block; flex-shrink: 0; width: clamp(260px, 32vmin, 380px); height: auto; aspect-ratio: 760 / 545; overflow: visible; will-change: transform, opacity; animation: rtx-terminal-icon-flash 0.55s ease-out 1 forwards; }
     [data-rtx-splash-played="true"] .rtx-terminal-loading__icon { animation: none; opacity: 1; transform: scale(1); filter: drop-shadow(0 0 10px rgba(124, 198, 35, 0.2)); }
     .rtx-terminal-loading__icon-wing { fill: #e2e8f0; }
     .rtx-terminal-loading__icon-five { fill: #7cc623; }
@@ -385,11 +388,13 @@
     .rtx-terminal-loading__actions button:hover { border-color: currentColor; }
     .rtx-terminal-loading__actions button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 3px; }
     @keyframes rtx-terminal-icon-flash { 0% { opacity: 0.35; transform: scale(0.94); filter: drop-shadow(0 0 0 rgba(124, 198, 35, 0)); } 60% { opacity: 1; transform: scale(1.03); filter: drop-shadow(0 0 18px rgba(124, 198, 35, 0.36)); } 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 10px rgba(124, 198, 35, 0.2)); } }
-    @media (prefers-reduced-motion: reduce) { .rtx-terminal-loading__icon { animation: none; } }
+    @keyframes rtx-terminal-icon-fade { 0% { opacity: 0.25; filter: drop-shadow(0 0 0 rgba(124, 198, 35, 0)); } 100% { opacity: 1; filter: drop-shadow(0 0 10px rgba(124, 198, 35, 0.2)); } }
+    @media (prefers-reduced-motion: reduce) { .rtx-terminal-loading__icon { animation: rtx-terminal-icon-fade 0.45s ease-out 1 forwards; } }
 
     [data-rtx-static-shell] { width: 100%; height: 100%; background: #050608; }
     [data-rtx-static-shell] > .rtx-terminal-loading { display: none; }
-    html[data-rtx-initial-view="terminal"] [data-rtx-static-shell] > .rtx-terminal-loading { display: flex; }
+    html[data-rtx-initial-view="terminal"] [data-rtx-static-shell] > .rtx-terminal-loading,
+    html[data-rtx-initial-view="login"] [data-rtx-static-shell] > .rtx-terminal-loading { display: flex; }
     body:has([data-terminal-startup="pending"], [data-terminal-module-loading="true"], .rtx-bootstrap-loader) [data-rtx5-version-badge]:not([data-rtx5-version-docked="true"]),
     html[data-rtx-initial-view="terminal"] body:has([data-rtx-static-shell] > .rtx-terminal-loading) [data-rtx5-version-badge]:not([data-rtx5-version-docked="true"]) { display: none !important; }
 
@@ -442,7 +447,7 @@
   <div id="root">
     <div data-rtx-static-shell>
       <div class="rtx-terminal-loading" role="status" aria-live="polite" aria-busy="true">
-        <svg class="rtx-terminal-loading__icon" viewBox="15 145 760 545" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg class="rtx-terminal-loading__icon" width="340" height="244" viewBox="15 145 760 545" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path class="rtx-terminal-loading__icon-wing" d="M137 172L264.5 172L413 342.5L289.5 342.5Z M372 480.5L501.5 480.5L654.5 650.5L525.5 650.5Z M456.5 390L555 390C625 314 700 232 766 161C769.5 157.5 767 155.5 761 158.5C718 184.5 672 202 610 202L512 201.5C484 201.5 466 224 459 250C456.5 260 460 265 470 264.5L526 263C552 263 559 279 544 296L456.5 390Z M335 450L236.5 450C166.5 526 91.5 608 25.5 679C22 682.5 24.5 684.5 30.5 681.5C73.5 655.5 119.5 638 181.5 638L279.5 638.5C307.5 638.5 325.5 616 332.5 590C335 580 331.5 575 321.5 575.5L265.5 577C239.5 577 232.5 561 247.5 544L335 450Z" />
           <path class="rtx-terminal-loading__icon-five" d="M355 367L432.5 367L425 388.5L374.5 388.5L374.5 397L410 397C429 397 438.5 408 438.5 428.5C438.5 449.5 428 460.5 409 460.5L382 460.5C364.5 460.5 355 449 355 432L374.5 432C374.5 437.5 378.5 439.5 385 439.5L408 439.5C416 439.5 419.5 435.5 419.5 428.5C419.5 421.5 416 418 408 418L355 418L355 367Z" />
         </svg>

@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CHART_GRID_DASH_PATTERN_CSS_PX,
+  CHART_GRID_STROKE_CSS_PX,
+  FINE_CHART_GRID_DASH_PATTERN_CSS_PX,
+  FINE_CHART_GRID_OPACITY,
+  FINE_CHART_GRID_STROKE_CSS_PX,
   SQUARE_CHART_GRID_CELL_SIZE_PX,
   FINE_CHART_GRID_CELL_SIZE_PX,
   SquareChartGridPrimitive,
   getSquareGridLinePositions,
   getFineGridHorizontalPositions,
   getSquareGridTimeAxisPositions,
+  resolveFineGridBitmapDash,
+  resolveFineGridBitmapOpacity,
+  resolveFineGridBitmapStroke,
 } from './squareChartGridPrimitive';
 
 describe('square chart grid geometry', () => {
@@ -47,14 +55,20 @@ describe('square chart grid geometry', () => {
 describe('SquareChartGridPrimitive', () => {
   const createDrawTarget = (horizontalPixelRatio = 1, verticalPixelRatio = 1) => {
     const strokeWidths: number[] = [];
+    const strokeAlphas: number[] = [];
     const context = {
       save: vi.fn(), restore: vi.fn(), setLineDash: vi.fn(),
-      beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(() => { strokeWidths.push(context.lineWidth); }),
-      lineWidth: 1, lineCap: 'butt', lineDashOffset: 0, strokeStyle: '',
+      beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(() => {
+        strokeWidths.push(context.lineWidth);
+        strokeAlphas.push(context.globalAlpha);
+      }),
+      lineWidth: 1, lineCap: 'butt', lineDashOffset: 0, strokeStyle: '', globalAlpha: 1,
     };
     return {
       context,
       strokeWidths,
+      strokeAlphas,
       target: {
         useBitmapCoordinateSpace: (draw: (scope: unknown) => void) => draw({
           context,
@@ -66,7 +80,7 @@ describe('SquareChartGridPrimitive', () => {
     };
   };
 
-  it.each([[1, 1], [2, 2], [2, 1]])('draws 0.75px dashed segments at pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
+  it.each([[1, 1], [2, 2], [2, 1]])('draws thin 0.25px micro-dotted segments at pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
     const primitive = new SquareChartGridPrimitive({
       visible: true, cellSizeCssPx: 64,
       verticalColor: '#222', horizontalColor: '#333',
@@ -75,17 +89,20 @@ describe('SquareChartGridPrimitive', () => {
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
 
     expect(context.setLineDash.mock.calls).toEqual([
-      [[8 * verticalPixelRatio, 4 * verticalPixelRatio]],
-      [[8 * horizontalPixelRatio, 4 * horizontalPixelRatio]],
+      [[CHART_GRID_DASH_PATTERN_CSS_PX[0] * verticalPixelRatio, CHART_GRID_DASH_PATTERN_CSS_PX[1] * verticalPixelRatio]],
+      [[CHART_GRID_DASH_PATTERN_CSS_PX[0] * horizontalPixelRatio, CHART_GRID_DASH_PATTERN_CSS_PX[1] * horizontalPixelRatio]],
     ]);
-    expect(strokeWidths).toEqual([0.75 * horizontalPixelRatio, 0.75 * verticalPixelRatio]);
+    expect(strokeWidths).toEqual([
+      CHART_GRID_STROKE_CSS_PX * horizontalPixelRatio,
+      CHART_GRID_STROKE_CSS_PX * verticalPixelRatio,
+    ]);
     expect(context.stroke).toHaveBeenCalledTimes(2);
     expect(context.moveTo).toHaveBeenCalledTimes(4);
     expect(context.save).toHaveBeenCalledOnce();
     expect(context.restore).toHaveBeenCalledOnce();
   });
 
-  it('clears the dash pattern when switching to solid and stops drawing while hidden', () => {
+  it('clears the dash pattern when switching to solid, keeps the thin stroke, and stops drawing while hidden', () => {
     const primitive = new SquareChartGridPrimitive({
       visible: true, lineStyle: 'dashed', cellSizeCssPx: 64,
       verticalColor: '#222', horizontalColor: '#333',
@@ -96,7 +113,7 @@ describe('SquareChartGridPrimitive', () => {
     const { context, target } = createDrawTarget();
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.setLineDash.mock.calls).toEqual([[[]], [[]]]);
-    expect(context.lineWidth).toBe(1);
+    expect(context.lineWidth).toBe(CHART_GRID_STROKE_CSS_PX);
     expect(requestUpdate).toHaveBeenCalledOnce();
 
     context.stroke.mockClear();
@@ -105,53 +122,98 @@ describe('SquareChartGridPrimitive', () => {
     expect(context.stroke).not.toHaveBeenCalled();
   });
 
-  it.each([[1, 1], [2, 2], [2, 1]])('keeps Fine cells and short dashes consistent at pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
+  it.each([[1, 1], [1.25, 1.25], [1.5, 1.5], [1.75, 1.75], [2, 2], [2, 1]])('keeps Fine cells, pixel-snapped strokes, crisp MT5 dots, and equal visual opacity across desktop and laptop pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
     const primitive = new SquareChartGridPrimitive({
       visible: true, lineStyle: 'dashed', cellSizeCssPx: FINE_CHART_GRID_CELL_SIZE_PX,
-      profile: 'fine', dashPatternCssPx: [3, 3], verticalColor: '#778899', horizontalColor: '#778899',
+      profile: 'fine', verticalColor: '#778899', horizontalColor: '#778899',
     });
-    const { context, target, strokeWidths } = createDrawTarget(horizontalPixelRatio, verticalPixelRatio);
+    const { context, target, strokeWidths, strokeAlphas } = createDrawTarget(horizontalPixelRatio, verticalPixelRatio);
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.setLineDash.mock.calls).toEqual([
-      [[3 * verticalPixelRatio, 3 * verticalPixelRatio]],
-      [[3 * horizontalPixelRatio, 3 * horizontalPixelRatio]],
+      [resolveFineGridBitmapDash(FINE_CHART_GRID_DASH_PATTERN_CSS_PX[0], FINE_CHART_GRID_DASH_PATTERN_CSS_PX[1], verticalPixelRatio)],
+      [resolveFineGridBitmapDash(FINE_CHART_GRID_DASH_PATTERN_CSS_PX[0], FINE_CHART_GRID_DASH_PATTERN_CSS_PX[1], horizontalPixelRatio)],
     ]);
-    expect(strokeWidths).toEqual([horizontalPixelRatio, verticalPixelRatio]);
+    const expectedVerticalStrokeWidth = resolveFineGridBitmapStroke(FINE_CHART_GRID_STROKE_CSS_PX, horizontalPixelRatio);
+    const expectedHorizontalStrokeWidth = resolveFineGridBitmapStroke(FINE_CHART_GRID_STROKE_CSS_PX, verticalPixelRatio);
+    const expectedVerticalAlpha = resolveFineGridBitmapOpacity(
+      FINE_CHART_GRID_OPACITY,
+      FINE_CHART_GRID_STROKE_CSS_PX,
+      horizontalPixelRatio,
+      expectedVerticalStrokeWidth,
+    );
+    const expectedHorizontalAlpha = resolveFineGridBitmapOpacity(
+      FINE_CHART_GRID_OPACITY,
+      FINE_CHART_GRID_STROKE_CSS_PX,
+      verticalPixelRatio,
+      expectedHorizontalStrokeWidth,
+    );
+    expect(strokeWidths).toEqual([
+      expectedVerticalStrokeWidth,
+      expectedHorizontalStrokeWidth,
+    ]);
+    expect(strokeAlphas).toEqual([
+      expectedVerticalAlpha,
+      expectedHorizontalAlpha,
+    ]);
+    // Effective CSS ink density (cssStrokeWidth * alpha) must stay equal to Mac 2x / Windows 1x at every Windows scaling factor.
+    expect((expectedVerticalStrokeWidth / horizontalPixelRatio) * expectedVerticalAlpha).toBeCloseTo(
+      FINE_CHART_GRID_STROKE_CSS_PX * FINE_CHART_GRID_OPACITY,
+      3,
+    );
+    expect((expectedHorizontalStrokeWidth / verticalPixelRatio) * expectedHorizontalAlpha).toBeCloseTo(
+      FINE_CHART_GRID_STROKE_CSS_PX * FINE_CHART_GRID_OPACITY,
+      3,
+    );
+    expect(Number.isInteger(expectedVerticalStrokeWidth)).toBe(true);
+    expect(Number.isInteger(expectedHorizontalStrokeWidth)).toBe(true);
     expect(context.moveTo).toHaveBeenCalledTimes(9);
-    expect(context.moveTo).toHaveBeenCalledWith(0, 21 * verticalPixelRatio + (Math.round(verticalPixelRatio) % 2) / 2);
+    expect(context.moveTo).toHaveBeenCalledWith(
+      0,
+      Math.round(21 * verticalPixelRatio) + (expectedHorizontalStrokeWidth % 2) / 2,
+    );
 
-    // A hot switch must restore the wider Square pitch and longer dash pattern.
+    // A hot switch must restore the wider Square pitch, thin stroke, and dash pattern.
     primitive.applyOptions({ profile: 'square', cellSizeCssPx: SQUARE_CHART_GRID_CELL_SIZE_PX, dashPatternCssPx: [8, 4] });
     context.moveTo.mockClear();
     context.setLineDash.mockClear();
+    strokeWidths.length = 0;
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.moveTo).toHaveBeenCalledTimes(4);
+    expect(strokeWidths).toEqual([
+      CHART_GRID_STROKE_CSS_PX * horizontalPixelRatio,
+      CHART_GRID_STROKE_CSS_PX * verticalPixelRatio,
+    ]);
     expect(context.setLineDash.mock.calls).toEqual([
       [[8 * verticalPixelRatio, 4 * verticalPixelRatio]],
       [[8 * horizontalPixelRatio, 4 * horizontalPixelRatio]],
     ]);
   });
 
-  it('labels every Fine row with its actual price and releases the price axis when hidden or switched', () => {
+  it('labels every Fine row with its actual price and MT5 tick marks and releases the price axis when hidden or switched', () => {
     const labelAt = vi.fn((y: number) => `price ${y}`);
     const primitive = new SquareChartGridPrimitive({
       visible: true, profile: 'fine', cellSizeCssPx: 32,
       verticalColor: '#778899', horizontalColor: '#778899',
     }, { labelAt, appearance: () => ({ color: '#ccc', fontSize: 12, fontFamily: 'Arial' }) });
-    const context = { save: vi.fn(), restore: vi.fn(), fillText: vi.fn(), font: '', fillStyle: '', textBaseline: '', textAlign: '' };
+    const context = { save: vi.fn(), restore: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), font: '', fillStyle: '', textBaseline: '', textAlign: '' };
     const target = { useMediaCoordinateSpace: (draw: (scope: unknown) => void) => draw({ context, mediaSize: { width: 80, height: 150 } }) };
     const pane = primitive.priceAxisPaneViews()[0]!;
     expect(pane.zOrder?.()).toBe('normal'); // live/trade labels paint above these guides
     pane.renderer()!.draw(target as never);
     expect(labelAt.mock.calls).toEqual([[21], [53], [85], [117]]);
+    expect(context.fillRect.mock.calls).toEqual([
+      [0, 21, 4, 1], [0, 53, 4, 1], [0, 85, 4, 1], [0, 117, 4, 1],
+    ]);
     expect(context.fillText.mock.calls).toEqual([
       ['price 21', 8, 21.5], ['price 53', 8, 53.5], ['price 85', 8, 85.5], ['price 117', 8, 117.5],
     ]);
+    context.fillRect.mockClear();
     context.fillText.mockClear();
     primitive.applyOptions({ visible: false });
     pane.renderer()!.draw(target as never);
     primitive.applyOptions({ visible: true, profile: 'square' });
     pane.renderer()!.draw(target as never);
+    expect(context.fillRect).not.toHaveBeenCalled();
     expect(context.fillText).not.toHaveBeenCalled();
   });
 

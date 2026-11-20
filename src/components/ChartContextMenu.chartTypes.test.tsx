@@ -104,7 +104,7 @@ describe('ChartContextMenu grid choices', () => {
     await waitFor(() => expect(onToggleGrid).toHaveBeenCalledOnce());
   });
 
-  it('checks Square by default and selects Price/time aligned after closing', async () => {
+  it('checks Fine grid by default and selects Price/time aligned after closing', async () => {
     const user = userEvent.setup({ skipHover: true });
     const onChangeGridType = vi.fn();
     const { onClose } = renderMenu('line', { showGrid: false, onChangeGridType });
@@ -112,10 +112,10 @@ describe('ChartContextMenu grid choices', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await user.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    const square = screen.getByRole('menuitemradio', { name: 'Square' });
+    const fine = within(screen.getByRole('menu', { name: 'Grid type' })).getByRole('menuitemradio', { name: 'Fine grid' });
     const scale = screen.getByRole('menuitemradio', { name: 'Price/time aligned' });
-    expect(square).toHaveAttribute('aria-checked', 'true');
-    expect(square.querySelector('polyline')).not.toBeNull();
+    expect(fine).toHaveAttribute('aria-checked', 'true');
+    expect(fine.querySelector('polyline')).not.toBeNull();
     expect(scale).toHaveAttribute('aria-checked', 'false');
     expect(scale.querySelector('polyline')).toBeNull();
     // user-event omits mouseout.relatedTarget; provide the native portal transition before its full pointer click.

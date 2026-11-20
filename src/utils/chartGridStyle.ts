@@ -105,7 +105,7 @@ export const getChartGridLineColors = ({
   const isSlateGridPreset = isDarkSurface
     && (colorScheme === 'Green and White' || colorScheme === 'Green and Blue');
   const fineGridColor = colorScheme === 'Custom' || isSlateGridPreset
-    ? grid : isDarkSurface ? '#778899' : 'rgba(71, 85, 105, 0.45)';
+    ? grid : isDarkSurface ? '#778899' : 'rgba(71, 85, 105, 0.6)';
 
   if (lineStyle === 'solid') {
     // Continuous guides need much less contrast than short dashes. Keep their

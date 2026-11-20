@@ -18,6 +18,7 @@ import { getCommittedBrokerAccountSessionScope, getCommittedBrokerAccountSession
 import { resolveChartPropertiesTarget, type ChartPropertiesEventDetail } from '../../services/chartPropertiesTarget';
 import type { ChartPrintData, PrintPreferences } from '../../services/chartPrinter';
 import { hasArrangedChartWindows } from '../../utils/chartSymbolTabs';
+import { writePersistedTimeframe } from '../../utils/chartTimeframePersistence';
 import { normalizeSymbolName } from '../../utils/symbolEligibility';
 import { resolveQuickTradeRoute, selectOneClickTrading, useSettingsStore } from '../../store/useSettingsStore';
 import { translateUi } from '../../hooks/useUiTranslation';
@@ -132,6 +133,11 @@ export const useTerminalCommandEvents = ({
       }
       setSelectedSymbol(normalized);
     };
+    const commitSelectedTimeframe = (nextTimeframe: unknown) => {
+      const normalized = writePersistedTimeframe(nextTimeframe);
+      if (!normalized) return;
+      setTimeframe(normalized);
+    };
     const handlePrintChartEvent = (event: Event) => {
       const request = (event as CustomEvent<PrintChartRequest>).detail;
       void handlePrintChart(request || {});
@@ -142,9 +148,10 @@ export const useTerminalCommandEvents = ({
         || getChartEligibleSymbol(selectedSymbol)
         || chartEligibleSymbolNames[0];
       if (!symbol) return;
+      const nextTimeframe = active.timeframe || timeframe;
       const result = useDockLayoutStore.getState().addChartPanel({
         symbol,
-        timeframe: active.timeframe || timeframe,
+        timeframe: nextTimeframe,
         chartType: getDockPanelChartType(useDockLayoutStore.getState().layout, active.targetContextId, chartType),
       });
       if (result.status === 'limit-reached') {
@@ -152,6 +159,7 @@ export const useTerminalCommandEvents = ({
         return;
       }
       commitSelectedChartSymbol(symbol);
+      commitSelectedTimeframe(nextTimeframe);
     };
     const handleRequestChartSymbolChange = (event: CustomEvent<{ panelId?: unknown; anchor?: ChartSymbolAnchor }>) => {
       if (!hasArrangedChartWindows(useDockLayoutStore.getState().layout)) return;
@@ -182,6 +190,7 @@ export const useTerminalCommandEvents = ({
         if (existing) {
           activateChartPanel(existing.id);
           commitSelectedChartSymbol(symbol);
+          if (existing.props?.timeframe) commitSelectedTimeframe(existing.props.timeframe);
           return;
         }
       } else {
@@ -196,7 +205,7 @@ export const useTerminalCommandEvents = ({
     const handleChartSymbolChanged = (event: CustomEvent<{ symbol?: unknown; timeframe?: Timeframe }>) => {
       const chartSymbol = getChartEligibleSymbol(event.detail?.symbol);
       if (chartSymbol) commitSelectedChartSymbol(chartSymbol);
-      if (event.detail?.timeframe) setTimeframe(event.detail.timeframe);
+      if (event.detail?.timeframe) commitSelectedTimeframe(event.detail.timeframe);
     };
     const handleWorkspaceProfileRestored = (event: CustomEvent<{ state?: { chartView?: { dockHeight?: unknown } } }>) => {
       const restoredDockHeight = Number(event.detail?.state?.chartView?.dockHeight);
@@ -323,7 +332,7 @@ export const useTerminalCommandEvents = ({
       ['chartSymbolChanged', handleChartSymbolChanged as EventListener],
       ['workspace:profile-restored', handleWorkspaceProfileRestored as EventListener],
       ['togglePanel', handleTogglePanel as EventListener],
-      ['change-timeframe', ((event: CustomEvent<{ timeframe: Timeframe }>) => setTimeframe(event.detail.timeframe)) as EventListener],
+      ['change-timeframe', ((event: CustomEvent<{ timeframe?: unknown }>) => commitSelectedTimeframe(event.detail?.timeframe)) as EventListener],
       ['change-chart-type', handleChangeChartType as EventListener],
       ['quickTrade', handleQuickTrade as EventListener],
     ];

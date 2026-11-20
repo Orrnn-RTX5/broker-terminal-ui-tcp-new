@@ -288,6 +288,15 @@ export const useMarketWatchContextMenu = ({
       action: () => setMarketWatchOptions((current) => ({ ...current, showMilliseconds: !current.showMilliseconds })),
       autoClose: false,
     },
+    {
+      label: 'Live Change Actual Value',
+      checked: marketWatchOptions.showLiveChangeActualValue,
+      action: () => setMarketWatchOptions((current) => ({
+        ...current,
+        showLiveChangeActualValue: !current.showLiveChangeActualValue,
+      })),
+      autoClose: false,
+    },
     { label: 'Auto Remove Expired', checked: marketWatchOptions.autoRemoveExpired, disabled: true },
     {
       label: 'Auto Arrange',

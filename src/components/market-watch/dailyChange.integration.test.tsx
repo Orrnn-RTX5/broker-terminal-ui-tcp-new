@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, it, expect, vi } from 'vitest';
 import { closedDailyChangeHook, marketHooks, getActiveMarketSnapshot, getRenderedRowSymbols, ResizeObserverStub } from '../layout/__tests__/MarketWatchPanel.testSupport';
 import { useAppStore } from '../../store/useAppStore';
@@ -68,7 +68,7 @@ afterEach(() => {
     expect(getRenderedRowSymbols(container)).toEqual(['XAUUSD', 'BTCUSD']);
   });
 
-  it('displays both price delta and percentage in the default Daily Change column across symbols', () => {
+  it('displays percentage only by default and toggles Live Change Actual Value from the symbol context menu', () => {
     marketHooks.activeSymbols = ['BTCUSD', 'XAUUSD'];
     marketHooks.instrumentSymbols = marketHooks.activeSymbols;
     marketHooks.authorizedSymbols = marketHooks.activeSymbols;
@@ -86,14 +86,23 @@ afterEach(() => {
     });
     const { container } = render(<MarketWatchPanel allSymbols={marketHooks.activeSymbols} selectedSymbol="BTCUSD" onSymbolSelect={vi.fn()} />);
 
+    const btcRow = screen.getByText('BTCUSD').closest('tr')!;
+    const xauRow = screen.getByText('XAUUSD').closest('tr')!;
+    expect(btcRow.querySelectorAll('td')[3]).toHaveTextContent('+1.25%');
+    expect(btcRow.querySelectorAll('td')[3].textContent).not.toContain('+25.00');
+    expect(xauRow.querySelectorAll('td')[3]).toHaveTextContent('-1.40%');
+    expect(xauRow.querySelectorAll('td')[3].textContent).not.toContain('-67.35');
+
+    // Right-click symbol and enable "Live Change Actual Value"
+    fireEvent.contextMenu(btcRow);
+    const liveActualOption = screen.getByText('Live Change Actual Value');
+    fireEvent.click(liveActualOption);
+
     const cols = Array.from(container.querySelectorAll('colgroup col')) as HTMLElement[];
-    expect(cols.map((col) => col.style.width)).toEqual(['27.14%', '19.64%', '19.64%', '33.57%']);
+    expect(cols.map((col) => col.style.width)).toEqual(['29.66%', '20.00%', '20.00%', '30.34%'].map((v) => v.replace('.00%', '%')));
 
-    const btcCells = screen.getByText('BTCUSD').closest('tr')!.querySelectorAll('td');
-    expect(btcCells[3]).toHaveTextContent('+25.00 (+1.25%)');
-
-    const xauCells = screen.getByText('XAUUSD').closest('tr')!.querySelectorAll('td');
-    expect(xauCells[3]).toHaveTextContent('-67.35 (-1.40%)');
+    expect(btcRow.querySelectorAll('td')[3]).toHaveTextContent('+25.00 (+1.25%)');
+    expect(xauRow.querySelectorAll('td')[3]).toHaveTextContent('-67.35 (-1.40%)');
   });
 
 

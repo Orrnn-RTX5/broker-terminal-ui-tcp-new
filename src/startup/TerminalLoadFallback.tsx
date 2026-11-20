@@ -5,16 +5,22 @@ import { useDesktopStartupReady } from './useDesktopStartupReady';
 const SPLASH_DURATION_MS = 550;
 let firstSplashStartedAt: number | null = null;
 
+function readDocumentSplashStartMs(): number | null {
+  if (typeof window === 'undefined') return null;
+  const startedAt = (window as Window & { __RTX_SPLASH_STARTED_AT_MS__?: unknown }).__RTX_SPLASH_STARTED_AT_MS__;
+  return typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : null;
+}
+
 function resolveSplashTiming(): { alreadyPlayed: boolean; delayMs: number } {
   if (typeof performance === 'undefined') {
     return { alreadyPlayed: false, delayMs: 0 };
   }
   const now = performance.now();
   if (firstSplashStartedAt === null) {
-    firstSplashStartedAt = now;
-    return { alreadyPlayed: false, delayMs: 0 };
+    const docStart = readDocumentSplashStartMs();
+    firstSplashStartedAt = docStart !== null && docStart <= now ? docStart : now;
   }
-  const elapsed = now - firstSplashStartedAt;
+  const elapsed = Math.max(0, now - firstSplashStartedAt);
   if (elapsed >= SPLASH_DURATION_MS) {
     return { alreadyPlayed: true, delayMs: 0 };
   }
@@ -59,6 +65,8 @@ export function TerminalLoadFallback({
     >
       <svg
         className="rtx-terminal-loading__icon"
+        width={340}
+        height={244}
         style={splashTiming.delayMs > 0 ? { animationDelay: `-${splashTiming.delayMs}ms` } : undefined}
         viewBox="15 145 760 545"
         fill="none"

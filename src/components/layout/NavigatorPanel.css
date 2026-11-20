@@ -41,7 +41,75 @@ html.rtx-skin-untitled-light .navigator-panel {
     color: var(--navigator-account-inactive-hover-text, #a1a1aa) !important;
 }
 
+.navigator-panel .navigator-account-type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+    border: 1px solid rgba(161, 161, 170, 0.25);
+    color: var(--navigator-account-unknown);
+    background: rgba(161, 161, 170, 0.10);
+}
+
+.navigator-panel .navigator-account-type-badge[data-account-type="demo"] {
+    color: var(--navigator-account-demo);
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.28);
+}
+
+.navigator-panel .navigator-account-type-badge[data-account-type="real"] {
+    color: var(--navigator-account-real);
+    background: rgba(250, 204, 21, 0.12);
+    border-color: rgba(250, 204, 21, 0.28);
+}
+
+.navigator-panel .navigator-account-type-badge[data-account-type="contest"] {
+    color: var(--navigator-account-contest);
+    background: rgba(96, 165, 250, 0.12);
+    border-color: rgba(96, 165, 250, 0.28);
+}
+
+.navigator-panel .navigator-account-type-badge[data-active="false"] {
+    color: var(--navigator-account-inactive-text, #71717a);
+    background: rgba(113, 113, 122, 0.12);
+    border-color: rgba(113, 113, 122, 0.24);
+}
+
+html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data-account-type="demo"] {
+    color: var(--navigator-account-demo);
+    background: rgba(21, 128, 61, 0.10);
+    border-color: rgba(21, 128, 61, 0.26);
+}
+
+html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data-account-type="real"] {
+    color: var(--navigator-account-real);
+    background: rgba(161, 98, 7, 0.10);
+    border-color: rgba(161, 98, 7, 0.26);
+}
+
+html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data-account-type="contest"] {
+    color: var(--navigator-account-contest);
+    background: rgba(37, 99, 235, 0.10);
+    border-color: rgba(37, 99, 235, 0.26);
+}
+
+html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data-active="false"] {
+    color: var(--navigator-account-inactive-text, #64748b);
+    background: rgba(100, 116, 139, 0.10);
+    border-color: rgba(100, 116, 139, 0.22);
+}
+
 @media (max-width: 1720px), (max-height: 920px) {
+    .navigator-panel .navigator-account-type-badge {
+        font-size: 9px;
+        padding: 0 4px;
+        line-height: 1.25;
+    }
     .navigator-panel .navigator-panel__body {
         padding: 2px 3px !important;
     }

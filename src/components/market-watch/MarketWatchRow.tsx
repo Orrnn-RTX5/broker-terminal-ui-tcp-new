@@ -87,6 +87,7 @@ interface MarketWatchRowProps {
   getContextMenuItems: (symbol: string) => ContextMenuItemConfig[];
   columns: readonly MarketWatchColumnId[];
   showMilliseconds: boolean;
+  showLiveChangeActualValue?: boolean;
   isLightSkin: boolean;
   closedDailyChange?: number | null;
   lastPrice?: MarketWatchLastPrice;
@@ -111,6 +112,7 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
   getContextMenuItems,
   columns,
   showMilliseconds,
+  showLiveChangeActualValue = false,
   isLightSkin,
   closedDailyChange,
   lastPrice,
@@ -164,7 +166,7 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
   const showSeparateDailyChangePrice = columns.includes('dailyChangePrice');
   const referenceCurrentPrice = bid > 0 ? bid : (lastClose && lastClose.close > 0 ? lastClose.close : 0);
   const tickPreviousClose = readFiniteDailyChange(tick?.close);
-  const inlineDailyAmount = !showSeparateDailyChangePrice && hasDailyData
+  const inlineDailyAmount = showLiveChangeActualValue && !showSeparateDailyChangePrice && hasDailyData
     ? (dailyAmount
       ?? (tickPreviousClose !== null && tickPreviousClose > 0 && bid > 0
         ? bid - tickPreviousClose

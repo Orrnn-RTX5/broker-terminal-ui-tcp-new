@@ -36,6 +36,7 @@ import {
   SquareChartGridPrimitive,
 } from '../../../utils/squareChartGridPrimitive';
 import { getChartGridRenderingOptions } from '../../../utils/chartGridOptions';
+import { TARGET_BAR_PX } from './chartRuntime';
 import type {
   Candle,
   Timeframe,
@@ -249,7 +250,7 @@ useChartInitializationLifetime(() => {
         timeVisible: true,
         secondsVisible: false,
         tickMarkMaxCharacterLength: getTradingChartTickMarkCharacterLength(timeframe),
-        barSpacing: 8,
+        barSpacing: TARGET_BAR_PX,
         minBarSpacing: 0.5,
         rightOffset: getTradingChartShiftRightOffset(timeframe, ctxChartShift),
         fixLeftEdge: false,

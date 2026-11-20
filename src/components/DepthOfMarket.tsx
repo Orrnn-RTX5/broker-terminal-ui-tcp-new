@@ -254,7 +254,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
 
       // Subtle dashed grid lines inside plot area
       ctx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.14)' : 'rgba(148, 163, 184, 0.08)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 0.25;
       for (let i = 1; i < 5; i++) {
         const y = Math.round((chartH / 5) * i) + 0.5;
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotWidth, y); ctx.stroke();

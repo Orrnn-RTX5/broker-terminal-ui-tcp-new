@@ -294,6 +294,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                 // Do not serialize deliberate one-click orders behind a prior
                 // terminal fill; every call owns separate durable correlation IDs.
                 await orderPromise;
+                import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
                 refreshHistoryAfterFill(Number(accountId));
                 setLastSymbol(exactLastSymbol, side);
                 window.dispatchEvent(new Event('rtx:force-refresh-positions'));
@@ -328,6 +329,9 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                     useAppStore.getState().positions.filter((position) => !closedIdSet.has(position.id)),
                     { removedTickets: candidateIds, closedTickets: candidateIds },
                 );
+                import('../utils/audio')
+                    .then((m) => m.playSystemSound(candidateIds.length > 1 ? 'close-all' : 'close-single'))
+                    .catch(() => undefined);
                 refreshHistoryAfterFill(Number(accountId));
                 flash(`${tr('closed')}: ${candidateIds.length} · ${lastSymbol} ✓`, 'success');
                 return;
@@ -355,7 +359,12 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
             useAppStore.getState().setPositions(useAppStore.getState().positions.filter(
                 (position) => !closedIds.has(position.id),
             ));
-            if (closedIds.size > 0) refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
+            if (closedIds.size > 0) {
+                import('../utils/audio')
+                    .then((m) => m.playSystemSound(closedIds.size > 1 ? 'close-all' : 'close-single'))
+                    .catch(() => undefined);
+                refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
+            }
             window.dispatchEvent(new Event('rtx:force-refresh-positions'));
             if (staleMessage !== null) flash(staleMessage, 'error');
             else flash(`${tr('closed')}: ${closedIds.size} · ${lastSymbol} ✓`, 'success');

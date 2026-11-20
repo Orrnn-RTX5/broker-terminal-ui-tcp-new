@@ -56,7 +56,7 @@ interface LoginDialogProps {
     onLoginSuccess?: (accountId: string) => void;
     initialLogin?: string;
     initialServer?: string;
-    reason?: 'trade';
+    reason?: 'trade' | 'add-account';
     /** Prevent this broker-branded terminal from authenticating against another tenant. */
     lockedBrokerId?: string;
     /** Trusted policy display label; never used as the broker identity. */
@@ -100,6 +100,7 @@ export function LoginDialog({
     const tr = useUiTranslation();
     const dialogId = useId();
     const tradeLogin = reason === 'trade';
+    const addAccountLogin = reason === 'add-account';
     const isDesktop = isDesktopBackendTarget();
     const configuration = getRuntimeBrokerConfiguration();
     const lockedBrokerId = isDesktop ? requestedLockedBrokerId : configuration.brokerId;
@@ -118,13 +119,17 @@ export function LoginDialog({
     const [selectedBroker, setSelectedBroker] = useState<BrokerServerItem | null>(null);
     const selectedBrokerRef = useRef<BrokerServerItem | null>(null);
     const userSelectedBrokerRef = useRef<BrokerServerItem | null>(null);
+    const resolvedInitialLogin = addAccountLogin
+        ? initialLogin
+        : (initialLogin || useAppStore.getState().accountId || localStorage.getItem('rtx_saved_username') || '');
     const { login, password, setLogin, setPassword, savePassword, setSavePassword, available: passwordSavingAvailable, restoring, storageError, persistPassword } = useSavedLogin(
         isOpen,
-        initialLogin || useAppStore.getState().accountId || localStorage.getItem('rtx_saved_username') || '',
+        resolvedInitialLogin,
         selectedBroker ? {
             brokerId: selectedBroker.broker_id,
             serverUrl: isDesktop ? getDirectoryBrokerServerUrl(selectedBroker) : resolveBrokerExtApiUrl(selectedBroker),
         } : null,
+        { restoreEmptyLogin: !addAccountLogin },
     );
     const [searchQuery, setSearchQuery] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -512,6 +517,11 @@ export function LoginDialog({
         );
 
         try {
+            // Capture the active session's broker scope before discovery storage is updated
+            // so switching/adding accounts reliably caches the outgoing account's session.
+            const previousBrokerId = localStorage.getItem('broker_id') || localStorage.getItem('rtx_broker_id') || '';
+            const previousServerUrl = localStorage.getItem('server_url') || localStorage.getItem('backend_url') || '';
+
             // Save selected broker details before login so the request targets the broker backend.
             const submitBroker = normalizeBrokerInfoForTarget(selectedBroker) as BrokerServerItem;
             const brokerServerUrl = isDesktop ? getDirectoryBrokerServerUrl(selectedBroker) : resolveBrokerBackendUrl(submitBroker);
@@ -565,8 +575,8 @@ export function LoginDialog({
             const prevToken = prevState.authToken || localStorage.getItem('auth_token');
             if (prevState.isAuthenticated && prevState.accountId && prevToken) {
                 rememberAccountSession({
-                    brokerId: localStorage.getItem('broker_id') || localStorage.getItem('rtx_broker_id') || submitBroker.broker_id,
-                    serverUrl: localStorage.getItem('server_url') || localStorage.getItem('backend_url') || brokerServerUrl,
+                    brokerId: previousBrokerId || localStorage.getItem('broker_id') || localStorage.getItem('rtx_broker_id') || submitBroker.broker_id,
+                    serverUrl: previousServerUrl || localStorage.getItem('server_url') || localStorage.getItem('backend_url') || brokerServerUrl,
                     login: prevState.accountId,
                     authToken: prevToken,
                     refreshToken: prevState.refreshToken || localStorage.getItem('refresh_token') || undefined,
@@ -745,8 +755,8 @@ export function LoginDialog({
                             <User size={20} strokeWidth={2} />
                         </div>
                         <div>
-                            <h2 id={`${dialogId}-title`} className="rtx-dialog-title rtx-login-title">{tr(tradeLogin ? "Log in to trade" : "Login")}</h2>
-                            {!tradeLogin && <p id={`${dialogId}-description`} className="rtx-login-description">{tr("Access your trading account.")}</p>}
+                            <h2 id={`${dialogId}-title`} className="rtx-dialog-title rtx-login-title">{tr(tradeLogin ? "Log in to trade" : addAccountLogin ? "Add another account" : "Login")}</h2>
+                            {!tradeLogin && <p id={`${dialogId}-description`} className="rtx-login-description">{tr(addAccountLogin ? "Log in to add another account on this broker." : "Access your trading account.")}</p>}
                         </div>
                     </div>
                     <button type="button" onClick={closeDialog} className="rtx-login-close" aria-label={tr("Close")} title={tr("Close")}>
@@ -788,7 +798,7 @@ export function LoginDialog({
                                 <select
                                     id={`${dialogId}-server`}
                                     value={selectedBroker?.broker_id || ''}
-                                    disabled={loading || directoryLoading}
+                                    disabled={loading || directoryLoading || Boolean(lockedBrokerKey)}
                                     onFocus={() => {
                                         void loadAppBrokerDirectory({ forceRefresh: true, desktop: true })
                                             .then((payload: unknown) => {

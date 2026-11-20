@@ -2,7 +2,12 @@ import { LineStyle, type GridOptions } from 'lightweight-charts';
 import { isLightChartBackground } from '../features/trading-chart/presentation/chartTheme';
 import type { ChartProperties } from '../store/useChartSettingsStore';
 import type { TradingViewChartTheme } from '../types/chart';
-import { FINE_CHART_GRID_CELL_SIZE_PX, SQUARE_CHART_GRID_CELL_SIZE_PX, type SquareChartGridOptions } from './squareChartGridPrimitive';
+import {
+  CHART_GRID_DASH_PATTERN_CSS_PX,
+  FINE_CHART_GRID_CELL_SIZE_PX,
+  SQUARE_CHART_GRID_CELL_SIZE_PX,
+  type SquareChartGridOptions,
+} from './squareChartGridPrimitive';
 import { isChartBackgroundLogoVisible, resolveActiveBrokerWatermarkCandidates } from './brokerWatermark';
 
 /** Select one background grid; scale guides track the chart's price/time ticks. */
@@ -27,7 +32,7 @@ export const getChartGridRenderingOptions = (
       ? settings.backgroundLogoFileDataUrl?.trim()
       : undefined;
   const showLogo = isChartBackgroundLogoVisible({
-    showBackgroundLogo: settings.showBackgroundLogo !== false,
+    showBackgroundLogo: settings.showBackgroundLogo === true,
     backgroundLogoMode: settings.backgroundLogoMode,
   });
   const brokerCandidates = showLogo && !customLogoSrc
@@ -61,7 +66,7 @@ export const getChartGridRenderingOptions = (
       lineStyle: settings.gridLineStyle,
       profile: settings.gridType === 'mt5' ? 'fine' : 'square',
       cellSizeCssPx: settings.gridType === 'mt5' ? FINE_CHART_GRID_CELL_SIZE_PX : SQUARE_CHART_GRID_CELL_SIZE_PX,
-      dashPatternCssPx: settings.gridType === 'mt5' ? [3, 3] : [8, 4],
+      dashPatternCssPx: [...CHART_GRID_DASH_PATTERN_CSS_PX],
       verticalColor: colors.gridVertical,
       horizontalColor: colors.gridHorizontal,
     },

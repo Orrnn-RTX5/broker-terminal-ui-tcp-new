@@ -13,10 +13,10 @@ describe('chart grid type selection', () => {
     expect(square.squareVisible).toBe(true);
     expect(square.nativeGrid.vertLines.visible).toBe(false);
     expect(square.nativeGrid.horzLines.visible).toBe(false);
-    expect(square.fixedGrid).toMatchObject({ visible: true, cellSizeCssPx: 64, dashPatternCssPx: [8, 4], lineStyle: gridLineStyle });
+    expect(square.fixedGrid).toMatchObject({ visible: true, cellSizeCssPx: 64, dashPatternCssPx: [1, 2], lineStyle: gridLineStyle });
     expect(mt5.fixedGrid).toEqual({
       profile: 'fine',
-      visible: true, cellSizeCssPx: 32, dashPatternCssPx: [3, 3], lineStyle: gridLineStyle,
+      visible: true, cellSizeCssPx: 32, dashPatternCssPx: [1, 2], lineStyle: gridLineStyle,
       verticalColor: colors.gridVertical, horizontalColor: colors.gridHorizontal,
     });
     expect(mt5.nativeGrid.vertLines.visible).toBe(false);

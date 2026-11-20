@@ -27,6 +27,7 @@ const storageShim = vi.hoisted(() => {
 
 import { applyBrokerChrome } from '../services/brokerPresentation';
 import {
+  applyBackgroundLogoDefaultOffMigration,
   applyBackgroundLogoOpacityDefaultMigration,
   defaultChartProperties,
   useChartSettingsStore,
@@ -68,29 +69,47 @@ describe('broker watermark, logo toggle persistence, blur removal, draggable she
     Object.defineProperty(globalThis, 'window', { value: storageShim.prevWindow, configurable: true, writable: true });
   });
 
-  it('keeps showBackgroundLogo and backgroundLogoMode synchronized across toggles and persistence', async () => {
+  it('keeps showBackgroundLogo OFF by default and synchronized across toggles and persistence', async () => {
+    expect(defaultChartProperties.showBackgroundLogo).toBe(false);
+    expect(defaultChartProperties.backgroundLogoMode).toBe('none');
     expect(isChartBackgroundLogoVisible({ showBackgroundLogo: true, backgroundLogoMode: 'default' })).toBe(true);
     expect(isChartBackgroundLogoVisible({ showBackgroundLogo: true, backgroundLogoMode: 'none' })).toBe(false);
     expect(isChartBackgroundLogoVisible({ showBackgroundLogo: false, backgroundLogoMode: 'default' })).toBe(false);
 
+    // First toggle turns the logo ON for the target symbol.
     toggleChartBackgroundLogoInStore('XAUUSD');
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(false);
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('none');
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(true);
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('default');
 
     // Persisted settings survive rehydration (simulating browser refresh).
     const persistedRaw = globalThis.localStorage.getItem('rtx-chart-settings');
     expect(persistedRaw).toBeTruthy();
     await useChartSettingsStore.persist.rehydrate();
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(false);
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('none');
-
-    // Updating showBackgroundLogo directly keeps backgroundLogoMode synchronized too.
-    useChartSettingsStore.getState().updateSymbolProperty('XAUUSD', 'showBackgroundLogo', true);
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(true);
     expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('default');
 
-    setChartBackgroundLogoVisibility('XAUUSD', false);
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(false);
+    // Legacy persisted default-on state migrates to OFF once, while post-migration ON choice is preserved.
+    const migrated = applyBackgroundLogoDefaultOffMigration(
+      { ...defaultChartProperties, showBackgroundLogo: true, backgroundLogoMode: 'default' },
+      {
+        EURUSD: { ...defaultChartProperties, showBackgroundLogo: true, backgroundLogoMode: 'default' },
+        BTCUSD: { ...defaultChartProperties, showBackgroundLogo: true, backgroundLogoMode: 'url', backgroundLogoUrl: 'https://cdn.example/logo.png' },
+      },
+      0,
+    );
+    expect(migrated.backgroundLogoDefaultOffMigrationVersion).toBe(1);
+    expect(migrated.globalProperties.showBackgroundLogo).toBe(false);
+    expect(migrated.globalProperties.backgroundLogoMode).toBe('none');
+    expect(migrated.symbolProperties.EURUSD.showBackgroundLogo).toBe(false);
+    expect(migrated.symbolProperties.BTCUSD.showBackgroundLogo).toBe(true);
+
+    // Updating showBackgroundLogo directly keeps backgroundLogoMode synchronized too.
+    useChartSettingsStore.getState().updateSymbolProperty('XAUUSD', 'showBackgroundLogo', false);
     expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('none');
+
+    setChartBackgroundLogoVisibility('XAUUSD', true);
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(true);
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.backgroundLogoMode).toBe('default');
   });
 
   it('hot-applies background logo properties and broker watermark updates in TradingChart', () => {

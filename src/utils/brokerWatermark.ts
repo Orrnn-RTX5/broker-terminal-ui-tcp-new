@@ -38,7 +38,7 @@ const appendUniqueUrl = (target: string[], value: unknown): void => {
 
 export const isChartBackgroundLogoVisible = (
   settings: Pick<ChartProperties, 'showBackgroundLogo' | 'backgroundLogoMode'>,
-): boolean => settings.showBackgroundLogo !== false && settings.backgroundLogoMode !== 'none';
+): boolean => settings.showBackgroundLogo === true && settings.backgroundLogoMode !== 'none';
 
 export const setChartBackgroundLogoVisibility = (
   symbol: string | undefined,

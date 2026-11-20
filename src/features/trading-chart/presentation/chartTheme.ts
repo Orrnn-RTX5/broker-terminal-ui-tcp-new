@@ -117,12 +117,52 @@ const getColorLuminance = (color: string | undefined): number | null => {
   return null;
 };
 
+const getRelativeLuminance = (color: string | undefined): number | null => {
+  const parsed = color ? parseCssColor(color) : null;
+  if (!parsed) return null;
+  const toLinear = (channel: number): number => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return (0.2126 * toLinear(parsed.r)) + (0.7152 * toLinear(parsed.g)) + (0.0722 * toLinear(parsed.b));
+};
+
+const getColorContrastRatio = (first: string, second: string): number | null => {
+  const l1 = getRelativeLuminance(first);
+  const l2 = getRelativeLuminance(second);
+  if (l1 === null || l2 === null) return null;
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+};
+
+// Derive crisp solid volume colors directly from the active candle colors
+// without hardcoding any scheme hues. When a hollow candle body matches the
+// chart background (e.g. black bull body on a black canvas), fall back to its
+// visible candle outline/bar color so every volume line remains readable.
+const resolveCandleVolumeColor = (
+  candleColor: string,
+  barColor: string,
+  background: string,
+  foreground: string,
+): string => {
+  const candleContrast = getColorContrastRatio(candleColor, background);
+  if (candleContrast === null || candleContrast >= 1.8) {
+    return candleColor;
+  }
+  const barContrast = getColorContrastRatio(barColor, background);
+  if (barContrast === null || barContrast >= 1.8) {
+    return barColor;
+  }
+  return foreground;
+};
+
 export const buildChartTheme = (
   colors: ChartColorPalette,
   showGrid: boolean,
   useReferenceLightSurface = false,
   gridLineStyle: ChartProperties['gridLineStyle'] = 'dashed',
-  gridType: ChartProperties['gridType'] = 'square',
+  gridType: ChartProperties['gridType'] = 'mt5',
   colorScheme?: ChartProperties['colorScheme'],
 ): TradingViewChartTheme => {
   const candleUp = colors.bullCandle || colors.barUp || '#089981';
@@ -163,9 +203,14 @@ export const buildChartTheme = (
     preserveConfiguredColor: useReferenceLightSurface,
   });
 
+  const background = colors.background || '#0e0e12';
+  const foreground = colors.foreground || '#ffffff';
+  const volumeUp = resolveCandleVolumeColor(candleUp, barUp, background, foreground);
+  const volumeDown = resolveCandleVolumeColor(candleDown, barDown, background, foreground);
+
   return {
-    background: colors.background || '#0e0e12',
-    text: colors.foreground || '#ffffff',
+    background,
+    text: foreground,
     axisText: backgroundIsDark
       ? colorWithAlpha(colors.foreground, 0.72, 'rgba(226, 232, 240, 0.72)')
       : (colors.foreground || '#25313c'),
@@ -192,11 +237,7 @@ export const buildChartTheme = (
     areaDownLine: areaDown,
     areaDownTop: colorWithAlpha(areaDown, areaFillOpacity, `rgba(242, 54, 69, ${areaFillOpacity})`),
     areaDownBottom: colorWithAlpha(areaDown, 0, 'rgba(242, 54, 69, 0)'),
-    volumeUp: colorScheme === 'Green and White' || colorScheme === 'Green and Blue' ? colors.volumes : useReferenceLightSurface
-      ? barUp
-      : colorWithAlpha(barUp, 0.28, 'rgba(8, 153, 129, 0.28)'),
-    volumeDown: colorScheme === 'Green and White' || colorScheme === 'Green and Blue' ? colors.volumes : useReferenceLightSurface
-      ? barDown
-      : colorWithAlpha(barDown, 0.28, 'rgba(242, 54, 69, 0.28)'),
+    volumeUp,
+    volumeDown,
   };
 };

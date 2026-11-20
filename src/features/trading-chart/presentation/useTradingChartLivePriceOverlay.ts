@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { LineStyle } from 'lightweight-charts';
 import type { IPriceLine, ISeriesApi, SeriesType } from 'lightweight-charts';
+import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 
 import {
   getLivePriceOverlayColors,
@@ -52,6 +53,8 @@ export function useTradingChartLivePriceOverlay({
   const lastLivePriceDirectionalColorRef = useRef(defaultChartProperties.colors.bullCandle);
   const areaTrendDirectionRef = useRef<AreaTrendDirection | null>(null);
   const useEnterpriseLightPricePaletteRef = useRef(false);
+  const livePriceCanvasManagedRef = useRef(false);
+  const requestLivePriceCanvasUpdateRef = useRef<(() => void) | null>(null);
 
   const hideLivePriceOverlay = useCallback((clearPrice = true) => {
     if (clearPrice) {
@@ -81,6 +84,9 @@ export function useTradingChartLivePriceOverlay({
     if (livePriceCountdownRef.current) {
       livePriceCountdownRef.current.textContent = '';
       livePriceCountdownRef.current.style.display = 'none';
+    }
+    if (livePriceCanvasManagedRef.current) {
+      requestLivePriceCanvasUpdateRef.current?.();
     }
   }, [askPriceLineRef, lastPriceLineRef]);
 
@@ -224,6 +230,70 @@ export function useTradingChartLivePriceOverlay({
     badge.style.display = 'block';
   }, [applyLivePriceHorizontalGeometry, getLivePriceDirectionalColor, resolvedPriceDigitsRef]);
 
+  const renderLivePriceOnCanvas = useCallback((
+    target: CanvasRenderingTarget2D,
+    series: ISeriesApi<SeriesType>,
+  ) => {
+    if (isDisposedRef.current) return;
+    if (!canPaintLivePrice() || !chartSettingsRef.current.showBidPriceLine) {
+      return;
+    }
+    const activeCandle = currentCandleRef.current;
+    const livePrice = activeCandle && Number.isFinite(Number(activeCandle.close))
+      ? Number(activeCandle.close)
+      : livePriceRef.current;
+    if (livePrice === null || !Number.isFinite(livePrice)) return;
+
+    livePriceRef.current = livePrice;
+    const y = series.priceToCoordinate(livePrice);
+    if (y === null || y === undefined || !Number.isFinite(y)) {
+      if (livePriceBadgeRef.current) {
+        livePriceBadgeRef.current.style.display = 'none';
+        livePriceBadgeRef.current.style.top = '-9999px';
+      }
+      return;
+    }
+
+    const overlayColors = getLivePriceOverlayColors(
+      livePriceColorPaletteRef.current,
+      getLivePriceDirectionalColor(activeCandle?.time, livePrice),
+      useEnterpriseLightPricePaletteRef.current,
+    );
+    livePriceOverlayColorsRef.current = overlayColors;
+
+    // Draw the horizontal live price line directly in Lightweight Charts' own
+    // bitmap coordinate space so it commits in the exact same canvas frame and
+    // pixel row as the forming candle across Windows & macOS DPI scales.
+    target.useBitmapCoordinateSpace(({ context, bitmapSize, verticalPixelRatio }) => {
+      const yBitmap = Math.round(y * verticalPixelRatio) + 0.5;
+      if (yBitmap < -2 || yBitmap > bitmapSize.height + 2) return;
+      context.save();
+      context.strokeStyle = overlayColors.lineColor;
+      context.lineWidth = 1;
+      context.setLineDash([]);
+      context.beginPath();
+      context.moveTo(0, yBitmap);
+      context.lineTo(bitmapSize.width, yBitmap);
+      context.stroke();
+      context.restore();
+    });
+
+    // Synchronize the right-axis price badge (and hidden DOM proxy) on the exact
+    // same frame that the forming candle and canvas price line commit.
+    const scaleWidth = series.priceScale().width();
+    if (livePriceLineRef.current) {
+      livePriceLineRef.current.dataset.canvasLineActive = 'true';
+    }
+    paintLivePriceOverlay(livePrice, y, scaleWidth, activeCandle?.time, livePrice);
+  }, [
+    canPaintLivePrice,
+    chartSettingsRef,
+    currentCandleRef,
+    getLivePriceDirectionalColor,
+    isDisposedRef,
+    paintLivePriceOverlay,
+  ]);
+
   const repaintLivePriceOverlayFromCurrentPrice = useCallback((activeCandle: Candle) => {
     if (!canPaintLivePrice()) return;
     if (!chartSettingsRef.current.showBidPriceLine) {
@@ -239,6 +309,22 @@ export function useTradingChartLivePriceOverlay({
       || !livePriceBadgeRef.current
       || !seriesRef.current
     ) return;
+
+    // When the canvas primitive is attached to the active series, commit the
+    // live price line + right-axis badge strictly inside LWC's canvas draw pass
+    // so the price line never jumps ahead of or lags behind the forming candle.
+    if (livePriceCanvasManagedRef.current && requestLivePriceCanvasUpdateRef.current) {
+      livePriceRef.current = livePrice;
+      const overlayColors = getLivePriceOverlayColors(
+        livePriceColorPaletteRef.current,
+        getLivePriceDirectionalColor(activeCandle.time, activeCandle.close),
+        useEnterpriseLightPricePaletteRef.current,
+      );
+      livePriceOverlayColorsRef.current = overlayColors;
+      livePriceLineRef.current.dataset.canvasLineActive = 'true';
+      requestLivePriceCanvasUpdateRef.current();
+      return;
+    }
 
     const paint = () => {
       if (
@@ -274,6 +360,7 @@ export function useTradingChartLivePriceOverlay({
   }, [
     canPaintLivePrice,
     chartSettingsRef,
+    getLivePriceDirectionalColor,
     hideLivePriceOverlay,
     isDisposedRef,
     paintLivePriceOverlay,
@@ -288,13 +375,16 @@ export function useTradingChartLivePriceOverlay({
     hideLivePriceOverlay,
     lastLivePriceDirectionalColorRef,
     livePriceBadgeRef,
+    livePriceCanvasManagedRef,
     livePriceColorPaletteRef,
     livePriceCountdownRef,
     livePriceLineRef,
     livePriceOverlayColorsRef,
     livePriceRef,
     livePriceValueRef,
+    renderLivePriceOnCanvas,
     repaintLivePriceOverlayFromCurrentPrice,
+    requestLivePriceCanvasUpdateRef,
     syncSupplementalPriceLines,
     useEnterpriseLightPricePaletteRef,
   };

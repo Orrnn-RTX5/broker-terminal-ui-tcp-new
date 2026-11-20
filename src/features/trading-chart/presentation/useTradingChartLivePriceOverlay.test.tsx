@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IPriceLine, ISeriesApi, SeriesType } from 'lightweight-charts';
 import { useTradingChartLivePriceOverlay } from './useTradingChartLivePriceOverlay';
+import { ChartOverlayGeometryPrimitive } from '../../../utils/chartOverlayGeometryPrimitive';
 import { defaultChartProperties, normalizeChartProperties } from '../../../store/useChartSettingsStore';
 
 describe('forming candle and chart price line alignment', () => {
@@ -54,6 +55,79 @@ describe('forming candle and chart price line alignment', () => {
     expect(badge.style.top).toBe('142.5px');
     expect(line.style.right).toBe('72px');
     expect(badge.style.width).toBe('72px');
+  });
+
+  it('draws the live price line directly in LWC bitmap coordinates and syncs the badge in the same frame', () => {
+    const candle = { time: 1_790_860_020, open: 3589.5, high: 3590.5, low: 3589.0, close: 3590.25, volume: 12 };
+    const priceToCoordinate = vi.fn(() => 142.4);
+    const series = {
+      priceToCoordinate,
+      priceScale: () => ({ width: () => 68 }),
+    } as unknown as ISeriesApi<SeriesType>;
+
+    const { result } = renderHook(() => useTradingChartLivePriceOverlay({
+      canPaintLivePrice: () => true,
+      askPriceLineRef: { current: null }, lastPriceLineRef: { current: null },
+      chartSettingsRef: { current: defaultChartProperties }, chartType: 'candlestick',
+      currentCandleRef: { current: candle }, isDisposedRef: { current: false },
+      resolvedPriceDigitsRef: { current: 2 },
+      seriesRef: { current: series },
+    }));
+
+    const line = document.createElement('div');
+    const badge = document.createElement('div');
+    const value = document.createElement('span');
+    result.current.livePriceLineRef.current = line;
+    result.current.livePriceBadgeRef.current = badge;
+    result.current.livePriceValueRef.current = value;
+
+    const requestUpdate = vi.fn();
+    const primitive = new ChartOverlayGeometryPrimitive(
+      vi.fn(),
+      (target, attachedSeries) => result.current.renderLivePriceOnCanvas(target, attachedSeries),
+    );
+    primitive.attached({ series, requestUpdate } as never);
+    result.current.livePriceCanvasManagedRef.current = true;
+    result.current.requestLivePriceCanvasUpdateRef.current = () => primitive.requestUpdate();
+
+    // Tick update queues canvas repaint instead of moving DOM ahead of the candle.
+    act(() => result.current.repaintLivePriceOverlayFromCurrentPrice(candle));
+    expect(requestUpdate).toHaveBeenCalledTimes(1);
+    expect(line.dataset.canvasLineActive).toBe('true');
+
+    // When LWC draws the candle frame at Windows 125% DPI (1.25x), primitive draws
+    // the exact horizontal line on the canvas and snaps the axis badge together.
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      setLineDash: vi.fn(),
+      strokeStyle: '',
+      lineWidth: 0,
+    };
+    const target = {
+      useBitmapCoordinateSpace: (cb: (args: {
+        context: typeof ctx;
+        bitmapSize: { width: number; height: number };
+        verticalPixelRatio: number;
+      }) => void) => cb({
+        context: ctx,
+        bitmapSize: { width: 1000, height: 600 },
+        verticalPixelRatio: 1.25,
+      }),
+    };
+
+    primitive.paneViews()[0]!.renderer()!.draw(target as never);
+
+    expect(ctx.moveTo).toHaveBeenCalledWith(0, Math.round(142.4 * 1.25) + 0.5);
+    expect(ctx.lineTo).toHaveBeenCalledWith(1000, Math.round(142.4 * 1.25) + 0.5);
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+    expect(badge.style.top).toBe('142.4px');
+    expect(badge.style.display).toBe('block');
+    expect(Number(value.textContent?.replace(/,/g, ''))).toBe(3590.25);
   });
 });
 

@@ -14,10 +14,11 @@ describe('layout reset on open', () => {
     expect(bootEnd).toBeGreaterThan(bootStart);
     expect(bootEffect).toContain('useDockLayoutStore.getState().resetToDefaultLayout();');
     expect(bootEffect).toContain('setSelectedSymbol(DEFAULT_CHART_SYMBOL);');
-    expect(bootEffect).toContain('setTimeframe(DEFAULT_CHART_TIMEFRAME);');
+    expect(bootEffect).toContain('const restoredTimeframe = readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME;');
+    expect(bootEffect).toContain('setTimeframe(restoredTimeframe);');
     expect(bootEffect).toContain('setRestoredLayoutAccountId(accountId);');
     expect(bootEffect.indexOf('resetToDefaultLayout()')).toBeLessThan(bootEffect.indexOf('setRestoredLayoutAccountId(accountId)'));
-    expect(source).toContain('useState<Timeframe>(DEFAULT_CHART_TIMEFRAME)');
+    expect(source).toContain('readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME');
   });
 
   it('never restores or auto-saves per-account layouts at boot', () => {
@@ -26,12 +27,18 @@ describe('layout reset on open', () => {
     expect(bootEffect).not.toContain('useDockLayoutStore.subscribe');
   });
 
-  it('restores the last selected symbol onto the default chart container across reload and reopen while falling back to DEFAULT_CHART_SYMBOL', () => {
+  it('restores the last selected symbol and timeframe onto the default chart container across reload and reopen while falling back to defaults', () => {
     expect(bootEffect).toContain('const persistedSymbol = readPersistedSelectedSymbol();');
+    expect(bootEffect).toContain('const restoredTimeframe = readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME;');
     expect(bootEffect).toContain("useDockLayoutStore.getState().updatePanelProps('chart-default-container'");
+    expect(bootEffect).toContain('title: `${persistedSymbol},${restoredTimeframe}`');
+    expect(bootEffect).toContain('props: { symbol: persistedSymbol, timeframe: restoredTimeframe }');
+    expect(bootEffect).toContain('props: { timeframe: restoredTimeframe }');
     expect(bootEffect).toContain('setSelectedSymbol(persistedSymbol);');
     expect(bootEffect).toContain('setSelectedSymbol(DEFAULT_CHART_SYMBOL);');
+    expect(bootEffect).toContain('setTimeframe(restoredTimeframe);');
     expect(source).toContain('readPersistedSelectedSymbol() || DEFAULT_CHART_SYMBOL');
+    expect(source).toContain('readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME');
     expect(source).toContain('if (useDockLayoutStore.getState().layout !== dockLayout) return;');
   });
 });

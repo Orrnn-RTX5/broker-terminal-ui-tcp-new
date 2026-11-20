@@ -12,6 +12,11 @@ import { removeSolidBackgroundFromRgba } from './watermarkBackgroundRemoval';
 
 export const SQUARE_CHART_GRID_CELL_SIZE_PX = 64;
 export const FINE_CHART_GRID_CELL_SIZE_PX = 32;
+export const CHART_GRID_STROKE_CSS_PX = 0.25;
+export const FINE_CHART_GRID_STROKE_CSS_PX = 1;
+export const FINE_CHART_GRID_OPACITY = 0.5;
+export const CHART_GRID_DASH_PATTERN_CSS_PX: readonly [number, number] = [1, 2];
+export const FINE_CHART_GRID_DASH_PATTERN_CSS_PX: readonly [number, number] = [1, 2];
 
 export interface SquareChartGridOptions {
   visible: boolean;
@@ -761,7 +766,47 @@ export interface SquareGridTimeAxis {
 
 const MT5_TIME_AXIS_MAX_FONT_SIZE_PX = 12;
 const MT5_TIME_AXIS_TICK_LENGTH_PX = 4;
+const MT5_PRICE_AXIS_TICK_LENGTH_PX = 4;
 const MT5_TIME_AXIS_LIGHT_LABEL_GAP_PX = 16;
+
+/**
+ * Snap Fine grid stroke widths and dot/gap segments to integer bitmap pixels
+ * so the MT5 dotted lattice renders with identical sharpness and 1:2 rhythm
+ * across 100% Windows desktops, 125%/150% Windows laptops, and 200% Retina screens.
+ */
+export const resolveFineGridBitmapStroke = (strokeCssPx: number, pixelRatio: number): number => (
+  Math.max(1, Math.round(strokeCssPx * pixelRatio))
+);
+
+export const resolveFineGridBitmapDash = (
+  dashLengthCssPx: number,
+  dashGapCssPx: number,
+  pixelRatio: number,
+): [number, number] => {
+  const dotPx = Math.max(1, Math.round(dashLengthCssPx * pixelRatio));
+  const gapPx = dashLengthCssPx > 0
+    ? Math.max(1, Math.round(dotPx * (dashGapCssPx / dashLengthCssPx)))
+    : Math.max(1, Math.round(dashGapCssPx * pixelRatio));
+  return [dotPx, gapPx];
+};
+
+/**
+ * Compensate Fine grid opacity when integer pixel-snapping changes the effective
+ * CSS width on fractional Windows DPI scaling (125%, 150%, 175%), so visibility
+ * matches 100% Windows desktops and 200% Mac Retina screens identically.
+ */
+export const resolveFineGridBitmapOpacity = (
+  baseOpacity: number,
+  strokeCssPx: number,
+  pixelRatio: number,
+  snappedBitmapStrokePx: number,
+): number => {
+  if (!Number.isFinite(pixelRatio) || pixelRatio <= 0 || snappedBitmapStrokePx <= 0) {
+    return Math.max(0, Math.min(1, baseOpacity));
+  }
+  const compensated = baseOpacity * ((strokeCssPx * pixelRatio) / snappedBitmapStrokePx);
+  return Math.max(0, Math.min(1, Number(compensated.toFixed(4))));
+};
 
 class FineGridPriceAxisRenderer implements IPrimitivePaneRenderer {
   constructor(
@@ -782,7 +827,12 @@ class FineGridPriceAxisRenderer implements IPrimitivePaneRenderer {
       for (const y of getFineGridHorizontalPositions(mediaSize.height)) {
         if (y < appearance.fontSize / 2 || y > mediaSize.height - appearance.fontSize / 2) continue;
         const text = this.priceAxis.labelAt(y);
-        if (text !== null) context.fillText(text, 8, y + 0.5);
+        if (text !== null) {
+          if (typeof context.fillRect === 'function') {
+            context.fillRect(0, Math.round(y), MT5_PRICE_AXIS_TICK_LENGTH_PX, 1);
+          }
+          context.fillText(text, 8, y + 0.5);
+        }
       }
       context.restore();
     });
@@ -915,30 +965,66 @@ class SquareChartGridRenderer implements IPrimitivePaneRenderer {
       // Dash lengths follow the line direction so segments keep their CSS size
       // on high-DPI displays, independently of the square cell pitch.
       const dashed = options.lineStyle !== 'solid';
-      const [dashLength, dashGap] = options.dashPatternCssPx ?? [8, 4];
-      const strokeCssPx = options.profile === 'fine' ? 1 : dashed ? 0.75 : 1;
-      const verticalLineWidth = strokeCssPx * horizontalPixelRatio;
+      const isFineProfile = options.profile === 'fine';
+      const [dashLength, dashGap] = options.dashPatternCssPx
+        ?? (isFineProfile ? FINE_CHART_GRID_DASH_PATTERN_CSS_PX : CHART_GRID_DASH_PATTERN_CSS_PX);
+      const strokeCssPx = isFineProfile ? FINE_CHART_GRID_STROKE_CSS_PX : CHART_GRID_STROKE_CSS_PX;
+      const verticalLineWidth = isFineProfile
+        ? resolveFineGridBitmapStroke(strokeCssPx, horizontalPixelRatio)
+        : strokeCssPx * horizontalPixelRatio;
+      const verticalPixelOffset = (Math.max(1, Math.round(verticalLineWidth)) % 2) / 2;
+      if (isFineProfile) {
+        context.globalAlpha = resolveFineGridBitmapOpacity(
+          FINE_CHART_GRID_OPACITY,
+          strokeCssPx,
+          horizontalPixelRatio,
+          verticalLineWidth,
+        );
+      }
       context.lineWidth = verticalLineWidth;
-      context.setLineDash(dashed ? [dashLength * verticalPixelRatio, dashGap * verticalPixelRatio] : []);
+      context.setLineDash(
+        dashed
+          ? (isFineProfile
+            ? resolveFineGridBitmapDash(dashLength, dashGap, verticalPixelRatio)
+            : [dashLength * verticalPixelRatio, dashGap * verticalPixelRatio])
+          : [],
+      );
       context.beginPath();
       for (let x = verticalStep; x < bitmapSize.width; x += verticalStep) {
-        const crispX = Math.round(x) + (Math.round(verticalLineWidth) % 2) / 2;
+        const crispX = Math.round(x) + verticalPixelOffset;
         context.moveTo(crispX, 0);
         context.lineTo(crispX, bitmapSize.height);
       }
       context.strokeStyle = options.verticalColor;
       context.stroke();
 
-      const horizontalLineWidth = strokeCssPx * verticalPixelRatio;
+      const horizontalLineWidth = isFineProfile
+        ? resolveFineGridBitmapStroke(strokeCssPx, verticalPixelRatio)
+        : strokeCssPx * verticalPixelRatio;
+      const horizontalPixelOffset = (Math.max(1, Math.round(horizontalLineWidth)) % 2) / 2;
+      if (isFineProfile) {
+        context.globalAlpha = resolveFineGridBitmapOpacity(
+          FINE_CHART_GRID_OPACITY,
+          strokeCssPx,
+          verticalPixelRatio,
+          horizontalLineWidth,
+        );
+      }
       context.lineWidth = horizontalLineWidth;
-      context.setLineDash(dashed ? [dashLength * horizontalPixelRatio, dashGap * horizontalPixelRatio] : []);
+      context.setLineDash(
+        dashed
+          ? (isFineProfile
+            ? resolveFineGridBitmapDash(dashLength, dashGap, horizontalPixelRatio)
+            : [dashLength * horizontalPixelRatio, dashGap * horizontalPixelRatio])
+          : [],
+      );
       context.beginPath();
       const horizontalPositions = options.profile === 'fine'
         ? getFineGridHorizontalPositions(bitmapSize.height / verticalPixelRatio)
         : getSquareGridLinePositions(bitmapSize.height / verticalPixelRatio, cellSize);
       for (const position of horizontalPositions) {
         const y = position * verticalPixelRatio;
-        const crispY = Math.round(y) + (Math.round(horizontalLineWidth) % 2) / 2;
+        const crispY = Math.round(y) + horizontalPixelOffset;
         context.moveTo(0, crispY);
         context.lineTo(bitmapSize.width, crispY);
       }

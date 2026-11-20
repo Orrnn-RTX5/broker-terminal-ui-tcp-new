@@ -74,4 +74,32 @@ describe('latest candle viewport', () => {
     act(() => { expect(fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 0, 'M1')).toBe(false); });
     expect(fixture.timeScale.setVisibleLogicalRange).not.toHaveBeenCalled();
   });
+
+  it('uses the default 7px candle density on initial load, wide viewports, and Reset Layout', () => {
+    const fixture = createFixture(false, 'M1');
+    act(() => { fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
+    // (1000px container - 60px price scale) / 7px TARGET_BAR_PX = 134 visible bars
+    expect(fixture.getRange()).toEqual({ from: 366, to: 499 });
+
+    // Wide desktop charts must stay at 7px candle density rather than clamping at 200 bars.
+    const wideFixture = renderHook(() => useTradingChartViewportReset({
+      chartRef: { current: fixture.chart },
+      chartSettingsRef: fixture.settingsRef,
+      containerRef: { current: { offsetWidth: 1920 } as HTMLDivElement },
+      contextId: 'viewport-wide-test',
+      isDisposedRef: { current: false },
+      lastRenderedCandlesRef: { current: Array.from({ length: 500 }, (_, i) => ({ time: i + 1, open: 1, high: 1, low: 1, close: 1, volume: 1 })) },
+      lastVisibleLogicalRangeRef: { current: null },
+      seriesRef: { current: null },
+      timeframe: 'M1',
+    }));
+    act(() => { wideFixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
+    // (1920px container - 60px price scale) / 7px TARGET_BAR_PX = 265 visible bars
+    expect(fixture.getRange()).toEqual({ from: 235, to: 499 });
+
+    // Zooming away and triggering Reset Layout restores the exact same 7px candle density.
+    act(() => { fixture.timeScale.setVisibleLogicalRange({ from: 470, to: 499 }); });
+    act(() => { window.dispatchEvent(new Event('resetLayout')); });
+    expect(fixture.getRange()).toEqual({ from: 235, to: 499 });
+  });
 });

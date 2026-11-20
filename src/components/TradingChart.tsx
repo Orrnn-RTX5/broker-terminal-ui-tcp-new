@@ -13,7 +13,7 @@ import i18n from '../i18n';
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, useId } from 'react';
 import { createChartRuler, rulerMetrics } from '../drawing-tools/chartRuler';
-import { ColorType, TickMarkType, MismatchDirection, CandlestickSeries, LineSeries, BarSeries, AreaSeries, HistogramSeries } from 'lightweight-charts';
+import { ColorType, TickMarkType, MismatchDirection, CandlestickSeries, LineSeries, BarSeries, AreaSeries } from 'lightweight-charts';
 import type { IChartApi, IPriceLine, ISeriesApi, Logical, SeriesType, Time } from 'lightweight-charts';
 import { useCrosshair } from '../hooks/useCrosshair';
 import { installChartCursorInteractions } from '../drawing-tools/chartCursorInteractions';
@@ -53,6 +53,7 @@ import {
 import { resolveSpecDigits } from '../utils/symbolUtils';
 import { readRegisteredSymbolPriceSpec } from '../services/dailyChangePriceModeRegistry';
 import { SquareChartGridPrimitive } from '../utils/squareChartGridPrimitive';
+import { createChartVolumeSeries, isCurrentChartVolumeSeries } from '../utils/chartVolumeSeries';
 import { getChartGridRenderingOptions } from '../utils/chartGridOptions';
 import { createChartGridTimeProjection, type ChartGridTimeProjection } from '../utils/chartGridTimeProjection';
 import { getChartCandleCountdownText } from '../utils/chartCandleCountdown';
@@ -842,13 +843,16 @@ export const TradingChart = React.memo(function TradingChart({
     hideLivePriceOverlay,
     lastLivePriceDirectionalColorRef,
     livePriceBadgeRef,
+    livePriceCanvasManagedRef,
     livePriceColorPaletteRef,
     livePriceCountdownRef,
     livePriceLineRef,
     livePriceOverlayColorsRef,
     livePriceRef,
     livePriceValueRef,
+    renderLivePriceOnCanvas,
     repaintLivePriceOverlayFromCurrentPrice,
+    requestLivePriceCanvasUpdateRef,
     syncSupplementalPriceLines,
     useEnterpriseLightPricePaletteRef,
   } = useTradingChartLivePriceOverlay({
@@ -1121,6 +1125,7 @@ export const TradingChart = React.memo(function TradingChart({
       livePriceBadgeRef.current.style.background = overlayColors.badgeBackground;
       livePriceBadgeRef.current.style.color = overlayColors.badgeTextColor;
     }
+    requestLivePriceCanvasUpdateRef.current?.();
   }, [
     chartColors,
     chartType,
@@ -1130,6 +1135,7 @@ export const TradingChart = React.memo(function TradingChart({
     livePriceColorPaletteRef,
     livePriceLineRef,
     livePriceOverlayColorsRef,
+    requestLivePriceCanvasUpdateRef,
     useEnterpriseLightChartPalette,
   ]);
 
@@ -2370,35 +2376,44 @@ useTradingChartInitialization({
     }
     let scaleWidthFrameA: number | null = null;
     let scaleWidthFrameB: number | null = null;
-    series.attachPrimitive(new ChartOverlayGeometryPrimitive(() => {
-      if (isDisposedRef.current || !isActiveRef.current || seriesRef.current !== series) return;
-      const initialScaleWidth = series.priceScale().width();
-      applyLivePriceHorizontalGeometry(initialScaleWidth);
-      repaintTradeOverlayGeometryRef.current();
-      if (typeof window === 'undefined') return;
-      if (scaleWidthFrameA !== null) window.cancelAnimationFrame(scaleWidthFrameA);
-      if (scaleWidthFrameB !== null) window.cancelAnimationFrame(scaleWidthFrameB);
-      scaleWidthFrameA = window.requestAnimationFrame(() => {
-        scaleWidthFrameA = null;
+    const overlayGeometryPrimitive = new ChartOverlayGeometryPrimitive(
+      () => {
         if (isDisposedRef.current || !isActiveRef.current || seriesRef.current !== series) return;
-        const nextScaleWidth = series.priceScale().width();
-        if (nextScaleWidth !== initialScaleWidth) {
-          applyLivePriceHorizontalGeometry(nextScaleWidth);
-          repaintTradeOverlayGeometryRef.current();
-        }
-        scaleWidthFrameB = window.requestAnimationFrame(() => {
-          scaleWidthFrameB = null;
+        const initialScaleWidth = series.priceScale().width();
+        applyLivePriceHorizontalGeometry(initialScaleWidth);
+        repaintTradeOverlayGeometryRef.current();
+        if (typeof window === 'undefined') return;
+        if (scaleWidthFrameA !== null) window.cancelAnimationFrame(scaleWidthFrameA);
+        if (scaleWidthFrameB !== null) window.cancelAnimationFrame(scaleWidthFrameB);
+        scaleWidthFrameA = window.requestAnimationFrame(() => {
+          scaleWidthFrameA = null;
           if (isDisposedRef.current || !isActiveRef.current || seriesRef.current !== series) return;
-          const finalScaleWidth = series.priceScale().width();
-          if (finalScaleWidth !== nextScaleWidth) {
-            applyLivePriceHorizontalGeometry(finalScaleWidth);
+          const nextScaleWidth = series.priceScale().width();
+          if (nextScaleWidth !== initialScaleWidth) {
+            applyLivePriceHorizontalGeometry(nextScaleWidth);
             repaintTradeOverlayGeometryRef.current();
           }
+          scaleWidthFrameB = window.requestAnimationFrame(() => {
+            scaleWidthFrameB = null;
+            if (isDisposedRef.current || !isActiveRef.current || seriesRef.current !== series) return;
+            const finalScaleWidth = series.priceScale().width();
+            if (finalScaleWidth !== nextScaleWidth) {
+              applyLivePriceHorizontalGeometry(finalScaleWidth);
+              repaintTradeOverlayGeometryRef.current();
+            }
+          });
         });
-      });
-    }));
+      },
+      (target, attachedSeries) => {
+        if (isDisposedRef.current || !isActiveRef.current || seriesRef.current !== attachedSeries) return;
+        renderLivePriceOnCanvas(target, attachedSeries);
+      },
+    );
+    series.attachPrimitive(overlayGeometryPrimitive);
+    livePriceCanvasManagedRef.current = true;
+    requestLivePriceCanvasUpdateRef.current = () => overlayGeometryPrimitive.requestUpdate();
     return series;
-  }, [areaTrendDirectionRef]);
+  }, [areaTrendDirectionRef, livePriceCanvasManagedRef, renderLivePriceOnCanvas, requestLivePriceCanvasUpdateRef]);
 
   // Switch the chart type in place: swap only the price/volume series and paint
   // the cached candles synchronously. This avoids the full rebuild path (which
@@ -2425,18 +2440,16 @@ useTradingChartInitialization({
       volumeRef.current = null;
     }
 
-    const series = createPriceSeries(chart, type);
-    seriesRef.current = series;
-    const volSeries = chart.addSeries(HistogramSeries, {
+    // Add volume series before price series so thin vertical volume lines stay
+    // cleanly behind candlesticks and wicks.
+    const volSeries = createChartVolumeSeries(chart, {
       color: chartThemeRef.current.volumeUp,
-      priceScaleId: '',
-      priceFormat: { type: 'volume' },
-      lastValueVisible: false,
-      priceLineVisible: false,
       visible: shouldBuildVolumeData(chartSettingsRef.current),
     });
-    volSeries.priceScale().applyOptions({ scaleMargins: { top: 0.68, bottom: 0 } });
     volumeRef.current = volSeries;
+
+    const series = createPriceSeries(chart, type);
+    seriesRef.current = series;
     prevChartTypeRef.current = type;
 
     drawingManager.setChart(
@@ -2475,6 +2488,7 @@ useTradingChartInitialization({
     candlesRef,
     chartInteractionOwnershipRef,
     chartRef,
+    chartSettingsRef,
     chartThemeRef,
     chartType,
     clearLocalChartPointerStateRef,
@@ -2814,9 +2828,21 @@ useTradingChartInitialization({
       }
     }
 
-    // Toggle volumes and apply colors if it exists
+    // Toggle volumes and apply colors if it exists (also hot-swapping any legacy
+    // HistogramSeries surviving Vite HMR into the custom MT5 thin-line renderer).
     if (volumeRef.current) {
       const volumeVisible = shouldBuildVolumeData(currentSettings);
+      if (!isCurrentChartVolumeSeries(volumeRef.current)) {
+        try {
+          chart.removeSeries(volumeRef.current);
+          volumeRef.current = createChartVolumeSeries(chart, {
+            color: chartTheme.volumeUp,
+            visible: volumeVisible,
+          });
+        } catch {
+          // Ignore if chart is mid-teardown or mocked in unit tests.
+        }
+      }
       volumeRef.current.applyOptions({
         visible: volumeVisible,
         color: chartTheme.volumeUp
@@ -3465,6 +3491,16 @@ useTradingChartTradeRuntime({
   });
 
 
+  const handleResetViewportOnRefresh = useCallback(() => {
+    resetVisibleRangeOnNextDataRef.current = true;
+    const chart = chartRef.current;
+    const totalBars = lastRenderedCandlesRef.current.length;
+    if (chart && !isDisposedRef.current && totalBars > 0) {
+      seriesRef.current?.priceScale().applyOptions({ autoScale: true });
+      applyInitialVisibleLogicalRange(chart, totalBars, prevTimeframeRef.current || timeframe);
+    }
+  }, [applyInitialVisibleLogicalRange, timeframe]);
+
   // Relabel existing overlays in place. Changing the interface language must
   // not recreate the chart, reset its viewport, or interrupt a level drag.
 
@@ -3513,6 +3549,7 @@ useTradingChartTradeRuntime({
     persistCurrentIndicators,
     prevTimeframeRef,
     refreshCurrentIndicators,
+    resetViewportOnRefresh: handleResetViewportOnRefresh,
     setBackgroundImageDialogOpen,
     setCtxAutoScroll,
     setCtxChartShift,
