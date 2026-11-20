@@ -4,7 +4,7 @@
  * Includes authentication with JWT token management and 401 handling
  */
 
-import { resolveTickFromLookup, useAppStore } from '../store/useAppStore';
+import { useAppStore } from '../store/useAppStore';
 import { readBackendNumber } from './backendAccountMetrics';
 import { normalizeBrokerOperationalConfig } from './brokerOperationalConfig';
 import { API_V2_BASE_URL, normalizeBrokerServerUrl } from '../config/api';
@@ -2061,7 +2061,6 @@ export const ordersApi = {
 
     const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
     const provisionalTicket = createProvisionalMarketOrderTicket();
-    let pendingPlacementDispatched = false;
     const terminalTransport: TradeOrderLatencyTransport = 'websocket';
     let binaryEnqueueStartedAtMs: number | undefined;
 
@@ -2115,41 +2114,6 @@ export const ordersApi = {
       }));
     };
 
-    const buildProvisionalPlacementPosition = () => {
-      const appState = useAppStore.getState();
-      const tick = resolveTickFromLookup(appState.ticks, appState.tickLookup, symbol);
-      const quotedPrice = side === 'buy' ? Number(tick?.ask) : Number(tick?.bid);
-      const optimisticPrice = Number.isFinite(quotedPrice) && quotedPrice > 0 ? quotedPrice : 0;
-      const nowIso = new Date().toISOString();
-      return {
-        id: provisionalTicket,
-        ticket: provisionalTicket,
-        account_login: accountLogin,
-        client_order_id: clientOrderId,
-        placement_state: 'pending',
-        symbol,
-        side,
-        volume,
-        price_open: optimisticPrice,
-        price_current: optimisticPrice,
-        price_sl: sl,
-        price_tp: tp,
-        profit: 0,
-        hasBackendProfit: false,
-        hasBackendCurrentPrice: false,
-        commission: 0,
-        swap: 0,
-        time_create: nowIso,
-        time_update: nowIso,
-      };
-    };
-
-    const dispatchPendingPlacement = () => {
-      if (pendingPlacementDispatched) return;
-      pendingPlacementDispatched = true;
-      dispatchPlacementState('pending', buildProvisionalPlacementPosition());
-    };
-
     let binaryFilledAtMs: number | undefined;
     let result: endpoints.Position;
     {
@@ -2198,7 +2162,6 @@ export const ordersApi = {
         apiToEnqueueMs: Math.max(0, enqueueCompletedAtMs - apiStartedAtMs),
       });
 
-      const pendingPlacementTimer = setTimeout(dispatchPendingPlacement, 45);
       try {
         let resp: DecodedBinaryOrderResp;
         try {
@@ -2282,7 +2245,6 @@ export const ordersApi = {
           });
         }
       } catch (rawError) {
-        clearTimeout(pendingPlacementTimer);
         let error: unknown = rawError;
         if (isBinaryTcpOrderError(rawError)) {
           const effectiveClientOrderId = rawError.clientOrderId || clientOrderId;
@@ -2294,27 +2256,8 @@ export const ordersApi = {
           code: errorCode,
           message: errorMessage,
         }, binaryFilledAtMs);
-        if (pendingPlacementDispatched) {
-          if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
-            dispatchPlacementState(terminalStatus, undefined, {
-              code: errorCode,
-              message: errorMessage,
-            });
-          } else {
-            dispatchPlacementState('failed', undefined, {
-              code: errorCode,
-              message: errorMessage,
-            });
-          }
-        } else if (terminalStatus === 'rejected' || terminalStatus === 'expired') {
-          dispatchPlacementState(terminalStatus, buildProvisionalPlacementPosition(), {
-            code: errorCode,
-            message: errorMessage,
-          });
-        }
         throw error;
       }
-      clearTimeout(pendingPlacementTimer);
       if (hasTrailing) {
         if (trailingStopParam !== undefined) {
           (result as unknown as LooseRecord).trailing_stop = trailingStopParam;
@@ -3104,6 +3047,7 @@ export const configApi = {
       return await apiClient.get<BrokerConfig>('/broker/config', {
         baseUrl: API_V2_BASE_URL,
         skipAuth: true,
+        cache: 'no-store',
       });
     } catch (error) {
       // Some deployments do not expose the v2 broker config yet.

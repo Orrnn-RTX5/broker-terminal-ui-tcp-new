@@ -102,4 +102,38 @@ describe('reconcileWebTcpRouting', () => {
     expect(api.API_V2_BASE_URL.startsWith(ORIGIN)).toBe(true);
     expect(api.MARKET_WS_URL.startsWith(WS_ORIGIN)).toBe(true);
   });
+
+  it('clears stale off-origin dynamic or loopback logo_url without disturbing active tokens or CDN logos', () => {
+    configure('web-tcp');
+    localStorage.setItem('server_url', ORIGIN);
+    localStorage.setItem('auth_token', 'tok');
+    localStorage.setItem('logo_url', `${OLD}/api/v1/brokers/broker-a/logo?v=old`);
+    localStorage.setItem('rtx_broker_presentation_v1', JSON.stringify({ version: 1, brokerId: 'broker-a', logoUrl: `${OLD}/api/v1/brokers/broker-a/logo` }));
+
+    expect(reconcileWebTcpRouting()).toBe(false);
+    expect(localStorage.getItem('logo_url')).toBeNull();
+    expect(localStorage.getItem('rtx_broker_presentation_v1')).toBeNull();
+    expect(localStorage.getItem('auth_token')).toBe('tok');
+
+    localStorage.setItem('logo_url', 'http://127.0.0.1:18403/custom/logo.png');
+    localStorage.setItem('rtx_broker_presentation_v1', JSON.stringify({ version: 1, brokerId: 'broker-a' }));
+    expect(reconcileWebTcpRouting()).toBe(false);
+    expect(localStorage.getItem('logo_url')).toBeNull();
+    expect(localStorage.getItem('rtx_broker_presentation_v1')).toBeNull();
+    expect(localStorage.getItem('auth_token')).toBe('tok');
+
+    // External non-loopback CDN logo URL stays untouched.
+    localStorage.setItem('logo_url', 'https://cdn.broker.example/brand/logo.png');
+    expect(reconcileWebTcpRouting()).toBe(false);
+    expect(localStorage.getItem('logo_url')).toBe('https://cdn.broker.example/brand/logo.png');
+  });
+
+  it('clears cached logo_url and broker presentation on off-origin routing rewrite', () => {
+    configure('web-tcp'); seedOld();
+    localStorage.setItem('logo_url', `${OLD}/brand-logo.png`);
+    localStorage.setItem('rtx_broker_presentation_v1', JSON.stringify({ version: 1, brokerId: 'broker-old' }));
+    expect(reconcileWebTcpRouting()).toBe(true);
+    expect(localStorage.getItem('logo_url')).toBeNull();
+    expect(localStorage.getItem('rtx_broker_presentation_v1')).toBeNull();
+  });
 });

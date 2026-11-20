@@ -1130,4 +1130,27 @@ describe('JournalTab', () => {
         });
         expect(journalHarness.getLogs).toHaveBeenCalledTimes(2);
     });
+
+    it('logs rejected order errors such as COMMISSION_CALC_FAILED in Journal without duplicating the error code prefix', async () => {
+        journalHarness.getLogs.mockResolvedValue({ count: 0, logs: [] });
+        recordTradeOrderLatency({
+            phase: 'placement_terminal',
+            transport: 'websocket',
+            traceId: 'comm-01',
+            clientOrderId: 'cid-euraud-comm-01',
+            sessionScope: journalHarness.sessionScope,
+            symbol: 'EURAUD',
+            side: 'sell',
+            volume: 0.01,
+            terminalStatus: 'rejected',
+            errorCode: 'COMMISSION_CALC_FAILED',
+            errorMessage: 'COMMISSION_CALC_FAILED: Commission calculation failed for EURAUD',
+            totalMs: 4.2,
+        });
+
+        render(<JournalTab />);
+
+        expect(await screen.findByText('Order rejected sell EURAUD 0.01: COMMISSION_CALC_FAILED: Commission calculation failed for EURAUD')).toBeInTheDocument();
+        expect(screen.queryByText(/COMMISSION_CALC_FAILED: COMMISSION_CALC_FAILED/)).not.toBeInTheDocument();
+    });
 });

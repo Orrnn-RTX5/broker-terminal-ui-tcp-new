@@ -2,8 +2,10 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Copy, Minus, Square, X } from 'lucide-react';
 import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
+import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
+import { toLocalDevProxyUrl } from '../../config/api';
 import './DesktopWindowShell.css';
-import { BrokerLogoImage } from '../BrokerLogoImage';
+import { BrokerLogoImage, isPlaceholderBrokerLogoUrl, normalizeSameOriginHttpsUrl } from '../BrokerLogoImage';
 
 interface DesktopWindowShellProps {
   children: ReactNode;
@@ -89,13 +91,35 @@ function ElectronDesktopWindowShell({
     };
   }, []);
 
+  const storedBrokerId = typeof window !== 'undefined'
+    ? String(
+      window.localStorage.getItem('broker_id')
+      || window.localStorage.getItem('rtx_broker_id')
+      || getRuntimeBrokerConfiguration().brokerId
+      || '',
+    ).trim()
+    : '';
+  const effectiveBrokerId = String(brokerChrome.brokerId || storedBrokerId || '').trim();
+  const rawStoredLogo = typeof window !== 'undefined' ? String(window.localStorage.getItem('logo_url') || '').trim() : '';
+  const validStoredLogo = isPlaceholderBrokerLogoUrl(rawStoredLogo) ? '' : rawStoredLogo;
+  const rawChromeLogo = isPlaceholderBrokerLogoUrl(brokerChrome.logoUrl) ? '' : String(brokerChrome.logoUrl || '').trim();
+  const effectiveLogoUrl = toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(rawChromeLogo || validStoredLogo));
+  const effectiveServerUrl = typeof window !== 'undefined'
+    ? String(window.localStorage.getItem('server_url') || window.localStorage.getItem('backend_url') || '').trim()
+    : '';
+
   return (
     <div className="rtx-desktop-shell" data-rtx-desktop-shell="true">
       <header className="rtx-desktop-titlebar" aria-label={tr("Application title bar")}>
         <div className="rtx-desktop-titlebar__drag-region">
           <BrokerLogoImage
             className="rtx-desktop-titlebar__icon"
-            broker={{ broker_id: brokerChrome.brokerId, logo_url: brokerChrome.logoUrl }}
+            broker={effectiveBrokerId || effectiveLogoUrl ? {
+              broker_id: effectiveBrokerId,
+              broker_name: brokerChrome.brokerName,
+              logo_url: effectiveLogoUrl,
+              server_url: effectiveServerUrl,
+            } : null}
             appFallbackUrl={DEFAULT_TITLEBAR_ICON}
             alt=""
           />

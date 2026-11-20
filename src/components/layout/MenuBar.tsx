@@ -26,15 +26,9 @@ import { supportedLanguages } from '../../config/supportedLanguages';
 import { changeInterfaceLanguage } from '../../i18n';
 import { getTerminalShortcutHint, runTerminalShortcutAction } from '../../services/shortcutCatalog';
 import { getAppVersion } from '../../config/appVersion';
-import { toLocalDevProxyUrl } from '../../config/api';
-import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
-import { BrokerLogoImage, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
+import { BrokerLogoImage } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
-import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
-import { brokerDisplayName, isBrokerName, NEUTRAL_TERMINAL_TITLE } from '../../services/brokerDisplayName';
-import { getCachedBrokerDirectory } from '../../services/brokerDirectory';
-import { getCommittedBrokerAccountSessionScope } from '../../services/brokerSession';
-import { getLogoUrl, getWebTerminalTitle, isSameTerminalLabel, useTerminalBrokerInfo } from '../../hooks/useTerminalTitle';
+import { useActiveBrokerBrand } from '../../hooks/useActiveBrokerBrand';
 import { useThemeAppearanceStore } from '../../store/useThemeAppearanceStore';
 import { DARK_THEME_PRESETS, LIGHT_THEME_PRESETS } from '../../utils/themePresets';
 import { OPEN_THEME_SETTINGS_EVENT, ThemeSettingsDialog } from '../settings/ThemeAppearanceSettings';
@@ -139,83 +133,15 @@ export const MenuBar = ({
     const isElectronDesktop = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
-    const [brokerChrome, setBrokerChrome] = useState(getBrokerChrome);
-    useEffect(() => {
-        setBrokerChrome(getBrokerChrome());
-        const handleBrokerChrome = (event: Event) => {
-            const detail = (event as CustomEvent<BrokerChromeState>).detail;
-            setBrokerChrome(detail || getBrokerChrome());
-        };
-        window.addEventListener(BROKER_CHROME_EVENT, handleBrokerChrome);
-        return () => window.removeEventListener(BROKER_CHROME_EVENT, handleBrokerChrome);
-    }, []);
-    const brokerInfo = useTerminalBrokerInfo(chartSymbol ?? '');
-    const sessionScope = getCommittedBrokerAccountSessionScope();
-    const cachedDirectory = getCachedBrokerDirectory() || [];
     const applicationMenuFallbackLogoSrc = toPublicAssetPath('brand/rtx5-chart-watermark.png');
-    const resolvedBrokerLogoUrl = toLocalDevProxyUrl(
-        getLogoUrl(brokerInfo.logoUrl, brokerInfo.logoBaseCandidates),
-    );
-    const rawChromeLogoUrl = isPlaceholderBrokerLogoUrl(brokerChrome.logoUrl)
-        ? ''
-        : toLocalDevProxyUrl(brokerChrome.logoUrl || '');
-    const applicationMenuBrokerId = brokerChrome.brokerId || (
-        typeof window !== 'undefined'
-            ? String(
-                localStorage.getItem('broker_id')
-                || localStorage.getItem('rtx_broker_id')
-                || sessionScope.brokerId
-                || getRuntimeBrokerConfiguration().brokerId
-                || '',
-            ).trim()
-            : ''
-    );
-    const storedBrokerName = typeof window !== 'undefined'
-        ? (localStorage.getItem('broker_name') || '').trim()
-        : '';
-    const storedBrokerServer = typeof window !== 'undefined'
-        ? (localStorage.getItem('rtx_broker_server') || localStorage.getItem('server_url') || '')
-        : '';
-    const matchedDirectoryBroker = cachedDirectory.find((entry) => {
-        if (applicationMenuBrokerId && String(entry.broker_id || '').trim() === applicationMenuBrokerId) return true;
-        const entryServer = String(entry.server_url || '').trim().replace(/\/+$/, '').toLowerCase();
-        const scopeServer = String(sessionScope.serverUrl || storedBrokerServer || '').trim().replace(/\/+$/, '').toLowerCase();
-        return Boolean(entryServer && scopeServer && entryServer === scopeServer);
+    const activeBrand = useActiveBrokerBrand({
+        symbol: chartSymbol ?? '',
+        accountBrokerName,
     });
-    const directoryLogoUrl = toLocalDevProxyUrl(
-        getLogoUrl(
-            matchedDirectoryBroker?.logo_url,
-            [matchedDirectoryBroker?.server_url || '', sessionScope.serverUrl].filter(Boolean),
-        ),
-    );
-    const applicationMenuLogoUrl = rawChromeLogoUrl || resolvedBrokerLogoUrl || directoryLogoUrl;
-    const webTerminalTitle = getWebTerminalTitle();
-    const isSpecificBrokerLabel = (value?: string | null): value is string => {
-        const trimmed = String(value ?? '').trim();
-        if (!isBrokerName(trimmed)) return false;
-        if (isSameTerminalLabel(trimmed, NEUTRAL_TERMINAL_TITLE)) return false;
-        return !/^rtx\s*5?(?:[- ]?(?:live|demo|web|terminal))?$/i.test(trimmed);
-    };
-    const applicationMenuBrokerName = (() => {
-        const candidates = [
-            accountBrokerName,
-            brokerInfo.brokerName,
-            brokerChrome.brokerName,
-            storedBrokerName,
-            matchedDirectoryBroker?.broker_name,
-            brokerDisplayName(storedBrokerServer || applicationMenuBrokerId || ''),
-        ];
-        const specific = candidates.find(isSpecificBrokerLabel);
-        if (specific) return specific.trim();
-        return candidates.find((value) => isBrokerName(value))?.trim() || webTerminalTitle;
-    })();
-    const formatApplicationMenuBrandLabel = (brokerName: string): string => {
-        const trimmed = brokerName.trim();
-        if (!trimmed || trimmed === NEUTRAL_TERMINAL_TITLE) return trimmed;
-        if (/(?:-| )(?:live|demo)$/i.test(trimmed)) return trimmed;
-        return `${trimmed}-Live`;
-    };
-    const applicationMenuBrandTitle = tr(formatApplicationMenuBrandLabel(applicationMenuBrokerName));
+    const applicationMenuBrokerId = activeBrand.brokerId;
+    const applicationMenuLogoUrl = activeBrand.logoUrl;
+    const applicationMenuBrokerName = activeBrand.brokerName;
+    const applicationMenuBrandTitle = tr(activeBrand.brandTitle);
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const [isThemeSettingsOpen, setIsThemeSettingsOpen] = useState(false);
     const [isSymbolsOpen, setIsSymbolsOpen] = useState(false);
@@ -935,6 +861,10 @@ export const MenuBar = ({
     const fileMenu = (
         <FileMenu
             accountId={accountId}
+            brokerId={activeBrand.brokerId}
+            brokerName={activeBrand.brokerName}
+            brokerLogoUrl={activeBrand.logoUrl}
+            brokerServerUrl={activeBrand.serverUrl}
             profileSymbols={profileSymbols}
             profileShortcutsEnabled={false}
             onDialogOpenChange={setIsFileDialogOpen}
@@ -1342,9 +1272,7 @@ export const MenuBar = ({
                                         broker_id: applicationMenuBrokerId,
                                         broker_name: applicationMenuBrokerName,
                                         logo_url: applicationMenuLogoUrl,
-                                        server_url: brokerInfo.logoBaseCandidates?.[0]
-                                            || matchedDirectoryBroker?.server_url
-                                            || sessionScope.serverUrl,
+                                        server_url: activeBrand.serverUrl,
                                     }
                                     : null
                             }

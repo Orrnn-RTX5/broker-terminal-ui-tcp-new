@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactEventHandler, type ReactNode } from 'react';
 import { normalizeBrokerServerUrl } from '../config/api';
 import {
   getBackendTarget,
@@ -61,6 +61,90 @@ export const buildBrokerDirectoryLogoUrl = (
   return `${discoveryBase}/api/v1/brokers/${encodeURIComponent(normalizedBrokerId)}/logo`;
 };
 
+const DYNAMIC_BROKER_LOGO_PATH_RE = /\/api\/v[12]\/brokers\/[^/]+\/logo$/i;
+
+/** Upgrade same-host http:// asset URLs to https:// on TLS pages (e.g. behind reverse proxies). */
+export const normalizeSameOriginHttpsUrl = (value: string): string => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || typeof window === 'undefined' || window.location?.protocol !== 'https:') {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' && parsed.host === window.location.host) {
+      parsed.protocol = 'https:';
+      return parsed.toString();
+    }
+  } catch {
+    // Keep non-URL values unchanged.
+  }
+  return trimmed;
+};
+
+const hasLogoVersionQuery = (parsed: URL): boolean =>
+  Boolean(parsed.searchParams.get('v') || parsed.searchParams.get('version') || parsed.searchParams.get('t'));
+
+/** Append `?v=<version>` to dynamic/remote broker logo URLs when not already versioned. */
+export const appendBrokerLogoVersionParam = (rawUrl: unknown, versionHint?: unknown): string => {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed || isPlaceholderBrokerLogoUrl(trimmed)) return '';
+  const version = String(versionHint || '').trim();
+  if (!version || /^(?:data:|blob:)/i.test(trimmed)) return trimmed;
+  try {
+    const base = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://broker.local';
+    const parsed = new URL(trimmed, base);
+    if (hasLogoVersionQuery(parsed)) return trimmed;
+    const sep = trimmed.includes('?') ? '&' : '?';
+    return `${trimmed}${sep}v=${encodeURIComponent(version)}`;
+  } catch {
+    return trimmed;
+  }
+};
+
+export const hasBrokerLogoVersionQuery = (rawUrl: unknown): boolean =>
+  /[?&](?:v|version|t)=[^&]+/i.test(String(rawUrl || '').trim());
+
+/**
+ * Prefer a live versioned server/directory logo over a static deploy-time
+ * BROKER_LOGO_URL when both target the same broker logo route or the live URL
+ * adds a cache-busting version token to an unversioned dynamic endpoint.
+ */
+export const shouldPreferDynamicLogoOverConfigured = (
+  configuredUrl: unknown,
+  dynamicUrl: unknown,
+): boolean => {
+  const configured = String(configuredUrl || '').trim();
+  const dynamic = String(dynamicUrl || '').trim();
+  if (!configured || !dynamic || isPlaceholderBrokerLogoUrl(dynamic)) return false;
+  if (configured === dynamic) return false;
+
+  try {
+    const base = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://broker.local';
+    const parsedConfigured = new URL(configured, base);
+    const parsedDynamic = new URL(dynamic, base);
+    const samePathname = parsedConfigured.pathname.replace(/\/+$/, '').toLowerCase()
+      === parsedDynamic.pathname.replace(/\/+$/, '').toLowerCase();
+    if (samePathname && parsedDynamic.search !== parsedConfigured.search) {
+      return hasLogoVersionQuery(parsedDynamic) || !hasLogoVersionQuery(parsedConfigured);
+    }
+    if (
+      DYNAMIC_BROKER_LOGO_PATH_RE.test(parsedDynamic.pathname)
+      && hasLogoVersionQuery(parsedDynamic)
+      && DYNAMIC_BROKER_LOGO_PATH_RE.test(parsedConfigured.pathname)
+      && !hasLogoVersionQuery(parsedConfigured)
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
 export const buildBrokerLogoCandidates = (
   broker: BrokerLogoSource | null | undefined,
   discoveryBaseUrl = getRuntimeDiscoveryBaseUrl(),
@@ -68,8 +152,8 @@ export const buildBrokerLogoCandidates = (
 ): string[] => {
   if (!broker) return appFallbackUrl ? [appFallbackUrl] : [];
 
-  const candidates: string[] = [];
-  appendUnique(candidates, getConfiguredBrokerLogoUrl(broker.broker_id));
+  const configuredLogoUrl = normalizeSameOriginHttpsUrl(getConfiguredBrokerLogoUrl(broker.broker_id));
+  const explicitUrls: string[] = [];
   const rawLogoUrl = String(broker.logo_url || '').trim();
   const hasUsableLogoUrl = Boolean(rawLogoUrl) && !isPlaceholderBrokerLogoUrl(rawLogoUrl);
 
@@ -89,30 +173,52 @@ export const buildBrokerLogoCandidates = (
   if (baseCandidates.length === 0) baseCandidates.push(getBackendTarget());
 
   if (hasUsableLogoUrl && ABSOLUTE_IMAGE_URL.test(rawLogoUrl)) {
-    appendUnique(candidates, rawLogoUrl);
+    appendUnique(explicitUrls, normalizeSameOriginHttpsUrl(rawLogoUrl));
   } else if (hasUsableLogoUrl && rawLogoUrl.startsWith('//')) {
     const protocol = typeof window !== 'undefined' && window.location.protocol === 'http:' ? 'http:' : 'https:';
-    appendUnique(candidates, `${protocol}${rawLogoUrl}`);
+    appendUnique(explicitUrls, `${protocol}${rawLogoUrl}`);
   } else if (hasUsableLogoUrl) {
     for (const baseValue of baseCandidates) {
       const baseUrl = normalizeLogoBaseUrl(baseValue);
       if (!baseUrl) continue;
       try {
-        appendUnique(candidates, new URL(rawLogoUrl, `${baseUrl}/`).toString());
+        appendUnique(explicitUrls, normalizeSameOriginHttpsUrl(new URL(rawLogoUrl, `${baseUrl}/`).toString()));
       } catch {
         // Try the next broker base before falling back to directory branding.
       }
     }
   }
 
-  const directoryLogoUrl = buildBrokerDirectoryLogoUrl(broker.broker_id, discoveryBaseUrl);
+  const candidates: string[] = [];
+  const preferExplicitOverConfigured = explicitUrls.some(
+    url => shouldPreferDynamicLogoOverConfigured(configuredLogoUrl, url),
+  );
+  if (preferExplicitOverConfigured) {
+    explicitUrls.forEach(url => appendUnique(candidates, url));
+    appendUnique(candidates, configuredLogoUrl);
+  } else {
+    appendUnique(candidates, configuredLogoUrl);
+    explicitUrls.forEach(url => appendUnique(candidates, url));
+  }
+
+  const directoryLogoUrl = normalizeSameOriginHttpsUrl(
+    buildBrokerDirectoryLogoUrl(broker.broker_id, discoveryBaseUrl),
+  );
   appendUnique(candidates, directoryLogoUrl);
   if (!directoryLogoUrl && String(broker.broker_id || '').trim()) {
     const encodedId = encodeURIComponent(String(broker.broker_id || '').trim());
     for (const baseValue of baseCandidates) {
       const baseUrl = normalizeLogoBaseUrl(baseValue);
       if (!baseUrl) continue;
-      appendUnique(candidates, `${baseUrl}/api/v1/brokers/${encodedId}/logo`);
+      appendUnique(candidates, normalizeSameOriginHttpsUrl(`${baseUrl}/api/v1/brokers/${encodedId}/logo`));
+    }
+    if (
+      candidates.length === 0
+      && typeof window !== 'undefined'
+      && window.location?.origin
+      && /^https?:/i.test(window.location.protocol)
+    ) {
+      appendUnique(candidates, `${window.location.origin}/api/v1/brokers/${encodedId}/logo`);
     }
   }
 
@@ -127,6 +233,8 @@ interface BrokerLogoImageProps {
   decoding?: 'async' | 'auto' | 'sync';
   fallback?: ReactNode;
   appFallbackUrl?: string;
+  onLoad?: ReactEventHandler<HTMLImageElement>;
+  onExhausted?: () => void;
 }
 
 export function BrokerLogoImage({
@@ -136,6 +244,8 @@ export function BrokerLogoImage({
   decoding = 'async',
   fallback = null,
   appFallbackUrl,
+  onLoad,
+  onExhausted,
 }: BrokerLogoImageProps) {
   const candidates = useMemo(() => buildBrokerLogoCandidates(broker, undefined, appFallbackUrl), [broker, appFallbackUrl]);
   const candidateSignature = candidates.join('\n');
@@ -153,7 +263,14 @@ export function BrokerLogoImage({
       className={className}
       decoding={decoding}
       draggable={false}
-      onError={() => setAttempt({ signature: candidateSignature, index: candidateIndex + 1 })}
+      onLoad={onLoad}
+      onError={() => {
+        const nextIndex = candidateIndex + 1;
+        setAttempt({ signature: candidateSignature, index: nextIndex });
+        if (!candidates[nextIndex]) {
+          onExhausted?.();
+        }
+      }}
     />
   );
 }

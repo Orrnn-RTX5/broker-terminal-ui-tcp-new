@@ -281,10 +281,6 @@ export function LoginDialog({
         setSelectedBroker(nextBroker);
         setSearchQuery(item.broker_name);
         setDropdownOpen(false);
-        if (!isDesktop) {
-            void runHealthCheck(normalizedServerUrl);
-            return;
-        }
 
         applyBrokerChrome({
             brokerId: nextBroker.broker_id,
@@ -297,6 +293,7 @@ export function LoginDialog({
         presentationAbortRef.current = controller;
         const runPostSelectChecks = () => {
             void runHealthCheck(normalizedServerUrl);
+            if (!normalizedServerUrl) return;
             void loadBrokerPresentation({
                 broker_id: nextBroker.broker_id,
                 server_url: normalizedServerUrl,
@@ -317,7 +314,7 @@ export function LoginDialog({
             }).catch(() => undefined);
         };
 
-        if (nextBroker.tcp_addr) {
+        if (isDesktop && nextBroker.tcp_addr) {
             void switchDesktopTcpBroker(nextBroker).finally(runPostSelectChecks);
         } else {
             runPostSelectChecks();

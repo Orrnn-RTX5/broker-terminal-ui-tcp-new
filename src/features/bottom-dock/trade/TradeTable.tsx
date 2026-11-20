@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
@@ -151,7 +150,6 @@ const TradeTableRow = memo(function TradeTableRow({
   profitMode,
   selectedPositionKey,
   setSelectedPositionKey,
-  visibleOptionalColumnCount,
 }: TradeTableRowProps) {
   const placementState = position.placementState;
   const isPendingPlacement = Boolean(placementState && !['filled', 'confirmed'].includes(placementState));
@@ -556,20 +554,6 @@ const TradeTableRow = memo(function TradeTableRow({
         </div>
       </td>
     </tr>
-    {isTerminalPlacementFailure && (
-      <tr className="rtx-trade-placement-message text-loss" data-placement-state={placementState}>
-        <td colSpan={visibleOptionalColumnCount + 2} className="px-1.5 py-[2px] text-left">
-          <div
-            role="status"
-            className="truncate font-normal"
-            style={{ '--rtx-type-size': '13px', '--rtx-type-weight': 400 } as CSSProperties}
-            title={placementSummary}
-          >
-            {placementSummary}
-          </div>
-        </td>
-      </tr>
-    )}
     </Fragment>
   );
 });
@@ -617,6 +601,14 @@ export function TradeTable({
   visibleTradeTableWidth,
 }: TradeTableProps) {
   const tr = useUiTranslation();
+  const visibleLivePositions = useMemo(
+    () => displayedLivePositions.filter((position) => (
+      position.placementState !== 'rejected'
+      && position.placementState !== 'expired'
+      && position.placementState !== 'failed'
+    )),
+    [displayedLivePositions],
+  );
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const footerScrollRef = useRef<HTMLDivElement | null>(null);
@@ -628,7 +620,7 @@ export function TradeTable({
     footer.scrollLeft = scroller.scrollLeft;
   }, []);
 
-  const totalRows = displayedLivePositions.length;
+  const totalRows = visibleLivePositions.length;
   const windowed = totalRows > WINDOW_THRESHOLD;
   const [win, setWin] = useState({ first: 0, rows: WINDOW_DEFAULT_ROWS });
   const [rowHeight, setRowHeight] = useState(WINDOW_DEFAULT_ROW_HEIGHT);
@@ -712,7 +704,7 @@ export function TradeTable({
     observer?.observe(scroller);
     if (tableRef.current) observer?.observe(tableRef.current);
     return () => observer?.disconnect();
-  }, [displayedLivePositions.length, visibleTradeTableWidth]);
+  }, [visibleLivePositions.length, visibleTradeTableWidth]);
 
   const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
   const toColumnWidthStyle = (width: number) => (
@@ -789,7 +781,7 @@ export function TradeTable({
   // Account publications update the footer without reformatting every trade row.
   const tableBody = (
     <TradeTableBody
-      displayedLivePositions={displayedLivePositions}
+      displayedLivePositions={visibleLivePositions}
       tradeOverrides={tradeOverrides}
       windowed={windowed}
       winFrom={winFrom}
@@ -823,7 +815,7 @@ export function TradeTable({
         ref={scrollContainerRef}
         onScroll={handleScroll}
         onContextMenu={(event) => handleTradeContextMenu(event)}
-        className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
+        className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${visibleLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
       >
         <table
           className="rtx-trade-table w-full shrink-0 text-center border-collapse table-fixed"
@@ -859,7 +851,7 @@ export function TradeTable({
           {tableBody}
         </table>
 
-        {displayedLivePositions.length === 0 && !loading && !error && (
+        {visibleLivePositions.length === 0 && !loading && !error && (
           <div
             className="rtx-trade-empty-state flex flex-1 min-h-0 w-max min-w-full items-center justify-center text-center text-xs italic text-zinc-400"
             style={{ minWidth: `max(100%, ${visibleTradeTableWidth}px)` }}

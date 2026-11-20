@@ -566,7 +566,7 @@ func (c *WebTerminalServer) getActiveDistFS() fs.FS {
 	return c.getActiveDistFSForApp("terminal")
 }
 
-func (c *WebTerminalServer) superAdminCandidates() []string {
+func (c *WebTerminalServer) superAdminCandidatesForLink(link *brokerLink) []string {
 	c.mu.RLock()
 	sa := strings.TrimSpace(c.superAdminTCP)
 	c.mu.RUnlock()
@@ -585,24 +585,39 @@ func (c *WebTerminalServer) superAdminCandidates() []string {
 		list = append(list, addr)
 	}
 
+	hostToSuperAdmin := func(target string) string {
+		if h, _, err := net.SplitHostPort(strings.TrimSpace(target)); err == nil && h != "" && !strings.EqualFold(h, "127.0.0.1") && !strings.EqualFold(h, "localhost") {
+			return net.JoinHostPort(h, "9100")
+		}
+		return ""
+	}
+
 	_, _, defTarget := c.linkIdentity(c.defaultLink())
-	defHost := ""
-	if h, _, err := net.SplitHostPort(strings.TrimSpace(defTarget)); err == nil && h != "" && !strings.EqualFold(h, "127.0.0.1") && !strings.EqualFold(h, "localhost") {
-		defHost = net.JoinHostPort(h, "9100")
+	defHost := hostToSuperAdmin(defTarget)
+	linkHost := ""
+	if link != nil {
+		_, _, linkTarget := c.linkIdentity(link)
+		linkHost = hostToSuperAdmin(linkTarget)
 	}
 
 	if sa == "" || strings.EqualFold(sa, "185.126.217.108:9100") || strings.EqualFold(sa, "127.0.0.1:9100") || strings.EqualFold(sa, "localhost:9100") {
 		add("127.0.0.1:9100")
+		add(linkHost)
 		add(defHost)
 		add(sa)
 		add("185.126.217.108:9100")
 	} else {
 		add(sa)
+		add(linkHost)
 		add(defHost)
 		add("127.0.0.1:9100")
 		add("185.126.217.108:9100")
 	}
 	return list
+}
+
+func (c *WebTerminalServer) superAdminCandidates() []string {
+	return c.superAdminCandidatesForLink(nil)
 }
 
 func (c *WebTerminalServer) getOrDialSessionForApp(link *brokerLink, appKind string) (*rtx5tcp.MuxSession, error) {
@@ -977,10 +992,36 @@ func (c *WebTerminalServer) getCachedBrokerDirectory(link *brokerLink) []Discove
 	}}
 }
 
+func requestIsHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	if xfp := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); xfp != "" {
+		first := strings.TrimSpace(strings.Split(xfp, ",")[0])
+		if strings.EqualFold(first, "https") {
+			return true
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Ssl")), "on") ||
+		strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Url-Scheme")), "https") {
+		return true
+	}
+	if fwd := strings.ToLower(r.Header.Get("Forwarded")); strings.Contains(fwd, "proto=https") {
+		return true
+	}
+	if cfv := strings.ToLower(r.Header.Get("CF-Visitor")); strings.Contains(cfv, `"scheme":"https"`) {
+		return true
+	}
+	return false
+}
+
 func (c *WebTerminalServer) requestOrigin(r *http.Request) (httpOrigin, wsOrigin, hostOnly string, port int) {
 	scheme := "http"
 	wsScheme := "ws"
-	if r != nil && (r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")) {
+	if requestIsHTTPS(r) {
 		scheme = "https"
 		wsScheme = "wss"
 	}
@@ -1856,6 +1897,9 @@ func (c *WebTerminalServer) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *ht
 			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 			if w.Header().Get("Access-Control-Allow-Origin") == "" {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			if w.Header().Get("Vary") == "" {
+				w.Header().Set("Vary", "Origin")
 			}
 			w.Header().Set("X-RTX5-Broker-Logo-Source", "embedded")
 			w.WriteHeader(http.StatusOK)

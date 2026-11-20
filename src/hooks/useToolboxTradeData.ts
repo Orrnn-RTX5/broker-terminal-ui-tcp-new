@@ -519,12 +519,11 @@ export const applyMarketOrderPlacementState = (
   ));
   const removedProvisional = withoutProvisional.length !== current.length;
 
-  if (detail.status === 'failed') {
+  if (detail.status === 'failed' || detail.status === 'rejected' || detail.status === 'expired') {
     return removedProvisional ? withoutProvisional : current;
   }
 
-  const provisionalStatus = ['pending', 'accepted', 'processing', 'rejected', 'expired']
-    .includes(detail.status);
+  const provisionalStatus = ['pending', 'accepted', 'processing'].includes(detail.status);
   if (provisionalStatus) {
     const source = detail.position && typeof detail.position === 'object'
       ? detail.position as Record<string, unknown>
@@ -1250,7 +1249,7 @@ export function useToolboxTradeData() {
         }
       };
 
-      if (['pending', 'accepted', 'processing', 'rejected', 'expired'].includes(detail.status)) {
+      if (['pending', 'accepted', 'processing'].includes(detail.status)) {
         const currentPending = Array.from(pendingMarketOrdersRef.current.values())
           .map(({ position }) => position);
         const nextPending = applyMarketOrderPlacementState(
@@ -1262,30 +1261,12 @@ export function useToolboxTradeData() {
         if (nextPending === currentPending) return;
 
         clearPlacementTimer(detail.clientOrderId);
-        const isTerminalFailure = detail.status === 'rejected' || detail.status === 'expired';
-        const retentionMs = isTerminalFailure
-          ? TERMINAL_PLACEMENT_FAILURE_RETENTION_MS
-          : PENDING_MARKET_ORDER_ORPHAN_MS;
         const position = nextPending.find((candidate) => candidate.clientOrderId === detail.clientOrderId);
         if (position) {
           pendingMarketOrdersRef.current.set(detail.clientOrderId, {
             position,
-            expiresAt: Date.now() + retentionMs,
+            expiresAt: Date.now() + PENDING_MARKET_ORDER_ORPHAN_MS,
           });
-          if (isTerminalFailure) {
-            const timer = setTimeout(() => {
-              pendingPlacementTimersRef.current.delete(detail.clientOrderId);
-              if (!pendingMarketOrdersRef.current.has(detail.clientOrderId)) return;
-              pendingMarketOrdersRef.current.delete(detail.clientOrderId);
-              setState((prev) => ({
-                ...prev,
-                pendingPositions: Array.from(pendingMarketOrdersRef.current.values())
-                  .map(({ position: pendingPosition }) => pendingPosition)
-                  .sort((a, b) => a.id - b.id),
-              }));
-            }, TERMINAL_PLACEMENT_FAILURE_RETENTION_MS);
-            pendingPlacementTimersRef.current.set(detail.clientOrderId, timer);
-          }
         }
         setState((prev) => ({
           ...prev,
@@ -1304,7 +1285,7 @@ export function useToolboxTradeData() {
           .map(({ position }) => position)
           .sort((a, b) => a.id - b.id),
       }));
-      if (detail.status === 'failed') return;
+      if (detail.status === 'failed' || detail.status === 'rejected' || detail.status === 'expired') return;
 
       const next = applyMarketOrderPlacementState(
         positionsRef.current,

@@ -1693,6 +1693,9 @@ func (c *DesktopClient) serveEmbeddedBrokerLogo(w http.ResponseWriter, r *http.R
 			if w.Header().Get("Access-Control-Allow-Origin") == "" {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 			}
+			if w.Header().Get("Vary") == "" {
+				w.Header().Set("Vary", "Origin")
+			}
 			w.Header().Set("X-RTX5-Broker-Logo-Source", "embedded")
 			w.WriteHeader(http.StatusOK)
 			if r.Method != http.MethodHead {

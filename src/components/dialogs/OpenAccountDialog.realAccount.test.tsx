@@ -34,10 +34,12 @@ vi.mock('../../api/client', () => ({
 vi.mock('../../config/api', () => ({
     BROKER_DISCOVERY_URL: 'https://directory.test',
     normalizeBrokerServerUrl: (value: string) => value.replace(/\/$/, ''),
+    toLocalDevProxyUrl: (value: string) => value,
     updateDynamicUrls: mocks.updateDynamicUrls,
 }));
 
-vi.mock('../../config/backendTarget.js', () => ({
+vi.mock('../../config/backendTarget.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../config/backendTarget.js')>()),
     isDesktopBackendTarget: () => mocks.desktop,
     getRuntimeBrokerConfiguration: () => mocks.configuration,
     normalizeBrokerInfoForTarget: (broker: Record<string, unknown>) => broker,

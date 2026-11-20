@@ -17,8 +17,16 @@ import * as tradeApiModule from '../../api/trade';
 import { brokerV2Api } from '../../api/trade';
 import { getToken, parseTokenExpiresAt, setRefreshToken, setToken } from '../../api/client';
 import { normalizeBrokerServerUrl, toLocalDevProxyUrl } from '../../config/api';
-import { getRuntimeDiscoveryBaseUrl, isDesktopBackendTarget, resolveBrokerExtApiUrl } from '../../config/backendTarget.js';
-import { buildBrokerDirectoryLogoUrl, getConfiguredBrokerLogoUrl, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
+import { getBackendTarget, getRuntimeDiscoveryBaseUrl, isDesktopBackendTarget, resolveBrokerExtApiUrl } from '../../config/backendTarget.js';
+import {
+    appendBrokerLogoVersionParam,
+    buildBrokerDirectoryLogoUrl,
+    getConfiguredBrokerLogoUrl,
+    hasBrokerLogoVersionQuery,
+    isPlaceholderBrokerLogoUrl,
+    normalizeSameOriginHttpsUrl,
+    shouldPreferDynamicLogoOverConfigured,
+} from '../BrokerLogoImage';
 import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
 import { getCachedBrokerDirectory, loadAppBrokerDirectory } from '../../services/brokerDirectory';
 import { runAfterTerminalReady } from '../../startup/runAfterTerminalReady';
@@ -56,18 +64,26 @@ const resolveNavigatorLogoUrl = (url: string, baseCandidates: string[]): string 
     const rawUrl = normalizeNavigatorText(url);
     if (!rawUrl || isPlaceholderBrokerLogoUrl(rawUrl)) return '';
     if (/^(?:https?:|data:|blob:)/i.test(rawUrl)) {
-        return rawUrl;
+        return toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(rawUrl));
     }
 
-    if (rawUrl.startsWith('/api/v1/brokers/')) {
+    if (rawUrl.startsWith('/api/v1/brokers/') || rawUrl.startsWith('/api/v2/brokers/')) {
         const discoveryBase = normalizeSavedAccountServer(getRuntimeDiscoveryBaseUrl());
-        if (discoveryBase) return `${discoveryBase}${rawUrl}`;
+        if (discoveryBase) return toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(`${discoveryBase}${rawUrl}`));
+        for (const base of [...baseCandidates, getBackendTarget()]) {
+            if (!/^https?:\/\//i.test(base)) continue;
+            try {
+                return toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(new URL(rawUrl, `${base.replace(/\/+$/, '')}/`).toString()));
+            } catch { /* Try next base. */ }
+        }
         return '';
     }
 
     for (const base of baseCandidates) {
         if (!/^https?:\/\//i.test(base)) continue;
-        try { return new URL(rawUrl, `${base.replace(/\/+$/, '')}/`).toString(); } catch { /* Try the next owned endpoint. */ }
+        try {
+            return toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(new URL(rawUrl, `${base.replace(/\/+$/, '')}/`).toString()));
+        } catch { /* Try the next owned endpoint. */ }
     }
     return '';
 };
@@ -107,19 +123,77 @@ const buildBrokerLogoInfo = (
     const owned = !target.brokerId && matchedIds.size > 1 ? [] : matches;
     const brokerId = target.brokerId || normalizeNavigatorText(owned[0]?.broker_id);
     const broker = brokerId ? brokers.find(item => item.broker_id === brokerId) : undefined;
-    const storedMatches = Boolean(stored && brokerId && brokerId === stored.brokerId
-        && target.serverUrl && normalizeSavedAccountServer(target.serverUrl) === normalizeSavedAccountServer(stored.serverUrl));
-    const bases = [target.serverUrl, ...owned.flatMap(source => [source.server_url || '', source.backend_url || ''])];
+    const storedMatches = Boolean(
+        stored
+        && brokerId
+        && brokerId === stored.brokerId
+        && (
+            !target.serverUrl
+            || !/^https?:\/\//i.test(target.serverUrl)
+            || !stored.serverUrl
+            || normalizeSavedAccountServer(target.serverUrl) === normalizeSavedAccountServer(stored.serverUrl)
+        ),
+    );
+    const chrome = getBrokerChrome();
+    const chromeMatches = Boolean(
+        brokerId
+        && chrome.brokerId
+        && chrome.brokerId.trim().toLowerCase() === brokerId.toLowerCase(),
+    );
+    const bases = [target.serverUrl, ...owned.flatMap(source => [source.server_url || '', source.backend_url || '']), getBackendTarget()].filter(Boolean);
     const candidates: string[] = [];
     const add = (value: string, sourceBases = bases) => {
         const url = resolveNavigatorLogoUrl(value, sourceBases);
         if (url && !candidates.includes(url)) candidates.push(url);
     };
-    add(getConfiguredBrokerLogoUrl(brokerId));
-    owned.forEach(source => add(source.logo_url || '', [source.server_url || '', source.backend_url || '', ...bases]));
-    add(broker?.logo_url || '');
-    if (storedMatches) add(stored?.logoUrl || '');
-    add(buildBrokerDirectoryLogoUrl(brokerId));
+    const configuredLogoUrl = getConfiguredBrokerLogoUrl(brokerId);
+    const dynamicServerLogos = owned.map(source => ({
+        raw: appendBrokerLogoVersionParam(
+            source.logo_url || '',
+            (source as { logo_version?: string; logo_updated_at?: string }).logo_version
+            || (source as { logo_updated_at?: string }).logo_updated_at,
+        ),
+        bases: [source.server_url || '', source.backend_url || '', ...bases],
+    }));
+    const brokerLogoRaw = appendBrokerLogoVersionParam(
+        broker?.logo_url || '',
+        (broker as { logo_version?: string; logo_updated_at?: string } | undefined)?.logo_version
+        || (broker as { logo_updated_at?: string } | undefined)?.logo_updated_at,
+    );
+    const liveChromeLogo = chromeMatches ? chrome.logoUrl : '';
+    const liveStoredLogo = storedMatches ? (stored?.logoUrl || '') : '';
+
+    const resolvedDynamicLogos = [
+        ...dynamicServerLogos.map(entry => resolveNavigatorLogoUrl(entry.raw, entry.bases)),
+        resolveNavigatorLogoUrl(brokerLogoRaw, bases),
+        resolveNavigatorLogoUrl(liveChromeLogo, bases),
+        resolveNavigatorLogoUrl(liveStoredLogo, bases),
+    ].filter(Boolean);
+    const hasPreferredDynamicLogo = resolvedDynamicLogos.some(
+        url => shouldPreferDynamicLogoOverConfigured(configuredLogoUrl, url),
+    );
+
+    if (!hasPreferredDynamicLogo) {
+        add(configuredLogoUrl);
+    }
+    // Prefer versioned live URLs first so all views show the exact latest uploaded logo.
+    resolvedDynamicLogos.filter(url => hasBrokerLogoVersionQuery(url)).forEach(url => {
+        if (!candidates.includes(url)) candidates.push(url);
+    });
+    resolvedDynamicLogos.forEach(url => {
+        if (!candidates.includes(url)) candidates.push(url);
+    });
+    if (hasPreferredDynamicLogo) {
+        add(configuredLogoUrl);
+    }
+    const directoryFallback = buildBrokerDirectoryLogoUrl(brokerId);
+    add(directoryFallback);
+    if (!directoryFallback && brokerId) {
+        for (const base of bases) {
+            if (!/^https?:\/\//i.test(base)) continue;
+            add(buildBrokerDirectoryLogoUrl(brokerId, base));
+        }
+    }
     const sessionBrokerId = getStoredNavigatorValue('broker_id') || getStoredNavigatorValue('rtx_broker_id');
     const sessionBrokerName = getStoredNavigatorValue('broker_name');
     const explicitBrokerNames: unknown[] = [
@@ -346,7 +420,7 @@ export const NavigatorPanel: React.FC = () => {
                 const safeBrokerServers = Array.isArray(brokerServers) ? brokerServers : [];
                 update(cachedDirectory, safeBrokerServers, brokers);
 
-                if (cachedDirectory.length === 0 || (chromeLogoRefreshTick > 0 && isDesktopBackendTarget())) {
+                if (cachedDirectory.length === 0 || chromeLogoRefreshTick > 0) {
                     loadAppBrokerDirectory({ forceRefresh: chromeLogoRefreshTick > 0, desktop: isDesktopBackendTarget() })
                         .then((directoryBrokers) => {
                             if (!active || !directoryBrokers?.length) return;

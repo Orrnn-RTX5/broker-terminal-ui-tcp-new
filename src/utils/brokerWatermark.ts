@@ -1,9 +1,13 @@
 import {
+  appendBrokerLogoVersionParam,
   buildBrokerLogoCandidates,
   getConfiguredBrokerLogoUrl,
   isPlaceholderBrokerLogoUrl,
+  normalizeSameOriginHttpsUrl,
+  shouldPreferDynamicLogoOverConfigured,
 } from '../components/BrokerLogoImage';
 import { getRuntimeBrokerConfiguration } from '../config/backendTarget.js';
+import { getCachedBrokerDirectory } from '../services/brokerDirectory';
 import { BROKER_CHROME_EVENT, getBrokerChrome } from '../services/brokerPresentation';
 import { useChartSettingsStore, type ChartProperties } from '../store/useChartSettingsStore';
 
@@ -27,7 +31,7 @@ const readStoredValue = (key: string): string => {
 };
 
 const appendUniqueUrl = (target: string[], value: unknown): void => {
-  const normalized = String(value || '').trim();
+  const normalized = normalizeSameOriginHttpsUrl(String(value || '').trim());
   if (!normalized || isPlaceholderBrokerLogoUrl(normalized)) return;
   if (!target.includes(normalized)) target.push(normalized);
 };
@@ -103,44 +107,72 @@ export const resolveActiveBrokerWatermarkCandidates = (): string[] => {
   }
 
   const brokerId = chromeBrokerId || storedBrokerId || runtimeBrokerId;
-  const configuredLogoUrl = getConfiguredBrokerLogoUrl(brokerId);
+  const configuredLogoUrl = normalizeSameOriginHttpsUrl(getConfiguredBrokerLogoUrl(brokerId));
+  const normalizedRuntimeLogoUrl = normalizeSameOriginHttpsUrl(runtimeConfigLogoUrl);
+
+  const cachedDirectory = (() => {
+    try {
+      return getCachedBrokerDirectory() || [];
+    } catch {
+      return [];
+    }
+  })();
+  const matchedDirectoryBroker = brokerId
+    ? cachedDirectory.find((entry) => String(entry.broker_id || '').trim() === brokerId)
+    : undefined;
+  const directoryLogoUrl = appendBrokerLogoVersionParam(
+    matchedDirectoryBroker?.logo_url,
+    (matchedDirectoryBroker as { logo_version?: string; logo_updated_at?: string } | undefined)?.logo_version
+    || (matchedDirectoryBroker as { logo_updated_at?: string } | undefined)?.logo_updated_at,
+  );
 
   const hasExplicitBrokerIdentity = Boolean(
     chromeLogoUrl
     || storedLogoUrl
+    || directoryLogoUrl
     || configuredLogoUrl
-    || runtimeConfigLogoUrl
+    || normalizedRuntimeLogoUrl
     || chromeBrokerId
-    || storedBrokerId,
+    || storedBrokerId
+    || runtimeBrokerId,
   );
   if (!hasExplicitBrokerIdentity) {
     return [];
   }
 
-  const candidates: string[] = [];
-  appendUniqueUrl(candidates, configuredLogoUrl);
-  appendUniqueUrl(candidates, runtimeConfigLogoUrl);
-
   const sharedSource = {
     broker_id: brokerId,
-    server_url: serverUrl || undefined,
+    server_url: serverUrl || matchedDirectoryBroker?.server_url || undefined,
     backend_url: backendUrl || undefined,
   };
 
-  if (chromeLogoUrl) {
-    for (const candidate of buildBrokerLogoCandidates({ ...sharedSource, logo_url: chromeLogoUrl }, undefined, '')) {
-      appendUniqueUrl(candidates, candidate);
+  const liveDynamicCandidates: string[] = [];
+  for (const liveLogo of [chromeLogoUrl, directoryLogoUrl, storedLogoUrl]) {
+    if (!liveLogo) continue;
+    for (const candidate of buildBrokerLogoCandidates({ ...sharedSource, logo_url: liveLogo }, undefined, '')) {
+      appendUniqueUrl(liveDynamicCandidates, candidate);
     }
   }
-  if (storedLogoUrl && storedLogoUrl !== chromeLogoUrl) {
-    for (const candidate of buildBrokerLogoCandidates({ ...sharedSource, logo_url: storedLogoUrl }, undefined, '')) {
-      appendUniqueUrl(candidates, candidate);
-    }
-  }
-  if (!chromeLogoUrl && !storedLogoUrl && brokerId) {
+  if (liveDynamicCandidates.length === 0 && brokerId) {
     for (const candidate of buildBrokerLogoCandidates(sharedSource, undefined, '')) {
-      appendUniqueUrl(candidates, candidate);
+      appendUniqueUrl(liveDynamicCandidates, candidate);
     }
+  }
+
+  const staticConfigured = configuredLogoUrl || normalizedRuntimeLogoUrl;
+  const preferLiveOverConfigured = liveDynamicCandidates.some(
+    (candidate) => shouldPreferDynamicLogoOverConfigured(staticConfigured, candidate),
+  );
+
+  const candidates: string[] = [];
+  if (preferLiveOverConfigured) {
+    liveDynamicCandidates.forEach((candidate) => appendUniqueUrl(candidates, candidate));
+    appendUniqueUrl(candidates, configuredLogoUrl);
+    appendUniqueUrl(candidates, normalizedRuntimeLogoUrl);
+  } else {
+    appendUniqueUrl(candidates, configuredLogoUrl);
+    appendUniqueUrl(candidates, normalizedRuntimeLogoUrl);
+    liveDynamicCandidates.forEach((candidate) => appendUniqueUrl(candidates, candidate));
   }
 
   return candidates;

@@ -6,11 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	rtx5tcp "rtx5-tcp-protocol"
 )
 
 const (
@@ -248,6 +251,82 @@ func (c *WebTerminalServer) resolveLinkForBrokerID(fallbackLink *brokerLink, bro
 	return fallbackLink
 }
 
+// getOrDialSuperAdminForLogo reuses an active SuperAdmin tunnel or dials one with
+// a short per-candidate cap respecting ctx so an unreachable SuperAdmin hub never
+// starves the Broker Gateway (:4443) secondary logo source.
+func (c *WebTerminalServer) getOrDialSuperAdminForLogo(ctx context.Context, link *brokerLink) (*rtx5tcp.MuxSession, error) {
+	c.mu.RLock()
+	sess := c.superAdminMux
+	c.mu.RUnlock()
+	if sess != nil {
+		select {
+		case <-sess.Done():
+		default:
+			return sess, nil
+		}
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	c.saDialMu.Lock()
+	defer c.saDialMu.Unlock()
+
+	c.mu.RLock()
+	sess = c.superAdminMux
+	c.mu.RUnlock()
+	if sess != nil {
+		select {
+		case <-sess.Done():
+		default:
+			return sess, nil
+		}
+	}
+
+	candidates := c.superAdminCandidatesForLink(link)
+	var lastErr error
+	for _, cand := range candidates {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		dialTimeout := 1500 * time.Millisecond
+		if deadline, ok := ctx.Deadline(); ok {
+			rem := time.Until(deadline)
+			if rem <= 0 {
+				return nil, context.DeadlineExceeded
+			}
+			if rem < dialTimeout {
+				dialTimeout = rem
+			}
+		}
+		tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleSuperAdminClient, dialTimeout)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
+		c.mu.Lock()
+		c.superAdminMux = newSess
+		c.superAdminTCP = cand
+		c.mu.Unlock()
+
+		go func(s *rtx5tcp.MuxSession) {
+			_ = s.ServeLoop()
+			c.mu.Lock()
+			if c.superAdminMux == s {
+				c.superAdminMux = nil
+			}
+			c.mu.Unlock()
+		}(newSess)
+		return newSess, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
+}
+
 func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *brokerLink, brokerID string, forceRefresh bool) (*cachedBrokerLogo, bool) {
 	bid := strings.TrimSpace(brokerID)
 	if bid == "" {
@@ -263,24 +342,34 @@ func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *br
 	}
 
 	logoPath := "/api/v1/brokers/" + url.PathEscape(bid) + "/logo"
+	targetLink := c.resolveLinkForBrokerID(link, bid)
 
 	// 1. Primary source: Super Admin Control Plane (:9100 -> control-plane)
 	superAdminReturnedNotFound := false
-	if c.superAdminTCP != "" || c.superAdminMux != nil {
-		if sess, err := c.getOrDialSessionForApp(link, "superadmin"); err == nil && sess != nil {
+	if c.superAdminTCP != "" || c.superAdminMux != nil || targetLink != nil {
+		saTimeout := 2200 * time.Millisecond
+		if deadline, ok := ctx.Deadline(); ok {
+			if rem := time.Until(deadline); rem > 0 && rem < saTimeout {
+				saTimeout = rem
+			}
+		}
+		saCtx, saCancel := context.WithTimeout(ctx, saTimeout)
+		sess, serr := c.getOrDialSuperAdminForLogo(saCtx, targetLink)
+		saCancel()
+		if serr == nil && sess != nil {
 			hdrs := map[string][]string{
 				"Origin": {"http://127.0.0.1:18400"},
 			}
 			if cached != nil && cached.found && cached.source == "superadmin" && cached.upstreamTag != "" {
 				hdrs["If-None-Match"] = []string{cached.upstreamTag}
 			}
-			timeout := brokerLogoFetchTimeout
+			rpcTimeout := 2200 * time.Millisecond
 			if deadline, ok := ctx.Deadline(); ok {
-				if rem := time.Until(deadline); rem > 0 && rem < timeout {
-					timeout = rem
+				if rem := time.Until(deadline); rem > 0 && rem < rpcTimeout {
+					rpcTimeout = rem
 				}
 			}
-			code, respHdrs, body, rerr := sess.RoundTripRPC("control-plane", http.MethodGet, logoPath, hdrs, nil, timeout)
+			code, respHdrs, body, rerr := sess.RoundTripRPC("control-plane", http.MethodGet, logoPath, hdrs, nil, rpcTimeout)
 			if rerr == nil {
 				switch code {
 				case http.StatusNotModified:
@@ -315,8 +404,7 @@ func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *br
 	}
 
 	// 2. Secondary source: Broker Gateway (:4443 -> gateway)
-	targetLink := c.resolveLinkForBrokerID(link, bid)
-	if targetLink != nil {
+	if targetLink != nil && ctx.Err() == nil {
 		if sess, err := targetLink.getOrDialSession(); err == nil && sess != nil {
 			hdrs := map[string][]string{
 				"Origin": {"http://127.0.0.1:18403"},
@@ -324,14 +412,17 @@ func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *br
 			if cached != nil && cached.found && cached.source == "gateway" && cached.upstreamTag != "" {
 				hdrs["If-None-Match"] = []string{cached.upstreamTag}
 			}
-			timeout := brokerLogoFetchTimeout
+			timeout := 2500 * time.Millisecond
 			if deadline, ok := ctx.Deadline(); ok {
 				if rem := time.Until(deadline); rem > 0 && rem < timeout {
 					timeout = rem
 				}
 			}
-			code, respHdrs, body, rerr := sess.RoundTripRPC("gateway", http.MethodGet, logoPath, hdrs, nil, timeout)
-			if rerr == nil {
+			for _, gwPath := range []string{logoPath, "/api/v2/brokers/" + url.PathEscape(bid) + "/logo"} {
+				code, respHdrs, body, rerr := sess.RoundTripRPC("gateway", http.MethodGet, gwPath, hdrs, nil, timeout)
+				if rerr != nil {
+					break
+				}
 				switch code {
 				case http.StatusNotModified:
 					if cached != nil && cached.found && len(cached.data) > 0 {
@@ -354,7 +445,10 @@ func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *br
 						c.setCachedBrokerLogoEntry(bid, entry)
 						return entry, true
 					}
+				case http.StatusNotFound:
+					continue
 				}
+				break
 			}
 		}
 	}
@@ -468,6 +562,9 @@ func (c *WebTerminalServer) serveDynamicBrokerLogo(w http.ResponseWriter, r *htt
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		if w.Header().Get("Access-Control-Allow-Origin") == "" {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		if w.Header().Get("Vary") == "" {
+			w.Header().Set("Vary", "Origin")
 		}
 		if entry.version != "" {
 			w.Header().Set("ETag", `"`+entry.version+`"`)

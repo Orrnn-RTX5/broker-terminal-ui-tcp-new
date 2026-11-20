@@ -15,6 +15,7 @@ import {
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { chartPrinter } from '../../services/chartPrinter';
 import { getTerminalShortcutHint, TERMINAL_SHORTCUTS } from '../../services/shortcutCatalog';
+import { applyBrokerChrome } from '../../services/brokerPresentation';
 
 const savePictureDialogMock = vi.hoisted(() => ({
     props: [] as any[],
@@ -296,6 +297,94 @@ describe('FileMenu Component', () => {
 
             fireEvent.click(logoutButton);
             expect(onLogout).toHaveBeenCalledTimes(1);
+        });
+
+        it('renders the active broker logo inside the circular account avatar and falls back to the user icon on failure', () => {
+            const onLogout = vi.fn();
+            const { rerender } = render(
+                <FileMenu
+                    {...mockHandlers}
+                    accountId="200010"
+                    brokerId="orrnn"
+                    brokerName="Orrnn"
+                    brokerLogoUrl="https://orrnn.example/logo.svg"
+                    brokerServerUrl="https://orrnn.example"
+                    onLogout={onLogout}
+                />,
+            );
+
+            const avatar = screen.getByTestId('file-menu-broker-avatar');
+            expect(avatar).toHaveClass('rounded-full', 'border-white/15');
+            const logoImg = within(avatar).getByRole('img', { name: 'Orrnn Logo' });
+            expect(logoImg).toHaveAttribute('src', 'https://orrnn.example/logo.svg');
+            expect(logoImg).toHaveClass('rounded-full', 'object-cover');
+
+            Object.defineProperty(logoImg, 'naturalWidth', { configurable: true, value: 160 });
+            Object.defineProperty(logoImg, 'naturalHeight', { configurable: true, value: 100 });
+            fireEvent.load(logoImg);
+            expect(logoImg).toHaveClass('object-cover');
+
+            Object.defineProperty(logoImg, 'naturalWidth', { configurable: true, value: 320 });
+            Object.defineProperty(logoImg, 'naturalHeight', { configurable: true, value: 100 });
+            fireEvent.load(logoImg);
+            expect(logoImg).toHaveClass('object-contain');
+
+            fireEvent.error(logoImg);
+            const directoryFallbackImg = within(avatar).getByRole('img', { name: 'Orrnn Logo' });
+            expect(directoryFallbackImg).toHaveAttribute('src', 'https://orrnn.example/api/v1/brokers/orrnn/logo');
+
+            fireEvent.error(directoryFallbackImg);
+            expect(within(avatar).queryByRole('img')).not.toBeInTheDocument();
+            expect(avatar).toHaveClass('border-blue-500/30', 'bg-blue-500/10');
+            expect(avatar.querySelector('svg')).not.toBeNull();
+
+            rerender(
+                <FileMenu
+                    {...mockHandlers}
+                    accountId="200010"
+                    brokerId="acme"
+                    brokerName="Acme"
+                    brokerLogoUrl="https://acme.example/logo.png"
+                    brokerServerUrl="https://acme.example"
+                    onLogout={onLogout}
+                />,
+            );
+
+            const switchedLogo = within(avatar).getByRole('img', { name: 'Acme Logo' });
+            expect(switchedLogo).toHaveAttribute('src', 'https://acme.example/logo.png');
+            expect(switchedLogo).toHaveClass('object-cover');
+        });
+
+        it('reads and updates the circular broker logo live from broker storage and chrome events when rendered standalone', () => {
+            localStorage.setItem('broker_id', 'orrnn');
+            localStorage.setItem('broker_name', 'Orrnn');
+            localStorage.setItem('logo_url', 'https://orrnn.example/initial.png');
+            let unmountMenu: (() => void) | undefined;
+            try {
+                const view = render(<FileMenu {...mockHandlers} accountId="200010" onLogout={vi.fn()} />);
+                unmountMenu = view.unmount;
+
+                const avatar = screen.getByTestId('file-menu-broker-avatar');
+                expect(within(avatar).getByRole('img', { name: 'Orrnn Logo' }))
+                    .toHaveAttribute('src', 'https://orrnn.example/initial.png');
+
+                act(() => {
+                    applyBrokerChrome({
+                        brokerId: 'orrnn',
+                        brokerName: 'Orrnn',
+                        logoUrl: 'https://orrnn.example/updated.svg',
+                    });
+                });
+
+                expect(within(avatar).getByRole('img', { name: 'Orrnn Logo' }))
+                    .toHaveAttribute('src', 'https://orrnn.example/updated.svg');
+            } finally {
+                unmountMenu?.();
+                localStorage.removeItem('broker_id');
+                localStorage.removeItem('broker_name');
+                localStorage.removeItem('logo_url');
+                applyBrokerChrome({});
+            }
         });
 
         it('shows desktop Log Out as text only and preserves its account action', () => {

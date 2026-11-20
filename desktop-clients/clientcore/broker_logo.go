@@ -519,6 +519,9 @@ func (c *DesktopClient) serveDynamicBrokerLogo(w http.ResponseWriter, r *http.Re
 		if w.Header().Get("Access-Control-Allow-Origin") == "" {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
+		if w.Header().Get("Vary") == "" {
+			w.Header().Set("Vary", "Origin")
+		}
 		if entry.version != "" {
 			w.Header().Set("ETag", `"`+entry.version+`"`)
 		}

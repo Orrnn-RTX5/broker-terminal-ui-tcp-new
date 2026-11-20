@@ -334,20 +334,14 @@ describe('useToolboxTradeData display lifecycle', () => {
       ? 'Too many orders are already in flight for this account'
       : 'No terminal order result arrived before execute_before.';
     emit({ ...first, status: terminalStatus, errorCode, errorMessage });
-    expect(firstRow()).toMatchObject({
-      placementState: terminalStatus,
-      placementErrorCode: errorCode,
-      placementErrorMessage: errorMessage,
-    });
+    expect(firstRow()).toBeUndefined();
+    expect(result.current.pendingPositions).toHaveLength(1);
+    expect(result.current.pendingPositions[0]?.clientOrderId).toBe(second.clientOrderId);
     expect(result.current.positions).toEqual([]);
     expect(mocks.storeState.setPositions).not.toHaveBeenCalled();
 
     emit({ ...second, status: 'filled', position: { ...rawPosition, ticket: 18 } });
-    expect(result.current.pendingPositions).toEqual([expect.objectContaining({
-      clientOrderId: first.clientOrderId,
-      placementState: terminalStatus,
-      placementErrorMessage: errorMessage,
-    })]);
+    expect(result.current.pendingPositions).toEqual([]);
     expect(result.current.positions).toEqual([expect.objectContaining({
       id: 18,
       clientOrderId: second.clientOrderId,
@@ -356,53 +350,39 @@ describe('useToolboxTradeData display lifecycle', () => {
     unmount();
   });
 
-  it('auto-clears rejected order placement rows from the Trade tab after 5 seconds', () => {
-    vi.useFakeTimers();
-    try {
-      const scope = 'authenticated|200001|test|https://test.example.com';
-      const rejectedOrder = {
-        login: 200001,
-        sessionScope: scope,
-        clientOrderId: 'order-rejected-5s',
-        provisionalTicket: -201,
-      };
-      const { result, unmount } = renderHook(() => useToolboxTradeData());
-      act(() => {
-        window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
-          detail: {
-            ...rejectedOrder,
-            status: 'pending',
-            position: { ...rawPosition, ticket: -201, symbol: 'XAUUSD', side: 'buy', volume: 100 },
-          },
-        }));
-        window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
-          detail: {
-            ...rejectedOrder,
-            status: 'rejected',
-            errorCode: 'INSUFFICIENT_MARGIN',
-            errorMessage: 'Insufficient free margin (need 407669.00, available 6107.75)',
-          },
-        }));
-      });
-      expect(result.current.pendingPositions).toHaveLength(1);
-      expect(result.current.pendingPositions[0]).toMatchObject({
-        placementState: 'rejected',
-        placementErrorCode: 'INSUFFICIENT_MARGIN',
-      });
+  it('immediately removes rejected order placement rows from the Trade tab instead of keeping error rows', () => {
+    const scope = 'authenticated|200001|test|https://test.example.com';
+    const rejectedOrder = {
+      login: 200001,
+      sessionScope: scope,
+      clientOrderId: 'order-rejected-immediate',
+      provisionalTicket: -201,
+    };
+    const { result, unmount } = renderHook(() => useToolboxTradeData());
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
+        detail: {
+          ...rejectedOrder,
+          status: 'pending',
+          position: { ...rawPosition, ticket: -201, symbol: 'EURAUD', side: 'sell', volume: 0.01 },
+        },
+      }));
+    });
+    expect(result.current.pendingPositions).toHaveLength(1);
 
-      act(() => {
-        vi.advanceTimersByTime(4_999);
-      });
-      expect(result.current.pendingPositions).toHaveLength(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
-      expect(result.current.pendingPositions).toHaveLength(0);
-      unmount();
-    } finally {
-      vi.useRealTimers();
-    }
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
+        detail: {
+          ...rejectedOrder,
+          status: 'rejected',
+          errorCode: 'COMMISSION_CALC_FAILED',
+          errorMessage: 'Commission calculation failed for EURAUD',
+        },
+      }));
+    });
+    expect(result.current.pendingPositions).toHaveLength(0);
+    expect(result.current.positions).toEqual([]);
+    unmount();
   });
 
   it('keeps pushed SLTP and profit when an older REST snapshot finishes later', async () => {

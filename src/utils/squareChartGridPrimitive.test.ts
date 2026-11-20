@@ -332,8 +332,8 @@ describe('SquareChartGridPrimitive', () => {
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.fill).toHaveBeenCalledTimes(2);
     expect(fillStyles).toEqual([
-      'rgba(255, 255, 255, 0.180)',
-      'rgba(128, 195, 66, 0.207)',
+      'rgba(255, 255, 255, 0.360)',
+      'rgba(128, 195, 66, 0.414)',
     ]);
     expect(context.stroke).not.toHaveBeenCalled();
 
@@ -343,13 +343,309 @@ describe('SquareChartGridPrimitive', () => {
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.fill).toHaveBeenCalledTimes(2);
     expect(fillStyles).toEqual([
-      'rgba(51, 65, 85, 0.140)',
-      'rgba(56, 142, 20, 0.225)',
+      'rgba(51, 65, 85, 0.281)',
+      'rgba(56, 142, 20, 0.450)',
     ]);
 
     context.fill.mockClear();
     primitive.applyOptions({ showBackgroundLogo: false });
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.fill).not.toHaveBeenCalled();
+  });
+
+  it('loads cross-origin broker logos via CORS fetch -> blob: URL so canvas background removal is never tainted, and prefers CORS-readable fallbacks', async () => {
+    const prevWindow = (globalThis as { window?: unknown }).window;
+    const prevDocument = (globalThis as { document?: unknown }).document;
+    const prevImage = globalThis.Image;
+    const prevFetch = globalThis.fetch;
+    const prevCreateObjectURL = URL.createObjectURL;
+    const prevRevokeObjectURL = URL.revokeObjectURL;
+
+    const width = 32;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const off = (y * width + x) * 4;
+        const isMark = x >= 8 && x < 24 && y >= 12 && y < 20;
+        rgba[off] = isMark ? 20 : 255;
+        rgba[off + 1] = isMark ? 20 : 255;
+        rgba[off + 2] = isMark ? 24 : 255;
+        rgba[off + 3] = 255;
+      }
+    }
+
+    const workCtx = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({ data: rgba })),
+    };
+    let outputImageData: { data: Uint8ClampedArray } | null = null;
+    const outCtx = {
+      createImageData: vi.fn((w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h })),
+      putImageData: vi.fn((imgData: { data: Uint8ClampedArray }) => { outputImageData = imgData; }),
+    };
+    const createdCanvases: Array<{ width: number; height: number; tag: string }> = [];
+    const mockDocument = {
+      baseURI: 'http://127.0.0.1:5173/',
+      createElement: vi.fn(() => {
+        const idx = createdCanvases.length;
+        const canvas = { width: 0, height: 0, tag: idx === 0 ? 'work' : 'out', getContext: () => (idx === 0 ? workCtx : outCtx) };
+        createdCanvases.push(canvas);
+        return canvas;
+      }),
+    };
+    const createdImages: MockBlobImage[] = [];
+    class MockBlobImage {
+      decoding = '';
+      crossOrigin: string | null = null;
+      complete = false;
+      naturalWidth = 0;
+      naturalHeight = 0;
+      onload?: () => void;
+      onerror?: () => void;
+      private _src = '';
+      set src(value: string) {
+        this._src = value;
+        if (value.startsWith('blob:')) {
+          this.complete = true;
+          this.naturalWidth = width;
+          this.naturalHeight = height;
+        }
+      }
+      get src() { return this._src; }
+      get currentSrc() { return this._src; }
+      constructor() { createdImages.push(this); }
+    }
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('non-cors.example')) {
+        throw new TypeError('CORS blocked');
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'image/png' },
+        blob: async () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }),
+      };
+    });
+
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin: 'http://127.0.0.1:5173', protocol: 'http:', hostname: '127.0.0.1' } },
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'document', { value: mockDocument, configurable: true, writable: true });
+    Object.defineProperty(globalThis, 'Image', { value: MockBlobImage, configurable: true, writable: true });
+    Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true, writable: true });
+    URL.createObjectURL = vi.fn(() => 'blob:http://127.0.0.1:5173/logo-blob-1');
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      const requestUpdate = vi.fn();
+      const primitive = new SquareChartGridPrimitive({
+        visible: false,
+        showBackgroundLogo: true,
+        isLightBackground: false,
+        backgroundLogoSrc: 'https://non-cors.example/logo.png?v=1',
+        backgroundLogoFallbacks: ['http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=1'],
+        cellSizeCssPx: SQUARE_CHART_GRID_CELL_SIZE_PX,
+        verticalColor: '#222',
+        horizontalColor: '#333',
+      });
+      primitive.attached({ requestUpdate } as never);
+      await vi.waitFor(() => expect(requestUpdate).toHaveBeenCalledTimes(1));
+
+      const drawContext = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        drawImage: vi.fn(),
+        fill: vi.fn(),
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: 'low',
+        globalAlpha: 1,
+      };
+      const drawTarget = {
+        useBitmapCoordinateSpace: (cb: (scope: unknown) => void) => cb({
+          context: drawContext,
+          bitmapSize: { width: 800, height: 500 },
+          horizontalPixelRatio: 1,
+          verticalPixelRatio: 1,
+        }),
+      };
+
+      // Primary URL blocked CORS -> draw triggers fallback CORS-isolated fetch to directory endpoint.
+      primitive.paneViews()[0]!.renderer()!.draw(drawTarget as never);
+      await vi.waitFor(() => expect(createdImages.length).toBe(1));
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:18403/api/v1/brokers/orrnn/logo?v=1',
+        { mode: 'cors', credentials: 'omit', cache: 'no-cache' },
+      );
+      expect(createdImages[0]?.src).toBe('blob:http://127.0.0.1:5173/logo-blob-1');
+
+      // Second draw processes the same-origin blob image and renders the background-stripped output canvas!
+      primitive.paneViews()[0]!.renderer()!.draw(drawTarget as never);
+      expect(drawContext.drawImage).toHaveBeenCalledWith(
+        expect.objectContaining({ tag: 'out' }),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+      );
+      expect(outputImageData).toBeTruthy();
+      expect(outputImageData!.data[3]).toBe(0);
+    } finally {
+      Object.defineProperty(globalThis, 'window', { value: prevWindow, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'document', { value: prevDocument, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'Image', { value: prevImage, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'fetch', { value: prevFetch, configurable: true, writable: true });
+      URL.createObjectURL = prevCreateObjectURL;
+      URL.revokeObjectURL = prevRevokeObjectURL;
+    }
+  });
+
+  it('fetches same-origin extensionless broker watermarks via blob: URL with same-origin credentials and strips their background', async () => {
+    const prevWindow = (globalThis as { window?: unknown }).window;
+    const prevDocument = (globalThis as { document?: unknown }).document;
+    const prevImage = globalThis.Image;
+    const prevFetch = globalThis.fetch;
+    const prevCreateObjectURL = URL.createObjectURL;
+    const prevRevokeObjectURL = URL.revokeObjectURL;
+
+    const width = 32;
+    const height = 32;
+    const buildRgba = (w: number, h: number): Uint8ClampedArray => {
+      const buf = new Uint8ClampedArray(w * h * 4);
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const off = (y * w + x) * 4;
+          const isMark = x >= w * 0.2 && x < w * 0.8 && y >= h * 0.35 && y < h * 0.65;
+          buf[off] = isMark ? 15 : 248;
+          buf[off + 1] = isMark ? 15 : 248;
+          buf[off + 2] = isMark ? 18 : 250;
+          buf[off + 3] = 255;
+        }
+      }
+      return buf;
+    };
+
+    const workCtx = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn((_x: number, _y: number, w: number, h: number) => ({ data: buildRgba(w, h) })),
+    };
+    let outputImageData: { data: Uint8ClampedArray } | null = null;
+    const outCtx = {
+      createImageData: vi.fn((w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h })),
+      putImageData: vi.fn((imgData: { data: Uint8ClampedArray }) => { outputImageData = imgData; }),
+    };
+    const createdCanvases: Array<{ width: number; height: number; tag: string }> = [];
+    const mockDocument = {
+      baseURI: 'https://terminal.orrnn.com/',
+      createElement: vi.fn(() => {
+        const idx = createdCanvases.length;
+        const canvas = { width: 0, height: 0, tag: idx === 0 ? 'work' : 'out', getContext: () => (idx === 0 ? workCtx : outCtx) };
+        createdCanvases.push(canvas);
+        return canvas;
+      }),
+    };
+    const createdImages: MockSameOriginBlobImage[] = [];
+    class MockSameOriginBlobImage {
+      decoding = '';
+      crossOrigin: string | null = null;
+      complete = false;
+      naturalWidth = 0;
+      naturalHeight = 0;
+      onload?: () => void;
+      onerror?: () => void;
+      private _src = '';
+      set src(value: string) {
+        this._src = value;
+        if (value.startsWith('blob:')) {
+          this.complete = true;
+          this.naturalWidth = width;
+          this.naturalHeight = height;
+        }
+      }
+      get src() { return this._src; }
+      get currentSrc() { return this._src; }
+      constructor() { createdImages.push(this); }
+    }
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'image/svg+xml; charset=utf-8' : null) },
+      blob: async () => new Blob(['<svg xmlns="http://www.w3.org/2000/svg"></svg>'], { type: 'image/svg+xml' }),
+    }));
+
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin: 'https://terminal.orrnn.com', protocol: 'https:', hostname: 'terminal.orrnn.com' } },
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'document', { value: mockDocument, configurable: true, writable: true });
+    Object.defineProperty(globalThis, 'Image', { value: MockSameOriginBlobImage, configurable: true, writable: true });
+    Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true, writable: true });
+    URL.createObjectURL = vi.fn(() => 'blob:https://terminal.orrnn.com/same-origin-logo-2');
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      const requestUpdate = vi.fn();
+      const primitive = new SquareChartGridPrimitive({
+        visible: false,
+        showBackgroundLogo: true,
+        isLightBackground: false,
+        backgroundLogoSrc: 'https://terminal.orrnn.com/api/v1/brokers/orrnn/logo?v=2',
+        cellSizeCssPx: SQUARE_CHART_GRID_CELL_SIZE_PX,
+        verticalColor: '#222',
+        horizontalColor: '#333',
+      });
+      primitive.attached({ requestUpdate } as never);
+      await vi.waitFor(() => expect(createdImages.length).toBe(1));
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://terminal.orrnn.com/api/v1/brokers/orrnn/logo?v=2',
+        { credentials: 'same-origin', cache: 'no-cache' },
+      );
+      expect(createdImages[0]?.src).toBe('blob:https://terminal.orrnn.com/same-origin-logo-2');
+
+      const drawContext = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        drawImage: vi.fn(),
+        fill: vi.fn(),
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: 'low',
+        globalAlpha: 1,
+      };
+      const drawTarget = {
+        useBitmapCoordinateSpace: (cb: (scope: unknown) => void) => cb({
+          context: drawContext,
+          bitmapSize: { width: 800, height: 500 },
+          horizontalPixelRatio: 1,
+          verticalPixelRatio: 1,
+        }),
+      };
+
+      primitive.paneViews()[0]!.renderer()!.draw(drawTarget as never);
+      expect(drawContext.drawImage).toHaveBeenCalledWith(
+        expect.objectContaining({ tag: 'out' }),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+      );
+      expect(outputImageData).toBeTruthy();
+      expect(outputImageData!.data[3]).toBe(0);
+      // Verify extensionless SVG content-type triggered high-res vector upscaling before bg removal.
+      expect(createdCanvases[0]?.width).toBe(256);
+      expect(createdCanvases[0]?.height).toBe(256);
+    } finally {
+      Object.defineProperty(globalThis, 'window', { value: prevWindow, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'document', { value: prevDocument, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'Image', { value: prevImage, configurable: true, writable: true });
+      Object.defineProperty(globalThis, 'fetch', { value: prevFetch, configurable: true, writable: true });
+      URL.createObjectURL = prevCreateObjectURL;
+      URL.revokeObjectURL = prevRevokeObjectURL;
+    }
   });
 });

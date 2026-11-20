@@ -222,13 +222,16 @@ const formatLocalOrderPrice = (price: number | undefined): string => (
 const createLocalTerminalJournalEntry = (
     sample: PlacementTerminalSample,
 ): JournalLogEntry => {
-    const errorDetails = [sample.errorCode, sample.errorMessage]
-        .filter((value, index, values): value is string => (
-            typeof value === 'string'
-            && value.trim().length > 0
-            && values.indexOf(value) === index
-        ))
-        .join(': ');
+    const trimmedErrorCode = typeof sample.errorCode === 'string' ? sample.errorCode.trim() : '';
+    const trimmedErrorMessage = typeof sample.errorMessage === 'string' ? sample.errorMessage.trim() : '';
+    const errorDetails = trimmedErrorCode && trimmedErrorMessage
+        ? (
+            trimmedErrorMessage.toUpperCase() === trimmedErrorCode.toUpperCase()
+            || trimmedErrorMessage.toUpperCase().startsWith(`${trimmedErrorCode.toUpperCase()}:`)
+                ? trimmedErrorMessage
+                : `${trimmedErrorCode}: ${trimmedErrorMessage}`
+        )
+        : (trimmedErrorCode || trimmedErrorMessage);
     const isFilled = sample.terminalStatus === 'filled';
 
     let message: string;

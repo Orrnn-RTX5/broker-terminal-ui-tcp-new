@@ -331,17 +331,18 @@ const extractBrokerDirectoryPayload = (payload: unknown): { brokers: Broker[]; c
 
 export const brokerV2Api = {
   getServers: async (options?: ApiRequestOptions): Promise<BrokerServer[]> => {
-    const payload = await apiClient.get<unknown>('/broker/servers', v2Options({ ...options, skipAuth: true }));
+    const payload = await apiClient.get<unknown>('/broker/servers', v2Options({ cache: 'no-store', ...options, skipAuth: true }));
     return extractBrokerServerRows(payload);
   },
 
   getBrokers: async (options?: ApiRequestOptions): Promise<{ brokers: Broker[]; count: number }> => {
-    const payload = await apiClient.get<unknown>('/brokers', v2Options({ ...options, skipAuth: true }));
+    const payload = await apiClient.get<unknown>('/brokers', v2Options({ cache: 'no-store', ...options, skipAuth: true }));
     return extractBrokerDirectoryPayload(payload);
   },
 
   getConfig: (broker_id?: string, options?: ApiRequestOptions) =>
     apiClient.get<BrokerConfig>('/broker/config', v2Options({
+      cache: 'no-store',
       ...options,
       params: { ...options?.params, broker_id },
     })),

@@ -35,7 +35,8 @@ vi.mock('../../config/api', () => ({
     updateDynamicUrls: mocks.updateDynamicUrls,
 }));
 
-vi.mock('../../config/backendTarget.js', () => ({
+vi.mock('../../config/backendTarget.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../config/backendTarget.js')>()),
     isDesktopBackendTarget: () => mocks.desktop,
     getRuntimeBrokerConfiguration: () => mocks.configuration,
     normalizeBrokerInfoForTarget: (broker: Record<string, unknown>) => broker,

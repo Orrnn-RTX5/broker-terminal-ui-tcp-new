@@ -708,7 +708,7 @@ describe('BottomDock History live-deal integration', () => {
         });
     });
 
-    it('renders FILLED, CANCELLED, EXPIRED, and REJECTED status badges in Orders history view', async () => {
+    it('renders FILLED, CANCELLED, and EXPIRED status badges in Orders history view while hiding REJECTED rows', async () => {
         useAppStore.setState({ accountId: '300007', positions: [] });
         vi.spyOn(tradeGatewayApi, 'getHistoryDataSet').mockResolvedValue(historyDataSet({
             orders: [
@@ -730,7 +730,7 @@ describe('BottomDock History live-deal integration', () => {
         expect(screen.getByTestId('history-row-status-810101')).toHaveTextContent('FILLED');
         expect(screen.getByTestId('history-row-status-810102')).toHaveTextContent('CANCELLED');
         expect(screen.getByTestId('history-row-status-810103')).toHaveTextContent('EXPIRED');
-        expect(screen.getByTestId('history-row-status-810104')).toHaveTextContent('REJECTED');
+        expect(screen.queryByTestId('history-row-status-810104')).not.toBeInTheDocument();
     });
 
     it('validates and applies an inclusive local Custom Period', async () => {
@@ -795,7 +795,7 @@ describe('BottomDock History live-deal integration', () => {
         expect(getHistory).toHaveBeenCalledTimes(1);
     });
 
-    it('records rejected orders with their exact error reason on the History page', async () => {
+    it('does not show rejected order placement errors in History (errors belong only in Journal)', async () => {
         useAppStore.setState({ accountId: '200001', positions: [] });
         vi.spyOn(tradeGatewayApi, 'getHistoryDataSet').mockResolvedValue(historyDataSet({
             positions: [],
@@ -811,28 +811,26 @@ describe('BottomDock History live-deal integration', () => {
             window.dispatchEvent(new CustomEvent('rtx:market-order-placement-state', {
                 detail: {
                     status: 'rejected',
-                    clientOrderId: 'cid-xau-100',
+                    clientOrderId: 'cid-euraud-001',
                     login: 200001,
                     sessionScope: 'unauthenticated|200001||',
                     provisionalTicket: -777,
                     position: {
                         id: -777,
                         ticket: -777,
-                        symbol: 'XAUUSD',
-                        side: 'buy',
-                        volume: 100,
-                        time_create: '2026-11-06T09:46:35.000Z',
+                        symbol: 'EURAUD',
+                        side: 'sell',
+                        volume: 0.01,
+                        time_create: '2026-11-20T09:46:35.000Z',
                     },
-                    errorCode: 'INSUFFICIENT_MARGIN',
-                    errorMessage: 'Insufficient free margin (need 407669.00, available 6107.75)',
+                    errorCode: 'COMMISSION_CALC_FAILED',
+                    errorMessage: 'Commission calculation failed for EURAUD',
                 },
             }));
         });
 
-        await waitFor(() => expect(screen.getByText('1 records')).toBeInTheDocument());
-        expect(screen.getByTestId('history-row-status--777')).toHaveTextContent('REJECTED');
-        expect(
-            screen.getByText('Rejected · XAUUSD · buy · 100.00 lots: INSUFFICIENT_MARGIN: Insufficient free margin (need 407669.00, available 6107.75)'),
-        ).toBeInTheDocument();
+        expect(screen.getByText('0 records')).toBeInTheDocument();
+        expect(screen.queryByTestId('history-row-status--777')).not.toBeInTheDocument();
+        expect(screen.queryByText(/COMMISSION_CALC_FAILED/)).not.toBeInTheDocument();
     });
 });

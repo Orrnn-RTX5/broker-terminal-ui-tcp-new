@@ -12,19 +12,19 @@ const dockSource = [
 const lifecycleStart = hookSource.indexOf('const handleMarketOrderPlacement = (event: Event) => {');
 const lifecycleEnd = hookSource.indexOf('const handleCloseState', lifecycleStart);
 const lifecycleHandler = hookSource.slice(lifecycleStart, lifecycleEnd);
-const pendingStart = lifecycleHandler.indexOf("if (['pending', 'accepted', 'processing', 'rejected', 'expired'].includes(detail.status))");
+const pendingStart = lifecycleHandler.indexOf("if (['pending', 'accepted', 'processing'].includes(detail.status))");
 const pendingEnd = lifecycleHandler.indexOf('pendingMarketOrdersRef.current.delete(detail.clientOrderId)', pendingStart);
 const pendingBranch = lifecycleHandler.slice(pendingStart, pendingEnd);
 
 describe('Toolbox provisional market-order source contract', () => {
-  it('keeps pending rows isolated from confirmed positions and the app store', () => {
+  it('keeps pending rows isolated from confirmed positions and the app store, and drops terminal failures immediately', () => {
     expect(lifecycleStart).toBeGreaterThan(-1);
     expect(lifecycleEnd).toBeGreaterThan(lifecycleStart);
     expect(pendingBranch).toContain('pendingMarketOrdersRef.current.set');
     expect(pendingBranch).toContain('pendingPositions:');
     expect(pendingBranch).not.toContain('commitPositions(');
-    expect(lifecycleHandler).toContain("if (detail.status === 'failed') return;");
-    expect(lifecycleHandler).toContain('commitPositions(next);');
+    expect(lifecycleHandler).toContain("if (detail.status === 'failed' || detail.status === 'rejected' || detail.status === 'expired') return;");
+    expect(lifecycleHandler).toContain('commitPositions(next');
   });
 
   it('passes pending rows separately and disables every trade action on them', () => {

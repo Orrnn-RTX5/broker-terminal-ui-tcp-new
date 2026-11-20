@@ -21,6 +21,61 @@ const colorDistance = (
 const clampByte = (value: number): number =>
   value <= 0 ? 0 : value >= 255 ? 255 : Math.round(value);
 
+interface SampledColorStats {
+  r: number;
+  g: number;
+  b: number;
+  chroma: number;
+  lum: number;
+  uniformity: number;
+}
+
+const sampleDominantColor = (
+  input: Uint8ClampedArray,
+  pixels: readonly number[],
+  threshold: number,
+): SampledColorStats | null => {
+  if (pixels.length === 0) return null;
+  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
+  for (let i = 0; i < pixels.length; i += 1) {
+    const off = pixels[i]! * 4;
+    const r = input[off]!;
+    const g = input[off + 1]!;
+    const b = input[off + 2]!;
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    const entry = buckets.get(key);
+    if (entry) {
+      entry.count += 1;
+      entry.r += r;
+      entry.g += g;
+      entry.b += b;
+    } else {
+      buckets.set(key, { count: 1, r, g, b });
+    }
+  }
+
+  let best: { count: number; r: number; g: number; b: number } | null = null;
+  for (const bucket of buckets.values()) {
+    if (!best || bucket.count > best.count) best = bucket;
+  }
+  if (!best || best.count === 0) return null;
+
+  const r = best.r / best.count;
+  const g = best.g / best.count;
+  const b = best.b / best.count;
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+  let matches = 0;
+  for (let i = 0; i < pixels.length; i += 1) {
+    const off = pixels[i]! * 4;
+    if (colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, r, g, b) <= threshold) {
+      matches += 1;
+    }
+  }
+  return { r, g, b, chroma, lum, uniformity: matches / pixels.length };
+};
+
 /**
  * Automatically detects and removes solid rectangular, rounded-square, or card
  * backgrounds from broker watermark logos (including trapped counters inside
@@ -41,11 +96,11 @@ export const removeSolidBackgroundFromRgba = (
     return { data: input, width, height, removed: false };
   }
 
-  let opaqueCount = 0;
+  let visibleCount = 0;
   for (let p = 0; p < totalPixels; p += 1) {
-    if (input[p * 4 + 3]! >= 200) opaqueCount += 1;
+    if (input[p * 4 + 3]! >= 120) visibleCount += 1;
   }
-  const totalOpaqueRatio = opaqueCount / totalPixels;
+  const totalOpaqueRatio = visibleCount / totalPixels;
 
   // Collect image perimeter coordinates.
   const perimeterCount = width * 2 + Math.max(0, height - 2) * 2;
@@ -61,25 +116,26 @@ export const removeSolidBackgroundFromRgba = (
   }
 
   const opaquePerimeter: number[] = [];
+  const translucentPerimeter: number[] = [];
   for (let i = 0; i < perimeterCount; i += 1) {
     const p = perimeter[i]!;
-    if (input[p * 4 + 3]! >= 120) opaquePerimeter.push(p);
+    const a = input[p * 4 + 3]!;
+    if (a >= 120) opaquePerimeter.push(p);
+    else if (a >= 12) translucentPerimeter.push(p);
   }
   const borderOpaqueRatio = opaquePerimeter.length / Math.max(1, perimeterCount);
+  const borderTranslucentRatio = translucentPerimeter.length / Math.max(1, perimeterCount);
 
-  // If the perimeter is mostly transparent AND overall opaque area is low,
-  // the logo is already background-less (e.g. transparent PNG/SVG).
-  if (borderOpaqueRatio < 0.45 && totalOpaqueRatio < 0.62) {
-    return { data: input, width, height, removed: false };
-  }
-
-  // Sample pixels to identify the dominant background color.
-  // For standard rectangular / rounded-square cards, sample the opaque border.
-  // For circular / padded cards surrounded by transparent margins, sample the
-  // outer silhouette boundary (opaque pixels next to transparent pixels).
+  // Sample pixels to identify the dominant background color:
+  // 1) Standard opaque border cards,
+  // 2) Semi-transparent rectangular matte cards around opaque logos,
+  // 3) Silhouette boundary of padded cards / transparent logos.
   let samplePixels: number[] = opaquePerimeter;
-  const usingSilhouetteMode = borderOpaqueRatio < 0.45;
-  if (usingSilhouetteMode) {
+  const usingTranslucentBorderMode = borderOpaqueRatio < 0.45 && borderTranslucentRatio >= 0.45;
+  const usingSilhouetteMode = borderOpaqueRatio < 0.45 && !usingTranslucentBorderMode;
+  if (usingTranslucentBorderMode) {
+    samplePixels = translucentPerimeter;
+  } else if (usingSilhouetteMode) {
     samplePixels = [];
     for (let y = 1; y < height - 1; y += 1) {
       for (let x = 1; x < width - 1; x += 1) {
@@ -100,150 +156,250 @@ export const removeSolidBackgroundFromRgba = (
     }
   }
 
-  // Quantize sampled pixels into 4-bit-per-channel buckets to find dominant bg.
-  const buckets = new Map<number, { count: number; r: number; g: number; b: number }>();
-  for (let i = 0; i < samplePixels.length; i += 1) {
-    const off = samplePixels[i]! * 4;
-    const r = input[off]!;
-    const g = input[off + 1]!;
-    const b = input[off + 2]!;
-    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-    const entry = buckets.get(key);
-    if (entry) {
-      entry.count += 1;
-      entry.r += r;
-      entry.g += g;
-      entry.b += b;
-    } else {
-      buckets.set(key, { count: 1, r, g, b });
-    }
-  }
-
-  let bestBucket: { count: number; r: number; g: number; b: number } | null = null;
-  for (const bucket of buckets.values()) {
-    if (!bestBucket || bucket.count > bestBucket.count) {
-      bestBucket = bucket;
-    }
-  }
-  if (!bestBucket || bestBucket.count === 0) {
+  const initialProbe = sampleDominantColor(input, samplePixels, 44);
+  if (!initialProbe) {
     return { data: input, width, height, removed: false };
   }
 
-  const bgR = bestBucket.r / bestBucket.count;
-  const bgG = bestBucket.g / bestBucket.count;
-  const bgB = bestBucket.b / bestBucket.count;
-
-  // Verify the sampled perimeter/silhouette is sufficiently uniform in color.
-  let matchingSamples = 0;
-  for (let i = 0; i < samplePixels.length; i += 1) {
-    const off = samplePixels[i]! * 4;
-    if (colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, bgR, bgG, bgB) <= 38) {
-      matchingSamples += 1;
-    }
+  // When an opaque card floats inside transparent padding (<62% opaque overall),
+  // only strip neutral/card backgrounds so background-less colorful marks stay intact.
+  if (usingSilhouetteMode && totalOpaqueRatio < 0.62 && initialProbe.chroma > 34) {
+    return { data: input, width, height, removed: false };
   }
-  const uniformity = matchingSamples / Math.max(1, samplePixels.length);
-  const requiredUniformity = usingSilhouetteMode ? 0.75 : 0.55;
+
+  const bgThreshold = initialProbe.chroma <= 26 ? 44 : 38;
+  const bgStats = bgThreshold === 44
+    ? initialProbe
+    : sampleDominantColor(input, samplePixels, bgThreshold)!;
+  const bgR = bgStats.r;
+  const bgG = bgStats.g;
+  const bgB = bgStats.b;
+  const uniformity = bgStats.uniformity;
+  const requiredUniformity = usingSilhouetteMode ? 0.72 : 0.55;
   if (uniformity < requiredUniformity) {
     return { data: input, width, height, removed: false };
   }
 
-  // Step 1: 4-connected BFS flood-fill from the image border through
-  // transparent pixels and pixels within color tolerance of the background.
-  const bgThreshold = 38;
-  const visited = new Uint8Array(totalPixels);
-  const isBg = new Uint8Array(totalPixels);
-  const queue = new Int32Array(totalPixels);
-  let qHead = 0;
-  let qTail = 0;
+  const runFloodAndHoles = (
+    seeds: number[],
+    targetR: number,
+    targetG: number,
+    targetB: number,
+    threshold: number,
+    silhouette: boolean,
+    sampleUniformity: number,
+    allowSemiAlphaThrough: boolean,
+  ) => {
+    const visited = new Uint8Array(totalPixels);
+    const markedBg = new Uint8Array(totalPixels);
+    const queue = new Int32Array(totalPixels);
+    let qHead = 0;
+    let qTail = 0;
 
-  const tryEnqueueBg = (p: number): void => {
-    if (visited[p]) return;
-    const off = p * 4;
-    const a = input[off + 3]!;
-    if (
-      a < 120
-      || colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, bgR, bgG, bgB) <= bgThreshold
-    ) {
-      visited[p] = 1;
-      isBg[p] = 1;
-      queue[qTail++] = p;
+    const tryEnqueueBg = (p: number): void => {
+      if (visited[p]) return;
+      const off = p * 4;
+      const a = input[off + 3]!;
+      const dist = colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, targetR, targetG, targetB);
+      if (
+        a < 12
+        || (allowSemiAlphaThrough && a < 120 && (!usingTranslucentBorderMode || dist <= threshold))
+        || dist <= threshold
+        || (silhouette && a < 210 && dist <= 72)
+      ) {
+        visited[p] = 1;
+        markedBg[p] = 1;
+        queue[qTail++] = p;
+      }
+    };
+
+    for (let i = 0; i < seeds.length; i += 1) {
+      tryEnqueueBg(seeds[i]!);
     }
+    while (qHead < qTail) {
+      const p = queue[qHead++]!;
+      const x = p % width;
+      const y = (p - x) / width;
+      if (x > 0) tryEnqueueBg(p - 1);
+      if (x + 1 < width) tryEnqueueBg(p + 1);
+      if (y > 0) tryEnqueueBg(p - width);
+      if (y + 1 < height) tryEnqueueBg(p + width);
+    }
+
+    let removedVis = 0;
+    for (let p = 0; p < totalPixels; p += 1) {
+      if (markedBg[p] && input[p * 4 + 3]! >= 120) removedVis += 1;
+    }
+
+    const targetChroma = Math.max(targetR, targetG, targetB) - Math.min(targetR, targetG, targetB);
+    if (sampleUniformity >= 0.65 && removedVis / Math.max(1, visibleCount) >= 0.08) {
+      const holeVisited = new Uint8Array(totalPixels);
+      const maxHolePixels = Math.floor(totalPixels * 0.08);
+      const holeThreshold = targetChroma <= 26 ? 40 : 28;
+      const holeQueue = new Int32Array(totalPixels);
+      for (let start = 0; start < totalPixels; start += 1) {
+        if (markedBg[start] || holeVisited[start]) continue;
+        const startOff = start * 4;
+        if (
+          input[startOff + 3]! < 180
+          || colorDistance(input[startOff]!, input[startOff + 1]!, input[startOff + 2]!, targetR, targetG, targetB) > holeThreshold
+        ) {
+          continue;
+        }
+        let hHead = 0;
+        let hTail = 0;
+        holeVisited[start] = 1;
+        holeQueue[hTail++] = start;
+        while (hHead < hTail) {
+          const p = holeQueue[hHead++]!;
+          const x = p % width;
+          const y = (p - x) / width;
+          const checkNeighbor = (np: number) => {
+            if (markedBg[np] || holeVisited[np]) return;
+            const off = np * 4;
+            if (
+              input[off + 3]! >= 180
+              && colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, targetR, targetG, targetB) <= holeThreshold
+            ) {
+              holeVisited[np] = 1;
+              holeQueue[hTail++] = np;
+            }
+          };
+          if (x > 0) checkNeighbor(p - 1);
+          if (x + 1 < width) checkNeighbor(p + 1);
+          if (y > 0) checkNeighbor(p - width);
+          if (y + 1 < height) checkNeighbor(p + width);
+        }
+        if (hTail <= maxHolePixels) {
+          for (let i = 0; i < hTail; i += 1) {
+            const p = holeQueue[i]!;
+            markedBg[p] = 1;
+          }
+        }
+      }
+    }
+    return markedBg;
   };
 
-  for (let i = 0; i < perimeterCount; i += 1) {
-    tryEnqueueBg(perimeter[i]!);
-  }
-  while (qHead < qTail) {
-    const p = queue[qHead++]!;
-    const x = p % width;
-    const y = (p - x) / width;
-    if (x > 0) tryEnqueueBg(p - 1);
-    if (x + 1 < width) tryEnqueueBg(p + 1);
-    if (y > 0) tryEnqueueBg(p - width);
-    if (y + 1 < height) tryEnqueueBg(p + width);
-  }
+  // Step 1 & 2: Flood-fill outer background + trapped interior counters.
+  const perimeterSeeds = Array.from(perimeter);
+  let activeBgR = bgR;
+  let activeBgG = bgG;
+  let activeBgB = bgB;
+  const isBg = runFloodAndHoles(perimeterSeeds, activeBgR, activeBgG, activeBgB, bgThreshold, usingSilhouetteMode, uniformity, true);
 
-  let removedOpaqueCount = 0;
+  let removedVisibleCount = 0;
+  let remainingVisibleCount = 0;
+  let removedTranslucentCount = 0;
   for (let p = 0; p < totalPixels; p += 1) {
-    if (isBg[p] && input[p * 4 + 3]! >= 120) removedOpaqueCount += 1;
+    const a = input[p * 4 + 3]!;
+    if (a >= 120) {
+      if (isBg[p]) removedVisibleCount += 1;
+      else remainingVisibleCount += 1;
+    } else if (isBg[p] && a >= 12) {
+      removedTranslucentCount += 1;
+    }
   }
 
-  // Step 2: Remove small trapped interior background pockets (e.g. counters
-  // inside letters O, R, A, B, D, P, e, a, o) matching the outer background.
-  if (uniformity >= 0.7 && removedOpaqueCount / Math.max(1, opaqueCount) >= 0.1) {
-    const holeVisited = new Uint8Array(totalPixels);
-    const maxHolePixels = Math.floor(totalPixels * 0.08);
-    const holeThreshold = 20;
-    const holeQueue = new Int32Array(totalPixels);
-    for (let start = 0; start < totalPixels; start += 1) {
-      if (isBg[start] || holeVisited[start]) continue;
-      const startOff = start * 4;
+  // Fallback for bordered/framed cards (e.g. 1-4px grey border or drop shadow around a solid neutral white/black card):
+  // If outer peel removed <20% of visible pixels while >=45% of the canvas remains solid, sample an inset ring.
+  if (
+    removedVisibleCount / Math.max(1, visibleCount) < 0.2
+    && remainingVisibleCount / totalPixels >= 0.45
+    && Math.min(width, height) >= 16
+  ) {
+    const inset = Math.max(2, Math.min(12, Math.floor(Math.min(width, height) * 0.06)));
+    const ringPixels: number[] = [];
+    for (let x = inset; x < width - inset; x += 1) {
+      const top = inset * width + x;
+      const bot = (height - 1 - inset) * width + x;
+      if (!isBg[top] && input[top * 4 + 3]! >= 180) ringPixels.push(top);
+      if (!isBg[bot] && input[bot * 4 + 3]! >= 180) ringPixels.push(bot);
+    }
+    for (let y = inset + 1; y < height - 1 - inset; y += 1) {
+      const left = y * width + inset;
+      const right = y * width + (width - 1 - inset);
+      if (!isBg[left] && input[left * 4 + 3]! >= 180) ringPixels.push(left);
+      if (!isBg[right] && input[right * 4 + 3]! >= 180) ringPixels.push(right);
+    }
+    if (ringPixels.length >= 16) {
+      const innerStats = sampleDominantColor(input, ringPixels, 36);
       if (
-        input[startOff + 3]! < 180
-        || colorDistance(input[startOff]!, input[startOff + 1]!, input[startOff + 2]!, bgR, bgG, bgB) > holeThreshold
+        innerStats
+        && innerStats.chroma <= 20
+        && (innerStats.lum >= 218 || innerStats.lum <= 34)
+        && innerStats.uniformity >= 0.78
       ) {
-        continue;
-      }
-      let hHead = 0;
-      let hTail = 0;
-      holeVisited[start] = 1;
-      holeQueue[hTail++] = start;
-      while (hHead < hTail) {
-        const p = holeQueue[hHead++]!;
-        const x = p % width;
-        const y = (p - x) / width;
-        const checkNeighbor = (np: number) => {
-          if (isBg[np] || holeVisited[np]) return;
-          const off = np * 4;
-          if (
-            input[off + 3]! >= 180
-            && colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, bgR, bgG, bgB) <= holeThreshold
-          ) {
-            holeVisited[np] = 1;
-            holeQueue[hTail++] = np;
+        const innerBg = runFloodAndHoles(
+          ringPixels,
+          innerStats.r,
+          innerStats.g,
+          innerStats.b,
+          36,
+          false,
+          innerStats.uniformity,
+          false,
+        );
+        let combinedRemovedVis = 0;
+        let combinedRemainingVis = 0;
+        let distinctIn = 0;
+        for (let p = 0; p < totalPixels; p += 1) {
+          const marked = isBg[p] || innerBg[p];
+          const a = input[p * 4 + 3]!;
+          if (a >= 120) {
+            if (marked) {
+              combinedRemovedVis += 1;
+            } else {
+              combinedRemainingVis += 1;
+              if (distinctIn < 12 && colorDistance(input[p * 4]!, input[p * 4 + 1]!, input[p * 4 + 2]!, innerStats.r, innerStats.g, innerStats.b) > 45) {
+                distinctIn += 1;
+              }
+            }
           }
-        };
-        if (x > 0) checkNeighbor(p - 1);
-        if (x + 1 < width) checkNeighbor(p + 1);
-        if (y > 0) checkNeighbor(p - width);
-        if (y + 1 < height) checkNeighbor(p + width);
-      }
-      if (hTail <= maxHolePixels) {
-        for (let i = 0; i < hTail; i += 1) {
-          const p = holeQueue[i]!;
-          isBg[p] = 1;
-          removedOpaqueCount += 1;
+        }
+        if (
+          combinedRemovedVis / Math.max(1, visibleCount) >= 0.25
+          && combinedRemainingVis >= 16
+          && combinedRemainingVis / totalPixels >= 0.001
+          && distinctIn >= 12
+        ) {
+          for (let p = 0; p < totalPixels; p += 1) {
+            if (innerBg[p]) isBg[p] = 1;
+          }
+          activeBgR = innerStats.r;
+          activeBgG = innerStats.g;
+          activeBgB = innerStats.b;
+          removedVisibleCount = combinedRemovedVis;
+          remainingVisibleCount = combinedRemainingVis;
         }
       }
     }
   }
 
-  // Safety checks: never wipe out a pure solid-color mark or tiny noisy image.
-  const minRemainingRatio = usingSilhouetteMode ? 0.04 : 0.015;
-  const remainingOpaque = opaqueCount - removedOpaqueCount;
+  // Safety checks: never wipe out a pure solid-color mark or tiny noisy image,
+  // while still stripping large white/dark cards around slim wordmarks (e.g. ORRNN)
+  // and semi-transparent rectangular mattes around opaque marks.
+  const removedOpaqueShare = removedVisibleCount / Math.max(1, visibleCount);
+  const removedTranslucentShare = removedTranslucentCount / totalPixels;
+  const isTranslucentMatteRemoval = removedVisibleCount === 0
+    && removedTranslucentShare >= 0.15
+    && remainingVisibleCount >= 16;
+  const minRemovedShare = usingSilhouetteMode && totalOpaqueRatio < 0.62 ? 0.35 : 0.08;
+  let distinctForegroundCount = 0;
+  for (let p = 0; p < totalPixels; p += 1) {
+    if (isBg[p]) continue;
+    const off = p * 4;
+    if (input[off + 3]! < 120) continue;
+    if (colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, activeBgR, activeBgG, activeBgB) > 45) {
+      distinctForegroundCount += 1;
+      if (distinctForegroundCount >= 12) break;
+    }
+  }
   if (
-    removedOpaqueCount / Math.max(1, opaqueCount) < 0.08
-    || remainingOpaque / totalPixels < minRemainingRatio
+    (!isTranslucentMatteRemoval && removedOpaqueShare < minRemovedShare)
+    || remainingVisibleCount < 16
+    || remainingVisibleCount / totalPixels < 0.001
+    || distinctForegroundCount < 12
   ) {
     return { data: input, width, height, removed: false };
   }
@@ -301,14 +457,14 @@ export const removeSolidBackgroundFromRgba = (
       fR /= fCount;
       fG /= fCount;
       fB /= fCount;
-      const vR = fR - bgR;
-      const vG = fG - bgG;
-      const vB = fB - bgB;
+      const vR = fR - activeBgR;
+      const vG = fG - activeBgG;
+      const vB = fB - activeBgB;
       const vSq = vR * vR + vG * vG + vB * vB;
       if (vSq > 900) {
-        const uR = input[off]! - bgR;
-        const uG = input[off + 1]! - bgG;
-        const uB = input[off + 2]! - bgB;
+        const uR = input[off]! - activeBgR;
+        const uG = input[off + 1]! - activeBgG;
+        const uB = input[off + 2]! - activeBgB;
         const t = Math.max(0, Math.min(1, (uR * vR + uG * vG + uB * vB) / vSq));
         const resR = uR - t * vR;
         const resG = uG - t * vG;
@@ -326,15 +482,15 @@ export const removeSolidBackgroundFromRgba = (
         }
       }
     } else {
-      const d = colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, bgR, bgG, bgB);
+      const d = colorDistance(input[off]!, input[off + 1]!, input[off + 2]!, activeBgR, activeBgG, activeBgB);
       if (d < 64) {
         const t = Math.max(0, Math.min(1, (d - 22) / 42));
         if (t <= 0.04) {
           out[off + 3] = 0;
         } else {
-          out[off] = clampByte((input[off]! - (1 - t) * bgR) / t);
-          out[off + 1] = clampByte((input[off + 1]! - (1 - t) * bgG) / t);
-          out[off + 2] = clampByte((input[off + 2]! - (1 - t) * bgB) / t);
+          out[off] = clampByte((input[off]! - (1 - t) * activeBgR) / t);
+          out[off + 1] = clampByte((input[off + 1]! - (1 - t) * activeBgG) / t);
+          out[off + 2] = clampByte((input[off + 2]! - (1 - t) * activeBgB) / t);
           out[off + 3] = Math.round(input[off + 3]! * t);
         }
       }
@@ -362,8 +518,8 @@ export const removeSolidBackgroundFromRgba = (
     const avgLum = fgLumSum / fgSamples;
     const avgChroma = fgChromaSum / fgSamples;
     const isLightChart = options.isLightBackground === true;
-    if (!isLightChart && avgLum < 44 && avgChroma < 26) {
-      // Near-black monochrome mark (e.g. black logo stripped from white card)
+    if (!isLightChart && avgLum < 72 && avgChroma < 28) {
+      // Near-black monochrome mark (e.g. black/charcoal logo stripped from white card)
       // would be invisible on dark charts -> lift cleanly to light silver/white.
       for (let p = 0; p < totalPixels; p += 1) {
         const off = p * 4;
@@ -372,7 +528,7 @@ export const removeSolidBackgroundFromRgba = (
         out[off + 1] = clampByte(255 - out[off + 1]!);
         out[off + 2] = clampByte(255 - out[off + 2]!);
       }
-    } else if (isLightChart && avgLum > 212 && avgChroma < 26) {
+    } else if (isLightChart && avgLum > 195 && avgChroma < 28) {
       // Near-white monochrome mark (e.g. white logo stripped from dark card)
       // would be invisible on light charts -> invert cleanly to dark slate.
       for (let p = 0; p < totalPixels; p += 1) {

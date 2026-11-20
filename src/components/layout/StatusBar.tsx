@@ -3,16 +3,13 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { ConnectionStatus } from '../ConnectionStatus';
 import { BrokerLogoImage } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
-import { toLocalDevProxyUrl } from '../../config/api';
-import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
+import { useActiveBrokerBrand } from '../../hooks/useActiveBrokerBrand';
 import { useDesktopUpdater } from '../../hooks/useDesktopUpdater';
 import { useTerminalBarsStore } from '../../store/useTerminalBarsStore';
 import {
     formatTerminalTitle,
-    getLogoUrl,
     getWebTerminalTitle,
     isSameTerminalLabel,
-    useTerminalBrokerInfo,
 } from '../../hooks/useTerminalTitle';
 import type { NormalizedMarketStatus } from '../../utils/marketStatus';
 import './StatusBar.css';
@@ -34,19 +31,11 @@ interface StatusBarProps {
 export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketStatus }: StatusBarProps) {
     const tr = useUiTranslation();
     const visible = useTerminalBarsStore(state => state.statusBarVisible);
-    const brokerInfo = useTerminalBrokerInfo(symbol ?? '');
+    const activeBrand = useActiveBrokerBrand({ symbol: symbol ?? '' });
+    const brokerInfo = activeBrand.brokerInfo;
     const statusBarFallbackLogoSrc = toPublicAssetPath('favicon.png');
-    const resolvedBrokerLogoUrl = toLocalDevProxyUrl(
-        getLogoUrl(brokerInfo.logoUrl, brokerInfo.logoBaseCandidates),
-    );
-    const activeBrokerId = typeof window !== 'undefined'
-        ? String(
-            localStorage.getItem('broker_id')
-            || localStorage.getItem('rtx_broker_id')
-            || getRuntimeBrokerConfiguration().brokerId
-            || '',
-        ).trim()
-        : '';
+    const resolvedBrokerLogoUrl = activeBrand.logoUrl;
+    const activeBrokerId = activeBrand.brokerId;
 
     const [tcpInfo, setTcpInfo] = useState<TcpRuntimeStatus>(() => {
         if (typeof window === 'undefined') return {};
@@ -97,11 +86,11 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                     <BrokerLogoImage
                         broker={resolvedBrokerLogoUrl || activeBrokerId ? {
                             broker_id: activeBrokerId,
-                            broker_name: brokerInfo.brokerName,
+                            broker_name: activeBrand.brokerName || brokerInfo.brokerName,
                             logo_url: resolvedBrokerLogoUrl,
-                            server_url: brokerInfo.logoBaseCandidates?.[0],
+                            server_url: activeBrand.serverUrl || brokerInfo.logoBaseCandidates?.[0],
                         } : null}
-                        alt={`${brokerInfo.brokerName} Logo`}
+                        alt={`${activeBrand.brokerName || brokerInfo.brokerName} Logo`}
                         className="rtx-status-bar__logo h-4 w-4 shrink-0 rounded-sm object-contain"
                         appFallbackUrl={statusBarFallbackLogoSrc}
                     />

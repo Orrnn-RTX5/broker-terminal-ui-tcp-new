@@ -3,9 +3,10 @@ import { useBrokerAccountSessionScope } from './hooks/useBrokerAccountSessionSco
 import { useGuestChartLoginContinuity } from './hooks/useGuestChartLoginContinuity';
 import { getChartMarketSourceIdentity } from './utils/chartLoginTransition';
 import { getLogoUrl, getWebTerminalTitle, isSameTerminalLabel, useTerminalBrokerInfo } from './hooks/useTerminalTitle';
+import { buildBrokerDirectoryLogoUrl } from './components/BrokerLogoImage';
 import { brokerDisplayName } from './services/brokerDisplayName';
 import { applyBrokerChrome } from './services/brokerPresentation';
-import { getRuntimeBrokerConfiguration } from './config/backendTarget.js';
+import { getBackendTarget, getRuntimeBrokerConfiguration } from './config/backendTarget.js';
 import { ChartSymbolDropdown } from './components/ChartSymbolDropdown';
 import { translateUi } from './hooks/useUiTranslation';
 import { feedbackLabel, feedbackValue, feedbackSymbol, type UiMessage } from './utils/uiFeedback';
@@ -1866,6 +1867,10 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     const activeBrokerId = typeof window === 'undefined'
       ? runtimeBrokerId
       : String(window.localStorage.getItem('broker_id') || window.localStorage.getItem('rtx_broker_id') || runtimeBrokerId || '').trim();
+    const effectiveChromeLogoUrl = resolvedLogoUrl
+      || (activeBrokerId
+        ? (buildBrokerDirectoryLogoUrl(activeBrokerId) || buildBrokerDirectoryLogoUrl(activeBrokerId, getBackendTarget()))
+        : '');
     const activeThemeColor = typeof window === 'undefined'
       ? ''
       : String(window.localStorage.getItem('broker_theme_color') || '');
@@ -1892,11 +1897,11 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       window.electron?.window?.setTitle(title);
     }
 
-    if (isAuthenticated || activeBrokerId || resolvedLogoUrl) {
+    if (isAuthenticated || activeBrokerId || effectiveChromeLogoUrl) {
       applyBrokerChrome({
         brokerId: activeBrokerId,
         brokerName: server,
-        logoUrl: resolvedLogoUrl,
+        logoUrl: effectiveChromeLogoUrl,
         themeColor: activeThemeColor,
       });
     }

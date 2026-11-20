@@ -160,4 +160,74 @@ describe('removeSolidBackgroundFromRgba', () => {
     expect(result.data[centerOff + 1]).toBe(185);
     expect(result.data[centerOff + 2]).toBe(129);
   });
+
+  it('removes a white square background behind a slim horizontal monochrome wordmark (e.g. ORRNN)', () => {
+    const w = 256;
+    const h = 256;
+    const data = createRgbaBuffer(w, h, [255, 255, 255, 255]);
+    // Thin horizontal wordmark occupying ~1.1% of total pixels (5 chars with enclosed O/R holes)
+    fillRect(data, w, 40, 124, 176, 4, [24, 24, 27, 255]);
+    // Simulate a small hollow "O" loop with off-white JPEG shade [238,238,238] inside
+    fillRect(data, w, 44, 118, 20, 20, [24, 24, 27, 255]);
+    fillRect(data, w, 49, 123, 10, 10, [238, 238, 238, 255]);
+
+    const result = removeSolidBackgroundFromRgba(data, w, h, { isLightBackground: false });
+    expect(result.removed).toBe(true);
+    expect(result.height).toBeLessThan(36);
+    // Outer white box removed
+    expect(result.data[3]).toBe(0);
+    // Enclosed "O" counter also cleared to transparent
+    const holeCenter = (Math.floor(result.height / 2) * result.width + 12) * 4;
+    expect(result.data[holeCenter + 3]).toBe(0);
+    // Black monochrome letters inverted cleanly to light silver/white for dark charts
+    const strokePixel = (2 * result.width + 6) * 4;
+    expect(result.data[strokePixel]).toBeGreaterThan(200);
+    expect(result.data[strokePixel + 3]).toBe(255);
+  });
+
+  it('removes a white card inside a larger transparent margin while keeping multi-color transparent marks untouched', () => {
+    // 1) White horizontal pill card (~37% opaque) containing black emblem
+    const w = 64;
+    const h = 64;
+    const whiteCard = createRgbaBuffer(w, h, [0, 0, 0, 0]);
+    fillRect(whiteCard, w, 8, 20, 48, 24, [255, 255, 255, 255]);
+    fillRect(whiteCard, w, 20, 28, 24, 8, [18, 18, 22, 255]);
+
+    const cardResult = removeSolidBackgroundFromRgba(whiteCard, w, h, { isLightBackground: false });
+    expect(cardResult.removed).toBe(true);
+    expect(cardResult.height).toBeLessThan(16);
+
+    // 2) Already-transparent colorful mark (blue emblem with green core, no card) stays untouched
+    const transparentColorLogo = createRgbaBuffer(w, h, [0, 0, 0, 0]);
+    fillRect(transparentColorLogo, w, 20, 20, 24, 24, [37, 99, 235, 255]);
+    fillRect(transparentColorLogo, w, 28, 28, 8, 8, [16, 185, 129, 255]);
+
+    const colorResult = removeSolidBackgroundFromRgba(transparentColorLogo, w, h, { isLightBackground: false });
+    expect(colorResult.removed).toBe(false);
+  });
+
+  it('removes a white card even when framed by a 1px grey border or rendered as a translucent matte', () => {
+    const w = 64;
+    const h = 64;
+    // 1) White card framed by a 2px grey border (#b4b4b4)
+    const framed = createRgbaBuffer(w, h, [180, 180, 180, 255]);
+    fillRect(framed, w, 2, 2, 60, 60, [255, 255, 255, 255]);
+    fillRect(framed, w, 18, 28, 28, 8, [16, 185, 129, 255]);
+
+    const framedResult = removeSolidBackgroundFromRgba(framed, w, h, { isLightBackground: false });
+    expect(framedResult.removed).toBe(true);
+    expect(framedResult.width).toBeLessThan(36);
+    expect(framedResult.height).toBeLessThan(16);
+
+    // 2) Semi-transparent white matte box (alpha = 90) behind black text
+    const matte = createRgbaBuffer(w, h, [255, 255, 255, 90]);
+    fillRect(matte, w, 14, 28, 36, 8, [20, 20, 24, 255]);
+
+    const matteResult = removeSolidBackgroundFromRgba(matte, w, h, { isLightBackground: false });
+    expect(matteResult.removed).toBe(true);
+    expect(matteResult.height).toBeLessThan(16);
+    const strokePixel = (Math.floor(matteResult.height / 2) * matteResult.width + 6) * 4;
+    expect(matteResult.data[strokePixel]).toBeGreaterThan(200);
+    expect(matteResult.data[strokePixel + 3]).toBe(255);
+  });
 });
