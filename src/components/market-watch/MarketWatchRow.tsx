@@ -1,5 +1,5 @@
 import { resolveDailyChangeDisplayDigits } from '../../services/dailyChangePriceModeRegistry';
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type FC, type ReactNode } from 'react';
+import { memo, useMemo, useState, type CSSProperties, type FC, type ReactNode } from 'react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import type { MarketWatchLastPrice } from '../../hooks/useLastMarketWatchQuotes';
 import { useTick } from '../../store/useAppStore';
@@ -47,36 +47,31 @@ const CORE_MARKET_WATCH_COLUMN_SET = new Set<MarketWatchColumnId>([
   'source',
 ]);
 
-interface QuoteDirectionMemo {
-  symbol: string;
-  value: number;
-  direction: 'up' | 'down' | null;
-}
-
-/**
- * Last non-flat move of a quote side. The previous value lives in a ref that is committed in an
- * effect, so the render is pure and a changed value renders once (no setState during render).
- */
 function useLastQuoteDirection(symbol: string, value: number): 'up' | 'down' | null {
-  const memoRef = useRef<QuoteDirectionMemo>({ symbol, value, direction: null });
-  const previous = memoRef.current;
-  let direction: 'up' | 'down' | null;
-  if (previous.symbol !== symbol) {
-    direction = null;
-  } else if (value !== previous.value) {
-    direction = value > 0 && previous.value > 0
-      ? (value > previous.value ? 'up' : 'down')
-      : previous.direction;
-  } else {
-    direction = previous.direction;
+  const [directionState, setDirectionState] = useState<{
+    symbol: string;
+    value: number;
+    direction: 'up' | 'down' | null;
+  }>(() => ({ symbol, value, direction: null }));
+
+  if (directionState.symbol !== symbol) {
+    setDirectionState({ symbol, value, direction: null });
+    return null;
   }
-  useEffect(() => {
-    const memo = memoRef.current;
-    memo.symbol = symbol;
-    memo.value = value;
-    memo.direction = direction;
-  }, [symbol, value, direction]);
-  return direction;
+
+  if (value !== directionState.value) {
+    const nextDirection = value > 0 && directionState.value > 0
+      ? (value > directionState.value ? 'up' : 'down')
+      : directionState.direction;
+    setDirectionState({
+      symbol,
+      value,
+      direction: nextDirection,
+    });
+    return nextDirection;
+  }
+
+  return directionState.direction;
 }
 
 interface MarketWatchRowProps {

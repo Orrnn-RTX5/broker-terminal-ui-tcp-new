@@ -69,7 +69,7 @@ describe('MarketWatchGrid row memoization', () => {
   );
 
   const makeHandlers = () => ({
-    getContextMenuItems: vi.fn((_symbol: string): never[] => []),
+    getContextMenuItems: vi.fn((): never[] => []),
     onContextSelect: vi.fn(),
     onSymbolSelect: vi.fn(),
   });
