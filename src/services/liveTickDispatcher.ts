@@ -37,6 +37,8 @@ import {
 } from './binaryTcpOrderClient';
 
 const MAX_BINARY_ORDER_TICK_DEFER_MS = 250;
+const MAX_CONSECUTIVE_TICK_DEFER_MS = 200;
+export const LIVE_TICK_DISPATCHER_WATCHDOG_MS = 100;
 
 // A logged-in account's quote is widened by its group spread markup here, once;
 // `rawBid`/`rawAsk` keep the feed sides for raw-bid consumers (chart candles).
@@ -61,6 +63,7 @@ const feedActivityOnCommit = new Set<string>();
 const frozenMarketDataSources = new Map<string, Map<string, string>>();
 let rafId: number | null = null;
 let timeoutId: ReturnType<typeof setTimeout> | null = null;
+let deferredSinceMs = 0;
 
 const INITIAL_RETRY_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 2_000;
@@ -100,6 +103,7 @@ const clearDispatcherRuntime = (): void => {
   if (timeoutId !== null) clearTimeout(timeoutId);
   rafId = null;
   timeoutId = null;
+  deferredSinceMs = 0;
   resetRetry(marketRetry);
   resetRetry(appRetry);
 };
@@ -156,14 +160,39 @@ export const setLiveMarketDataFrozen = (
   frozenMarketDataSources.set(key, sources);
 };
 
+const cancelScheduledFlush = () => {
+  if (typeof window !== 'undefined' && rafId !== null && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(rafId);
+  }
+  if (timeoutId !== null) {
+    clearTimeout(timeoutId);
+  }
+  rafId = null;
+  timeoutId = null;
+};
+
 const scheduleFlush = () => {
   if (rafId !== null || timeoutId !== null) return;
 
   if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
     rafId = window.requestAnimationFrame(() => {
       rafId = null;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
       flushLiveTicks();
     });
+    // Hidden/throttled tabs or occluded WebView2 windows pause requestAnimationFrame;
+    // a 100ms watchdog fallback guarantees tick delivery never freezes.
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      if (rafId !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      flushLiveTicks();
+    }, LIVE_TICK_DISPATCHER_WATCHDOG_MS);
     return;
   }
 
@@ -474,9 +503,15 @@ export const flushLiveTicks = (): void => {
     getActiveBinaryTcpOrderCount() > 0
     && getBinaryTcpOrderActiveDurationMs() < MAX_BINARY_ORDER_TICK_DEFER_MS
   ) {
-    scheduleFlush();
-    return;
+    const now = Date.now();
+    if (deferredSinceMs === 0) deferredSinceMs = now;
+    if (now - deferredSinceMs < MAX_CONSECUTIVE_TICK_DEFER_MS) {
+      scheduleFlush();
+      return;
+    }
   }
+  deferredSinceMs = 0;
+  cancelScheduledFlush();
 
   flushMarketWatchDisplayMetadata();
   if (pendingTicks.size === 0 && !hasRetryTicks()) return;

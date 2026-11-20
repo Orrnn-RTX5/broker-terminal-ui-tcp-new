@@ -88,7 +88,7 @@ type CreateTradeOverlayDomRuntimeOptions = {
   seriesRef: RefObject<ISeriesApi<SeriesType> | null>;
   timeframe: Timeframe;
   tr: <T>(source: T, values?: Record<string, unknown>) => T;
-  tradeControlLiveUpdatersRef: RefObject<Array<() => void>>;
+  tradeControlLiveUpdatersRef: RefObject<Array<(positionsByTicket?: ReadonlyMap<number, TradePositionRecord>) => void>>;
   tradeLevelLastKnownLevelsRef: RefObject<Map<string, TradeLevelOverride>>;
   tradeLevelModifyRequestSeqRef: RefObject<TradeLevelModifyRequestId>;
   tradeLevelOptimisticGraceUntilRef: RefObject<Map<string, number>>;
@@ -148,6 +148,51 @@ export const createTradeOverlayDomRuntime = ({
 
     const newHistoryLayoutCache = (): HistoryNodeLayoutCache => ({ placed: false, live: false, styles: {} });
 
+    // O(1) index of active overlay nodes by (tradeKey, role) so building controls
+    // for N open positions stays O(N) instead of O(N^2) scanning activeOverlayNodesRef.
+    let indexedActiveNodesArray: HTMLElement[] | null = null;
+    const activeNodesByTradeRole = new Map<string, HTMLElement[]>();
+
+    const syncActiveNodeIndex = () => {
+      const current = activeOverlayNodesRef.current;
+      if (indexedActiveNodesArray === current) return;
+      indexedActiveNodesArray = current;
+      activeNodesByTradeRole.clear();
+      for (let i = 0; i < current.length; i++) {
+        const el = current[i];
+        const tradeKey = el.dataset.tradeKey;
+        const role = el.dataset.role;
+        if (!tradeKey || !role) continue;
+        const bucketKey = `${tradeKey}\0${role}`;
+        let bucket = activeNodesByTradeRole.get(bucketKey);
+        if (!bucket) {
+          bucket = [];
+          activeNodesByTradeRole.set(bucketKey, bucket);
+        }
+        bucket.push(el);
+      }
+    };
+
+    const indexActiveOverlayNode = (element: HTMLElement) => {
+      syncActiveNodeIndex();
+      const tradeKey = element.dataset.tradeKey;
+      const role = element.dataset.role;
+      if (!tradeKey || !role) return;
+      const bucketKey = `${tradeKey}\0${role}`;
+      let bucket = activeNodesByTradeRole.get(bucketKey);
+      if (!bucket) {
+        bucket = [];
+        activeNodesByTradeRole.set(bucketKey, bucket);
+      }
+      bucket.push(element);
+    };
+
+    const getActiveNodesForTradeRole = (tradeKey: string, role: string): HTMLElement[] => {
+      syncActiveNodeIndex();
+      const bucket = activeNodesByTradeRole.get(`${tradeKey}\0${role}`);
+      return bucket ? bucket.slice() : [];
+    };
+
     const appendOverlayNode = (element: HTMLElement, node: OverlayNodeData, layer: TradeOverlayLayer) => {
       const nodesRef = layer === 'active' ? activeOverlayNodesRef : historyOverlayNodesRef;
       const dataRef = layer === 'active' ? activeOverlayNodeDataRef : historyOverlayNodeDataRef;
@@ -156,15 +201,19 @@ export const createTradeOverlayDomRuntime = ({
         const clipsToPlot = node.kind === 'segment' || node.kind === 'marker';
         (clipsToPlot ? getTradePlotClipLayer(overlayEl) : overlayEl).appendChild(element);
       }
+      if (layer === 'active') syncActiveNodeIndex();
       nodesRef.current.push(element);
       dataRef.current.push(node);
+      if (layer === 'active') indexActiveOverlayNode(element);
     };
 
     const appendActiveInteractionNode = (element: HTMLElement, node: OverlayNodeData) => {
       const host = overlayRef.current?.parentElement ?? overlayRef.current;
       host?.appendChild(element);
+      syncActiveNodeIndex();
       activeOverlayNodesRef.current.push(element);
       activeOverlayNodeDataRef.current.push(node);
+      indexActiveOverlayNode(element);
     };
 
     const appendTradeControls = (control: HTMLElement, price: number) => {
@@ -400,13 +449,29 @@ export const createTradeOverlayDomRuntime = ({
       return Number.isSafeInteger(ticket) && ticket > 0 ? ticket : 0;
     };
 
-    const findStorePosition = (ticket: number): TradePositionRecord | null => {
+    let cachedStorePositionsRef: readonly unknown[] | null = null;
+    const cachedStorePositionsByTicket = new Map<number, TradePositionRecord>();
+
+    const findStorePosition = (
+      ticket: number,
+      positionsByTicket?: ReadonlyMap<number, TradePositionRecord>,
+    ): TradePositionRecord | null => {
       if (!ticket) return null;
+      if (positionsByTicket) return positionsByTicket.get(ticket) ?? null;
       const positions = useAppStore.getState().positions;
       if (!Array.isArray(positions)) return null;
-      return positions.find((position) => (
-        Number(position.id ?? (position as TradePositionRecord).ticket) === ticket
-      )) ?? null;
+      if (cachedStorePositionsRef !== positions) {
+        cachedStorePositionsRef = positions;
+        cachedStorePositionsByTicket.clear();
+        for (let i = 0; i < positions.length; i++) {
+          const position = positions[i] as TradePositionRecord;
+          const posTicket = Number(position.id ?? position.ticket);
+          if (Number.isSafeInteger(posTicket) && posTicket > 0 && !cachedStorePositionsByTicket.has(posTicket)) {
+            cachedStorePositionsByTicket.set(posTicket, position);
+          }
+        }
+      }
+      return cachedStorePositionsByTicket.get(ticket) ?? null;
     };
 
     const getTradeClosePrice = (trade: ActiveTradeSnapshot): number => {
@@ -688,9 +753,7 @@ export const createTradeOverlayDomRuntime = ({
       const entryPriceLabel = formatTradeLevelBadgePrice(trade.entryPrice);
       const currencyLabel = getAccountCurrencyLabel();
 
-      const entryNodes = activeOverlayNodesRef.current.filter(node => (
-        node.dataset.tradeKey === trade.key && node.dataset.role === 'ENTRY'
-      ));
+      const entryNodes = getActiveNodesForTradeRole(trade.key, 'ENTRY');
 
       const controlBar = createEntryTradeControlBar({
         tradeKey: trade.key,
@@ -765,8 +828,8 @@ export const createTradeOverlayDomRuntime = ({
         if (node.classList.contains('rtx-trade-level-hit-area')) bindTradeLevelHoverTarget(controlBar.root, node);
       }
 
-      const refreshLiveMetrics = () => {
-        const position = findStorePosition(ticket);
+      const refreshLiveMetrics = (positionsByTicket?: ReadonlyMap<number, TradePositionRecord>) => {
+        const position = findStorePosition(ticket, positionsByTicket);
         const closePrice = (position ? getLivePositionPrice(position) : null) ?? getTradeClosePrice(trade);
         const pips = computeSignedPips(trade.side, trade.entryPrice, closePrice, digits);
         const livePnl = position ? getLivePositionProfit(position) : null;
@@ -874,9 +937,7 @@ export const createTradeOverlayDomRuntime = ({
       if (!(levelPrice > 0)) return;
       const lightSurface = isChartSurfaceLight();
       const ticketLabel = getTradeTicketLabel(trade.key);
-      const levelNodes = activeOverlayNodesRef.current.filter(node => (
-        node.dataset.tradeKey === trade.key && node.dataset.role === role
-      ));
+      const levelNodes = getActiveNodesForTradeRole(trade.key, role);
       const levelBar = createTradeLevelControlBar({
         tradeKey: trade.key,
         role,

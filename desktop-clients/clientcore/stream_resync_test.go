@@ -187,3 +187,57 @@ func TestLocalResyncIsRateLimited(t *testing.T) {
 		t.Fatal("the deferred resync must run once the gap has passed")
 	}
 }
+
+func TestActiveMuxPingStrikesMatchesOrderMux(t *testing.T) {
+	if activePingFailLimit != 2 {
+		t.Fatalf("activePingFailLimit = %d, want 2", activePingFailLimit)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		raw, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		tc, err := rtx5tcp.AcceptTunnel(raw, 5*time.Second)
+		if err != nil {
+			return
+		}
+		_ = rtx5tcp.NewMuxSession(tc, true, nil, nil).ServeLoop()
+	}()
+	tc, err := rtx5tcp.DialTunnel(ln.Addr().String(), rtx5tcp.RoleTraderTerminalClient, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
+	go func() { _ = sess.ServeLoop() }()
+	defer sess.Close()
+	open := func() bool {
+		select {
+		case <-sess.Done():
+			return false
+		default:
+			return true
+		}
+	}
+	prev := keepAlivePing
+	defer func() { keepAlivePing = prev }()
+	keepAlivePing = func(*rtx5tcp.MuxSession, time.Duration) (float64, error) { return 0, pingLost("pong timeout") }
+	dc := &DesktopClient{}
+
+	if _, err := dc.activeStrikes.ping(sess, time.Second, activePingFailLimit); err == nil {
+		t.Fatal("want error on first strike")
+	}
+	if !open() {
+		t.Fatal("activeMux must survive 1 failed ping")
+	}
+	if _, err := dc.activeStrikes.ping(sess, time.Second, activePingFailLimit); err == nil {
+		t.Fatal("want error on second strike")
+	}
+	if open() {
+		t.Fatal("activeMux must close after 2 consecutive failed pings")
+	}
+}

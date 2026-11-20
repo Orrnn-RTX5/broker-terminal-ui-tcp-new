@@ -3,6 +3,7 @@ package clientcore
 import (
 	"encoding/binary"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -92,20 +93,43 @@ func (c *DesktopClient) getCachedOrderAuthToken() string {
 }
 
 // rebindBinaryAccountSub replays the last bound FrameBinaryAccountSub (0x3B) control frame
-// onto a newly established Encrypted Binary TCP MuxSession.
+// onto a newly established Encrypted Binary TCP MuxSession, retrying up to 3 times with short backoff.
 func (c *DesktopClient) rebindBinaryAccountSub(sess *rtx5tcp.MuxSession) {
 	if c == nil || sess == nil {
 		return
 	}
-	v, ok := clientBinaryAccountSubs.Load(c)
-	if !ok {
-		return
+	const maxAttempts = 3
+	backoffs := [...]time.Duration{150 * time.Millisecond, 400 * time.Millisecond}
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		select {
+		case <-sess.Done():
+			return
+		default:
+		}
+		v, ok := clientBinaryAccountSubs.Load(c)
+		if !ok {
+			return
+		}
+		rawAccountSub, ok := v.([]byte)
+		if !ok || len(rawAccountSub) == 0 {
+			return
+		}
+		err := sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, rawAccountSub)
+		if err == nil {
+			return
+		}
+		if attempt+1 >= maxAttempts {
+			log.Printf("[BINARY-STREAM] rebindBinaryAccountSub failed after %d attempts: %v", maxAttempts, err)
+			return
+		}
+		timer := time.NewTimer(backoffs[attempt])
+		select {
+		case <-sess.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
-	rawAccountSub, ok := v.([]byte)
-	if !ok || len(rawAccountSub) == 0 {
-		return
-	}
-	_ = sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, rawAccountSub)
 }
 
 func setBinaryOrderCORSHeaders(w http.ResponseWriter) {

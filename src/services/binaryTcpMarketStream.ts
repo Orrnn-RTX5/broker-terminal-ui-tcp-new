@@ -29,19 +29,20 @@ import {
 import { getAccessToken, getAccountLogin, onSessionChange } from './brokerSession';
 
 const MAX_BINARY_ORDER_STREAM_DEFER_MS = 250;
+const MAX_CONSECUTIVE_STREAM_DEFER_MS = 200;
 
 /**
- * Silence watchdog. The stream server (local Go DesktopClient / web-terminal server) writes a FramePing keepalive
- * every 10 s even when no price moves, so a stream that delivers no byte at all for 30 s (three missed keepalives) is
- * stuck: a proxy or socket stalled without closing it. `reader.read()` would then wait forever and prices would stay
- * frozen while the stream still reports connected. The watchdog aborts such a stream and reconnects.
- * The read loop only increments a counter per chunk; the check runs on a timer, so the hot path gains no timer work.
+ * Silence watchdog. Tracks actual market-data frames (0x21 ticks, 0x22 candles, 0x23, 0x24 depth)
+ * separately from 0x05 keepalive pings, so a dead upstream tick feed with live 10s keepalive pings
+ * still triggers a clean reconnect after 30 s.
  */
 export const STREAM_SILENCE_RECONNECT_MS = 30_000;
 const STREAM_SILENCE_CHECK_MS = 5_000;
+const VISIBILITY_RECOVERY_STALE_MS = 15_000;
 
 export const FRAME_BINARY_TICK_BATCH = 0x21;
 export const FRAME_BINARY_CANDLE_BATCH = 0x22;
+export const FRAME_BINARY_MARKET_DATA_EXT = 0x23;
 export const FRAME_BINARY_DEPTH_BATCH = 0x24;
 export const FRAME_BINARY_TRADE_EVENT = 0x3A;
 
@@ -429,6 +430,7 @@ class BinaryTcpMarketStream {
   private readonly deferredDepths = new Map<string, DecodedBinaryDepth>();
   private deferredTradeEvents: DecodedBinaryTradeEvent[] = [];
   private deferredFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private deferredSinceMs = 0;
   private lastTradeEventSig = '';
   private lastTradeEventAtMs = 0;
 
@@ -436,8 +438,11 @@ class BinaryTcpMarketStream {
   private accumBuf = new Uint8Array(131_072);
   private accumLen = 0;
 
-  // Chunks received on the current stream; read by the silence watchdog (see STREAM_SILENCE_RECONNECT_MS).
-  private chunksReceived = 0;
+  // Market-data frames (0x21/0x22/0x23/0x24) received on the current stream; read by the silence watchdog
+  // so 0x05 keepalive pings alone never mask a dead upstream tick feed.
+  private marketDataFramesReceived = 0;
+  private lastMarketDataAt = 0;
+  private latestTickTimestampMs = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -450,12 +455,14 @@ class BinaryTcpMarketStream {
           this.latestTicks.clear();
           this.dayStats.clear();
           this.tickTimestampGuard.clear();
+          this.latestTickTimestampMs = 0;
           this.latestM1Candles.clear();
           this.latestDepths.clear();
           this.deferredTicks.clear();
           this.deferredCandles.clear();
           this.deferredDepths.clear();
           this.deferredTradeEvents = [];
+          this.deferredSinceMs = 0;
           this.boundAccountKey = null;
           this.inFlightAccountKey = null;
           this.syncAccountSubscription(undefined, true);
@@ -472,6 +479,25 @@ class BinaryTcpMarketStream {
       window.addEventListener('online', () => {
         if (this.hasConsumers()) this.forceReconnect();
       });
+
+      const handleWakeRecovery = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        if (!this.hasConsumers() || !this.isSupported()) return;
+        if (!this.connected || !this.running) {
+          this.forceReconnect();
+          return;
+        }
+        if (this.lastMarketDataAt > 0 && Date.now() - this.lastMarketDataAt >= VISIBILITY_RECOVERY_STALE_MS) {
+          this.forceReconnect();
+          return;
+        }
+        this.flushDeferredNotifications();
+      };
+
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', handleWakeRecovery);
+      }
+      window.addEventListener('focus', handleWakeRecovery);
     }
   }
 
@@ -729,19 +755,21 @@ class BinaryTcpMarketStream {
     this.accumLen = 0;
 
     // Silence watchdog: started before the request so it also covers a server that never answers.
+    // Tracks actual market-data frames (0x21/0x22/0x23/0x24) rather than raw chunks so 0x05 keepalive
+    // pings alone cannot prevent reconnect when the upstream tick feed dies.
     let silenced = false;
-    let lastSeenChunks = this.chunksReceived;
+    let lastSeenMarketDataFrames = this.marketDataFramesReceived;
     let lastProgressAt = Date.now();
     const silenceWatchdog = setInterval(() => {
       const now = Date.now();
-      if (this.chunksReceived !== lastSeenChunks) {
-        lastSeenChunks = this.chunksReceived;
+      if (this.marketDataFramesReceived !== lastSeenMarketDataFrames) {
+        lastSeenMarketDataFrames = this.marketDataFramesReceived;
         lastProgressAt = now;
         return;
       }
       if (now - lastProgressAt >= STREAM_SILENCE_RECONNECT_MS && !controller.signal.aborted) {
         silenced = true;
-        console.warn(`[BinaryTcpMarketStream] no data or keepalive for ${Math.round((now - lastProgressAt) / 1000)}s; reconnecting the stream`);
+        console.warn(`[BinaryTcpMarketStream] no market data frames for ${Math.round((now - lastProgressAt) / 1000)}s; reconnecting the stream`);
         try { controller.abort(); } catch { /* ignore */ }
       }
     }, STREAM_SILENCE_CHECK_MS);
@@ -775,7 +803,6 @@ class BinaryTcpMarketStream {
         const { value, done } = await reader.read();
         if (done) break;
         if (value && value.byteLength > 0) {
-          this.chunksReceived++;
           this.consumeChunk(value);
         }
       }
@@ -827,15 +854,24 @@ class BinaryTcpMarketStream {
 
       const payloadOffset = offset + 4;
       if (frameType === FRAME_BINARY_TICK_BATCH && payloadLen >= 2) {
+        this.marketDataFramesReceived++;
+        this.lastMarketDataAt = Date.now();
         this.decodeTickBatch(buf, view, payloadOffset, payloadLen);
       } else if (frameType === FRAME_BINARY_CANDLE_BATCH && payloadLen >= 2) {
+        this.marketDataFramesReceived++;
+        this.lastMarketDataAt = Date.now();
         this.decodeCandleBatch(buf, view, payloadOffset, payloadLen);
+      } else if (frameType === FRAME_BINARY_MARKET_DATA_EXT) {
+        this.marketDataFramesReceived++;
+        this.lastMarketDataAt = Date.now();
       } else if (frameType === FRAME_BINARY_DEPTH_BATCH && payloadLen >= 2) {
+        this.marketDataFramesReceived++;
+        this.lastMarketDataAt = Date.now();
         this.decodeDepthBatch(buf, view, payloadOffset, payloadLen);
       } else if (frameType === FRAME_BINARY_TRADE_EVENT && payloadLen >= BINARY_TRADE_EVENT_MIN_SIZE) {
         this.decodeTradeEventFrame(buf, payloadOffset, payloadLen);
       }
-      // 0x00 (initial pad) and 0x05 (FramePing keepalive) are skipped in O(1)
+      // 0x00 (initial pad) and 0x05 (FramePing keepalive) are skipped in O(1) without resetting market-data silence.
       offset = frameEnd;
     }
 
@@ -849,10 +885,18 @@ class BinaryTcpMarketStream {
   }
 
   private shouldDeferForActiveBinaryOrder(): boolean {
-    return (
-      getActiveBinaryTcpOrderCount() > 0
-      && getBinaryTcpOrderActiveDurationMs() < MAX_BINARY_ORDER_STREAM_DEFER_MS
-    );
+    if (
+      getActiveBinaryTcpOrderCount() <= 0
+      || getBinaryTcpOrderActiveDurationMs() >= MAX_BINARY_ORDER_STREAM_DEFER_MS
+    ) {
+      return false;
+    }
+    const now = Date.now();
+    if (this.deferredSinceMs === 0) {
+      this.deferredSinceMs = now;
+      return true;
+    }
+    return now - this.deferredSinceMs < MAX_CONSECUTIVE_STREAM_DEFER_MS;
   }
 
   private scheduleDeferredFlushSafety(): void {
@@ -880,6 +924,8 @@ class BinaryTcpMarketStream {
       }
       return;
     }
+
+    this.deferredSinceMs = 0;
 
     if (this.deferredTicks.size > 0) {
       const pendingTicks = Array.from(this.deferredTicks.values());
@@ -994,6 +1040,7 @@ class BinaryTcpMarketStream {
       const ask = Number.isFinite(askRaw) && askRaw > 0 ? askRaw : bid;
       // A wrong/future server timestamp must not make every later tick look older (see tickTimestampGuard).
       const timestamp = rawTsMs > 0 ? this.tickTimestampGuard.resolve(symbol, rawTsMs) : Date.now();
+      if (timestamp > this.latestTickTimestampMs) this.latestTickTimestampMs = timestamp;
       const utcDay = Math.floor(timestamp / UTC_DAY_MS);
 
       let stats = this.dayStats.get(symbol);
@@ -1068,7 +1115,7 @@ class BinaryTcpMarketStream {
       const symbol = decodeFixedAsciiSymbol(buf, off);
       if (!symbol) continue;
 
-      const time = readUint64LE(view, off + 16);
+      const rawTime = readUint64LE(view, off + 16);
       const open = view.getFloat64(off + 24, true);
       const high = view.getFloat64(off + 32, true);
       const low = view.getFloat64(off + 40, true);
@@ -1078,13 +1125,24 @@ class BinaryTcpMarketStream {
       const tfCode = buf[off + 61];
 
       if (
-        time <= 0
+        rawTime <= 0
         || !Number.isFinite(open) || open <= 0
         || !Number.isFinite(high) || high <= 0
         || !Number.isFinite(low) || low <= 0
         || !Number.isFinite(close) || close <= 0
       ) {
         continue;
+      }
+
+      // Guard future-skewed 0x22 candle timestamps so a clock-skewed candle cannot
+      // advance chart time into the future and permanently freeze subsequent 0x21 ticks.
+      const isMs = rawTime >= 1_000_000_000_000;
+      const rawTimeMs = isMs ? rawTime : rawTime * 1000;
+      const symbolRefMs = this.latestTicks.get(symbol)?.timestamp ?? this.latestTickTimestampMs;
+      let time = rawTime;
+      if (symbolRefMs > 0 && rawTimeMs > symbolRefMs) {
+        const guardedMs = this.tickTimestampGuard.resolve(symbol, rawTimeMs);
+        time = isMs ? guardedMs : Math.floor(guardedMs / 1000);
       }
 
       const timeframe = TF_CODE_TO_STRING[tfCode] ?? 'M1';

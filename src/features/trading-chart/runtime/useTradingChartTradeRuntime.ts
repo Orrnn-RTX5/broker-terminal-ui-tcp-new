@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import type { IChartApi, ISeriesApi, SeriesType, Time } from 'lightweight-charts';
 import type { TradingChartVisibleRuntime } from '../../../hooks/useTradingChartVisibleRuntime';
+import { useAppStore } from '../../../store/useAppStore';
 import { drawingManager } from '../../../services/drawingManager';
 import { requestChartTradeOverlayRefresh } from '../../../services/tradeOverlayRefreshEvents';
 import { getTimeframeSeconds, type Timeframe as AggTimeframe } from '../../../services/candleAggregationService';
@@ -48,6 +49,7 @@ import type {
   TradeLevelModifyRequestId,
   TradeLevelOverride,
   TradeOverlayLayer,
+  TradePositionRecord,
 } from './tradeRuntimeContracts';
 
 export type { ActiveTradeSnapshot } from './tradeRuntimeContracts';
@@ -165,7 +167,7 @@ export const useTradingChartTradeRuntime = ({
 
 
   // Live Pips/USD refresh hooks for the on-line position control bars.
-  const tradeControlLiveUpdatersRef = useRef<Array<() => void>>([]);
+  const tradeControlLiveUpdatersRef = useRef<Array<(positionsByTicket?: ReadonlyMap<number, TradePositionRecord>) => void>>([]);
   const tradeControlSizesRef = useRef<TradeControlSizeCache>(new WeakMap());
   const tradeOverlayContainerSizesRef = useRef<TradeOverlayContainerSizeCache>(new WeakMap());
   const tradeControlSizeObservationRef = useRef(false);
@@ -871,9 +873,21 @@ export const useTradingChartTradeRuntime = ({
 
     // Refresh the live Pips/USD text on position control bars. Relayout is
     // already tick-driven for active trades, so this stays in the same frame.
-    if (refreshMetrics) {
+    // Build a ticket -> Position lookup map once per frame so N positions update in O(N) instead of O(N^2).
+    if (refreshMetrics && tradeControlLiveUpdatersRef.current.length > 0) {
+      const positions = useAppStore.getState().positions;
+      const positionsByTicket = new Map<number, TradePositionRecord>();
+      if (Array.isArray(positions)) {
+        for (let i = 0; i < positions.length; i++) {
+          const position = positions[i] as TradePositionRecord;
+          const posTicket = Number(position.id ?? position.ticket);
+          if (Number.isSafeInteger(posTicket) && posTicket > 0 && !positionsByTicket.has(posTicket)) {
+            positionsByTicket.set(posTicket, position);
+          }
+        }
+      }
       for (const refreshTradeControlMetrics of tradeControlLiveUpdatersRef.current) {
-        try { refreshTradeControlMetrics(); } catch { /* overlay may be rebuilding */ }
+        try { refreshTradeControlMetrics(positionsByTicket); } catch { /* overlay may be rebuilding */ }
       }
     }
 
@@ -960,6 +974,7 @@ export const useTradingChartTradeRuntime = ({
     const wrapper = container?.parentElement;
     if (!container || !wrapper) return;
     let frame: number | null = null;
+    let observeFrame: number | null = null;
     const schedule = () => {
       if (frame !== null) return;
       frame = window.requestAnimationFrame(() => { frame = null; updateLabelPositions(false); });
@@ -983,7 +998,14 @@ export const useTradingChartTradeRuntime = ({
       wrapper.querySelectorAll('.rtx-trade-controls').forEach(element => resize?.observe(element));
       schedule();
     };
-    const children = new MutationObserver(observeControlSizes);
+    const scheduleObserveControlSizes = () => {
+      if (observeFrame !== null) return;
+      observeFrame = window.requestAnimationFrame(() => {
+        observeFrame = null;
+        observeControlSizes();
+      });
+    };
+    const children = new MutationObserver(scheduleObserveControlSizes);
     children.observe(wrapper, { childList: true });
     children.observe(container, { childList: true, subtree: true });
     observeControlSizes();
@@ -994,6 +1016,7 @@ export const useTradingChartTradeRuntime = ({
       tradeControlSizesRef.current = new WeakMap();
       tradeOverlayContainerSizesRef.current = new WeakMap();
       if (frame !== null) window.cancelAnimationFrame(frame);
+      if (observeFrame !== null) window.cancelAnimationFrame(observeFrame);
     };
   }, [containerRef, updateLabelPositions]);
 

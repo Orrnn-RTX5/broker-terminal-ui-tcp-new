@@ -172,6 +172,8 @@ const (
 	localStreamWriteDeadline        = 45 * time.Second
 	localStreamWriteDeadlineRefresh = 5 * time.Second
 	localResyncMinGap               = time.Second
+	localStreamMaxPrioBurst         = 24
+	localStreamMaxMarketBurst       = 32
 )
 
 func (c *DesktopClient) handleServerControlFrame(_ *rtx5tcp.MuxSession, frameType uint8, _ uint32, _ uint8, payload []byte) {
@@ -251,10 +253,20 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 	defer keepAlive.Stop()
 	noopPing := []byte{rtx5tcp.FramePing, 0x00, 0x00, 0x00}
 
-	drainPrio := func() (wrote bool, err error) {
-		for {
+	rc := http.NewResponseController(w)
+	var deadlineSet time.Time
+	refreshDeadline := func() {
+		if now := time.Now(); now.Sub(deadlineSet) >= localStreamWriteDeadlineRefresh {
+			deadlineSet = now
+			_ = rc.SetWriteDeadline(now.Add(localStreamWriteDeadline)) // unsupported writers just ignore it
+		}
+	}
+
+	drainPrio := func(limit int) (wrote bool, err error) {
+		for i := 0; i < limit; i++ {
 			select {
 			case pkt := <-sub.prioCh:
+				refreshDeadline()
 				if _, werr := w.Write(pkt); werr != nil {
 					return wrote, werr
 				}
@@ -263,10 +275,25 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 				return wrote, nil
 			}
 		}
+		return wrote, nil
 	}
 
-	rc := http.NewResponseController(w)
-	var deadlineSet time.Time
+	drainMarket := func(limit int) (wrote bool, err error) {
+		for i := 0; i < limit; i++ {
+			select {
+			case pkt := <-sub.ch:
+				refreshDeadline()
+				if _, werr := w.Write(pkt); werr != nil {
+					return wrote, werr
+				}
+				wrote = true
+			default:
+				return wrote, nil
+			}
+		}
+		return wrote, nil
+	}
+
 	var resyncTimer *time.Timer
 	var resyncC <-chan time.Time
 	defer func() {
@@ -276,15 +303,18 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 	}()
 	ctxDone := r.Context().Done()
 	for {
-		// The 45 s write deadline is refreshed here, once per loop turn; on an idle stream it relies on the 10 s
-		// keep-alive ticker below waking the loop (45 s >> 10 s + 5 s refresh gap).
-		if now := time.Now(); now.Sub(deadlineSet) >= localStreamWriteDeadlineRefresh {
-			deadlineSet = now
-			_ = rc.SetWriteDeadline(now.Add(localStreamWriteDeadline)) // unsupported writers just ignore it
+		select {
+		case <-ctxDone:
+			return
+		default:
 		}
+		// The 45 s write deadline is refreshed here, once per loop turn (and inside drainPrio/drainMarket);
+		// on an idle stream it relies on the 10 s keep-alive ticker waking the loop.
+		refreshDeadline()
 		if sub.needResync.Load() {
 			if pkts := c.binHub.resyncPackets(sub); pkts != nil {
 				for _, pkt := range pkts {
+					refreshDeadline()
 					if _, err := w.Write(pkt); err != nil {
 						return
 					}
@@ -300,10 +330,16 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 				resyncC = resyncTimer.C
 			}
 		}
-		if wrote, err := drainPrio(); err != nil {
+		if wrote, err := drainPrio(localStreamMaxPrioBurst); err != nil {
 			return
 		} else if wrote {
+			// Bound prio bursts before servicing sub.ch so 0x3A floods never starve 0x21 ticks,
+			// and coalesce the entire batch into a single flusher.Flush().
+			if _, err := drainMarket(localStreamMaxMarketBurst); err != nil {
+				return
+			}
 			flusher.Flush()
+			continue
 		}
 
 		select {
@@ -312,44 +348,31 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 		case <-resyncC:
 			resyncC = nil
 		case pkt := <-sub.prioCh:
+			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {
 				return
 			}
-			if _, err := drainPrio(); err != nil {
+			if _, err := drainPrio(localStreamMaxPrioBurst - 1); err != nil {
+				return
+			}
+			if _, err := drainMarket(localStreamMaxMarketBurst); err != nil {
 				return
 			}
 			flusher.Flush()
 		case pkt := <-sub.ch:
-			if _, err := drainPrio(); err != nil {
-				return
-			}
+			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {
 				return
 			}
-			// Drain any immediately queued packets (always checking prioCh first) before flushing syscall
-			for i := 0; i < 31; i++ {
-				if _, err := drainPrio(); err != nil {
-					return
-				}
-				select {
-				case nextPkt := <-sub.prioCh:
-					if _, err := w.Write(nextPkt); err != nil {
-						return
-					}
-				case nextPkt := <-sub.ch:
-					if _, err := w.Write(nextPkt); err != nil {
-						return
-					}
-				default:
-					goto flushNow
-				}
+			if _, err := drainMarket(localStreamMaxMarketBurst - 1); err != nil {
+				return
 			}
-		flushNow:
-			if _, err := drainPrio(); err != nil {
+			if _, err := drainPrio(localStreamMaxPrioBurst); err != nil {
 				return
 			}
 			flusher.Flush()
 		case <-keepAlive.C:
+			refreshDeadline()
 			if _, err := w.Write(noopPing); err != nil {
 				return
 			}

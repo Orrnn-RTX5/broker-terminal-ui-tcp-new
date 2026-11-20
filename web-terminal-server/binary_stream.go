@@ -38,19 +38,26 @@ type webBinaryStreamSub struct {
 	verified   bool
 
 	// Recent 0x3A payload hashes (length + FNV-1a): the same event can arrive over an account tunnel and over
-	// the direct :8190 push loop; a tab must see it once. Touched only on the (rare) trade-event path.
-	tradeMu   sync.Mutex
-	tradeSeen map[uint64]int64
+	// the direct :8190 push loop; a tab must see it once. Backed by an O(1) map + ring buffer under tradeMu.
+	tradeMu       sync.Mutex
+	tradeSeen     map[uint64]int64
+	tradeRing     []tradeDedupeEntry
+	tradeRingHead int
+}
+
+type tradeDedupeEntry struct {
+	sum uint64
+	at  int64
 }
 
 const (
-	tradeDedupeMax    = 64
+	tradeDedupeMax    = 4096
 	tradeDedupeWindow = 2 * time.Second
 )
 
 // isDuplicateTradeEvent records the event hash and reports whether the same event was already delivered to
-// this tab within tradeDedupeWindow. At most tradeDedupeMax hashes are kept (expired ones go first, then the
-// oldest), so a burst of well over a handful of events is still deduplicated.
+// this tab within tradeDedupeWindow. Backed by an O(1) map + ring buffer capped at tradeDedupeMax entries
+// so high-frequency bursts never overflow dedupe or scan linearly.
 func (s *webBinaryStreamSub) isDuplicateTradeEvent(sum uint64, now int64) bool {
 	s.tradeMu.Lock()
 	defer s.tradeMu.Unlock()
@@ -58,23 +65,19 @@ func (s *webBinaryStreamSub) isDuplicateTradeEvent(sum uint64, now int64) bool {
 		return true
 	}
 	if s.tradeSeen == nil {
-		s.tradeSeen = make(map[uint64]int64, tradeDedupeMax)
+		s.tradeSeen = make(map[uint64]int64, 64)
 	}
-	if len(s.tradeSeen) >= tradeDedupeMax {
-		for k, at := range s.tradeSeen {
-			if now-at >= int64(tradeDedupeWindow) {
-				delete(s.tradeSeen, k)
-			}
+	if len(s.tradeRing) < tradeDedupeMax {
+		s.tradeRing = append(s.tradeRing, tradeDedupeEntry{sum: sum, at: now})
+	} else {
+		old := s.tradeRing[s.tradeRingHead]
+		if curAt, exists := s.tradeSeen[old.sum]; exists && curAt == old.at {
+			delete(s.tradeSeen, old.sum)
 		}
-		if len(s.tradeSeen) >= tradeDedupeMax {
-			var oldestK uint64
-			oldest := now + 1
-			for k, at := range s.tradeSeen {
-				if at < oldest {
-					oldestK, oldest = k, at
-				}
-			}
-			delete(s.tradeSeen, oldestK)
+		s.tradeRing[s.tradeRingHead] = tradeDedupeEntry{sum: sum, at: now}
+		s.tradeRingHead++
+		if s.tradeRingHead >= tradeDedupeMax {
+			s.tradeRingHead = 0
 		}
 	}
 	s.tradeSeen[sum] = now
@@ -110,7 +113,7 @@ type webBinaryMarketHub struct {
 	//   onWarm:    called once per (re)dial on the first market frame; moves waiting tabs onto this hub.
 	// Guest hub only: tradePeers visits the account hubs a 0x3A event for eventLogin must also reach.
 	tradeSink *webBinaryMarketHub
-	onAuth    func()
+	onAuth    func(firstPayload []byte)
 	acctOwner *accountTunnel // the account tunnel this hub belongs to (nil on the guest hub)
 	// committed: a market frame arrived after the ping barrier that follows this tunnel's latest 0x3B (so the
 	// access server has applied the subscription's gate); tabs only move onto a committed hub. armedAt: unix
@@ -233,7 +236,9 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 	case rtx5tcp.FrameBinaryTradeEvent:
 		h.framesRx.Add(1)
 		if len(payload) >= 10 {
-			h.noteAuthed(int64(binary.LittleEndian.Uint64(payload[2:10])))
+			if h.noteAuthed(int64(binary.LittleEndian.Uint64(payload[2:10])), payload) {
+				return
+			}
 		}
 		if h.tradeSink != nil {
 			h.tradeSink.broadcastTradeEvent(payload)
@@ -245,18 +250,22 @@ func (h *webBinaryMarketHub) handleControlFrame(frameType uint8, payload []byte)
 
 // noteAuthed proves the tunnel's subscription on its first matching 0x3A: the access server only pushes events
 // to a tunnel whose token it accepted (a rejected token can still receive the guest market feed, so market
-// frames prove nothing). It runs before the event is delivered, so the tab's claimed login is bound in time to
-// receive that very event. A login tunnel only counts an event of its own login; a wildcard tunnel any event.
-func (h *webBinaryMarketHub) noteAuthed(eventLogin int64) {
+// frames prove nothing). When triggered, onAuth runs asynchronously (off MuxSession.ServeLoop) and delivers
+// firstPayload once reconcileTunnel has bound the tab's effective login. Returns true when onAuth took
+// ownership of delivering payload.
+func (h *webBinaryMarketHub) noteAuthed(eventLogin int64, payload []byte) bool {
 	if h.onAuth == nil || h.authed.Load() {
-		return
+		return false
 	}
 	if o := h.acctOwner; o != nil && o.login != 0 && eventLogin != o.login {
-		return
+		return false
 	}
 	if h.authed.CompareAndSwap(false, true) {
-		h.onAuth()
+		cp := append([]byte(nil), payload...)
+		h.onAuth(cp)
+		return true
 	}
+	return false
 }
 
 // broadcastMarketPacket sends pkt to every tab whose market source is this hub. Sends are non-blocking channel
@@ -397,6 +406,8 @@ const (
 	webStreamWriteDeadline        = 45 * time.Second
 	webStreamWriteDeadlineRefresh = 5 * time.Second
 	webResyncMinGap               = time.Second
+	webStreamMaxPrioBurst         = 24
+	webStreamMaxMarketBurst       = 32
 )
 
 func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *http.Request) {
@@ -478,10 +489,20 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	defer keepAlive.Stop()
 	noopPing := []byte{rtx5tcp.FramePing, 0x00, 0x00, 0x00}
 
-	drainPrio := func() (wrote bool, err error) {
-		for {
+	rc := http.NewResponseController(w)
+	var deadlineSet time.Time
+	refreshDeadline := func() {
+		if now := time.Now(); now.Sub(deadlineSet) >= webStreamWriteDeadlineRefresh {
+			deadlineSet = now
+			_ = rc.SetWriteDeadline(now.Add(webStreamWriteDeadline)) // unsupported writers just ignore it
+		}
+	}
+
+	drainPrio := func(limit int) (wrote bool, err error) {
+		for i := 0; i < limit; i++ {
 			select {
 			case pkt := <-sub.prioCh:
+				refreshDeadline()
 				if _, werr := w.Write(pkt); werr != nil {
 					return wrote, werr
 				}
@@ -490,10 +511,25 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 				return wrote, nil
 			}
 		}
+		return wrote, nil
 	}
 
-	rc := http.NewResponseController(w)
-	var deadlineSet time.Time
+	drainMarket := func(limit int) (wrote bool, err error) {
+		for i := 0; i < limit; i++ {
+			select {
+			case pkt := <-sub.ch:
+				refreshDeadline()
+				if _, werr := w.Write(pkt); werr != nil {
+					return wrote, werr
+				}
+				wrote = true
+			default:
+				return wrote, nil
+			}
+		}
+		return wrote, nil
+	}
+
 	var resyncTimer *time.Timer
 	var resyncC <-chan time.Time
 	defer func() {
@@ -503,15 +539,18 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	}()
 	ctxDone := r.Context().Done()
 	for {
-		// The 45 s write deadline is refreshed here, once per loop turn; on an idle stream it relies on the 10 s
-		// keep-alive ticker below waking the loop (45 s >> 10 s + 5 s refresh gap).
-		if now := time.Now(); now.Sub(deadlineSet) >= webStreamWriteDeadlineRefresh {
-			deadlineSet = now
-			_ = rc.SetWriteDeadline(now.Add(webStreamWriteDeadline)) // unsupported writers just ignore it
+		select {
+		case <-ctxDone:
+			return
+		default:
 		}
+		// The 45 s write deadline is refreshed here, once per loop turn (and inside drainPrio/drainMarket);
+		// on an idle stream it relies on the 10 s keep-alive ticker waking the loop.
+		refreshDeadline()
 		if sub.needResync.Load() {
 			if pkts := sub.resyncPackets(); pkts != nil {
 				for _, pkt := range pkts {
+					refreshDeadline()
 					if _, err := w.Write(pkt); err != nil {
 						return
 					}
@@ -527,10 +566,16 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 				resyncC = resyncTimer.C
 			}
 		}
-		if wrote, err := drainPrio(); err != nil {
+		if wrote, err := drainPrio(webStreamMaxPrioBurst); err != nil {
 			return
 		} else if wrote {
+			// Bound prio bursts before servicing sub.ch so 0x3A floods never starve 0x21 ticks,
+			// and coalesce the entire batch into a single flusher.Flush().
+			if _, err := drainMarket(webStreamMaxMarketBurst); err != nil {
+				return
+			}
 			flusher.Flush()
+			continue
 		}
 
 		select {
@@ -539,43 +584,31 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		case <-resyncC:
 			resyncC = nil
 		case pkt := <-sub.prioCh:
+			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {
 				return
 			}
-			if _, err := drainPrio(); err != nil {
+			if _, err := drainPrio(webStreamMaxPrioBurst - 1); err != nil {
+				return
+			}
+			if _, err := drainMarket(webStreamMaxMarketBurst); err != nil {
 				return
 			}
 			flusher.Flush()
 		case pkt := <-sub.ch:
-			if _, err := drainPrio(); err != nil {
-				return
-			}
+			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {
 				return
 			}
-			for i := 0; i < 31; i++ {
-				if _, err := drainPrio(); err != nil {
-					return
-				}
-				select {
-				case nextPkt := <-sub.prioCh:
-					if _, err := w.Write(nextPkt); err != nil {
-						return
-					}
-				case nextPkt := <-sub.ch:
-					if _, err := w.Write(nextPkt); err != nil {
-						return
-					}
-				default:
-					goto flushNow
-				}
+			if _, err := drainMarket(webStreamMaxMarketBurst - 1); err != nil {
+				return
 			}
-		flushNow:
-			if _, err := drainPrio(); err != nil {
+			if _, err := drainPrio(webStreamMaxPrioBurst); err != nil {
 				return
 			}
 			flusher.Flush()
 		case <-keepAlive.C:
+			refreshDeadline()
 			if _, err := w.Write(noopPing); err != nil {
 				return
 			}

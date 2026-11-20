@@ -123,7 +123,7 @@ type TradeTableRowProps = Pick<TradeTableProps,
 };
 
 // Row windowing: above WINDOW_THRESHOLD rows only the visible rows (+ overscan) are rendered.
-const WINDOW_THRESHOLD = 120;
+const WINDOW_THRESHOLD = 40;
 const WINDOW_OVERSCAN = 10;
 const WINDOW_DEFAULT_ROWS = 30;
 const WINDOW_DEFAULT_ROW_HEIGHT = 30;

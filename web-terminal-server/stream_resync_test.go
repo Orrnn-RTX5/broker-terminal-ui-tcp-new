@@ -273,3 +273,55 @@ func TestResyncIsRateLimitedPerTab(t *testing.T) {
 		t.Fatal("the deferred resync must run once the gap has passed")
 	}
 }
+
+// Trade dedupe ring buffer handles 500+ rapid trades without overflowing and stays bounded at tradeDedupeMax (4096).
+func TestTradeDedupeRingBufferHandlesBurstAndEvictsOldest(t *testing.T) {
+	sub := &webBinaryStreamSub{}
+	now := time.Now().UnixNano()
+	for i := uint64(1); i <= 500; i++ {
+		if sub.isDuplicateTradeEvent(i, now) {
+			t.Fatalf("first occurrence of %d marked duplicate", i)
+		}
+	}
+	for i := uint64(1); i <= 500; i++ {
+		if !sub.isDuplicateTradeEvent(i, now+int64(100*time.Millisecond)) {
+			t.Fatalf("duplicate occurrence of %d was not deduplicated", i)
+		}
+	}
+	for i := uint64(501); i <= uint64(tradeDedupeMax+100); i++ {
+		if sub.isDuplicateTradeEvent(i, now+int64(200*time.Millisecond)) {
+			t.Fatalf("first occurrence of %d marked duplicate", i)
+		}
+	}
+	if len(sub.tradeSeen) > tradeDedupeMax {
+		t.Fatalf("tradeSeen exceeded cap: %d > %d", len(sub.tradeSeen), tradeDedupeMax)
+	}
+	// Oldest entry (1) should have been evicted; newest should still be deduplicated.
+	if sub.isDuplicateTradeEvent(1, now+int64(300*time.Millisecond)) {
+		t.Fatal("evicted entry 1 should not be marked duplicate")
+	}
+	if !sub.isDuplicateTradeEvent(uint64(tradeDedupeMax+100), now+int64(300*time.Millisecond)) {
+		t.Fatal("newest entry must still be deduplicated")
+	}
+}
+
+// keepAccountTunnelsWarm automatically renews 0x3B on a silent, ping-alive committed tunnel without a page refresh.
+func TestKeepAccountTunnelsWarmAutoRenewsSilentCommittedTunnel(t *testing.T) {
+	e := newAcctEnv(t)
+	s := e.newSub("tab-auto-renew", "")
+	c := e.loginTab(t, s, 888, "tok", "ACC")
+	e.commit(t, c, "terminal", 888, "tok")
+	tn := e.tun("terminal", 888, "tok")
+	base := c.subs.Load()
+
+	prev := accountSubRenewQuiet
+	t.Cleanup(func() { accountSubRenewQuiet = prev })
+	accountSubRenewQuiet = 50 * time.Millisecond
+	time.Sleep(80 * time.Millisecond)
+
+	e.link.keepAccountTunnelsWarm()
+	waitFor(t, "auto-renewed 0x3B via keepAccountTunnelsWarm", func() bool { return c.subs.Load() == base+1 })
+	if !tn.hub.committed.Load() || s.src.Load() != tn.hub {
+		t.Fatal("auto-renewal must keep tunnel committed and tab attached")
+	}
+}

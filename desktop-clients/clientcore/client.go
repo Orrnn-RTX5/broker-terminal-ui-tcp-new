@@ -101,8 +101,9 @@ type DesktopClient struct {
 	masterPubHex string
 	ota          *clientOTAEngine
 	binHub       *clientBinaryMarketHub
-	// consecutive keep-alive ping failures of the order session (backgroundReconnectLoop)
-	orderStrikes pingStrikes
+	// consecutive keep-alive ping failures of activeMux and orderMux (backgroundReconnectLoop)
+	activeStrikes pingStrikes
+	orderStrikes  pingStrikes
 
 	mu                       sync.RWMutex
 	targetTCPAddr            string
@@ -526,7 +527,7 @@ func (c *DesktopClient) backgroundReconnectLoop() {
 		}
 
 		if sess, err := c.getOrDialSession(); err == nil && sess != nil {
-			if rtt, perr := pingOrCloseSession(sess, 4*time.Second); perr == nil && rtt > 0 {
+			if rtt, perr := c.activeStrikes.ping(sess, 4*time.Second, activePingFailLimit); perr == nil && rtt > 0 {
 				c.mu.Lock()
 				c.lastRTTMs = rtt
 				if c.avgRTTMs <= 0 {
@@ -574,9 +575,12 @@ func pingOrCloseSession(s *rtx5tcp.MuxSession, timeout time.Duration) (float64, 
 	return rtt, err
 }
 
-// orderPingFailLimit: the order session closes only after this many consecutive failed keep-alive pings, so an
-// in-flight order reply survives one >3 s stall. The market tunnel closes on the first failure.
-const orderPingFailLimit = 2
+// activePingFailLimit / orderPingFailLimit: both activeMux and orderMux close only after 2 consecutive
+// failed keep-alive pings, so transient stalls under load never trigger a 1-strike tunnel kill.
+const (
+	activePingFailLimit = 2
+	orderPingFailLimit  = 2
+)
 
 // pingStrikes counts consecutive failed keep-alive pings of one session; any successful ping resets it, and the
 // count is per session pointer (a redialed session starts at 0).

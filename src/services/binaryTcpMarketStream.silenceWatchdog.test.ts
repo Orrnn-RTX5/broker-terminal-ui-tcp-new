@@ -14,12 +14,17 @@ vi.mock('./brokerSession', () => ({
   onSessionChange: () => undefined,
 }));
 
-import { binaryTcpMarketStream, STREAM_SILENCE_RECONNECT_MS } from './binaryTcpMarketStream';
+import { binaryTcpMarketStream, FRAME_BINARY_TICK_BATCH, STREAM_SILENCE_RECONNECT_MS } from './binaryTcpMarketStream';
 
-type StreamMode = 'silent' | 'keepalive';
+type StreamMode = 'silent' | 'ping-only' | 'market-data';
 
-// A stream body whose reader either never delivers a byte (a stalled proxy/socket) or delivers one FramePing
-// keepalive every 10 s like the Go stream servers. Both end with an AbortError when the request is aborted.
+// Minimal valid 0x21 tick-batch frame (header 4 bytes + count u16=0 -> payloadLen=2).
+const MARKET_DATA_FRAME = new Uint8Array([FRAME_BINARY_TICK_BATCH, 0x00, 0x02, 0x00, 0x00, 0x00]);
+// 0x05 keepalive ping frame (must NOT reset market-data silence watchdog).
+const PING_FRAME = new Uint8Array([0x05, 0x00, 0x00, 0x00]);
+
+// A stream body whose reader either never delivers a byte (a stalled proxy/socket), delivers only 0x05
+// keepalive pings every 10 s (dead upstream tick feed), or delivers 0x21 market-data frames every 10 s.
 function streamBody(mode: StreamMode, signal: AbortSignal) {
   return {
     getReader: () => ({
@@ -27,10 +32,13 @@ function streamBody(mode: StreamMode, signal: AbortSignal) {
         const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
         if (signal.aborted) { onAbort(); return; }
         signal.addEventListener('abort', onAbort, { once: true });
-        if (mode === 'keepalive') {
+        if (mode === 'ping-only' || mode === 'market-data') {
           setTimeout(() => {
             signal.removeEventListener('abort', onAbort);
-            resolve({ value: new Uint8Array([0x01, 0x00, 0x00, 0x00]), done: false });
+            resolve({
+              value: mode === 'market-data' ? MARKET_DATA_FRAME : PING_FRAME,
+              done: false,
+            });
           }, 10_000);
         }
       }),
@@ -47,7 +55,7 @@ describe('BinaryTcpMarketStream silence watchdog', () => {
     streamCalls = 0;
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/__rtx5_binary_stream') {
-        const mode = modes[streamCalls] ?? 'keepalive';
+        const mode = modes[streamCalls] ?? 'market-data';
         streamCalls++;
         return { ok: true, status: 200, body: streamBody(mode, init!.signal as AbortSignal) };
       }
@@ -60,8 +68,8 @@ describe('BinaryTcpMarketStream silence watchdog', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reconnects a stream that delivers nothing, and keeps a stream that delivers keepalives', async () => {
-    modes.push('silent', 'keepalive');
+  it('reconnects silent and ping-only streams, and keeps a stream delivering market-data frames', async () => {
+    modes.push('silent', 'ping-only', 'market-data');
     const states: boolean[] = [];
     const off = binaryTcpMarketStream.onStateChange((connected) => { states.push(connected); });
     try {
@@ -79,9 +87,15 @@ describe('BinaryTcpMarketStream silence watchdog', () => {
       expect(states).toContain(false);
       expect(binaryTcpMarketStream.isConnected()).toBe(true);
 
-      // The new stream delivers a keepalive every 10 s: it is never treated as stalled.
+      // Stream 2 only sends 0x05 keepalive pings every 10s (dead upstream tick feed):
+      // pings must NOT reset the silence watchdog, so it reconnects cleanly after 30s.
+      await vi.advanceTimersByTimeAsync(STREAM_SILENCE_RECONNECT_MS + 6_000);
+      expect(streamCalls).toBe(3);
+      expect(binaryTcpMarketStream.isConnected()).toBe(true);
+
+      // Stream 3 delivers actual 0x21 market-data frames every 10 s: never treated as stalled.
       await vi.advanceTimersByTimeAsync(STREAM_SILENCE_RECONNECT_MS * 3);
-      expect(streamCalls).toBe(2);
+      expect(streamCalls).toBe(3);
       expect(binaryTcpMarketStream.isConnected()).toBe(true);
     } finally {
       off();

@@ -564,7 +564,14 @@ func (l *brokerLink) getOrCreateAccountTunnel(key accountKey, creator, ip string
 			t := &accountTunnel{key: key, login: key.login, creator: creator, creatorIP: ip, link: l, hub: newWebBinaryMarketHub()}
 			t.hub.acctOwner = t
 			t.hub.tradeSink = l.binHub
-			t.hub.onAuth = func() { l.reconcileTunnel(t) } // synchronous: the event being delivered needs the bound login
+			t.hub.onAuth = func(firstPayload []byte) {
+				go func() {
+					l.reconcileTunnel(t)
+					if len(firstPayload) > 0 {
+						l.binHub.broadcastTradeEvent(firstPayload)
+					}
+				}()
+			} // async so MuxSession.ServeLoop() is never blocked; delivers first 0x3A right after binding
 			t.born.Store(time.Now().UnixNano())
 			t.uncommittedSince.Store(t.born.Load())
 			t.touch()
@@ -689,6 +696,7 @@ func (l *brokerLink) keepAccountTunnelsWarm() {
 		list = append(list, t)
 	}
 	l.acctMu.RUnlock()
+	now := time.Now()
 	for _, t := range list {
 		if !t.live() {
 			l.ensureAccountTunnel(t)
@@ -701,6 +709,10 @@ func (l *brokerLink) keepAccountTunnelsWarm() {
 			go t.resend()
 			continue
 		}
+		if t.renewDue(now) {
+			t.lastRenew.Store(now.UnixNano())
+			go t.renewSub()
+		}
 		if t.pinging.CompareAndSwap(false, true) {
 			go func(t *accountTunnel) {
 				defer t.pinging.Store(false)
@@ -710,7 +722,7 @@ func (l *brokerLink) keepAccountTunnelsWarm() {
 			}(t)
 		}
 	}
-	l.recreateClaimedTunnels(time.Now())
+	l.recreateClaimedTunnels(now)
 }
 
 // recreateClaimedTunnels re-creates the tunnel of every tab whose claim is set but whose tunnel was closed

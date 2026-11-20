@@ -44,8 +44,16 @@ type TradeLevelCache = Record<string, CachedTradeLevels>;
 const TRADE_HISTORY_LEVEL_CACHE_KEY = 'rtx5_trade_history_levels_v1';
 const MAX_CACHE_AGE_MS = 45 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ROWS = 1000;
+const MAX_IN_MEMORY_ROWS_BEFORE_PRUNE = 2000;
+export const TRADE_HISTORY_LEVEL_CACHE_FLUSH_MS = 500;
 
 const isBrowser = () => typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+
+let memoryCache: TradeLevelCache | null = null;
+let memoryCacheSize = 0;
+let dirty = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let lifecycleListenersBound = false;
 
 const finiteNumber = (value: unknown): number | undefined => {
   const next = Number(value);
@@ -104,18 +112,27 @@ const scopedKey = (key: string, login?: number | string | null): string => `${no
 
 const readCache = (): TradeLevelCache => {
   if (!isBrowser()) return {};
+  if (memoryCache !== null) return memoryCache;
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem(TRADE_HISTORY_LEVEL_CACHE_KEY) || '{}');
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as TradeLevelCache : {};
+    memoryCache = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as TradeLevelCache
+      : {};
   } catch {
-    return {};
+    memoryCache = {};
   }
+  memoryCacheSize = Object.keys(memoryCache).length;
+  return memoryCache;
 };
 
 const writeCache = (cache: TradeLevelCache) => {
   if (!isBrowser()) return;
-  window.localStorage.setItem(TRADE_HISTORY_LEVEL_CACHE_KEY, JSON.stringify(cache));
+  try {
+    window.localStorage.setItem(TRADE_HISTORY_LEVEL_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore storage quota / security errors so trading is never blocked.
+  }
 };
 
 const pruneCache = (cache: TradeLevelCache): TradeLevelCache => {
@@ -126,6 +143,46 @@ const pruneCache = (cache: TradeLevelCache): TradeLevelCache => {
     .slice(0, MAX_CACHE_ROWS);
 
   return Object.fromEntries(entries);
+};
+
+export const flushTradeHistoryLevelCache = (): void => {
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  if (!dirty || memoryCache === null || !isBrowser()) return;
+  dirty = false;
+  memoryCache = pruneCache(memoryCache);
+  memoryCacheSize = Object.keys(memoryCache).length;
+  writeCache(memoryCache);
+};
+
+const bindLifecycleFlushListeners = (): void => {
+  if (lifecycleListenersBound || !isBrowser() || typeof window.addEventListener !== 'function') return;
+  lifecycleListenersBound = true;
+  window.addEventListener('pagehide', flushTradeHistoryLevelCache);
+  window.addEventListener('beforeunload', flushTradeHistoryLevelCache);
+};
+
+const schedulePersistCache = (): void => {
+  dirty = true;
+  bindLifecycleFlushListeners();
+  if (persistTimer !== null) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    flushTradeHistoryLevelCache();
+  }, TRADE_HISTORY_LEVEL_CACHE_FLUSH_MS);
+};
+
+/** Test-only reset for module-level memory cache and pending flush timer. */
+export const resetTradeHistoryLevelCacheForTests = (): void => {
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  memoryCache = null;
+  memoryCacheSize = 0;
+  dirty = false;
 };
 
 const getRecordPositionId = (record: TradeLevelRecord): number | undefined => (
@@ -212,7 +269,7 @@ export const rememberTradeHistoryPositionLevels = (
 ) => {
   if (!isBrowser() || positions.length === 0) return;
 
-  const cache = pruneCache(readCache());
+  let cache = readCache();
   const now = Date.now();
   let changed = false;
 
@@ -233,12 +290,20 @@ export const rememberTradeHistoryPositionLevels = (
 
     for (const key of keys) {
       if (!levelsChanged(cache[key], next)) continue;
+      if (cache[key] === undefined) memoryCacheSize += 1;
       cache[key] = next;
       changed = true;
     }
   }
 
-  if (changed) writeCache(pruneCache(cache));
+  if (changed) {
+    if (memoryCacheSize > MAX_IN_MEMORY_ROWS_BEFORE_PRUNE) {
+      cache = pruneCache(cache);
+      memoryCache = cache;
+      memoryCacheSize = Object.keys(cache).length;
+    }
+    schedulePersistCache();
+  }
 };
 
 const hasTradeLevel = (value: unknown): boolean => {

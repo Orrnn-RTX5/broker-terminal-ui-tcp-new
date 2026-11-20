@@ -102,7 +102,7 @@ interface UseTradingChartTradeOverlayRendererOptions {
   symbol: string;
   timeframe: Timeframe;
   tr: <T>(source: T, values?: Record<string, unknown>) => T;
-  tradeControlLiveUpdatersRef: RefObject<Array<() => void>>;
+  tradeControlLiveUpdatersRef: RefObject<Array<(positionsByTicket?: ReadonlyMap<number, TradePositionRecord>) => void>>;
   tradeHistoryRefreshTimerRef: RefObject<number | null>;
   tradeLevelCrossRefreshPendingRef: RefObject<Set<string>>;
   tradeLevelLastKnownLevelsRef: RefObject<Map<string, TradeLevelOverride>>;

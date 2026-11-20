@@ -88,9 +88,17 @@ describe('TradeTable row windowing', () => {
   });
 
   it('renders every row below the threshold without spacers', () => {
-    const view = render(<TradeTable {...createProps(makeList(100))} />);
-    expect(renderedRowCount(view.container)).toBe(100);
+    const view = render(<TradeTable {...createProps(makeList(30))} />);
+    expect(renderedRowCount(view.container)).toBe(30);
     expect(view.container.querySelector('[data-rtx-spacer]')).toBeNull();
+  });
+
+  it('windowing virtualizes 100 open positions above the 40-row threshold', () => {
+    const view = render(<TradeTable {...createProps(makeList(100))} />);
+    const count = renderedRowCount(view.container);
+    expect(count).toBeGreaterThan(0);
+    expect(count).toBeLessThan(100);
+    expect(view.container.querySelector('tbody tr[data-rtx-spacer]')).not.toBeNull();
   });
 
   it('renders only the visible window of a long list, with spacers keeping the scroll height', () => {
@@ -128,10 +136,10 @@ describe('TradeTable row windowing', () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[rows.length - 1].textContent).toContain('1000');
 
-    // Shrink below the window threshold: all rows render, no spacers.
-    const small = makeList(50);
-    view.rerender(<TradeTable {...props} displayedLivePositions={small} metricsPositions={small} openCount={50} />);
-    expect(renderedRowCount(view.container)).toBe(50);
+    // Shrink below the window threshold (40): all rows render, no spacers.
+    const small = makeList(30);
+    view.rerender(<TradeTable {...props} displayedLivePositions={small} metricsPositions={small} openCount={30} />);
+    expect(renderedRowCount(view.container)).toBe(30);
     expect(view.container.querySelector('[data-rtx-spacer]')).toBeNull();
 
     view.rerender(<TradeTable {...props} displayedLivePositions={[]} metricsPositions={[]} openCount={0} />);
