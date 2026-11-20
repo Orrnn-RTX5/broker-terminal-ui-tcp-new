@@ -3,6 +3,7 @@ import type { Coordinate, IChartApi, ISeriesApi, SeriesType } from 'lightweight-
 import { isTrendDrawingInputActive } from '../../../drawing-tools/drawingInteractionPriority';
 import api from '../../../services/api';
 import { useAppStore } from '../../../store/useAppStore';
+import { getLivePositionPrice, getLivePositionProfit } from '../../../services/livePositionMetrics';
 import { rememberTradeHistoryPositionLevels } from '../../../utils/tradeHistoryLevelCache';
 import { describeProtectionRefusal, formatOrderError } from '../../../utils/orderError';
 import {
@@ -799,7 +800,8 @@ export const useTradingChartTradeLevelDrag = ({
           ))
           : null;
         const previewPositionRaw = previewPosition as unknown as Record<string, unknown> | null;
-        const previewBackendPnl = Number(previewPosition?.unrealizedPnL ?? previewPosition?.profit ?? previewPosition?.unrealized_pl);
+        const previewLivePnl = previewPosition ? getLivePositionProfit(previewPosition) : null;
+        const previewLivePrice = (previewPosition ? getLivePositionPrice(previewPosition) : null) ?? liveCurrentPrice;
         const previewMoney = estimateTradeLevelMoney({
           symbol: tradeObj.symbol,
           side: tradeObj.side,
@@ -807,8 +809,8 @@ export const useTradingChartTradeLevelDrag = ({
           entryPrice: tradeObj.entryPrice,
           levelPrice: price,
           digits: resolvedPriceDigitsRef.current,
-          backendPnl: Number.isFinite(previewBackendPnl) ? previewBackendPnl : null,
-          currentPrice: liveCurrentPrice,
+          backendPnl: previewLivePnl !== null && Number.isFinite(previewLivePnl) ? previewLivePnl : null,
+          currentPrice: previewLivePrice,
           contractSize: Number(previewPositionRaw?.contractSize ?? previewPositionRaw?.contract_size) || undefined,
         });
         const previewCurrency = String(previewState.account?.currency || 'USD').trim().toUpperCase() || 'USD';

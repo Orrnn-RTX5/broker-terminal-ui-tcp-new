@@ -48,6 +48,9 @@ import {
 type Watchlist = ReturnType<typeof useWatchlistStore.getState>['watchlists'][number];
 type TradeProtectionState = Pick<ReturnType<typeof useAppStore.getState>, 'positions' | 'orders'>;
 
+/** Rows drawn in full above and below the visible Market Watch rows. */
+export const MARKET_WATCH_ROW_OVERSCAN = 10;
+
 const createProtectedTradeSymbolSelector = () => {
   let previousPositions: TradeProtectionState['positions'] | undefined;
   let previousOrders: TradeProtectionState['orders'] | undefined;
@@ -284,6 +287,28 @@ export const useMarketWatchPanelModel = ({
     [rows],
   );
   const marketWatchSymbolSet = useMemo(() => new Set(rows), [rows]);
+  // Rows drawn in full: the visible rows plus an overscan band. The grid draws every other row
+  // as a cheap placeholder (same height and ref, no store subscriptions), so per-tick store
+  // writes no longer run one selector per symbol. null = no visibility report yet (first frame,
+  // or no layout available): draw every row in full.
+  const fullRowSymbolSet = useMemo<ReadonlySet<string> | null>(() => {
+    if (visibleRowSymbols.length === 0 || rows.length === 0) return null;
+    let first = Number.POSITIVE_INFINITY;
+    let last = Number.NEGATIVE_INFINITY;
+    for (const symbol of visibleRowSymbols) {
+      const index = marketWatchSymbolOrder.get(symbol);
+      if (index === undefined) continue;
+      if (index < first) first = index;
+      if (index > last) last = index;
+    }
+    if (!Number.isFinite(first)) return null;
+    const from = Math.max(0, first - MARKET_WATCH_ROW_OVERSCAN);
+    const to = Math.min(rows.length - 1, last + MARKET_WATCH_ROW_OVERSCAN);
+    if (to - from + 1 >= rows.length) return null;
+    const drawn = new Set<string>();
+    for (let index = from; index <= to; index += 1) drawn.add(rows[index]);
+    return drawn;
+  }, [marketWatchSymbolOrder, rows, visibleRowSymbols]);
   const marketWatchRowRefCallbacks = useMemo(
     () => new Map(
       (marketWatchRowsKey ? marketWatchRowsKey.split('\u0000') : []).map((symbol) => [
@@ -432,6 +457,7 @@ export const useMarketWatchPanelModel = ({
     liveDisplayMetadataRevision,
     liveQuoteSymbolSet,
     liveTickCount,
+    fullRowSymbolSet,
     marketWatchRowRefCallbacks,
     marketWatchSymbolSet,
     persistedSymbols,

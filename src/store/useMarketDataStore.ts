@@ -100,6 +100,9 @@ interface MarketDataState {
   updateBulkTicks: (ticks: Tick[]) => void;
   subscribeSymbol: (symbol: string) => void;
   unsubscribeSymbol: (symbol: string) => void;
+  /** Bulk form: one store write for the whole list (Market Watch mounts/changes S symbols). */
+  subscribeSymbols: (symbols: readonly string[]) => void;
+  unsubscribeSymbols: (symbols: readonly string[]) => void;
   aggregateOHLCV: (symbol: string) => void;
   clearTickBuffer: (symbol: string) => void;
   clearSymbolData: (symbol: string) => void;
@@ -694,6 +697,36 @@ export const useMarketDataStore = create<MarketDataState>()(
             const newSubscribed = new Set(state.subscribedSymbols);
             newSubscribed.delete(symbol);
             return { subscribedSymbols: newSubscribed };
+          });
+        },
+
+        // One store write for a whole list. The per-symbol form copies the Set and the
+        // symbolData map once per symbol, which is O(S^2) when Market Watch (re)subscribes
+        // S symbols. symbolData is copied only if a symbol has no entry yet.
+        subscribeSymbols: (symbols) => {
+          if (symbols.length === 0) return;
+          set((state) => {
+            const nextSubscribed = new Set(state.subscribedSymbols);
+            let nextData: Record<string, SymbolData> | null = null;
+            for (const symbol of symbols) {
+              nextSubscribed.add(symbol);
+              if (!state.symbolData[symbol] && !nextData?.[symbol]) {
+                if (!nextData) nextData = { ...state.symbolData };
+                nextData[symbol] = createEmptySymbolData();
+              }
+            }
+            return nextData
+              ? { subscribedSymbols: nextSubscribed, symbolData: nextData }
+              : { subscribedSymbols: nextSubscribed };
+          });
+        },
+
+        unsubscribeSymbols: (symbols) => {
+          if (symbols.length === 0) return;
+          set((state) => {
+            const nextSubscribed = new Set(state.subscribedSymbols);
+            for (const symbol of symbols) nextSubscribed.delete(symbol);
+            return { subscribedSymbols: nextSubscribed };
           });
         },
 

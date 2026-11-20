@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { getLiveQuotesVersion, subscribeLiveQuotes } from '../../../services/liveQuotes';
 import { useUiTranslation } from '../../../hooks/useUiTranslation';
 import { useLiveAccountMetrics } from '../../../hooks/useLiveAccountMetrics';
 import './exposure-tab.css';
@@ -10,6 +11,9 @@ import {
 } from '../../../components/BottomDock.exposure';
 
 const METRIC_UNAVAILABLE = '\u2014';
+
+const noopSubscribe = () => () => {};
+const zeroSnapshot = () => 0;
 
 export type ExposureTabProps = {
   positions: ExposurePositionInput[];
@@ -32,7 +36,15 @@ const getAssetBadgeStyle = (asset: string) => {
 
 export function ExposureTab({ positions, formatMoney, account }: ExposureTabProps) {
   const tr = useUiTranslation();
-  const exposure = useMemo(() => buildExposureSummary(positions ?? [], account), [positions, account]);
+  const hasPositions = Boolean(positions && positions.length > 0);
+  const quotesVersion = useSyncExternalStore(
+    hasPositions ? subscribeLiveQuotes : noopSubscribe,
+    hasPositions ? getLiveQuotesVersion : zeroSnapshot,
+    zeroSnapshot,
+  );
+  // getPositionRate reads the live quote, so re-derive the summary when quotes change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const exposure = useMemo(() => buildExposureSummary(positions ?? [], account), [positions, account, quotesVersion]);
   const [metricsNow, setMetricsNow] = useState(Date.now);
 
   useEffect(() => {

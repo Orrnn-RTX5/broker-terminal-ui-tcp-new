@@ -36,11 +36,22 @@ const extractQuoteRows = (response: unknown): unknown[] => {
 
 export function useLiveQuotes(symbols: string[]) {
   const quoteDemandId = useId();
-  const normalizedSymbolsKey = JSON.stringify(Array.from(new Set(
-    symbols.map(normalizeSymbol).filter(Boolean),
-  )));
+  const orderedUniqueSymbols = useMemo(
+    () => Array.from(new Set(symbols.map(normalizeSymbol).filter(Boolean))),
+    [symbols],
+  );
+  // Change detection is order-independent: Market Watch passes its rows in display order, and a
+  // sort-mode reorder of the same symbols must not re-subscribe every symbol or re-run the REST
+  // quote snapshot. The list itself keeps the caller's order (REST batches load the top rows
+  // first), taken from the render in which the symbol set last changed.
+  const normalizedSymbolsKey = useMemo(
+    () => [...orderedUniqueSymbols].sort().join('\u0000'),
+    [orderedUniqueSymbols],
+  );
   const normalizedSymbols = useMemo(
-    () => JSON.parse(normalizedSymbolsKey) as string[],
+    () => orderedUniqueSymbols,
+    // Intentionally keyed on the set, not on the ordered array (see above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [normalizedSymbolsKey],
   );
   const [loading, setLoading] = useState(false);
@@ -219,14 +230,10 @@ export function useLiveQuotes(symbols: string[]) {
     void sessionRevision;
     if (normalizedSymbols.length === 0) return;
 
-    normalizedSymbols.forEach((symbol) => {
-      useMarketDataStore.getState().subscribeSymbol(symbol);
-    });
+    useMarketDataStore.getState().subscribeSymbols(normalizedSymbols);
 
     return () => {
-      normalizedSymbols.forEach((symbol) => {
-        useMarketDataStore.getState().unsubscribeSymbol(symbol);
-      });
+      useMarketDataStore.getState().unsubscribeSymbols(normalizedSymbols);
     };
   }, [normalizedSymbols, sessionRevision]);
 

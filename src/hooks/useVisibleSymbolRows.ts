@@ -33,6 +33,11 @@ export function useVisibleSymbolRows(symbols: readonly string[]): VisibleSymbolR
   const rowElementsRef = useRef(new Map<string, HTMLElement>());
   const elementSymbolsRef = useRef(new WeakMap<Element, string>());
   const observerRef = useRef<IntersectionObserver | null>(null);
+  // Visible symbols whose row element was detached. When the same symbol's row re-attaches
+  // (Market Watch swaps an off-screen placeholder for the full row, which remounts the <tr>),
+  // it is restored at once, so the visible list never flashes empty between the detach and the
+  // observer's next report. The observer's first report for the new element corrects it.
+  const detachedVisibleRef = useRef(new Set<string>());
 
   const publishVisibleSymbols = useCallback(() => {
     const next = orderedSymbols.filter((symbol) => visibleSetRef.current.has(symbol));
@@ -54,17 +59,25 @@ export function useVisibleSymbolRows(symbols: readonly string[]): VisibleSymbolR
       rowElementsRef.current.set(symbol, node);
       elementSymbolsRef.current.set(node, symbol);
       observerRef.current?.observe(node);
+      if (detachedVisibleRef.current.delete(symbol) && !visibleSetRef.current.has(symbol)) {
+        visibleSetRef.current.add(symbol);
+        publishVisibleSymbols();
+      }
       return;
     }
 
     rowElementsRef.current.delete(symbol);
-    if (visibleSetRef.current.delete(symbol)) publishVisibleSymbols();
+    if (visibleSetRef.current.delete(symbol)) {
+      detachedVisibleRef.current.add(symbol);
+      publishVisibleSymbols();
+    }
   }, [publishVisibleSymbols]);
 
   useLayoutEffect(() => {
     observerRef.current?.disconnect();
     observerRef.current = null;
     visibleSetRef.current.clear();
+    detachedVisibleRef.current.clear();
     publishVisibleSymbols();
     if (!viewportElement || orderedSymbols.length === 0) return undefined;
 

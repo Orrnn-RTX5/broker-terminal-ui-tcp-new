@@ -2,19 +2,29 @@ import {
   Fragment,
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
+  useSyncExternalStore,
   type CSSProperties,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
+  type RefObject,
   type SetStateAction,
 } from 'react';
 import type { ClosePositionAction } from '../../../contracts/tradeActions';
 import type { ToolboxTradePosition } from '../../../hooks/useToolboxTradeData';
 import { useUiTranslation } from '../../../hooks/useUiTranslation';
 import { useAppStore, type Account } from '../../../store/useAppStore';
+import { useLiveAccountMetrics } from '../../../hooks/useLiveAccountMetrics';
+import { getLiveQuotesVersion, subscribeLiveQuotes } from '../../../services/liveQuotes';
+import {
+  applyLiveQuoteToPosition,
+  type LiveRowCacheEntry,
+  type TradeOverrideEntry,
+} from '../../../services/livePositionMetrics';
 import {
   resolveTradeProfit,
   toBackendFinancialNumber,
@@ -27,6 +37,7 @@ import {
   getTradeColumnDef,
   METRIC_UNAVAILABLE,
   TRADE_COLUMN_HOVER_COMMENTS,
+  TRADE_FOOTER_METRIC_COMMENTS,
   TRADE_FIXED_COLUMN_DEFS,
   type TradeColumnDef,
   type TradeColumnKey,
@@ -42,10 +53,18 @@ import {
 type TradeTableProps = {
   account: Account | null;
   columnWidths: TradeColumnWidths;
+  /** Pending placement rows followed by the sorted open positions (raw, without live prices). */
   displayedLivePositions: ToolboxTradePosition[];
+  /** Open positions only (no pending rows): source of the live footer aggregates. */
+  metricsPositions: readonly ToolboxTradePosition[];
+  /** Optimistic SL/TP edits applied to rows at render time. */
+  tradeOverrides?: Record<number, TradeOverrideEntry>;
+  metricsNow: number;
+  totalSwap: number;
+  totalCommission: number;
+  openCount: number;
+  formatMarginLevel: (value: number | null) => string;
   error: string | null;
-  floatingProfitColor: string;
-  floatingProfitLabel: string;
   footerCloseColumnWidth: string;
   footerMetricMenuOpen: boolean;
   footerProfitColumnWidth: string;
@@ -55,7 +74,6 @@ type TradeTableProps = {
   formatTradePrice: (value: unknown, symbol: string, positionDigits?: unknown) => string;
   formatTradeTime: (value?: number | string | null) => string;
   formatTradeVolume: (position: ToolboxTradePosition) => number | string;
-  getFooterMetricComment: (key: TradeFooterMetricKey) => string;
   getPositionKey: (position: ToolboxTradePosition) => string;
   getTradePointsValue: (position: ToolboxTradePosition) => number | null;
   handleTradeContextMenu: (
@@ -63,12 +81,10 @@ type TradeTableProps = {
     position?: ToolboxTradePosition,
   ) => void;
   isColumnVisible: (key: TradeColumnKey) => boolean;
-  liveEquity: number | null;
   loading: boolean;
   onClosePosition: ClosePositionAction;
   openModifyPosition: (position: ToolboxTradePosition) => void;
   profitMode: TradeProfitMode;
-  renderFooterMetricValue: (key: TradeFooterMetricKey) => ReactNode;
   resizingColumn: TradeColumnWidthKey | null;
   selectedPositionKey: string | null;
   setColumnWidths: Dispatch<SetStateAction<TradeColumnWidths>>;
@@ -77,7 +93,6 @@ type TradeTableProps = {
   startColumnResize: (event: ReactMouseEvent, key: TradeColumnWidthKey) => void;
   toggleFooterMetricMenu: (trigger: HTMLButtonElement, position?: { x: number; y: number }) => void;
   toggleSort: (column: TradeSortColumn) => void;
-  totalLivePnL: number | null;
   visibleFooterMetrics: TradeFooterMetricDef[];
   visibleOptionalColumnCount: number;
   visibleTradeColumns: TradeColumnDef[];
@@ -107,6 +122,14 @@ type TradeTableRowProps = Pick<TradeTableProps,
   modifyPositionLabel: string;
   contextMenuLabel: string;
 };
+
+// Row windowing: above WINDOW_THRESHOLD rows only the visible rows (+ overscan) are rendered.
+const WINDOW_THRESHOLD = 120;
+const WINDOW_OVERSCAN = 10;
+const WINDOW_DEFAULT_ROWS = 30;
+const WINDOW_DEFAULT_ROW_HEIGHT = 30;
+const noopSubscribe = () => () => {};
+const zeroSnapshot = () => 0;
 
 const TradeTableRow = memo(function TradeTableRow({
   position,
@@ -206,7 +229,10 @@ const TradeTableRow = memo(function TradeTableRow({
     placementState, positionDigits, positionId, rawOpenPrice, rawStopLoss, rawTakeProfit, sideLabel, symbolLabel, ticket, tr, volumeLabel,
   ]);
 
-  const profitValue = resolveTradeProfit(position).value as number | null;
+  // Rows built by applyLiveQuoteToPosition already carry the live profit; other rows resolve it here.
+  const profitValue = (position as { profitSource?: unknown }).profitSource !== undefined
+    ? ((position as { livePnL?: number | null }).livePnL ?? null)
+    : (resolveTradeProfit(position).value as number | null);
   const pointsValue = getTradePointsValue(position);
   const profitIsPositive = profitMode === 'points'
     ? pointsValue !== null && pointsValue >= 0 : profitValue !== null && profitValue >= 0;
@@ -552,9 +578,14 @@ export function TradeTable({
   account,
   columnWidths,
   displayedLivePositions,
+  metricsPositions,
+  tradeOverrides,
+  metricsNow,
+  totalSwap,
+  totalCommission,
+  openCount,
+  formatMarginLevel,
   error,
-  floatingProfitColor,
-  floatingProfitLabel,
   footerCloseColumnWidth,
   footerMetricMenuOpen,
   footerProfitColumnWidth,
@@ -564,17 +595,14 @@ export function TradeTable({
   formatTradePrice,
   formatTradeTime,
   formatTradeVolume,
-  getFooterMetricComment,
   getPositionKey,
   getTradePointsValue,
   handleTradeContextMenu,
   isColumnVisible,
-  liveEquity,
   loading,
   onClosePosition,
   openModifyPosition,
   profitMode,
-  renderFooterMetricValue,
   resizingColumn,
   selectedPositionKey,
   setColumnWidths,
@@ -583,7 +611,6 @@ export function TradeTable({
   startColumnResize,
   toggleFooterMetricMenu,
   toggleSort,
-  totalLivePnL,
   visibleFooterMetrics,
   visibleOptionalColumnCount,
   visibleTradeColumns,
@@ -601,13 +628,73 @@ export function TradeTable({
     footer.scrollLeft = scroller.scrollLeft;
   }, []);
 
+  const totalRows = displayedLivePositions.length;
+  const windowed = totalRows > WINDOW_THRESHOLD;
+  const [win, setWin] = useState({ first: 0, rows: WINDOW_DEFAULT_ROWS });
+  const [rowHeight, setRowHeight] = useState(WINDOW_DEFAULT_ROW_HEIGHT);
+  const rowHeightRef = useRef(WINDOW_DEFAULT_ROW_HEIGHT);
+  const hasMeasuredRowHeightRef = useRef(false);
+
+  const updateWindow = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const rh = rowHeightRef.current;
+    const first = Math.max(0, Math.floor(container.scrollTop / rh));
+    const rows = container.clientHeight > 0 ? Math.ceil(container.clientHeight / rh) + 1 : WINDOW_DEFAULT_ROWS;
+    setWin((previous) => (previous.first === first && previous.rows === rows ? previous : { first, rows }));
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    syncFooterHorizontalScroll();
+    if (windowed) updateWindow();
+  }, [syncFooterHorizontalScroll, windowed, updateWindow]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!windowed || !container || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateWindow);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [windowed, updateWindow]);
+
+  // Measure the row height once when windowing first applies (no layout reads on quote renders).
+  const hasRows = totalRows > 0;
+  useLayoutEffect(() => {
+    if (!windowed || hasMeasuredRowHeightRef.current || !hasRows) return;
+    const row = scrollContainerRef.current?.querySelector<HTMLElement>('tbody > tr:not([data-rtx-spacer])');
+    const measured = row?.offsetHeight ?? 0;
+    if (measured > 0) {
+      hasMeasuredRowHeightRef.current = true;
+      if (Math.abs(measured - rowHeightRef.current) > 0.25) {
+        rowHeightRef.current = measured;
+        setRowHeight(measured);
+        updateWindow();
+      }
+    }
+  }, [windowed, hasRows, updateWindow]);
+
+  // Clamp scrollTop and resync the window whenever the list shrinks, grows or crosses the threshold,
+  // so closing rows while scrolled can never leave an empty window.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    if (displayedLivePositions.length === 0) {
+    if (totalRows === 0) {
       container.scrollTop = 0;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- window state must follow the scroll container synchronously
+      setWin((prev) => (prev.first === 0 && prev.rows === WINDOW_DEFAULT_ROWS ? prev : { first: 0, rows: WINDOW_DEFAULT_ROWS }));
+      return;
     }
-  }, [displayedLivePositions.length]);
+    const visibleHeight = container.clientHeight > 0 ? container.clientHeight : win.rows * rowHeight;
+    const maxScrollTop = Math.max(0, totalRows * rowHeight - visibleHeight);
+    if (container.scrollTop > maxScrollTop) container.scrollTop = maxScrollTop;
+    if (!windowed) {
+      setWin((prev) => (prev.first === 0 ? prev : { ...prev, first: 0 }));
+      return;
+    }
+    updateWindow();
+    // win.rows is read only as the fallback height; the window is resynced by updateWindow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalRows, windowed, rowHeight, updateWindow]);
 
   useLayoutEffect(() => {
     const scroller = scrollContainerRef.current;
@@ -693,58 +780,48 @@ export function TradeTable({
     </th>
   );
 
+  // Clamp the window during render so closing rows while scrolled never renders an empty window.
+  const maxFirst = Math.max(0, totalRows - win.rows);
+  const clampedFirst = Math.min(win.first, maxFirst);
+  const winFrom = windowed ? Math.max(0, clampedFirst - WINDOW_OVERSCAN) : 0;
+  const winTo = windowed ? Math.min(totalRows, clampedFirst + win.rows + WINDOW_OVERSCAN) : totalRows;
+
   // Account publications update the footer without reformatting every trade row.
-  const tableBody = useMemo(() => {
-    const modifyPositionLabel = tr('Modify Position');
-    const contextMenuLabel = tr('Context menu');
-    return (
-      <tbody className="divide-y divide-zinc-800/90 text-[#d8dde8] text-[13px] leading-[19.5px] font-normal">
-        {displayedLivePositions.length === 0 && (loading || error) && (
-          <tr>
-            <td colSpan={visibleOptionalColumnCount + 2} className="h-16 text-center text-zinc-600 text-xs italic">
-              {loading ? tr('Loading open positions...') : error}
-            </td>
-          </tr>
-        )}
-        {displayedLivePositions.map((position, index) => (
-          <TradeTableRow
-            key={position.id ?? index}
-            position={position}
-            tr={tr}
-            modifyPositionLabel={modifyPositionLabel}
-            contextMenuLabel={contextMenuLabel}
-            formatMoney={formatMoney}
-            formatTradeLevel={formatTradeLevel}
-            formatTradePoints={formatTradePoints}
-            formatTradePrice={formatTradePrice}
-            formatTradeTime={formatTradeTime}
-            formatTradeVolume={formatTradeVolume}
-            getPositionKey={getPositionKey}
-            getTradePointsValue={getTradePointsValue}
-            handleTradeContextMenu={handleTradeContextMenu}
-            isColumnVisible={isColumnVisible}
-            onClosePosition={onClosePosition}
-            openModifyPosition={openModifyPosition}
-            profitMode={profitMode}
-            selectedPositionKey={selectedPositionKey}
-            setSelectedPositionKey={setSelectedPositionKey}
-            visibleOptionalColumnCount={visibleOptionalColumnCount}
-          />
-        ))}
-      </tbody>
-    );
-  }, [
-    displayedLivePositions, error, formatMoney, formatTradeLevel, formatTradePoints,
-    formatTradePrice, formatTradeTime, formatTradeVolume, getPositionKey, getTradePointsValue,
-    handleTradeContextMenu, isColumnVisible, loading, onClosePosition, openModifyPosition,
-    profitMode, selectedPositionKey, setSelectedPositionKey, tr, visibleOptionalColumnCount,
-  ]);
+  const tableBody = (
+    <TradeTableBody
+      displayedLivePositions={displayedLivePositions}
+      tradeOverrides={tradeOverrides}
+      windowed={windowed}
+      winFrom={winFrom}
+      winTo={winTo}
+      rowHeight={rowHeight}
+      error={error}
+      formatMoney={formatMoney}
+      formatTradeLevel={formatTradeLevel}
+      formatTradePoints={formatTradePoints}
+      formatTradePrice={formatTradePrice}
+      formatTradeTime={formatTradeTime}
+      formatTradeVolume={formatTradeVolume}
+      getPositionKey={getPositionKey}
+      getTradePointsValue={getTradePointsValue}
+      handleTradeContextMenu={handleTradeContextMenu}
+      isColumnVisible={isColumnVisible}
+      loading={loading}
+      onClosePosition={onClosePosition}
+      openModifyPosition={openModifyPosition}
+      profitMode={profitMode}
+      selectedPositionKey={selectedPositionKey}
+      setSelectedPositionKey={setSelectedPositionKey}
+      tr={tr}
+      visibleOptionalColumnCount={visibleOptionalColumnCount}
+    />
+  );
 
   return (
     <div className="rtx-trade-table-panel flex flex-1 min-h-0 flex-col overflow-hidden">
       <div
         ref={scrollContainerRef}
-        onScroll={syncFooterHorizontalScroll}
+        onScroll={handleScroll}
         onContextMenu={(event) => handleTradeContextMenu(event)}
         className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
       >
@@ -793,8 +870,285 @@ export function TradeTable({
       </div>
 
       {/* Account summary stays fixed at the bottom outside vertical scrolling. */}
+      <TradeTableFooter
+        scrollRef={footerScrollRef}
+        account={account}
+        metricsPositions={metricsPositions}
+        metricsNow={metricsNow}
+        totalSwap={totalSwap}
+        totalCommission={totalCommission}
+        openCount={openCount}
+        visibleTradeTableWidth={visibleTradeTableWidth}
+        visibleFooterMetrics={visibleFooterMetrics}
+        footerMetricMenuOpen={footerMetricMenuOpen}
+        footerProfitColumnWidth={footerProfitColumnWidth}
+        footerCloseColumnWidth={footerCloseColumnWidth}
+        isColumnVisible={isColumnVisible}
+        formatMoney={formatMoney}
+        formatMarginLevel={formatMarginLevel}
+        toggleFooterMetricMenu={toggleFooterMetricMenu}
+        tr={tr}
+      />
+    </div>
+  );
+}
+
+type TradeTableBodyProps = Pick<TradeTableProps,
+  | 'displayedLivePositions'
+  | 'tradeOverrides'
+  | 'error'
+  | 'formatMoney'
+  | 'formatTradeLevel'
+  | 'formatTradePoints'
+  | 'formatTradePrice'
+  | 'formatTradeTime'
+  | 'formatTradeVolume'
+  | 'getPositionKey'
+  | 'getTradePointsValue'
+  | 'handleTradeContextMenu'
+  | 'isColumnVisible'
+  | 'loading'
+  | 'onClosePosition'
+  | 'openModifyPosition'
+  | 'profitMode'
+  | 'selectedPositionKey'
+  | 'setSelectedPositionKey'
+  | 'visibleOptionalColumnCount'
+> & {
+  windowed: boolean;
+  winFrom: number;
+  winTo: number;
+  rowHeight: number;
+  tr: ReturnType<typeof useUiTranslation>;
+};
+
+// Subscribes to live quotes itself and applies the latest price to the visible rows at render time;
+// a quote batch costs O(visible rows), independent of the number of open trades.
+const TradeTableBody = memo(function TradeTableBody({
+  displayedLivePositions,
+  tradeOverrides,
+  windowed,
+  winFrom,
+  winTo,
+  rowHeight,
+  error,
+  formatMoney,
+  formatTradeLevel,
+  formatTradePoints,
+  formatTradePrice,
+  formatTradeTime,
+  formatTradeVolume,
+  getPositionKey,
+  getTradePointsValue,
+  handleTradeContextMenu,
+  isColumnVisible,
+  loading,
+  onClosePosition,
+  openModifyPosition,
+  profitMode,
+  selectedPositionKey,
+  setSelectedPositionKey,
+  tr,
+  visibleOptionalColumnCount,
+}: TradeTableBodyProps) {
+  const totalRows = displayedLivePositions.length;
+  const quotesActive = totalRows > 0;
+  const quotesVersion = useSyncExternalStore(
+    quotesActive ? subscribeLiveQuotes : noopSubscribe,
+    quotesActive ? getLiveQuotesVersion : zeroSnapshot,
+    zeroSnapshot,
+  );
+  const liveRowCache = useMemo(() => new WeakMap<object, LiveRowCacheEntry>(), []);
+
+  return useMemo(() => {
+    const modifyPositionLabel = tr('Modify Position');
+    const contextMenuLabel = tr('Context menu');
+    const sliceFrom = windowed ? winFrom : 0;
+    const sliceTo = windowed ? winTo : totalRows;
+    const slice = windowed ? displayedLivePositions.slice(sliceFrom, sliceTo) : displayedLivePositions;
+
+    return (
+      <tbody className="divide-y divide-zinc-800/90 text-[#d8dde8] text-[13px] leading-[19.5px] font-normal">
+        {totalRows === 0 && (loading || error) && (
+          <tr>
+            <td colSpan={visibleOptionalColumnCount + 2} className="h-16 text-center text-zinc-600 text-xs italic">
+              {loading ? tr('Loading open positions...') : error}
+            </td>
+          </tr>
+        )}
+        {winFrom > 0 && (
+          <tr aria-hidden="true" data-rtx-spacer style={{ height: winFrom * rowHeight }}>
+            <td colSpan={visibleOptionalColumnCount + 2} style={{ padding: 0, border: 0 }} />
+          </tr>
+        )}
+        {slice.map((rawPosition, sliceIndex) => {
+          const position = applyLiveQuoteToPosition(rawPosition, tradeOverrides?.[rawPosition?.id], liveRowCache);
+          return (
+            <TradeTableRow
+              key={position.id ?? sliceFrom + sliceIndex}
+              position={position}
+              tr={tr}
+              modifyPositionLabel={modifyPositionLabel}
+              contextMenuLabel={contextMenuLabel}
+              formatMoney={formatMoney}
+              formatTradeLevel={formatTradeLevel}
+              formatTradePoints={formatTradePoints}
+              formatTradePrice={formatTradePrice}
+              formatTradeTime={formatTradeTime}
+              formatTradeVolume={formatTradeVolume}
+              getPositionKey={getPositionKey}
+              getTradePointsValue={getTradePointsValue}
+              handleTradeContextMenu={handleTradeContextMenu}
+              isColumnVisible={isColumnVisible}
+              onClosePosition={onClosePosition}
+              openModifyPosition={openModifyPosition}
+              profitMode={profitMode}
+              selectedPositionKey={selectedPositionKey}
+              setSelectedPositionKey={setSelectedPositionKey}
+              visibleOptionalColumnCount={visibleOptionalColumnCount}
+            />
+          );
+        })}
+        {windowed && winTo < totalRows && (
+          <tr aria-hidden="true" data-rtx-spacer style={{ height: (totalRows - winTo) * rowHeight }}>
+            <td colSpan={visibleOptionalColumnCount + 2} style={{ padding: 0, border: 0 }} />
+          </tr>
+        )}
+      </tbody>
+    );
+    // quotesVersion is the change signal for the live quotes read inside applyLiveQuoteToPosition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    quotesVersion, tradeOverrides, totalRows, rowHeight, windowed, winFrom, winTo,
+    displayedLivePositions, error, formatMoney, formatTradeLevel, formatTradePoints,
+    formatTradePrice, formatTradeTime, formatTradeVolume, getPositionKey, getTradePointsValue,
+    handleTradeContextMenu, isColumnVisible, loading, onClosePosition, openModifyPosition,
+    profitMode, selectedPositionKey, setSelectedPositionKey, tr, visibleOptionalColumnCount,
+  ]);
+});
+
+type TradeTableFooterProps = {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  account: Account | null;
+  metricsPositions: readonly ToolboxTradePosition[];
+  metricsNow: number;
+  totalSwap: number;
+  totalCommission: number;
+  openCount: number;
+  visibleTradeTableWidth: number;
+  visibleFooterMetrics: TradeFooterMetricDef[];
+  footerMetricMenuOpen: boolean;
+  footerProfitColumnWidth: string;
+  footerCloseColumnWidth: string;
+  isColumnVisible: (key: TradeColumnKey) => boolean;
+  formatMoney: (value: number | null | undefined) => string;
+  formatMarginLevel: (value: number | null) => string;
+  toggleFooterMetricMenu: (trigger: HTMLButtonElement, position?: { x: number; y: number }) => void;
+  tr: ReturnType<typeof useUiTranslation>;
+};
+
+// The footer subscribes to live quotes itself, so a quote batch re-renders only this footer and the
+// visible rows, never the whole TradeTab. Totals are O(numSymbols) (see livePositionAggregates).
+const TradeTableFooter = memo(function TradeTableFooter({
+  scrollRef,
+  account,
+  metricsPositions,
+  metricsNow,
+  totalSwap,
+  totalCommission,
+  openCount,
+  visibleTradeTableWidth,
+  visibleFooterMetrics,
+  footerMetricMenuOpen,
+  footerProfitColumnWidth,
+  footerCloseColumnWidth,
+  isColumnVisible,
+  formatMoney,
+  formatMarginLevel,
+  toggleFooterMetricMenu,
+  tr,
+}: TradeTableFooterProps) {
+  const res = useLiveAccountMetrics(account, metricsPositions, metricsNow);
+  const accountBalance = res.balance;
+  const accountCredit = res.credit;
+  const liveEquity = res.equity;
+  const margin = res.margin;
+  const liveFreeMargin = res.freeMargin;
+  const liveMarginLevel = res.marginLevel;
+  const totalLivePnL = res.floatingPnL;
+  const floatingProfitColor = totalLivePnL !== null && totalLivePnL > 0
+    ? 'text-profit'
+    : totalLivePnL !== null && totalLivePnL < 0 ? 'text-loss' : 'text-zinc-100';
+  const floatingProfitLabel = totalLivePnL === null ? METRIC_UNAVAILABLE : formatMoney(totalLivePnL);
+
+  const renderFooterMetricValue = (key: TradeFooterMetricKey) => {
+    switch (key) {
+      case 'positions':
+        return <TradeMetricValue value={openCount} />;
+      case 'balance':
+        return accountBalance === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={accountBalance} formatFn={formatMoney} />;
+      case 'credit':
+        return accountCredit === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={accountCredit} formatFn={formatMoney} />;
+      case 'equity':
+        return liveEquity === null
+          ? <UnavailableTradeMetric />
+          : <TradeMetricValue value={liveEquity} formatFn={formatMoney} flashDirection={false} />;
+      case 'margin':
+        return margin === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={margin} formatFn={formatMoney} />;
+      case 'freeMargin':
+        return liveFreeMargin === null
+          ? <UnavailableTradeMetric />
+          : <TradeMetricValue value={liveFreeMargin} formatFn={formatMoney} flashDirection={false} />;
+      case 'marginLevel':
+        return liveMarginLevel === null
+          ? <UnavailableTradeMetric />
+          : <TradeMetricValue value={liveMarginLevel} formatFn={formatMarginLevel} flashDirection={false} />;
+      case 'swap':
+        return <TradeMetricValue value={totalSwap} formatFn={formatMoney} defaultColor={totalSwap < 0 ? 'text-[#f87171]' : 'text-zinc-300'} />;
+      case 'commission':
+        return <TradeMetricValue value={totalCommission} formatFn={formatMoney} defaultColor={totalCommission < 0 ? 'text-[#f87171]' : 'text-zinc-300'} />;
+      default:
+        return null;
+    }
+  };
+
+  const getFooterMetricComment = (key: TradeFooterMetricKey) => {
+    let value = '';
+    switch (key) {
+      case 'positions':
+        value = String(openCount);
+        break;
+      case 'balance':
+        value = accountBalance === null ? METRIC_UNAVAILABLE : `${formatMoney(accountBalance)} ${account?.currency || 'USD'}`;
+        break;
+      case 'credit':
+        value = accountCredit === null ? METRIC_UNAVAILABLE : `${formatMoney(accountCredit)} ${account?.currency || 'USD'}`;
+        break;
+      case 'equity':
+        value = liveEquity === null ? METRIC_UNAVAILABLE : formatMoney(liveEquity);
+        break;
+      case 'margin':
+        value = margin === null ? METRIC_UNAVAILABLE : formatMoney(margin);
+        break;
+      case 'freeMargin':
+        value = liveFreeMargin === null ? METRIC_UNAVAILABLE : formatMoney(liveFreeMargin);
+        break;
+      case 'marginLevel':
+        value = formatMarginLevel(liveMarginLevel);
+        break;
+      case 'swap':
+        value = formatMoney(totalSwap);
+        break;
+      case 'commission':
+        value = formatMoney(totalCommission);
+        break;
+    }
+    return `${tr(TRADE_FOOTER_METRIC_COMMENTS[key])}: ${value}`;
+  };
+
+  return (
       <div
-        ref={footerScrollRef}
+        ref={scrollRef}
         className="rtx-trade-footer z-10 shrink-0 overflow-hidden bg-[#191a1e] border-t border-zinc-700 w-full text-[13px] font-normal text-zinc-300 tabular-nums"
         data-metrics-publication-token={account?.publicationToken}
         data-metrics-calculation-version={account?.calculationVersion}
@@ -866,6 +1220,5 @@ export function TradeTable({
           <span className="rtx-trade-footer-close-spacer shrink-0" style={{ width: footerCloseColumnWidth, flex: `0 0 ${footerCloseColumnWidth}` }} aria-hidden="true" />
         </div>
       </div>
-    </div>
   );
-}
+});

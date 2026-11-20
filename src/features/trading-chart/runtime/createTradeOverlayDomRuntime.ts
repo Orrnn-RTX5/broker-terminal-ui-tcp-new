@@ -2,6 +2,8 @@ import type { RefObject } from 'react';
 import type { ISeriesApi, SeriesType } from 'lightweight-charts';
 import api from '../../../services/api';
 import { useAppStore } from '../../../store/useAppStore';
+import { getLiveQuote } from '../../../services/liveQuotes';
+import { getLivePositionPrice, getLivePositionProfit } from '../../../services/livePositionMetrics';
 import { formatChartAxisPrice, getPricePointFromDigits } from '../../../utils/chartPriceScale';
 import { rememberTradeHistoryPositionLevels } from '../../../utils/tradeHistoryLevelCache';
 import {
@@ -408,6 +410,11 @@ export const createTradeOverlayDomRuntime = ({
     };
 
     const getTradeClosePrice = (trade: ActiveTradeSnapshot): number => {
+      const lq = getLiveQuote(trade.symbol);
+      if (lq) {
+        const qPrice = trade.side === 'BUY' ? Number(lq.bid) : Number(lq.ask);
+        if (Number.isFinite(qPrice) && qPrice > 0) return qPrice;
+      }
       const tick = resolveSymbolTick(useAppStore.getState().ticks);
       const closeQuote = trade.side === 'BUY' ? Number(tick?.bid) : Number(tick?.ask);
       if (Number.isFinite(closeQuote) && closeQuote > 0) return closeQuote;
@@ -415,12 +422,11 @@ export const createTradeOverlayDomRuntime = ({
       return Number.isFinite(live) && live > 0 ? live : trade.entryPrice;
     };
 
-    // Projected money at a level. Prefers scaling the backend-reported live
-    // profit (keeps account-currency conversion authoritative); falls back to
-    // a contract-size estimate when the live P/L baseline is too small.
+    // Projected money at a level. Uses live profit + matching live currentPrice.
     const estimateMoneyAtLevel = (trade: ActiveTradeSnapshot, levelPrice: number): number | null => {
       const position = findStorePosition(getTradeTicket(trade.key));
-      const backendPnl = Number(position?.unrealizedPnL ?? position?.profit ?? position?.unrealized_pl);
+      const livePnl = position ? getLivePositionProfit(position) : null;
+      const currentPrice = (position ? getLivePositionPrice(position) : null) ?? getTradeClosePrice(trade);
       return estimateTradeLevelMoney({
         symbol: trade.symbol,
         side: trade.side,
@@ -428,8 +434,8 @@ export const createTradeOverlayDomRuntime = ({
         entryPrice: trade.entryPrice,
         levelPrice,
         digits,
-        backendPnl: Number.isFinite(backendPnl) ? backendPnl : null,
-        currentPrice: getTradeClosePrice(trade),
+        backendPnl: livePnl !== null && Number.isFinite(livePnl) ? livePnl : null,
+        currentPrice,
         contractSize: Number(position?.contractSize ?? position?.contract_size) || undefined,
       });
     };
@@ -760,11 +766,10 @@ export const createTradeOverlayDomRuntime = ({
       }
 
       const refreshLiveMetrics = () => {
-        const closePrice = getTradeClosePrice(trade);
-        const pips = computeSignedPips(trade.side, trade.entryPrice, closePrice, digits);
         const position = findStorePosition(ticket);
-        const hasBackendProfit = (position as { hasBackendProfit?: boolean } | null)?.hasBackendProfit !== false;
-        const backendPnl = Number(position?.unrealizedPnL ?? position?.profit ?? position?.unrealized_pl);
+        const closePrice = (position ? getLivePositionPrice(position) : null) ?? getTradeClosePrice(trade);
+        const pips = computeSignedPips(trade.side, trade.entryPrice, closePrice, digits);
+        const livePnl = position ? getLivePositionProfit(position) : null;
         const estimatedMoney = estimateTradeMoneyAtPrice({
           symbol: trade.symbol,
           side: trade.side,
@@ -772,8 +777,8 @@ export const createTradeOverlayDomRuntime = ({
           entryPrice: trade.entryPrice,
           price: closePrice,
         });
-        const money = position && hasBackendProfit && Number.isFinite(backendPnl)
-          ? backendPnl
+        const money = livePnl !== null && Number.isFinite(livePnl)
+          ? livePnl
           : estimatedMoney ?? (trade.kind !== 'pending' && pips === 0 ? 0 : null);
         controlBar.setLiveMetrics(pips, money);
       };

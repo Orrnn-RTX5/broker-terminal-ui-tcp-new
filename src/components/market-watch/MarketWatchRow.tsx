@@ -1,5 +1,5 @@
 import { resolveDailyChangeDisplayDigits } from '../../services/dailyChangePriceModeRegistry';
-import { useState, type CSSProperties, type FC, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type FC, type ReactNode } from 'react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import type { MarketWatchLastPrice } from '../../hooks/useLastMarketWatchQuotes';
 import { useTick } from '../../store/useAppStore';
@@ -47,31 +47,36 @@ const CORE_MARKET_WATCH_COLUMN_SET = new Set<MarketWatchColumnId>([
   'source',
 ]);
 
+interface QuoteDirectionMemo {
+  symbol: string;
+  value: number;
+  direction: 'up' | 'down' | null;
+}
+
+/**
+ * Last non-flat move of a quote side. The previous value lives in a ref that is committed in an
+ * effect, so the render is pure and a changed value renders once (no setState during render).
+ */
 function useLastQuoteDirection(symbol: string, value: number): 'up' | 'down' | null {
-  const [directionState, setDirectionState] = useState<{
-    symbol: string;
-    value: number;
-    direction: 'up' | 'down' | null;
-  }>(() => ({ symbol, value, direction: null }));
-
-  if (directionState.symbol !== symbol) {
-    setDirectionState({ symbol, value, direction: null });
-    return null;
+  const memoRef = useRef<QuoteDirectionMemo>({ symbol, value, direction: null });
+  const previous = memoRef.current;
+  let direction: 'up' | 'down' | null;
+  if (previous.symbol !== symbol) {
+    direction = null;
+  } else if (value !== previous.value) {
+    direction = value > 0 && previous.value > 0
+      ? (value > previous.value ? 'up' : 'down')
+      : previous.direction;
+  } else {
+    direction = previous.direction;
   }
-
-  if (value !== directionState.value) {
-    const nextDirection = value > 0 && directionState.value > 0
-      ? (value > directionState.value ? 'up' : 'down')
-      : directionState.direction;
-    setDirectionState({
-      symbol,
-      value,
-      direction: nextDirection,
-    });
-    return nextDirection;
-  }
-
-  return directionState.direction;
+  useEffect(() => {
+    const memo = memoRef.current;
+    memo.symbol = symbol;
+    memo.value = value;
+    memo.direction = direction;
+  }, [symbol, value, direction]);
+  return direction;
 }
 
 interface MarketWatchRowProps {
@@ -79,41 +84,47 @@ interface MarketWatchRowProps {
   isSelected: boolean;
   isLive: boolean;
   isChartOpenable: boolean;
-  onClick: () => void;
-  onContextSelect: () => void;
-  onDoubleClick: () => void;
-  contextMenuItems: ContextMenuItemConfig[];
+  /** Stable handlers shared by every row; the row passes its own symbol. */
+  onSymbolClick: (symbol: string) => void;
+  onSymbolContextSelect: (symbol: string) => void;
+  onSymbolDoubleClick: (symbol: string) => void;
+  /** Stable builder; called only when this row's context menu is opened. */
+  getContextMenuItems: (symbol: string) => ContextMenuItemConfig[];
   columns: readonly MarketWatchColumnId[];
   showMilliseconds: boolean;
   isLightSkin: boolean;
   closedDailyChange?: number | null;
   lastPrice?: MarketWatchLastPrice;
-  instrumentSources?: readonly unknown[];
+  /** Stable lookup; only called when an extended column is shown. */
+  getInstrumentSources?: (symbol: string) => readonly unknown[];
   /** Broker catalog price digits for this symbol; null when the catalog publishes none. */
   catalogPriceDigits?: number | null;
   symbolUniverse: readonly string[];
   rowRef?: (node: HTMLTableRowElement | null) => void;
 }
 
-export const MarketWatchRow: FC<MarketWatchRowProps> = ({
+const EMPTY_CONTEXT_MENU_ITEMS: ContextMenuItemConfig[] = [];
+
+const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
   symbol,
   isSelected,
   isLive,
   isChartOpenable,
-  onClick,
-  onContextSelect,
-  onDoubleClick,
-  contextMenuItems,
+  onSymbolClick,
+  onSymbolContextSelect,
+  onSymbolDoubleClick,
+  getContextMenuItems,
   columns,
   showMilliseconds,
   isLightSkin,
   closedDailyChange,
   lastPrice,
-  instrumentSources,
+  getInstrumentSources,
   catalogPriceDigits,
   symbolUniverse,
   rowRef,
 }) => {
+  const [contextMenuItems, setContextMenuItems] = useState<ContextMenuItemConfig[]>(EMPTY_CONTEXT_MENU_ITEMS);
   const tr = useUiTranslation();
   const displaySymbol = getMarketWatchSymbolLabel(symbol, symbolUniverse);
   const tick = useTick(symbol);
@@ -210,7 +221,14 @@ export const MarketWatchRow: FC<MarketWatchRowProps> = ({
   const showTime = columns.includes('time');
   const showDailyChange = columns.includes('dailyChange');
   const showSource = columns.includes('source');
-  const extendedColumns = columns.filter((col) => !CORE_MARKET_WATCH_COLUMN_SET.has(col));
+  const extendedColumns = useMemo(
+    () => columns.filter((col) => !CORE_MARKET_WATCH_COLUMN_SET.has(col)),
+    [columns],
+  );
+  const instrumentSources = useMemo(
+    () => (extendedColumns.length > 0 ? getInstrumentSources?.(symbol) : undefined),
+    [extendedColumns, getInstrumentSources, symbol],
+  );
   const renderNumber = (value: unknown, digits = priceDigits): ReactNode => {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed !== 0
@@ -239,9 +257,14 @@ export const MarketWatchRow: FC<MarketWatchRowProps> = ({
           event.dataTransfer.effectAllowed = 'copyMove';
         }}
         tabIndex={isSelected ? 0 : -1}
-        onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); onClick(); }}
-        onContextMenu={(event) => { event.currentTarget.focus({ preventScroll: true }); onContextSelect(); }}
-        onDoubleClick={(event) => { event.preventDefault(); onDoubleClick(); }}
+        onClick={(event) => { event.currentTarget.focus({ preventScroll: true }); onSymbolClick(symbol); }}
+        onContextMenu={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          onSymbolContextSelect(symbol);
+          // Menu items are built only now, when the menu is about to open.
+          setContextMenuItems(getContextMenuItems(symbol));
+        }}
+        onDoubleClick={(event) => { event.preventDefault(); onSymbolDoubleClick(symbol); }}
         style={{
           height: 20,
           cursor: 'pointer',
@@ -463,3 +486,6 @@ export const MarketWatchRow: FC<MarketWatchRowProps> = ({
     </ContextMenu>
   );
 };
+
+/** Memoized: a row re-renders only when its own props change or its store subscriptions fire. */
+export const MarketWatchRow = memo(MarketWatchRowImpl);

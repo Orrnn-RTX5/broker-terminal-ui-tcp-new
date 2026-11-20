@@ -29,7 +29,7 @@ describe('Toolbox provisional market-order source contract', () => {
 
   it('passes pending rows separately and disables every trade action on them', () => {
     expect(dockSource).toContain('toolboxTrade.pendingPositions');
-    expect(dockSource).toContain('() => [...pendingPositions, ...sortedLivePositions]');
+    expect(dockSource).toContain('[...pendingPositions, ...sortedArrayPositions]');
     expect(dockSource).toContain('const isPendingPlacement = Boolean(');
     expect(dockSource).toContain('disabled={isPendingPlacement}');
     expect(dockSource).toContain('openModifyPosition(position);');

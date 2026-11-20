@@ -13,6 +13,7 @@ import {
   TRADE_OVERLAY_CLOSE_SUPPRESSION_TTL_MS,
 } from '../../../services/tradeOverlayHistory';
 import type { Timeframe } from '../../../types/chart';
+import { getLiveQuote, subscribeLiveQuotes } from '../../../services/liveQuotes';
 import type { createTradeOverlayModelRuntime } from './createTradeOverlayModelRuntime';
 import type {
   ActiveTradeSnapshot,
@@ -112,6 +113,22 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
       timeScaleHandler();
     }
 
+    // Ticks no longer rewrite state.positions (they go to the live-quote store), so a positions
+    // change is a real trade event/snapshot and keeps the original full-reconcile rule below.
+    // Live ticks only need a relayout so the chart profit chip follows the latest price.
+    let lastLiveQuote = getLiveQuote(symbol);
+    const unsubscribeLiveQuotes = subscribeLiveQuotes(() => {
+      const currentQuote = getLiveQuote(symbol);
+      if (currentQuote === lastLiveQuote) return;
+      lastLiveQuote = currentQuote;
+      if (
+        isActiveRef.current
+        && (activeTradeSnapshotsRef.current.size > 0 || pendingMissingActiveTradesRef.current.size > 0)
+      ) {
+        queueTradeOverlayRelayout();
+      }
+    });
+
     const unsubscribeAppStore = useAppStore.subscribe((state, previousState) => {
       const currentTick = resolveSymbolTick(state.ticks);
       const previousTick = resolveSymbolTick(previousState.ticks);
@@ -127,8 +144,7 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
 
       if (
         isActiveRef.current
-        &&
-        currentTick !== previousTick
+        && currentTick !== previousTick
         && (activeTradeSnapshotsRef.current.size > 0 || pendingMissingActiveTradesRef.current.size > 0)
       ) {
         queueTradeOverlayRelayout();
@@ -267,6 +283,7 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
       disposed = true;
       if (renderFrame !== null) window.cancelAnimationFrame(renderFrame);
       if (forceRefreshTimer !== null) window.clearTimeout(forceRefreshTimer);
+      unsubscribeLiveQuotes();
       unsubscribeAppStore();
       unsubscribeChartSettings();
       unsubscribeChartObjectState();

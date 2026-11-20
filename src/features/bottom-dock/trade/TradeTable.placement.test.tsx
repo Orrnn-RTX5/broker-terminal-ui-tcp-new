@@ -33,12 +33,16 @@ const provisionalPosition = (placementState: ToolboxTradePosition['placementStat
 });
 
 const createProps = (positions: ToolboxTradePosition[]): ComponentProps<typeof TradeTable> => ({
-  account: { currency: 'USD' } as ComponentProps<typeof TradeTable>['account'],
+  account: { currency: 'USD', balance: 1000, equity: 1000, margin: 10, freeMargin: 990, marginLevel: 10000, unrealizedPL: 0 } as unknown as ComponentProps<typeof TradeTable>['account'],
   columnWidths: DEFAULT_TRADE_COLUMN_WIDTHS,
   displayedLivePositions: positions,
+  metricsPositions: positions.filter(position => !position.placementState),
+  metricsNow: 0,
+  totalSwap: 0,
+  totalCommission: 0,
+  openCount: positions.length,
+  formatMarginLevel: value => String(value),
   error: null,
-  floatingProfitColor: 'text-profit',
-  floatingProfitLabel: '8.00',
   footerCloseColumnWidth: '32px',
   footerMetricMenuOpen: false,
   footerProfitColumnWidth: '92px',
@@ -48,17 +52,14 @@ const createProps = (positions: ToolboxTradePosition[]): ComponentProps<typeof T
   formatTradePrice: value => String(value),
   formatTradeTime: value => String(value ?? '-'),
   formatTradeVolume: position => position.volume,
-  getFooterMetricComment: () => '',
   getPositionKey: position => String(position.id),
   getTradePointsValue: () => null,
   handleTradeContextMenu: vi.fn(),
   isColumnVisible: () => true,
-  liveEquity: null,
   loading: false,
   onClosePosition: vi.fn(),
   openModifyPosition: vi.fn(),
   profitMode: 'money',
-  renderFooterMetricValue: () => null,
   resizingColumn: null,
   selectedPositionKey: null,
   setColumnWidths: vi.fn(),
@@ -67,7 +68,6 @@ const createProps = (positions: ToolboxTradePosition[]): ComponentProps<typeof T
   startColumnResize: vi.fn(),
   toggleFooterMetricMenu: vi.fn(),
   toggleSort: vi.fn(),
-  totalLivePnL: 8,
   visibleFooterMetrics: [],
   visibleOptionalColumnCount: TRADE_COLUMN_DEFS.length,
   visibleTradeColumns: TRADE_COLUMN_DEFS,
@@ -227,13 +227,13 @@ describe('Trade row updates', () => {
     view.rerender(<TradeTable {...props} displayedLivePositions={[latest]} />);
     const row = view.container.querySelector('tbody tr')!;
     fireEvent.doubleClick(row);
-    expect(props.openModifyPosition).toHaveBeenLastCalledWith(latest);
+    expect(props.openModifyPosition).toHaveBeenLastCalledWith(expect.objectContaining({ id: 100, price_current: 3490, profit: 25 }));
     fireEvent.click(view.container.querySelector('.rtx-trade-sl-value')!, { detail: 1 });
-    expect(props.openModifyPosition).toHaveBeenLastCalledWith(latest);
+    expect(props.openModifyPosition).toHaveBeenLastCalledWith(expect.objectContaining({ id: 100, price_current: 3490, profit: 25 }));
     fireEvent.click(view.container.querySelector('.rtx-trade-tp-value')!, { detail: 1 });
-    expect(props.openModifyPosition).toHaveBeenLastCalledWith(latest);
+    expect(props.openModifyPosition).toHaveBeenLastCalledWith(expect.objectContaining({ id: 100, price_current: 3490, profit: 25 }));
     fireEvent.contextMenu(row);
-    expect(props.handleTradeContextMenu).toHaveBeenLastCalledWith(expect.anything(), latest);
+    expect(props.handleTradeContextMenu).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ id: 100, price_current: 3490, profit: 25 }));
   });
 
   it('updates cached placement labels and failure details through an order lifecycle', () => {
@@ -264,15 +264,12 @@ describe('Trade row updates', () => {
 
     view.rerender(<TradeTable
       {...props}
-      account={{ currency: 'EUR', publicationToken: 'publication-two' } as NonNullable<typeof props.account>}
-      floatingProfitLabel="12.00"
-      totalLivePnL={12}
-      liveEquity={1012}
+      account={{ ...props.account, currency: 'EUR', publicationToken: 'publication-two' } as NonNullable<typeof props.account>}
     />);
 
     expect(formatTradeTime).not.toHaveBeenCalled();
     expect(view.container.querySelector('.rtx-trade-footer')).toHaveAttribute('data-metrics-publication-token', 'publication-two');
-    expect(view.container.querySelector('.rtx-trade-footer-floating')).toHaveTextContent('12.00EUR');
+    expect(view.container.querySelector('.rtx-trade-footer-floating')).toHaveTextContent('2.00EUR');
     expect(screen.getByRole('button', { name: 'Close position 100' })).toBeEnabled();
   });
 
@@ -324,9 +321,9 @@ describe('Trade row updates', () => {
     fireEvent.doubleClick(row);
     fireEvent.contextMenu(row);
     expect(current.onClosePosition).toHaveBeenCalledExactlyOnceWith(100);
-    expect(current.openModifyPosition).toHaveBeenCalledExactlyOnceWith(position);
+    expect(current.openModifyPosition).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 100 }));
     expect(current.setSelectedPositionKey).toHaveBeenCalledWith('100');
-    expect(current.handleTradeContextMenu).toHaveBeenCalledWith(expect.anything(), position);
+    expect(current.handleTradeContextMenu).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 100 }));
     expect(props.onClosePosition).not.toHaveBeenCalled();
     expect(props.openModifyPosition).not.toHaveBeenCalled();
     expect(props.handleTradeContextMenu).not.toHaveBeenCalled();

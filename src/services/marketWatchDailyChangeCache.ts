@@ -69,6 +69,17 @@ let loadedFromStorage = false;
 let entryCount = 0;
 let dirty = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+// Least-recently-updated order of all entries (key = scope + NUL + symbol). The per-tick path
+// evicts the oldest entry in O(1) when a new key exceeds the cap, instead of collecting and
+// sorting the whole cache on every insert (that sort ran on every tick once more than
+// MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES symbols were live).
+const lruOrder = new Map<string, true>();
+const lruKey = (scopeKey: string, symbol: string): string => `${scopeKey}\u0000${symbol}`;
+const touchLru = (scopeKey: string, symbol: string): void => {
+  const key = lruKey(scopeKey, symbol);
+  lruOrder.delete(key);
+  lruOrder.set(key, true);
+};
 
 const normalizeSymbol = (symbol: unknown): string => String(symbol ?? '').trim().toUpperCase();
 
@@ -175,6 +186,7 @@ const deleteEntry = (scopeKey: string, symbol: string): boolean => {
   const scopedEntries = entriesByScope.get(scopeKey);
   if (!scopedEntries?.delete(symbol)) return false;
   entryCount -= 1;
+  lruOrder.delete(lruKey(scopeKey, symbol));
   if (scopedEntries.size === 0) entriesByScope.delete(scopeKey);
   return true;
 };
@@ -259,7 +271,12 @@ const ensureLoaded = (): void => {
   });
 
   const pruned = pruneEntries();
-  entryCount = collectEntries().length;
+  const loadedEntries = collectEntries();
+  entryCount = loadedEntries.length;
+  // Seed the eviction order oldest-first from the persisted savedAt values.
+  loadedEntries
+    .sort((left, right) => left.savedAt - right.savedAt)
+    .forEach((entry) => touchLru(entry.scopeKey, entry.symbol));
   if (pruned) markDirty();
 };
 
@@ -395,7 +412,19 @@ const rememberEntry = (
   scopedEntries.set(normalizedSymbol, candidate);
   if (!current) entryCount += 1;
   entriesByScope.set(normalizedScopeKey, scopedEntries);
+  touchLru(normalizedScopeKey, normalizedSymbol);
   return true;
+};
+
+// O(1) per evicted entry: drop least-recently-updated entries until the cap holds.
+const evictOldestBeyondCap = (): void => {
+  while (entryCount > MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES) {
+    const oldest = lruOrder.keys().next();
+    if (oldest.done) break;
+    const sep = oldest.value.indexOf('\u0000');
+    const removed = deleteEntry(oldest.value.slice(0, sep), oldest.value.slice(sep + 1));
+    if (!removed) lruOrder.delete(oldest.value);
+  }
 };
 
 export const rememberMarketWatchDailyChange = (
@@ -412,8 +441,8 @@ export const rememberMarketWatchDailyChange = (
   if (!changed) return false;
 
   // Existing-symbol updates are the hot path: expiry scans and sorting wait for
-  // the coalesced flush. Only growth past the memory bound trims now.
-  if (entryCount > MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES) pruneEntries();
+  // the coalesced flush. Only growth past the memory bound trims now, in O(1).
+  if (entryCount > MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES) evictOldestBeyondCap();
   markDirty();
   return true;
 };
@@ -493,6 +522,7 @@ export const resetMarketWatchDailyChangeCacheForTests = (
   if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
   entriesByScope.clear();
+  lruOrder.clear();
   entryCount = 0;
   loadedFromStorage = false;
   dirty = false;

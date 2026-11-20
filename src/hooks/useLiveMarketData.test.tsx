@@ -715,6 +715,27 @@ describe('useLiveQuotes REST fallback batching', () => {
     unmount();
   });
 
+  it('does not re-run the REST snapshot when the same symbols are only reordered (Market Watch sort)', async () => {
+    const symbols = Array.from({ length: LIVE_QUOTES_REST_BATCH_SIZE + 3 }, (_, index) => `S${index}`);
+
+    const { rerender, unmount } = renderHook(({ list }) => useLiveQuotes(list), {
+      initialProps: { list: symbols },
+    });
+    await flushPromises();
+    const callsAfterMount = apiGet.mock.calls.length;
+    expect(callsAfterMount).toBe(2);
+
+    rerender({ list: [...symbols].reverse() });
+    await flushPromises();
+    expect(apiGet).toHaveBeenCalledTimes(callsAfterMount);
+
+    rerender({ list: [...symbols, 'NEW1'] });
+    await flushPromises();
+    expect(apiGet.mock.calls.length).toBeGreaterThan(callsAfterMount);
+
+    unmount();
+  });
+
   it('does not dispatch a timestamp-less REST snapshot over an existing websocket source tick', async () => {
     const websocketTick = {
       symbol: 'EURUSD',

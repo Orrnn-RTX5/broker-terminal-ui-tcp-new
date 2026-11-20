@@ -1,4 +1,6 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useSyncExternalStore } from 'react';
+import { getLiveQuotesVersion, subscribeLiveQuotes } from '../../services/liveQuotes';
+import { getLivePositionProfit } from '../../services/livePositionMetrics';
 import { useBulkCloseConfirmStore } from '../../store/useBulkCloseConfirmStore';
 import { useAppStore, type Position } from '../../store/useAppStore';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
@@ -8,6 +10,8 @@ import { resolveAccountCurrencyDigits } from '../../utils/accountCurrency';
 import { readBackendPositionProfit, resolveTradeProfit } from '../BottomDock.trade';
 
 const EMPTY_STORE_POSITIONS: Position[] = [];
+const noopSubscribe = () => () => {};
+const zeroSnapshot = () => 0;
 
 export function BulkCloseConfirmDialog() {
     const tr = useUiTranslation();
@@ -22,6 +26,11 @@ export function BulkCloseConfirmDialog() {
     } = useBulkCloseConfirmStore();
     const accountCurrencyDigits = resolveAccountCurrencyDigits(useAppStore(state => state.account));
     const storePositions = useAppStore(state => (isOpen ? state.positions : EMPTY_STORE_POSITIONS));
+    const quotesVersion = useSyncExternalStore(
+        isOpen ? subscribeLiveQuotes : noopSubscribe,
+        isOpen ? getLiveQuotesVersion : zeroSnapshot,
+        zeroSnapshot,
+    );
 
     const cancelBtnRef = useRef<HTMLButtonElement>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
@@ -49,7 +58,7 @@ export function BulkCloseConfirmDialog() {
             const livePos = liveById.get(pos.id);
             if (!livePos) return pos;
             hasLiveMatch = true;
-            const resolvedProfit = resolveTradeProfit(livePos).value ?? readBackendPositionProfit(livePos);
+            const resolvedProfit = getLivePositionProfit(livePos) ?? resolveTradeProfit(livePos).value ?? readBackendPositionProfit(livePos);
             const liveVolume = Number(livePos.volume ?? livePos.quantity);
             const liveOpenPrice = Number(livePos.openPrice ?? livePos.price_open ?? livePos.open_price);
             return {
@@ -66,7 +75,9 @@ export function BulkCloseConfirmDialog() {
 
         const nextCombinedPnL = nextPositions.reduce((total, pos) => total + pos.pnl, 0);
         return { livePositions: nextPositions, liveCombinedPnL: nextCombinedPnL };
-    }, [isOpen, positions, combinedPnL, storePositions]);
+    // quotesVersion is the change signal for the live quotes read by getLivePositionProfit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, positions, combinedPnL, storePositions, quotesVersion]);
 
     // Sort positions by P&L descending
     const sortedPositions = useMemo(() =>
