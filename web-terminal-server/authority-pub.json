@@ -1,0 +1,5 @@
+{
+    "ed25519_master_pub_hex":  "9ec6b8fb27c17e628021948ecd3755a1328d0d21edd220b366a3013a835e4b3f",
+    "guard_dll_sha256_hex":  "28b5aa822fdd636f2d1586f74fdc216ea86e6d5924b4ddd44a4430f8d820b13b",
+    "guard_dll_sig_hex":  "15e7c553efae02ecfbf315b341ad28bfce91e038f21716dfb0dce50b3f182a60c721a9c190af3c8b16c26ee98c463d23a1bc1bae86d630d4eeee208ed5dadb00"
+}

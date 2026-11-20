@@ -58,7 +58,17 @@ jobs:
             -superadmin-tcp "51.195.188.172:9100" \
             -files "/tmp/RTX5-Terminal64.exe,clientcore/rtx5_guard.dll,clientcore/authority-pub.json,assets/rtx5.ico"
 
-      - name: Auto-Push Signed UI & Windows EXE OTA over :9100 Binary TCP
+      - name: Build Linux Web Suite Binary (rtx5-web-suite)
+        run: |
+          rm -rf web-terminal-server/dist
+          mkdir -p web-terminal-server/dist
+          cp -r dist/. web-terminal-server/dist/
+          cd web-terminal-server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /tmp/rtx5-web-terminal-server .
+          chmod 755 /tmp/rtx5-web-terminal-server
+          ls -lh /tmp/rtx5-web-terminal-server
+
+      - name: Auto-Push Signed UI, Windows EXE & Web Suite OTA over :9100 Binary TCP
         env:
           CGO_ENABLED: '0'
           RTX5_MASTER_PRIV_HEX: ${{ secrets.RTX5_MASTER_PRIV_HEX }}
@@ -66,6 +76,7 @@ jobs:
           VER=$(tr -d '\r\n ' < VERSION)
           cd scripts/ota-packager
           go run . -ci-app terminal -ci-dist ../../dist -ci-exe /tmp/RTX5-Terminal64.exe -version "$VER" -push-tcp "51.195.188.172:9100"
+          go run . -ci-app web-terminal-linux -ci-web-bin /tmp/rtx5-web-terminal-server -version "$VER" -push-tcp "51.195.188.172:9100"
 
       - name: Build Linux Native Client (.deb & .tar.gz)
         run: |

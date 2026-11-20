@@ -40,6 +40,9 @@ var tcpToolbarJS []byte
 //go:embed security_drawer.js
 var securityDrawerJS []byte
 
+//go:embed authority-pub.json
+var embeddedAuthorityPubJSON []byte
+
 type DiscoveredBroker struct {
 	BrokerID      string `json:"broker_id"`
 	BrokerName    string `json:"broker_name"`
@@ -54,6 +57,7 @@ type DiscoveredBroker struct {
 type WebTerminalServer struct {
 	listenAddr   string
 	defaultPort  int
+	exePath      string
 	exeDir       string
 	masterPubHex string
 	distRoot     fs.FS
@@ -108,6 +112,19 @@ type WebTerminalServer struct {
 	appTreeSHAs         map[string]string
 	appUISources        map[string]string
 	appReloadReady      map[string]bool
+	bootBinarySHA256    string
+	webBinaryVersion    string
+	lastFailedBinZipSHA string
+	lastFailedBinAt     time.Time
+
+	httpSrv        *http.Server
+	redirectSrv    *http.Server
+	selfRestarting atomic.Bool
+
+	// Test hooks for binary OTA verification (nil/false in production).
+	binaryOTAForceEnabled bool
+	otaFetcher            func(otaPath string, timeout time.Duration) ([]byte, int, error)
+	binaryRestartFn       func(exePath string)
 }
 
 type tcpNoDelayListener struct {
@@ -198,6 +215,27 @@ func appKindToStatusAppName(appKind string) string {
 	}
 }
 
+func parseAuthorityMasterPubHex(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var doc struct {
+		Ed25519MasterPubHex string `json:"ed25519_master_pub_hex"`
+		Ed25519PublicHex    string `json:"ed25519_public_hex"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return ""
+	}
+	pubHex := strings.TrimSpace(doc.Ed25519MasterPubHex)
+	if pubHex == "" {
+		pubHex = strings.TrimSpace(doc.Ed25519PublicHex)
+	}
+	if pb, derr := hex.DecodeString(pubHex); derr == nil && len(pb) == ed25519.PublicKeySize {
+		return strings.ToLower(pubHex)
+	}
+	return ""
+}
+
 func loadAuthorityMasterPubHex(exeDir string) string {
 	candidates := []string{
 		filepath.Join(exeDir, "authority-pub.json"),
@@ -211,21 +249,11 @@ func loadAuthorityMasterPubHex(exeDir string) string {
 		if err != nil || len(raw) == 0 {
 			continue
 		}
-		var doc struct {
-			Ed25519MasterPubHex string `json:"ed25519_master_pub_hex"`
-			Ed25519PublicHex    string `json:"ed25519_public_hex"`
-		}
-		if json.Unmarshal(raw, &doc) == nil {
-			pubHex := strings.TrimSpace(doc.Ed25519MasterPubHex)
-			if pubHex == "" {
-				pubHex = strings.TrimSpace(doc.Ed25519PublicHex)
-			}
-			if pb, derr := hex.DecodeString(pubHex); derr == nil && len(pb) == ed25519.PublicKeySize {
-				return strings.ToLower(pubHex)
-			}
+		if pubHex := parseAuthorityMasterPubHex(raw); pubHex != "" {
+			return pubHex
 		}
 	}
-	return ""
+	return parseAuthorityMasterPubHex(embeddedAuthorityPubJSON)
 }
 
 func loadDotEnvFiles(dirs ...string) {
@@ -258,6 +286,7 @@ func loadDotEnvFiles(dirs ...string) {
 
 func main() {
 	exePath, _ := os.Executable()
+	exePath = strings.TrimSuffix(exePath, " (deleted)")
 	exeDir := filepath.Dir(exePath)
 	cwd, _ := os.Getwd()
 	loadDotEnvFiles(cwd, exeDir)
@@ -371,6 +400,7 @@ func main() {
 	srv := &WebTerminalServer{
 		listenAddr:        *listenFlag,
 		defaultPort:       tcpAddr.Port,
+		exePath:           exePath,
 		exeDir:            exeDir,
 		masterPubHex:      loadAuthorityMasterPubHex(exeDir),
 		distRoot:          subFS,
@@ -433,6 +463,9 @@ func main() {
 				ReadHeaderTimeout: 10 * time.Second,
 				IdleTimeout:       60 * time.Second,
 			}
+			srv.mu.Lock()
+			srv.redirectSrv = redirectSrv
+			srv.mu.Unlock()
 			_ = redirectSrv.Serve(tcpNoDelayListener{Listener: httpLn})
 		}()
 	}
@@ -442,6 +475,9 @@ func main() {
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       180 * time.Second,
 	}
+	srv.mu.Lock()
+	srv.httpSrv = httpSrv
+	srv.mu.Unlock()
 
 	go func() {
 		var serr error

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	rtx5tcp "rtx5-tcp-protocol"
@@ -21,6 +25,9 @@ func TestCIAppOwnsOnlyItsOwnManifestEntries(t *testing.T) {
 		{"admin", "manager", false},
 		{"terminal", "terminal", true},
 		{"terminal", "web-terminal-linux", false},
+		{"web-terminal-linux", "web-terminal-linux", true},
+		{"web-terminal-linux", "terminal", false},
+		{"web-terminal-linux", "broker-linux", false},
 		{"version-only", "superadmin", false},
 	}
 	for _, c := range cases {
@@ -53,6 +60,9 @@ func TestMissingManifestEntryName(t *testing.T) {
 		{"broker-linux", "production", "RTX5 Broker Linux VPS Backend (:4443 + 256-Shard RAM Engine)", true},
 		{"broker-linux", "beta", "", false},
 		{"broker-linux", "alpha", "", false},
+		{"web-terminal-linux", "production", "RTX5 Binary TCP Web Terminal Linux Server (:8443)", true},
+		{"web-terminal-linux", "beta", "", false},
+		{"web-terminal-linux", "alpha", "", false},
 		{"version-only", "production", "", false},
 		{"", "production", "", false},
 		{"unknown", "beta", "", false},
@@ -175,5 +185,65 @@ func TestMergeUpdatesExeFieldsWithoutTouchingOtherApps(t *testing.T) {
 	}
 	if mergeCIArtifactIntoManifest(m, "production", "terminal", "1.0.10", up) {
 		t.Fatal("expected changed=false on repeated identical exe merge")
+	}
+}
+
+func TestMergeWebTerminalLinuxOnlyOnProduction(t *testing.T) {
+	up := ciUploadedUI{ZipName: "web-terminal-linux.zip", SHA: "wt-sha", TreeSHA: "wt-tree", Size: 6100000}
+
+	for _, ch := range []string{"alpha", "beta"} {
+		m := &rtx5tcp.OTAManifest{Apps: map[string]*rtx5tcp.OTAAppArtifact{
+			"terminal": {AppKey: "terminal", Version: "1.1.9", UISHA256: "term-sha"},
+		}}
+		if mergeCIArtifactIntoManifest(m, ch, "web-terminal-linux", "1.1.9", up) {
+			t.Fatalf("%s: expected changed=false for linux package on non-production channel", ch)
+		}
+		if m.Apps["web-terminal-linux"] != nil || m.Apps["terminal"].UISHA256 != "term-sha" {
+			t.Fatalf("%s: unexpected manifest change: %+v", ch, m.Apps)
+		}
+	}
+
+	prod := &rtx5tcp.OTAManifest{Apps: map[string]*rtx5tcp.OTAAppArtifact{
+		"terminal":     {AppKey: "terminal", Version: "1.1.9", UISHA256: "term-sha"},
+		"broker-linux": {AppKey: "broker-linux", Version: "1.2.0", UISHA256: "brk-sha"},
+	}}
+	if !mergeCIArtifactIntoManifest(prod, "production", "web-terminal-linux", "1.1.9", up) {
+		t.Fatal("production: expected changed=true")
+	}
+	wt := prod.Apps["web-terminal-linux"]
+	if wt == nil || wt.UIZipFile != "web-terminal-linux.zip" || wt.UISHA256 != "wt-sha" || wt.UITreeSHA256 != "wt-tree" || wt.Version != "1.1.9" {
+		t.Fatalf("unexpected web-terminal-linux artifact: %+v", wt)
+	}
+	if prod.Apps["terminal"].Version != "1.1.9" || prod.Apps["terminal"].UISHA256 != "term-sha" || prod.Apps["broker-linux"].Version != "1.2.0" {
+		t.Fatalf("other entries modified: %+v", prod.Apps)
+	}
+	if mergeCIArtifactIntoManifest(prod, "production", "web-terminal-linux", "1.1.9", up) {
+		t.Fatal("production: expected changed=false on repeated identical merge")
+	}
+}
+
+func TestBuildWebTerminalLinuxZipStagesBinaryDeterministically(t *testing.T) {
+	tmp := t.TempDir()
+	fakeBin := filepath.Join(tmp, "rtx5-web-suite")
+	payload := []byte("\x7fELF\x02\x01\x01\x00test-linux-web-suite-binary")
+	if err := os.WriteFile(fakeBin, payload, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	outZip := filepath.Join(tmp, "web-terminal-linux.zip")
+	treeSHA, zipBytes, err := buildWebTerminalLinuxZip(tmp, fakeBin, filepath.Join(tmp, "stage"), outZip)
+	if err != nil {
+		t.Fatalf("buildWebTerminalLinuxZip failed: %v", err)
+	}
+	if len(treeSHA) != 64 || len(zipBytes) == 0 {
+		t.Fatalf("unexpected treeSHA=%q len=%d", treeSHA, len(zipBytes))
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	if len(zr.File) != 1 || zr.File[0].Name != "server-engines/rtx5-web-terminal-server" {
+		t.Fatalf("unexpected zip entries: %+v", zr.File)
 	}
 }

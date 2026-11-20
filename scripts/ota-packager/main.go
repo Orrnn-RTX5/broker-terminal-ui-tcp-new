@@ -690,7 +690,46 @@ func buildLinuxGoBinary(srcDir, outBinPath string) error {
 	return os.Chmod(outBinPath, 0755)
 }
 
-func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ciExe, ver, releaseID string, now time.Time) {
+func buildWebTerminalLinuxZip(prodRoot, ciWebBin, stageDir, outZipPath string) (string, []byte, error) {
+	_ = os.RemoveAll(stageDir)
+	binDst := filepath.Join(stageDir, "server-engines", "rtx5-web-terminal-server")
+	if strings.TrimSpace(ciWebBin) != "" {
+		if err := os.MkdirAll(filepath.Dir(binDst), 0755); err != nil {
+			return "", nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(binDst), err)
+		}
+		if err := copyAtomic(strings.TrimSpace(ciWebBin), binDst); err != nil {
+			return "", nil, fmt.Errorf("stage web suite binary (%s): %w", ciWebBin, err)
+		}
+		if err := os.Chmod(binDst, 0755); err != nil {
+			return "", nil, fmt.Errorf("chmod %s: %w", binDst, err)
+		}
+	} else {
+		webTermDir := filepath.Join(prodRoot, "web-terminal-server")
+		if _, err := os.Stat(filepath.Join(webTermDir, "main.go")); err != nil {
+			return "", nil, fmt.Errorf("web-terminal-server source not found at %s and -ci-web-bin not provided", webTermDir)
+		}
+		fmt.Printf("[CI-OTA] Compiling stripped Linux amd64 Web Suite binary (rtx5-web-terminal-server)...\n")
+		if err := buildLinuxGoBinary(webTermDir, binDst); err != nil {
+			return "", nil, err
+		}
+	}
+
+	treeSHA, err := zipSubdirsDeterministic(stageDir, []string{"server-engines"}, outZipPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("zip %s: %w", filepath.Base(outZipPath), err)
+	}
+	zipBytes, err := os.ReadFile(outZipPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("read %s: %w", outZipPath, err)
+	}
+	const maxRawOTABytes = 24 * 1024 * 1024
+	if len(zipBytes) >= maxRawOTABytes {
+		return "", nil, fmt.Errorf("%s size (%d bytes) exceeds 24 MB :9100 Binary TCP OTA raw cap", filepath.Base(outZipPath), len(zipBytes))
+	}
+	return treeSHA, zipBytes, nil
+}
+
+func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ciExe, ciWebBin, ver, releaseID string, now time.Time) {
 	if pushAddr == "" {
 		pushAddr = "185.126.217.108:9100"
 	}
@@ -726,6 +765,24 @@ func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp,
 			log.Fatalf("[CI-OTA] read %s: %v", tmpZip, rerr)
 		}
 		uploadedZipName = ciApp + "-ui.zip"
+		_, shaHex, uerr := uploadOTAFileOverTCP(sess, masterPriv, uploadedZipName, zipBytes)
+		if uerr != nil {
+			log.Fatalf("[CI-OTA] upload %s failed: %v", uploadedZipName, uerr)
+		}
+		uploadedSHA = shaHex
+		uploadedTreeSHA = treeSHA
+		uploadedSize = int64(len(zipBytes))
+		fmt.Printf("[CI-OTA] Uploaded %s (%.2f MB | sha256=%s)\n", uploadedZipName, float64(uploadedSize)/(1024*1024), shaHex[:12])
+	} else if ciApp == "web-terminal-linux" {
+		stageDir := filepath.Join(os.TempDir(), "rtx5-ci-web-terminal-linux")
+		defer os.RemoveAll(stageDir)
+
+		uploadedZipName = "web-terminal-linux.zip"
+		tmpZip := filepath.Join(os.TempDir(), uploadedZipName)
+		treeSHA, zipBytes, berr := buildWebTerminalLinuxZip(prodRoot, ciWebBin, stageDir, tmpZip)
+		if berr != nil {
+			log.Fatalf("[CI-OTA] %v", berr)
+		}
 		_, shaHex, uerr := uploadOTAFileOverTCP(sess, masterPriv, uploadedZipName, zipBytes)
 		if uerr != nil {
 			log.Fatalf("[CI-OTA] upload %s failed: %v", uploadedZipName, uerr)
@@ -879,9 +936,10 @@ func main() {
 	promoteToFlag := flag.String("promote-to", "", "Target channel to promote to (beta or production)")
 	pushTCPFlag := flag.String("push-tcp", "", "Super Admin Binary TCP Hub address (:9100) to push signed OTA release to")
 	autoPushFlag := flag.Bool("auto-push", true, "Automatically push signed OTA release over Binary TCP (:9100) using 1-SUPERADMIN-My-PC-Only/client-config.json")
-	ciAppFlag := flag.String("ci-app", "", "CI single-repo OTA update target (superadmin, admin, manager, terminal, version-only)")
+	ciAppFlag := flag.String("ci-app", "", "CI single-repo OTA update target (superadmin, admin, manager, terminal, web-terminal-linux, version-only)")
 	ciDistFlag := flag.String("ci-dist", "", "CI built dist directory for UI bundle")
 	ciExeFlag := flag.String("ci-exe", "", "CI built Windows .exe binary for desktop binary OTA self-update")
+	ciWebBinFlag := flag.String("ci-web-bin", "", "CI built Linux amd64 rtx5-web-suite binary for web-terminal-linux OTA")
 	flag.Parse()
 
 	prodRoot := strings.TrimSpace(*rootFlag)
@@ -939,7 +997,7 @@ func main() {
 	releaseID := fmt.Sprintf("rtx5-tcp-ota-%s", now.Format("20060102-150405"))
 
 	if strings.TrimSpace(*ciAppFlag) != "" {
-		runCIPartialOTAPush(prodRoot, pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), strings.TrimSpace(*ciExeFlag), ver, releaseID, now)
+		runCIPartialOTAPush(prodRoot, pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), strings.TrimSpace(*ciExeFlag), strings.TrimSpace(*ciWebBinFlag), ver, releaseID, now)
 		return
 	}
 

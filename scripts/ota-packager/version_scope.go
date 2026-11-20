@@ -7,13 +7,14 @@ import rtx5tcp "rtx5-tcp-protocol"
 // release-list entries it builds. A Super Admin push must not relabel the broker
 // or the UIs, whose files did not change.
 //
-//	repo                      CI target          release-list entries
-//	superadmin-backend        superadmin-linux   superadmin-linux
-//	superadmin-UI             superadmin         superadmin
-//	Broker-Backend-V2         broker-linux       broker-linux, broker-windows
-//	Broker-Admin-UI           admin              admin
-//	Broker-Manager-UI         manager            manager
-//	Broker-Terminal-UI        terminal           terminal
+//	repo                      CI target           release-list entries
+//	superadmin-backend        superadmin-linux    superadmin-linux
+//	superadmin-UI             superadmin          superadmin
+//	Broker-Backend-V2         broker-linux        broker-linux, broker-windows
+//	Broker-Admin-UI           admin               admin
+//	Broker-Manager-UI         manager             manager
+//	Broker-Terminal-UI        terminal            terminal
+//	Broker-Terminal-UI (web)  web-terminal-linux  web-terminal-linux
 func ciAppOwnsManifestKey(ciApp, key string) bool {
 	if ciApp == "broker-linux" {
 		return key == "broker-linux" || key == "broker-windows"
@@ -35,6 +36,10 @@ func missingManifestEntryName(ciApp, channel string) (appName string, ok bool) {
 	case "broker-linux":
 		if channel == "production" {
 			return "RTX5 Broker Linux VPS Backend (:4443 + 256-Shard RAM Engine)", true
+		}
+	case "web-terminal-linux":
+		if channel == "production" {
+			return "RTX5 Binary TCP Web Terminal Linux Server (:8443)", true
 		}
 	case "superadmin":
 		return "RTX5 Super Admin Control Plane", true
@@ -71,12 +76,12 @@ func mergeCIArtifactIntoManifest(m *rtx5tcp.OTAManifest, ch, ciApp, ver string, 
 			changed = true
 		}
 	}
-	linux := ciApp == "superadmin-linux" || ciApp == "broker-linux"
+	linux := ciApp == "superadmin-linux" || ciApp == "broker-linux" || ciApp == "web-terminal-linux"
 	for k, a := range m.Apps {
 		if a == nil {
 			continue
 		}
-		if ciAppOwnsManifestKey(ciApp, k) && a.Version != ver {
+		if ciAppOwnsManifestKey(ciApp, k) && (ch == "production" || !linux) && a.Version != ver {
 			a.Version = ver
 			changed = true
 		}

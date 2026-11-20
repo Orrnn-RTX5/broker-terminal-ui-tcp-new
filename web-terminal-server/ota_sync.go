@@ -116,6 +116,14 @@ func (c *WebTerminalServer) initHotUIOTAState() {
 		c.otaMu.Unlock()
 	}
 
+	if exePath := strings.TrimSpace(c.exePath); exePath != "" {
+		if h, _, err := rtx5tcp.ComputeFileSHA256(exePath); err == nil && h != "" {
+			c.otaMu.Lock()
+			c.bootBinarySHA256 = strings.ToLower(strings.TrimSpace(h))
+			c.otaMu.Unlock()
+		}
+	}
+
 	// Read local VERSION file if present
 	for _, vp := range []string{
 		filepath.Join(c.exeDir, "VERSION"),
@@ -187,6 +195,8 @@ func (c *WebTerminalServer) getOTAStatusSnapshotForApp(appKind string) map[strin
 	reloadReady := c.appReloadReady[appKind]
 	lastChecked := c.lastOTACheckedUnix
 	lastErr := c.lastOTAError
+	bootBinSHA := c.bootBinarySHA256
+	webBinVer := c.webBinaryVersion
 	c.otaMu.RUnlock()
 
 	snap := map[string]any{
@@ -201,6 +211,12 @@ func (c *WebTerminalServer) getOTAStatusSnapshotForApp(appKind string) map[strin
 		"ui_reload_ready":    reloadReady,
 		"exe_restart_ready":  false,
 		"last_checked_unix":  lastChecked,
+	}
+	if bootBinSHA != "" {
+		snap["web_suite_binary_sha"] = shortSHA(bootBinSHA)
+	}
+	if webBinVer != "" {
+		snap["web_suite_version"] = webBinVer
 	}
 	if lastErr != "" {
 		snap["last_error"] = lastErr
@@ -220,6 +236,9 @@ func (c *WebTerminalServer) runBackgroundHotUIOTALoop() {
 }
 
 func (c *WebTerminalServer) fetchOTARPC(otaPath string, timeout time.Duration) ([]byte, int, error) {
+	if c.otaFetcher != nil {
+		return c.otaFetcher(otaPath, timeout)
+	}
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
@@ -479,6 +498,8 @@ func (c *WebTerminalServer) syncHotUIOTA() error {
 
 		log.Printf("[WEB-OTA] Hot-synced %s UI (%s, release=%s, sha=%.12s)", appKey, art.UIZipFile, manifest.ReleaseID, targetUISHA)
 	}
+
+	_ = c.syncWebSuiteBinaryOTA(&manifest, cacheBase)
 
 	return nil
 }
