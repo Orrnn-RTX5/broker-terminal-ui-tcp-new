@@ -131,3 +131,49 @@ func TestMergeVersionOnlyCreatesNothing(t *testing.T) {
 		t.Fatal("version-only must not change or create")
 	}
 }
+
+func TestMergeUpdatesExeFieldsWithoutTouchingOtherApps(t *testing.T) {
+	m := &rtx5tcp.OTAManifest{Apps: map[string]*rtx5tcp.OTAAppArtifact{
+		"terminal": {
+			AppKey:       "terminal",
+			Version:      "1.0.10",
+			UIZipFile:    "terminal-ui.zip",
+			UISHA256:     "ui-sha",
+			UITreeSHA256: "ui-tree",
+			UISize:       500,
+			ExeFile:      "RTX5-Terminal64.exe",
+			ExeSHA256:    "exe-old",
+			ExeSize:      1000,
+		},
+		"admin": {
+			AppKey:    "admin",
+			Version:   "1.0.5",
+			ExeFile:   "RTX5-Admin64.exe",
+			ExeSHA256: "admin-exe",
+			ExeSize:   2000,
+		},
+	}}
+	up := ciUploadedUI{
+		ZipName: "terminal-ui.zip",
+		SHA:     "ui-sha",
+		TreeSHA: "ui-tree",
+		Size:    500,
+		ExeName: "RTX5-Terminal64.exe",
+		ExeSHA:  "exe-new",
+		ExeSize: 4096,
+	}
+	if !mergeCIArtifactIntoManifest(m, "production", "terminal", "1.0.10", up) {
+		t.Fatal("expected changed=true when exe fields differ")
+	}
+	term := m.Apps["terminal"]
+	if term.ExeFile != "RTX5-Terminal64.exe" || term.ExeSHA256 != "exe-new" || term.ExeSize != 4096 {
+		t.Fatalf("terminal exe fields not updated: %+v", term)
+	}
+	adm := m.Apps["admin"]
+	if adm.Version != "1.0.5" || adm.ExeFile != "RTX5-Admin64.exe" || adm.ExeSHA256 != "admin-exe" || adm.ExeSize != 2000 {
+		t.Fatalf("other app modified: %+v", adm)
+	}
+	if mergeCIArtifactIntoManifest(m, "production", "terminal", "1.0.10", up) {
+		t.Fatal("expected changed=false on repeated identical exe merge")
+	}
+}

@@ -48,21 +48,24 @@ func missingManifestEntryName(ciApp, channel string) (appName string, ok bool) {
 	return "", false
 }
 
-// ciUploadedUI describes the UI bundle the CI run just uploaded (empty SHA = none).
+// ciUploadedUI describes the UI bundle and optional Windows .exe the CI run just uploaded (empty SHA = none).
 type ciUploadedUI struct {
 	ZipName string
 	SHA     string
 	TreeSHA string
 	Size    int64
+	ExeName string
+	ExeSHA  string
+	ExeSize int64
 }
 
 // mergeCIArtifactIntoManifest applies one CI run to one channel manifest: creates
 // the CI app's own entry if missing, bumps the version of the entries it owns, and
-// fills the UI bundle fields. It reports whether anything changed. It never creates
+// fills the UI bundle / Windows .exe fields. It reports whether anything changed. It never creates
 // or touches entries owned by other repositories.
 func mergeCIArtifactIntoManifest(m *rtx5tcp.OTAManifest, ch, ciApp, ver string, up ciUploadedUI) bool {
 	changed := false
-	if up.SHA != "" && m.Apps[ciApp] == nil {
+	if (up.SHA != "" || up.ExeSHA != "") && m.Apps[ciApp] == nil {
 		if name, ok := missingManifestEntryName(ciApp, ch); ok {
 			m.Apps[ciApp] = &rtx5tcp.OTAAppArtifact{AppKey: ciApp, AppName: name, Version: ver}
 			changed = true
@@ -85,6 +88,14 @@ func mergeCIArtifactIntoManifest(m *rtx5tcp.OTAManifest, ch, ciApp, ver string, 
 			a.UISHA256 = up.SHA
 			a.UISize = up.Size
 			a.UITreeSHA256 = up.TreeSHA
+		}
+		if k == ciApp && up.ExeSHA != "" && up.ExeName != "" && !linux {
+			if a.ExeFile != up.ExeName || a.ExeSHA256 != up.ExeSHA || a.ExeSize != up.ExeSize {
+				changed = true
+			}
+			a.ExeFile = up.ExeName
+			a.ExeSHA256 = up.ExeSHA
+			a.ExeSize = up.ExeSize
 		}
 	}
 	return changed

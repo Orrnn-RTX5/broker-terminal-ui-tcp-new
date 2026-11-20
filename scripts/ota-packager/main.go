@@ -690,7 +690,7 @@ func buildLinuxGoBinary(srcDir, outBinPath string) error {
 	return os.Chmod(outBinPath, 0755)
 }
 
-func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ver, releaseID string, now time.Time) {
+func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp, ciDist, ciExe, ver, releaseID string, now time.Time) {
 	if pushAddr == "" {
 		pushAddr = "185.126.217.108:9100"
 	}
@@ -811,6 +811,24 @@ func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp,
 		}
 	}
 
+	var uploadedExeName, uploadedExeSHA string
+	var uploadedExeSize int64
+	if ciExe != "" && (ciApp == "superadmin" || ciApp == "admin" || ciApp == "manager" || ciApp == "terminal") {
+		exeBytes, rerr := os.ReadFile(ciExe)
+		if rerr != nil {
+			log.Fatalf("[CI-OTA] read %s: %v", ciExe, rerr)
+		}
+		exeName := filepath.Base(ciExe)
+		_, shaHex, uerr := uploadOTAFileOverTCP(sess, masterPriv, exeName, exeBytes)
+		if uerr != nil {
+			log.Fatalf("[CI-OTA] upload %s failed: %v", exeName, uerr)
+		}
+		uploadedExeName = exeName
+		uploadedExeSHA = shaHex
+		uploadedExeSize = int64(len(exeBytes))
+		fmt.Printf("[CI-OTA] Uploaded %s (%.2f MB | sha256=%s)\n", exeName, float64(uploadedExeSize)/(1024*1024), shaHex[:12])
+	}
+
 	for _, ch := range []string{"production", "beta", "alpha"} {
 		mStatus, _, mBody, mErr := sess.RoundTripRPC("ota", http.MethodGet, "/ota/manifest?channel="+ch, nil, nil, 15*time.Second)
 		if mErr != nil || mStatus != http.StatusOK || len(mBody) == 0 {
@@ -822,6 +840,7 @@ func runCIPartialOTAPush(prodRoot, pushAddr, masterPrivHex, masterPubHex, ciApp,
 		}
 		anyChanged := mergeCIArtifactIntoManifest(&m, ch, ciApp, ver, ciUploadedUI{
 			ZipName: uploadedZipName, SHA: uploadedSHA, TreeSHA: uploadedTreeSHA, Size: uploadedSize,
+			ExeName: uploadedExeName, ExeSHA: uploadedExeSHA, ExeSize: uploadedExeSize,
 		})
 		if !anyChanged && m.ReleaseID != "" {
 			fmt.Printf("[CI-OTA] Channel %s already up-to-date at %s (v%s); skipping duplicate manifest push\n", ch, m.ReleaseID, ver)
@@ -862,6 +881,7 @@ func main() {
 	autoPushFlag := flag.Bool("auto-push", true, "Automatically push signed OTA release over Binary TCP (:9100) using 1-SUPERADMIN-My-PC-Only/client-config.json")
 	ciAppFlag := flag.String("ci-app", "", "CI single-repo OTA update target (superadmin, admin, manager, terminal, version-only)")
 	ciDistFlag := flag.String("ci-dist", "", "CI built dist directory for UI bundle")
+	ciExeFlag := flag.String("ci-exe", "", "CI built Windows .exe binary for desktop binary OTA self-update")
 	flag.Parse()
 
 	prodRoot := strings.TrimSpace(*rootFlag)
@@ -919,7 +939,7 @@ func main() {
 	releaseID := fmt.Sprintf("rtx5-tcp-ota-%s", now.Format("20060102-150405"))
 
 	if strings.TrimSpace(*ciAppFlag) != "" {
-		runCIPartialOTAPush(prodRoot, pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), ver, releaseID, now)
+		runCIPartialOTAPush(prodRoot, pushAddr, auth.Ed25519MasterPrivHex, auth.Ed25519MasterPubHex, strings.TrimSpace(*ciAppFlag), strings.TrimSpace(*ciDistFlag), strings.TrimSpace(*ciExeFlag), ver, releaseID, now)
 		return
 	}
 
