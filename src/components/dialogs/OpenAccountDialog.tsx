@@ -25,7 +25,12 @@ import type { BrokerServer } from '../../types/api';
 import { CountryCombobox } from './CountryCombobox';
 import './open-account-dialog.css';
 import { TradeAuthDialog } from '../TradeAuthDialog';
-import { buildBrokerDirectoryLogoUrl, isPlaceholderBrokerLogoUrl } from '../BrokerLogoImage';
+import {
+    appendBrokerLogoVersionParam,
+    BrokerLogoImage,
+    isPlaceholderBrokerLogoUrl,
+    normalizeSameOriginHttpsUrl,
+} from '../BrokerLogoImage';
 import { getCachedAccountSession, rememberAccountSession } from '../../services/accountSessionCache';
 import { loadSavedLogin, saveLogin, supportsSavedLogins } from '../../services/savedLogins';
 
@@ -47,71 +52,70 @@ const initials = (name: string) => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-const getLogoUrl = (url?: string, brokerId?: string | number) => {
-    const raw = String(url || '').trim();
-    if (!raw || isPlaceholderBrokerLogoUrl(raw)) {
-        const discoveryBase = String(getRuntimeBrokerConfiguration()?.discoveryBaseUrl || BROKER_DISCOVERY_URL || '').trim();
-        return buildBrokerDirectoryLogoUrl(brokerId, discoveryBase);
-    }
-    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:')) {
-        return raw;
-    }
-    const base = (BROKER_DISCOVERY_URL || '').replace(/\/$/, '');
-    const path = raw.startsWith('/') ? raw : `/${raw}`;
-    return `${base}${path}`;
-};
-
-const BrokerAvatar: React.FC<{ broker: BrokerServer }> = ({ broker }) => {
-    const resolvedSrc = getLogoUrl(broker.logo_url, broker.broker_id);
-    const [failedSrc, setFailedSrc] = useState<string>('');
-    const hasError = Boolean(resolvedSrc && failedSrc === resolvedSrc);
-
-    if (resolvedSrc && !hasError) {
-        return (
-            <div className="rtx-open-account-dialog__logo">
-                <img
-                    key={resolvedSrc}
-                    src={resolvedSrc}
-                    alt=""
-                    onError={() => setFailedSrc(resolvedSrc)}
-                />
-            </div>
-        );
-    }
-
-    return (
-        <div className="rtx-open-account-dialog__avatar rtx-open-account-dialog__initials" aria-hidden="true">
-            {initials(broker.broker_name)}
-        </div>
+const buildOpenAccountBrokerLogoSource = (broker: BrokerServer) => {
+    const rawLogo = appendBrokerLogoVersionParam(
+        broker.logo_url,
+        broker.logo_version || broker.logo_updated_at,
     );
+    const normalizedLogo = rawLogo && !isPlaceholderBrokerLogoUrl(rawLogo)
+        ? toLocalDevProxyUrl(normalizeSameOriginHttpsUrl(rawLogo))
+        : '';
+    return {
+        ...broker,
+        logo_url: normalizedLogo,
+        server_url: broker.server_url || broker.backend_url || BROKER_DISCOVERY_URL || undefined,
+    };
 };
+
+const BrokerAvatar: React.FC<{ broker: BrokerServer }> = ({ broker }) => (
+    <BrokerLogoImage
+        broker={buildOpenAccountBrokerLogoSource(broker)}
+        alt=""
+        appFallbackUrl=""
+        className="rtx-open-account-dialog__logo object-contain"
+        fallback={(
+            <div className="rtx-open-account-dialog__avatar rtx-open-account-dialog__initials" aria-hidden="true">
+                {initials(broker.broker_name)}
+            </div>
+        )}
+    />
+);
 
 const DropdownBrokerLogo: React.FC<{ broker: BrokerServer; index: number }> = ({ broker, index }) => {
-    const resolvedSrc = getLogoUrl(broker.logo_url, broker.broker_id);
-    const [failedSrc, setFailedSrc] = useState<string>('');
-    const hasError = Boolean(resolvedSrc && failedSrc === resolvedSrc);
     const grad = GRADIENTS[index % GRADIENTS.length];
+    const [exhaustedKey, setExhaustedKey] = useState<string>('');
+    const brokerSource = buildOpenAccountBrokerLogoSource(broker);
+    const logoKey = `${brokerSource.broker_id || ''}|${brokerSource.logo_url || ''}|${brokerSource.server_url || ''}`;
+    const isExhausted = exhaustedKey === logoKey;
 
-    if (resolvedSrc && !hasError) {
+    if (isExhausted) {
         return (
-            <div className="w-5 h-5 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0 border border-white/10">
-                <img
-                    key={resolvedSrc}
-                    src={resolvedSrc}
-                    alt={broker.broker_name}
-                    className="w-full h-full object-contain p-0.5"
-                    onError={() => setFailedSrc(resolvedSrc)}
-                />
+            <div
+                className="rtx-open-account-dialog__avatar w-5 h-5 rounded flex items-center justify-center text-white font-semibold text-[12px] flex-shrink-0"
+                style={{ background: `linear-gradient(135deg, ${grad.from} 0%, ${grad.to} 100%)` }}
+            >
+                {initials(broker.broker_name)}
             </div>
         );
     }
 
     return (
-        <div
-            className="rtx-open-account-dialog__avatar w-5 h-5 rounded flex items-center justify-center text-white font-semibold text-[12px] flex-shrink-0"
-            style={{ background: `linear-gradient(135deg, ${grad.from} 0%, ${grad.to} 100%)` }}
-        >
-            {initials(broker.broker_name)}
+        <div className="w-5 h-5 rounded bg-white flex items-center justify-center overflow-hidden flex-shrink-0 border border-white/10">
+            <BrokerLogoImage
+                broker={brokerSource}
+                alt={broker.broker_name}
+                appFallbackUrl=""
+                className="w-full h-full object-contain p-0.5"
+                onExhausted={() => setExhaustedKey(logoKey)}
+                fallback={(
+                    <div
+                        className="rtx-open-account-dialog__avatar w-5 h-5 rounded flex items-center justify-center text-white font-semibold text-[12px] flex-shrink-0"
+                        style={{ background: `linear-gradient(135deg, ${grad.from} 0%, ${grad.to} 100%)` }}
+                    >
+                        {initials(broker.broker_name)}
+                    </div>
+                )}
+            />
         </div>
     );
 };

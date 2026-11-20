@@ -7,6 +7,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { isLocalViteDevServer, toLocalDevProxyUrl } from '../config/localDevProxy';
 import { removeSolidBackgroundFromRgba } from './watermarkBackgroundRemoval';
 
 export const SQUARE_CHART_GRID_CELL_SIZE_PX = 64;
@@ -31,21 +32,58 @@ export const RTX5_DEFAULT_CHART_WATERMARK_SRC = '/brand/rtx5-chart-watermark.png
 const DEFAULT_WATERMARK_ASSET_PATH = '/brand/rtx5-chart-watermark.png?v=2';
 export const DEFAULT_WATERMARK_OPACITY_PERCENT = 36;
 const watermarkImageCache = new Map<string, HTMLImageElement>();
+const rawNonCorsWatermarkImageCache = new Map<string, HTMLImageElement>();
 const failedWatermarkUrls = new Set<string>();
 const corsFallbackWatermarkUrls = new Set<string>();
+const rawFallbackFailedUrls = new Set<string>();
+const corsBlobLoadingUrls = new Set<string>();
+const watermarkBlobUrls = new Map<string, string>();
+const watermarkSvgUrls = new Set<string>();
 const lightWatermarkCanvasCache = new Map<string, HTMLCanvasElement>();
 const bgRemovedWatermarkCache = new Map<string, HTMLCanvasElement | HTMLImageElement>();
 const watermarkLoadListeners = new Set<() => void>();
-const MAX_WATERMARK_PROCESS_DIM_PX = 512;
+const MAX_WATERMARK_PROCESS_DIM_PX = 768;
+const MIN_SVG_WATERMARK_PROCESS_DIM_PX = 512;
 
-const shouldAttemptAnonymousCors = (src: string): boolean => {
+const isCrossOriginHttpUrl = (src: string): boolean => {
   if (typeof document === 'undefined' || typeof window === 'undefined') return false;
-  if (corsFallbackWatermarkUrls.has(src)) return false;
   if (!/^https?:\/\//i.test(src)) return false;
   try {
     return new URL(src, document.baseURI).origin !== window.location.origin;
   } catch {
     return false;
+  }
+};
+
+const canUseCorsBlobWatermarkFetch = (): boolean =>
+  typeof document !== 'undefined'
+  && typeof window !== 'undefined'
+  && typeof fetch === 'function'
+  && typeof URL !== 'undefined'
+  && typeof URL.createObjectURL === 'function';
+
+const isSvgWatermarkSource = (src: string, contentType = ''): boolean =>
+  contentType.toLowerCase().includes('svg')
+  || /(?:^data:image\/svg\+xml|\.svg(?:[?#].*)?$)/i.test(src);
+
+const isValidWatermarkImageBlob = (blob: Blob, contentType: string): boolean => {
+  if (!blob || blob.size <= 0) return false;
+  const ct = (contentType || blob.type || '').toLowerCase();
+  if (!ct) return true;
+  if (ct.startsWith('image/')) return true;
+  return ct === 'application/octet-stream';
+};
+
+const revokeWatermarkBlobUrl = (src: string): void => {
+  const existing = watermarkBlobUrls.get(src);
+  if (!existing) return;
+  watermarkBlobUrls.delete(src);
+  if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    try {
+      URL.revokeObjectURL(existing);
+    } catch {
+      // Ignore object URL revocation failures in test environments.
+    }
   }
 };
 
@@ -101,52 +139,224 @@ interface LoadedWatermarkResult {
   src: string;
 }
 
+const isHttpOrRelativeWatermarkUrl = (src: string): boolean => {
+  if (/^(?:data:|blob:)/i.test(src)) return false;
+  return /^(?:https?:\/\/|\/|\.\/)/i.test(src);
+};
+
+const loadWatermarkViaBlobFetch = (src: string, crossOriginHttp: boolean): void => {
+  if (corsBlobLoadingUrls.has(src) || failedWatermarkUrls.has(src) || corsFallbackWatermarkUrls.has(src)) {
+    return;
+  }
+  corsBlobLoadingUrls.add(src);
+
+  const tryFetchBlob = async (url: string, init: RequestInit): Promise<{ blob: Blob; contentType: string; notFound?: boolean } | null> => {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok) {
+        const contentType = response.headers?.get?.('content-type') || '';
+        const blob = await response.blob();
+        if (isValidWatermarkImageBlob(blob, contentType)) {
+          return { blob, contentType };
+        }
+        return null;
+      }
+      if (response.status === 404 || response.status === 410) {
+        return { blob: new Blob(), contentType: '', notFound: true };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  void (async () => {
+    try {
+      let resolved = await tryFetchBlob(
+        src,
+        crossOriginHttp
+          ? { mode: 'cors', credentials: 'omit', cache: 'no-cache' }
+          : { credentials: 'same-origin', cache: 'no-cache' },
+      );
+
+      if (resolved?.notFound) {
+        failedWatermarkUrls.add(src);
+        corsBlobLoadingUrls.delete(src);
+        notifyWatermarkListeners();
+        return;
+      }
+
+      if (!resolved && crossOriginHttp && isLocalViteDevServer()) {
+        const proxiedSrc = toLocalDevProxyUrl(src);
+        if (proxiedSrc && proxiedSrc !== src) {
+          const proxyResult = await tryFetchBlob(proxiedSrc, {
+            credentials: 'omit',
+            cache: 'no-cache',
+          });
+          if (proxyResult?.notFound) {
+            failedWatermarkUrls.add(src);
+            corsBlobLoadingUrls.delete(src);
+            notifyWatermarkListeners();
+            return;
+          }
+          resolved = proxyResult;
+        }
+      }
+
+      if (!resolved) {
+        corsFallbackWatermarkUrls.add(src);
+        corsBlobLoadingUrls.delete(src);
+        notifyWatermarkListeners();
+        return;
+      }
+
+      if (isSvgWatermarkSource(src, resolved.contentType || resolved.blob.type)) {
+        watermarkSvgUrls.add(src);
+      }
+      const blobUrl = URL.createObjectURL(resolved.blob);
+      revokeWatermarkBlobUrl(src);
+      watermarkBlobUrls.set(src, blobUrl);
+
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        corsBlobLoadingUrls.delete(src);
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          notifyWatermarkListeners();
+        } else {
+          revokeWatermarkBlobUrl(src);
+          watermarkImageCache.delete(src);
+          failedWatermarkUrls.add(src);
+          notifyWatermarkListeners();
+        }
+      };
+      img.onerror = () => {
+        corsBlobLoadingUrls.delete(src);
+        revokeWatermarkBlobUrl(src);
+        watermarkImageCache.delete(src);
+        failedWatermarkUrls.add(src);
+        notifyWatermarkListeners();
+      };
+      watermarkImageCache.set(src, img);
+      img.src = blobUrl;
+      if (img.complete) {
+        corsBlobLoadingUrls.delete(src);
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          notifyWatermarkListeners();
+        } else {
+          revokeWatermarkBlobUrl(src);
+          watermarkImageCache.delete(src);
+          failedWatermarkUrls.add(src);
+          notifyWatermarkListeners();
+        }
+      }
+    } catch {
+      corsFallbackWatermarkUrls.add(src);
+      corsBlobLoadingUrls.delete(src);
+      notifyWatermarkListeners();
+    }
+  })();
+};
+
+const startImageElementLoad = (
+  src: string,
+  useCors: boolean,
+  targetCache: Map<string, HTMLImageElement>,
+  failedSet: Set<string>,
+): LoadedWatermarkResult | 'loading' | null => {
+  if (failedSet.has(src)) return null;
+  let img = targetCache.get(src);
+  if (!img) {
+    img = new Image();
+    img.decoding = 'async';
+    if (useCors) {
+      img.crossOrigin = 'anonymous';
+    }
+    if (isSvgWatermarkSource(src)) {
+      watermarkSvgUrls.add(src);
+    }
+    img.onload = () => {
+      if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        notifyWatermarkListeners();
+      } else {
+        failedSet.add(src);
+        notifyWatermarkListeners();
+      }
+    };
+    img.onerror = () => {
+      if (useCors && !corsFallbackWatermarkUrls.has(src)) {
+        corsFallbackWatermarkUrls.add(src);
+        targetCache.delete(src);
+        notifyWatermarkListeners();
+        return;
+      }
+      failedSet.add(src);
+      notifyWatermarkListeners();
+    };
+    img.src = src;
+    targetCache.set(src, img);
+  }
+  if (img.complete) {
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return { image: img, src };
+    }
+    failedSet.add(src);
+    return null;
+  }
+  return 'loading';
+};
+
 const getLoadedWatermarkImage = (
   customSrc?: string,
   fallbacks?: readonly string[],
 ): LoadedWatermarkResult | null | 'loading' => {
   if (typeof Image === 'undefined') return null;
   const candidates = resolveWatermarkCandidates(customSrc, fallbacks);
-  for (const src of candidates) {
-    if (failedWatermarkUrls.has(src)) continue;
-    let img = watermarkImageCache.get(src);
-    if (!img) {
-      img = new Image();
-      img.decoding = 'async';
-      const useCors = shouldAttemptAnonymousCors(src);
-      if (useCors) {
-        img.crossOrigin = 'anonymous';
-      }
-      img.onload = () => {
-        if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-          notifyWatermarkListeners();
-        } else {
-          failedWatermarkUrls.add(src);
-          notifyWatermarkListeners();
+  const nonDefaultCandidates = candidates.filter((candidate) => !isDefaultBrandWatermarkSrc(candidate));
+  const defaultCandidates = candidates.filter((candidate) => isDefaultBrandWatermarkSrc(candidate));
+
+  // Tier 1: Prefer same-origin or CORS-readable broker/custom logos so canvas background removal works cleanly.
+  for (const src of nonDefaultCandidates) {
+    if (failedWatermarkUrls.has(src) || corsFallbackWatermarkUrls.has(src)) continue;
+    if (corsBlobLoadingUrls.has(src)) return 'loading';
+
+    const cached = watermarkImageCache.get(src);
+    if (cached) {
+      if (cached.complete) {
+        if (cached.naturalWidth > 0 && cached.naturalHeight > 0) {
+          return { image: cached, src };
         }
-      };
-      img.onerror = () => {
-        if (useCors && !corsFallbackWatermarkUrls.has(src)) {
-          corsFallbackWatermarkUrls.add(src);
-          watermarkImageCache.delete(src);
-          notifyWatermarkListeners();
-          return;
-        }
+        revokeWatermarkBlobUrl(src);
+        watermarkImageCache.delete(src);
         failedWatermarkUrls.add(src);
-        notifyWatermarkListeners();
-      };
-      img.src = src;
-      watermarkImageCache.set(src, img);
-    }
-    if (img.complete) {
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-        return { image: img, src };
+        continue;
       }
-      failedWatermarkUrls.add(src);
-      continue;
+      return 'loading';
     }
-    return 'loading';
+
+    const crossOriginHttp = isCrossOriginHttpUrl(src);
+    if (isHttpOrRelativeWatermarkUrl(src) && canUseCorsBlobWatermarkFetch()) {
+      loadWatermarkViaBlobFetch(src, crossOriginHttp);
+      return 'loading';
+    }
+
+    const loaded = startImageElementLoad(src, crossOriginHttp, watermarkImageCache, failedWatermarkUrls);
+    if (loaded) return loaded;
   }
+
+  // Tier 2: If all broker/custom candidates blocked CORS, still prefer showing the broker logo over reverting to RTX5.
+  for (const src of nonDefaultCandidates) {
+    if (failedWatermarkUrls.has(src) || !corsFallbackWatermarkUrls.has(src)) continue;
+    const loaded = startImageElementLoad(src, false, rawNonCorsWatermarkImageCache, rawFallbackFailedUrls);
+    if (loaded) return loaded;
+  }
+
+  // Tier 3: Fall back to default RTX5 watermark only when no custom/broker candidate can load.
+  for (const src of defaultCandidates) {
+    const loaded = startImageElementLoad(src, false, watermarkImageCache, failedWatermarkUrls);
+    if (loaded) return loaded;
+  }
+
   return null;
 };
 
@@ -168,7 +378,11 @@ const getBackgroundRemovedWatermarkSource = (
       return img;
     }
 
-    const scale = Math.min(1, MAX_WATERMARK_PROCESS_DIM_PX / Math.max(naturalW, naturalH));
+    const maxNat = Math.max(naturalW, naturalH);
+    const isSvg = watermarkSvgUrls.has(srcKey) || isSvgWatermarkSource(srcKey, img.currentSrc || img.src);
+    const scale = isSvg && maxNat < MIN_SVG_WATERMARK_PROCESS_DIM_PX
+      ? Math.min(8, MIN_SVG_WATERMARK_PROCESS_DIM_PX / maxNat)
+      : Math.min(1, MAX_WATERMARK_PROCESS_DIM_PX / maxNat);
     const procW = Math.max(4, Math.round(naturalW * scale));
     const procH = Math.max(4, Math.round(naturalH * scale));
 

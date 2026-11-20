@@ -104,6 +104,32 @@ export const buildBrokerPresentationUrl = (
 export const isPlaceholderBrokerLogoUrl = (value: unknown): boolean =>
   /(?:^|\/)(?:assets\/logo\.png|brand\/terminal-icon\.png|brand\/rtx5-app-icon\.png)(?:[?#].*)?$/i.test(String(value || '').trim());
 
+const upgradeSameOriginHttps = (value: string): string => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || typeof window === 'undefined' || window.location?.protocol !== 'https:') {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' && parsed.host === window.location.host) {
+      parsed.protocol = 'https:';
+      return parsed.toString();
+    }
+  } catch {
+    // Keep non-URL values unchanged.
+  }
+  return trimmed;
+};
+
+const appendPresentationLogoVersion = (url: string, versionHint: unknown): string => {
+  const trimmed = String(url || '').trim();
+  const version = String(versionHint || '').trim();
+  if (!trimmed || !version || /^(?:data:|blob:)/i.test(trimmed)) return trimmed;
+  if (/[?&](?:v|version|t)=[^&]+/i.test(trimmed)) return trimmed;
+  const sep = trimmed.includes('?') ? '&' : '?';
+  return `${trimmed}${sep}v=${encodeURIComponent(version)}`;
+};
+
 /** Resolve a broker-provided asset against that broker's own origin. */
 export const resolveBrokerPresentationAssetUrl = (
   value: unknown,
@@ -111,16 +137,17 @@ export const resolveBrokerPresentationAssetUrl = (
 ): string => {
   const raw = String(value || '').trim();
   if (!raw || isPlaceholderBrokerLogoUrl(raw)) return '';
-  if (ABSOLUTE_ASSET_URL.test(raw)) return raw;
+  if (ABSOLUTE_ASSET_URL.test(raw)) return upgradeSameOriginHttps(raw);
   if (raw.startsWith('//')) {
-    return `https:${raw}`;
+    const proto = typeof window !== 'undefined' && window.location?.protocol === 'http:' ? 'http:' : 'https:';
+    return `${proto}${raw}`;
   }
 
   const baseUrl = normalizeBrokerServerUrl(String(serverUrl || '').trim()).replace(/\/+$/, '');
   if (!baseUrl) return '';
 
   try {
-    return new URL(raw, `${baseUrl}/`).toString();
+    return upgradeSameOriginHttps(new URL(raw, `${baseUrl}/`).toString());
   } catch {
     return '';
   }
@@ -134,8 +161,9 @@ export const normalizeBrokerPresentationConfig = (
 
   const raw = payload as Record<string, unknown>;
   const rawLogo = isPlaceholderBrokerLogoUrl(raw.logo_url) ? '' : raw.logo_url;
-  const logoUrl = resolveBrokerPresentationAssetUrl(rawLogo, serverUrl)
-    || String(rawLogo || '').trim();
+  const baseLogoUrl = resolveBrokerPresentationAssetUrl(rawLogo, serverUrl)
+    || upgradeSameOriginHttps(String(rawLogo || '').trim());
+  const logoUrl = appendPresentationLogoVersion(baseLogoUrl, raw.logo_version || raw.logo_updated_at);
   const themeColor = normalizeBrokerThemeColor(raw.theme_color);
   const brokerName = isBrokerName(raw.broker_name) ? String(raw.broker_name).trim() : '';
   if (!logoUrl && !themeColor && !brokerName) return null;

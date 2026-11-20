@@ -12,9 +12,16 @@ import { getRuntimeBrokerConfiguration } from '../config/backendTarget.js';
  */
 
 const AUTH_KEYS = ['auth_token', 'refresh_token', 'token_expires_at'] as const;
-const IDENTITY_KEYS = ['rtx_broker_server', 'rtx_broker_server_identity_v1', 'broker_name'] as const;
+const IDENTITY_KEYS = [
+  'rtx_broker_server',
+  'rtx_broker_server_identity_v1',
+  'broker_name',
+  'logo_url',
+  'rtx_broker_presentation_v1',
+] as const;
 const IDENTITY_STORAGE_KEY = 'rtx_broker_server_identity_v1';
 const REMOVE_ONLY_KEYS = ['feed_status_url', 'api_base_url'] as const;
+const DYNAMIC_BROKER_LOGO_PATH_RE = /\/api\/v[12]\/brokers\/[^/]+\/logo$/i;
 
 const toHttpOrigin = (value: string): string => {
   const raw = value.trim();
@@ -95,6 +102,25 @@ export const reconcileWebTcpRouting = (): boolean => {
     }
     if (rewritten || identityMismatch) {
       for (const key of IDENTITY_KEYS) storage.removeItem(key);
+    } else {
+      // Clear stale off-origin dynamic broker logo URLs (e.g. old localhost or previous host)
+      // without touching valid external CDN logos or active auth tokens.
+      const storedLogo = (storage.getItem('logo_url') || '').trim();
+      if (storedLogo && /^(https?):\/\//i.test(storedLogo)) {
+        try {
+          const parsedLogo = new URL(storedLogo);
+          const isOffOriginDynamicLogo = parsedLogo.origin !== pageOrigin
+            && DYNAMIC_BROKER_LOGO_PATH_RE.test(parsedLogo.pathname);
+          const isStaleLoopbackLogo = parsedLogo.origin !== pageOrigin
+            && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(parsedLogo.hostname);
+          if (isOffOriginDynamicLogo || isStaleLoopbackLogo) {
+            storage.removeItem('logo_url');
+            storage.removeItem('rtx_broker_presentation_v1');
+          }
+        } catch {
+          // Ignore malformed logo URLs.
+        }
+      }
     }
     return rewritten;
   } catch {

@@ -9,7 +9,12 @@ import {
   type ChartProperties,
 } from '../../store/useChartSettingsStore';
 import { RTX5_DEFAULT_CHART_WATERMARK_SRC } from '../../utils/squareChartGridPrimitive';
-import { getPrimaryBrokerWatermarkUrl, subscribeBrokerWatermarkChanges } from '../../utils/brokerWatermark';
+import {
+  getPrimaryBrokerWatermarkUrl,
+  resolveActiveBrokerWatermarkCandidates,
+  subscribeBrokerWatermarkChanges,
+} from '../../utils/brokerWatermark';
+import { toLocalDevProxyUrl } from '../../config/api';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 
 export interface ChartBackgroundImageDialogProps {
@@ -217,6 +222,14 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
     return subscribeBrokerWatermarkChanges(() => setBrokerWatermarkTick(v => v + 1));
   }, [isOpen]);
 
+  const brokerWatermarkCandidates = brokerWatermarkTick >= 0
+    ? [...resolveActiveBrokerWatermarkCandidates().map((url) => toLocalDevProxyUrl(url)), RTX5_DEFAULT_CHART_WATERMARK_SRC]
+    : [RTX5_DEFAULT_CHART_WATERMARK_SRC];
+  const headerLogoSignature = brokerWatermarkCandidates.join('\n');
+  const [headerLogoAttempt, setHeaderLogoAttempt] = useState({ signature: headerLogoSignature, index: 0 });
+  const headerLogoIndex = headerLogoAttempt.signature === headerLogoSignature ? headerLogoAttempt.index : 0;
+  const headerLogoSrc = brokerWatermarkCandidates[headerLogoIndex] || RTX5_DEFAULT_CHART_WATERMARK_SRC;
+
   const defaultBrokerWatermarkUrl = brokerWatermarkTick >= 0 ? getPrimaryBrokerWatermarkUrl() : undefined;
   const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
     typeof window !== 'undefined' && window.location?.origin
@@ -383,11 +396,12 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <img
-              src={defaultBrokerWatermarkUrl || RTX5_DEFAULT_CHART_WATERMARK_SRC}
+              key={headerLogoSrc}
+              src={headerLogoSrc}
               alt=""
-              onError={(event) => {
-                if (event.currentTarget.getAttribute('src') !== RTX5_DEFAULT_CHART_WATERMARK_SRC) {
-                  event.currentTarget.setAttribute('src', RTX5_DEFAULT_CHART_WATERMARK_SRC);
+              onError={() => {
+                if (headerLogoIndex + 1 < brokerWatermarkCandidates.length) {
+                  setHeaderLogoAttempt({ signature: headerLogoSignature, index: headerLogoIndex + 1 });
                 }
               }}
               style={{ width: 14, height: 14, objectFit: 'contain', background: '#18181b', borderRadius: 2, padding: 1 }}

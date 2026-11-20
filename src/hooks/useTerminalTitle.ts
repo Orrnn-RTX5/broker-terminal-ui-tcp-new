@@ -9,11 +9,13 @@ import { API_V2_BASE_URL, RTX5_API_URL, normalizeServerUrl } from '../config/api
 import { apiClient } from '../api/client';
 import { runAfterTerminalReady } from '../startup/runAfterTerminalReady';
 import { setBrokerServerTimeZoneFromConfig } from '../services/brokerServerClock';
-import { onSessionChange } from '../services/brokerSession';
+import { getCommittedBrokerAccountSessionScope, onSessionChange } from '../services/brokerSession';
 import {
     buildBrokerDirectoryLogoUrl,
     getConfiguredBrokerLogoUrl,
     isPlaceholderBrokerLogoUrl,
+    normalizeSameOriginHttpsUrl,
+    shouldPreferDynamicLogoOverConfigured,
 } from '../components/BrokerLogoImage';
 import { getRuntimeBrokerConfiguration, isDesktopBackendTarget } from '../config/backendTarget.js';
 import {
@@ -112,11 +114,33 @@ const normalizeLogoBaseUrl = (value: unknown): string => {
     return normalized.replace(/\/api\/v\d+\/?$/i, '').replace(/\/$/, '');
 };
 
+const appendLogoVersionParam = (rawUrl: string, versionHint?: unknown): string => {
+    const trimmed = normalizeHeaderText(rawUrl);
+    if (!trimmed || isPlaceholderBrokerLogoUrl(trimmed)) return '';
+    const version = normalizeHeaderText(versionHint);
+    if (!version || /^(?:data:|blob:)/i.test(trimmed)) return trimmed;
+    try {
+        const base = typeof window !== 'undefined' && window.location?.origin
+            ? window.location.origin
+            : 'https://broker.local';
+        const parsed = new URL(trimmed, base);
+        if (parsed.searchParams.get('v') || parsed.searchParams.get('version') || parsed.searchParams.get('t')) {
+            return trimmed;
+        }
+        const sep = trimmed.includes('?') ? '&' : '?';
+        return `${trimmed}${sep}v=${encodeURIComponent(version)}`;
+    } catch {
+        return trimmed;
+    }
+};
+
+const hasVersionQuery = (rawUrl: string): boolean => /[?&](?:v|version|t)=[^&]+/i.test(rawUrl);
+
 export const getLogoUrl = (url?: string, baseCandidates: string[] = []) => {
     const rawUrl = normalizeHeaderText(url);
     if (!rawUrl || isPlaceholderBrokerLogoUrl(rawUrl)) return '';
     if (/^(?:https?:|data:|blob:)/i.test(rawUrl)) {
-        return rawUrl;
+        return normalizeSameOriginHttpsUrl(rawUrl);
     }
     if (rawUrl.startsWith('./')) {
         return rawUrl;
@@ -131,7 +155,7 @@ export const getLogoUrl = (url?: string, baseCandidates: string[] = []) => {
     if (!base) return rawUrl;
 
     const path = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
-    return `${base}${path}`;
+    return normalizeSameOriginHttpsUrl(`${base}${path}`);
 };
 
 type BrokerTitleConfig = {
@@ -140,6 +164,8 @@ type BrokerTitleConfig = {
     broker_name?: string;
     server_name?: string;
     logo_url?: string;
+    logo_version?: string;
+    logo_updated_at?: string;
     marginMode?: string;
     margin_mode?: string;
 };
@@ -214,37 +240,79 @@ type BrokerDetails = [BrokerTitleConfig | null, BrokerServer[], { brokers: Broke
 // HeaderBar and StatusBar both mount this hook; share one in-flight fetch per server.
 let detailsCache: { key: string; promise: Promise<BrokerDetails> } | null = null;
 
-// Shared tab-focus / visibility refresh trigger so Super Admin logo updates reflect
-// live across the chart watermark, account tree, status bar, and menus without reloading.
+// Shared tab-focus / visibility / background polling refresh trigger so Super Admin logo updates
+// reflect live across the chart watermark, account tree, status bar, toolbar, and menus without reloading.
 const BROKER_METADATA_REVALIDATE_MIN_GAP_MS = 5_000;
+const BROKER_METADATA_POLL_INTERVAL_MS = 15_000;
 let brokerMetadataRefreshTick = 0;
 let lastBrokerMetadataRefreshAt = 0;
+let lastObservedTcpStatusIdentity = '';
+let brokerMetadataPollTimer: ReturnType<typeof setInterval> | null = null;
 const brokerMetadataRefreshListeners = new Set<() => void>();
 let brokerMetadataListenersBound = false;
 
-const notifyBrokerMetadataRefresh = () => {
+export const notifyBrokerMetadataRefresh = (force = false) => {
     const now = Date.now();
-    if (now - lastBrokerMetadataRefreshAt < BROKER_METADATA_REVALIDATE_MIN_GAP_MS) return;
+    if (
+        !force
+        && now >= lastBrokerMetadataRefreshAt
+        && now - lastBrokerMetadataRefreshAt < BROKER_METADATA_REVALIDATE_MIN_GAP_MS
+    ) {
+        return;
+    }
     lastBrokerMetadataRefreshAt = now;
     brokerMetadataRefreshTick += 1;
     brokerMetadataRefreshListeners.forEach((listener) => listener());
 };
 
+const handleVisibilityOrFocusRefresh = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    notifyBrokerMetadataRefresh();
+};
+
+const handleTcpStatusRefresh = (event: Event) => {
+    const detail = (event as CustomEvent<{ broker_id?: string; broker_name?: string; logo_url?: string }>).detail;
+    if (!detail || typeof detail !== 'object') return;
+    const identity = `${String(detail.broker_id || '').trim()}|${String(detail.broker_name || '').trim()}|${String(detail.logo_url || '').trim()}`;
+    if (!identity.replace(/\|/g, '')) return;
+    if (identity !== lastObservedTcpStatusIdentity) {
+        lastObservedTcpStatusIdentity = identity;
+        notifyBrokerMetadataRefresh(true);
+    }
+};
+
+const ensureBrokerMetadataPollTimer = () => {
+    if (typeof window === 'undefined' || brokerMetadataPollTimer !== null) return;
+    brokerMetadataPollTimer = window.setInterval(() => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        notifyBrokerMetadataRefresh();
+    }, BROKER_METADATA_POLL_INTERVAL_MS);
+};
+
+const stopBrokerMetadataPollTimer = () => {
+    if (brokerMetadataPollTimer === null || typeof window === 'undefined') return;
+    window.clearInterval(brokerMetadataPollTimer);
+    brokerMetadataPollTimer = null;
+};
+
 const bindBrokerMetadataRefreshEvents = () => {
     if (brokerMetadataListenersBound || typeof window === 'undefined' || typeof document === 'undefined') return;
     brokerMetadataListenersBound = true;
-    window.addEventListener('focus', notifyBrokerMetadataRefresh);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            notifyBrokerMetadataRefresh();
-        }
-    });
+    window.addEventListener('focus', handleVisibilityOrFocusRefresh);
+    window.addEventListener('rtx5-tcp-status', handleTcpStatusRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocusRefresh);
 };
 
 const subscribeBrokerMetadataRefresh = (listener: () => void) => {
     bindBrokerMetadataRefreshEvents();
     brokerMetadataRefreshListeners.add(listener);
-    return () => { brokerMetadataRefreshListeners.delete(listener); };
+    ensureBrokerMetadataPollTimer();
+    return () => {
+        brokerMetadataRefreshListeners.delete(listener);
+        if (brokerMetadataRefreshListeners.size === 0) {
+            stopBrokerMetadataPollTimer();
+        }
+    };
 };
 
 const getBrokerMetadataRefreshTick = () => brokerMetadataRefreshTick;
@@ -441,22 +509,44 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                 const brokersList: Broker[] = Array.isArray(rawBrokersList) ? rawBrokersList : [];
                 const matchedBroker = brokersList.find(broker => String(broker?.broker_id) === (brokerId || String(matchedServer?.broker_id || '')));
 
+                const serverLogoCandidates = [
+                    appendLogoVersionParam(
+                        matchedServer?.logo_url || '',
+                        matchedServer?.logo_version || matchedServer?.logo_updated_at,
+                    ),
+                    appendLogoVersionParam(
+                        matchedBroker?.logo_url || '',
+                        matchedBroker?.logo_version || matchedBroker?.logo_updated_at,
+                    ),
+                    appendLogoVersionParam(
+                        config?.logo_url || '',
+                        config?.logo_version || config?.logo_updated_at,
+                    ),
+                ].filter((v) => Boolean(v) && !isPlaceholderBrokerLogoUrl(v));
+
+                const freshServerLogoUrl = serverLogoCandidates.find((v) => hasVersionQuery(v))
+                    || serverLogoCandidates[0]
+                    || '';
+
+                const configuredLogoUrl = getConfiguredBrokerLogoUrl(brokerId);
                 const pickValidLogoUrl = (...values: Array<string | undefined>): string =>
                     values
                         .map((v) => normalizeHeaderText(v))
                         .find((v) => Boolean(v) && !isPlaceholderBrokerLogoUrl(v)) || '';
 
-                const freshServerLogoUrl = pickValidLogoUrl(
-                    matchedServer?.logo_url,
-                    matchedBroker?.logo_url,
-                    config?.logo_url,
-                );
-                const finalLogoUrl = pickValidLogoUrl(
-                    getConfiguredBrokerLogoUrl(brokerId),
-                    freshServerLogoUrl,
-                    getStoredHeaderValue('logo_url'),
-                    getStoredLogoUrl(),
-                );
+                const finalLogoUrl = shouldPreferDynamicLogoOverConfigured(configuredLogoUrl, freshServerLogoUrl)
+                    ? pickValidLogoUrl(
+                        freshServerLogoUrl,
+                        configuredLogoUrl,
+                        getStoredHeaderValue('logo_url'),
+                        getStoredLogoUrl(),
+                    )
+                    : pickValidLogoUrl(
+                        configuredLogoUrl,
+                        freshServerLogoUrl,
+                        getStoredHeaderValue('logo_url'),
+                        getStoredLogoUrl(),
+                    );
                 let nextLogoBaseCandidates: string[] = [];
                 if (matchedServer) {
                     nextLogoBaseCandidates = [
@@ -466,11 +556,18 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                     ];
                 }
 
+                const committedScope = getCommittedBrokerAccountSessionScope();
+                const storedBrokerId = getStoredBrokerId();
+                const sessionMatchesBroker = !committedScope.authenticated
+                    || !committedScope.brokerId
+                    || !brokerId
+                    || committedScope.brokerId === brokerId;
+                const storageMatchesBroker = !brokerId || !storedBrokerId || storedBrokerId === brokerId;
                 if (
                     freshServerLogoUrl
-                    && isDesktopBackendTarget()
                     && typeof window !== 'undefined'
-                    && (!brokerId || getStoredBrokerId() === brokerId)
+                    && sessionMatchesBroker
+                    && storageMatchesBroker
                 ) {
                     const currentStored = getStoredHeaderValue('logo_url');
                     if (currentStored !== freshServerLogoUrl) {
@@ -493,7 +590,12 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                 setHasExplicitBroker(Boolean(explicitName));
                 setBrokerName(explicitName || resolveBrokerDisplayName(serverName, config, matchedServer, brokersList, brokerId));
                 setLogoUrl(finalLogoUrl);
-                setLogoBaseCandidates(nextLogoBaseCandidates);
+                setLogoBaseCandidates((prev) => (
+                    prev.length === nextLogoBaseCandidates.length
+                    && prev.every((item, idx) => item === nextLogoBaseCandidates[idx])
+                        ? prev
+                        : nextLogoBaseCandidates
+                ));
             } catch (err) {
                 console.error('[TerminalTitle] Error loading dynamic titlebar info:', err);
                 if (!active) return;
@@ -501,7 +603,7 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
                 setHasExplicitBroker(Boolean(fallbackExplicit));
                 setBrokerName(fallbackExplicit || brokerDisplayName(serverName));
                 setLogoUrl(getStoredLogoUrl());
-                setLogoBaseCandidates([]);
+                setLogoBaseCandidates((prev) => (prev.length === 0 ? prev : []));
             }
         };
 

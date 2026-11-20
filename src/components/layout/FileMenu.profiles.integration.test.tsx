@@ -15,6 +15,7 @@ import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { defaultChartProperties, useChartSettingsStore } from '../../store/useChartSettingsStore';
 import { useWatchlistStore } from '../../store/useWatchlistStore';
 import { useWorkspaceProfileSelectionStore } from '../../store/useWorkspaceProfileSelectionStore';
+import { applyBrokerChrome } from '../../services/brokerPresentation';
 
 vi.mock('react-i18next', async (importOriginal) => ({
     ...await importOriginal<typeof import('react-i18next')>(),
@@ -357,5 +358,39 @@ describe('FileMenu Profiles lifecycle with persisted workspaces', () => {
 
         expect(restoredNames(restored)).toEqual(['Euro']);
         expect(localStorage.getItem('rtx5_timeframe')).toBe('M15');
+    });
+
+    it('passes the active broker logo from MenuBar into the Trading accounts circular avatar', () => {
+        localStorage.setItem('broker_id', 'orrnn');
+        localStorage.setItem('broker_name', 'Orrnn');
+        localStorage.setItem('logo_url', 'https://orrnn.example/logo.svg');
+        let unmountMenu: (() => void) | undefined;
+        try {
+            const view = render(<MenuBar accountId="200010" accountBrokerName="Orrnn" profileSymbols={PROFILE_SYMBOLS} />);
+            unmountMenu = view.unmount;
+            openApplicationFileMenu();
+
+            const avatar = screen.getByTestId('file-menu-broker-avatar');
+            expect(avatar).toHaveClass('rounded-full');
+            expect(within(avatar).getByRole('img', { name: 'Orrnn Logo' }))
+                .toHaveAttribute('src', 'https://orrnn.example/logo.svg');
+
+            act(() => {
+                applyBrokerChrome({
+                    brokerId: 'orrnn',
+                    brokerName: 'Orrnn',
+                    logoUrl: 'https://orrnn.example/live.png',
+                });
+            });
+
+            expect(within(avatar).getByRole('img', { name: 'Orrnn Logo' }))
+                .toHaveAttribute('src', 'https://orrnn.example/live.png');
+        } finally {
+            unmountMenu?.();
+            localStorage.removeItem('broker_id');
+            localStorage.removeItem('broker_name');
+            localStorage.removeItem('logo_url');
+            applyBrokerChrome({});
+        }
     });
 });

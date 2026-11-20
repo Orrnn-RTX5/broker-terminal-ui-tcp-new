@@ -367,4 +367,39 @@ describe('broker watermark, logo toggle persistence, blur removal, draggable she
     expect(migrated.symbolProperties.EURUSD.backgroundLogoOpacity).toBe(36);
     expect(migrated.symbolProperties.XAUUSD.backgroundLogoOpacity).toBe(62);
   });
+
+  it('resolves runtime-configured broker watermark on a fresh guest web session and prefers live versioned logos over static BROKER_LOGO_URL', () => {
+    const win = globalThis.window as unknown as { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> };
+    const prevCfg = win.__RTX_RUNTIME_CONFIG__;
+    try {
+      win.__RTX_RUNTIME_CONFIG__ = {
+        CONFIG_SOURCE: 'deployment',
+        BACKEND_TARGET: 'web',
+        BROKER_ID: 'fresh-web-broker',
+        API_HOST: 'https://terminal.example',
+        WS_HOST: 'wss://terminal.example',
+        DEFAULT_MT5_SERVER: 'Fresh-Live',
+        DISCOVERY_BASE_URL: 'https://terminal.example',
+      };
+      // Empty localStorage and empty chrome -> must still resolve the runtime broker's dynamic logo endpoint.
+      const freshCandidates = resolveActiveBrokerWatermarkCandidates();
+      expect(freshCandidates).toContain('https://terminal.example/api/v1/brokers/fresh-web-broker/logo');
+
+      // When runtime config pins an unversioned BROKER_LOGO_URL, a newer versioned live chrome URL must win.
+      win.__RTX_RUNTIME_CONFIG__.BROKER_LOGO_URL = 'https://terminal.example/api/v1/brokers/fresh-web-broker/logo';
+      applyBrokerChrome({
+        brokerId: 'fresh-web-broker',
+        brokerName: 'Fresh Broker',
+        logoUrl: 'https://terminal.example/api/v1/brokers/fresh-web-broker/logo?v=live999',
+      });
+      const updatedCandidates = resolveActiveBrokerWatermarkCandidates();
+      expect(updatedCandidates[0]).toBe('https://terminal.example/api/v1/brokers/fresh-web-broker/logo?v=live999');
+    } finally {
+      if (prevCfg === undefined) {
+        delete win.__RTX_RUNTIME_CONFIG__;
+      } else {
+        win.__RTX_RUNTIME_CONFIG__ = prevCfg;
+      }
+    }
+  });
 });

@@ -5,7 +5,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  type CSSProperties,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -530,20 +529,6 @@ const TradeTableRow = memo(function TradeTableRow({
         </div>
       </td>
     </tr>
-    {isTerminalPlacementFailure && (
-      <tr className="rtx-trade-placement-message text-loss" data-placement-state={placementState}>
-        <td colSpan={visibleOptionalColumnCount + 2} className="px-1.5 py-[2px] text-left">
-          <div
-            role="status"
-            className="truncate font-normal"
-            style={{ '--rtx-type-size': '13px', '--rtx-type-weight': 400 } as CSSProperties}
-            title={placementSummary}
-          >
-            {placementSummary}
-          </div>
-        </td>
-      </tr>
-    )}
     </Fragment>
   );
 });
@@ -590,6 +575,14 @@ export function TradeTable({
   visibleTradeTableWidth,
 }: TradeTableProps) {
   const tr = useUiTranslation();
+  const visibleLivePositions = useMemo(
+    () => displayedLivePositions.filter((position) => (
+      position.placementState !== 'rejected'
+      && position.placementState !== 'expired'
+      && position.placementState !== 'failed'
+    )),
+    [displayedLivePositions],
+  );
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const footerScrollRef = useRef<HTMLDivElement | null>(null);
@@ -604,10 +597,10 @@ export function TradeTable({
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    if (displayedLivePositions.length === 0) {
+    if (visibleLivePositions.length === 0) {
       container.scrollTop = 0;
     }
-  }, [displayedLivePositions.length]);
+  }, [visibleLivePositions.length]);
 
   useLayoutEffect(() => {
     const scroller = scrollContainerRef.current;
@@ -625,7 +618,7 @@ export function TradeTable({
     observer?.observe(scroller);
     if (tableRef.current) observer?.observe(tableRef.current);
     return () => observer?.disconnect();
-  }, [displayedLivePositions.length, visibleTradeTableWidth]);
+  }, [visibleLivePositions.length, visibleTradeTableWidth]);
 
   const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
   const toColumnWidthStyle = (width: number) => (
@@ -699,14 +692,14 @@ export function TradeTable({
     const contextMenuLabel = tr('Context menu');
     return (
       <tbody className="divide-y divide-zinc-800/90 text-[#d8dde8] text-[13px] leading-[19.5px] font-normal">
-        {displayedLivePositions.length === 0 && (loading || error) && (
+        {visibleLivePositions.length === 0 && (loading || error) && (
           <tr>
             <td colSpan={visibleOptionalColumnCount + 2} className="h-16 text-center text-zinc-600 text-xs italic">
               {loading ? tr('Loading open positions...') : error}
             </td>
           </tr>
         )}
-        {displayedLivePositions.map((position, index) => (
+        {visibleLivePositions.map((position, index) => (
           <TradeTableRow
             key={position.id ?? index}
             position={position}
@@ -734,7 +727,7 @@ export function TradeTable({
       </tbody>
     );
   }, [
-    displayedLivePositions, error, formatMoney, formatTradeLevel, formatTradePoints,
+    visibleLivePositions, error, formatMoney, formatTradeLevel, formatTradePoints,
     formatTradePrice, formatTradeTime, formatTradeVolume, getPositionKey, getTradePointsValue,
     handleTradeContextMenu, isColumnVisible, loading, onClosePosition, openModifyPosition,
     profitMode, selectedPositionKey, setSelectedPositionKey, tr, visibleOptionalColumnCount,
@@ -746,7 +739,7 @@ export function TradeTable({
         ref={scrollContainerRef}
         onScroll={syncFooterHorizontalScroll}
         onContextMenu={(event) => handleTradeContextMenu(event)}
-        className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${displayedLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
+        className={`rtx-trade-scroll flex flex-1 min-h-0 flex-col ${visibleLivePositions.length === 0 ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} scrollbar-thin scrollbar-thumb-zinc-700`}
       >
         <table
           className="rtx-trade-table w-full shrink-0 text-center border-collapse table-fixed"
@@ -782,7 +775,7 @@ export function TradeTable({
           {tableBody}
         </table>
 
-        {displayedLivePositions.length === 0 && !loading && !error && (
+        {visibleLivePositions.length === 0 && !loading && !error && (
           <div
             className="rtx-trade-empty-state flex flex-1 min-h-0 w-max min-w-full items-center justify-center text-center text-xs italic text-zinc-400"
             style={{ minWidth: `max(100%, ${visibleTradeTableWidth}px)` }}

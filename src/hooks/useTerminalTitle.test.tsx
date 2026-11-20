@@ -439,3 +439,89 @@ it('revalidates and updates broker logo_url on window focus after a Super Admin 
         dateNowSpy.mockRestore();
     }
 });
+
+it('updates deployed web mode (BACKEND_TARGET=web) logoUrl and localStorage when live versioned logo changes', async () => {
+    vi.stubGlobal('__RTX_RUNTIME_CONFIG__', {
+        CONFIG_SOURCE: 'deployment',
+        BACKEND_TARGET: 'web',
+        API_HOST: 'https://broker.example',
+        WS_HOST: 'wss://broker.example',
+        BROKER_ID: 'orrnn',
+        BROKER_NAME: 'Orrnn',
+        DEFAULT_MT5_SERVER: 'Orrnn-Live',
+        BROKER_LOGO_URL: 'https://broker.example/api/v1/brokers/orrnn/logo',
+    });
+    localStorage.setItem('broker_id', 'orrnn');
+    localStorage.setItem('logo_url', 'https://broker.example/api/v1/brokers/orrnn/logo?v=111111111111');
+    let serverLogo = 'https://broker.example/api/v1/brokers/orrnn/logo?v=111111111111';
+    vi.mocked(brokerV2Api.getServers).mockImplementation(async () => [{
+        broker_id: 'orrnn',
+        broker_name: 'Orrnn',
+        server: 'Orrnn',
+        server_url: 'https://broker.example',
+        logo_url: serverLogo,
+    } as never]);
+
+    const { result } = renderHook(useTerminalBrokerInfo);
+    await waitFor(() => expect(result.current.logoUrl).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=111111111111'));
+
+    serverLogo = 'https://broker.example/api/v1/brokers/orrnn/logo?v=222222222222';
+    const baseNow = Date.now();
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(baseNow + 120_000);
+    try {
+        act(() => { window.dispatchEvent(new Event('focus')); });
+        await waitFor(() => {
+            expect(result.current.logoUrl).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=222222222222');
+            expect(localStorage.getItem('logo_url')).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=222222222222');
+        });
+    } finally {
+        dateNowSpy.mockRestore();
+    }
+});
+
+it('polls for broker logo updates while open and refreshes immediately on rtx5-tcp-status change', async () => {
+    vi.useFakeTimers();
+    try {
+        localStorage.setItem('broker_id', 'orrnn');
+        let currentLogoUrl = 'https://broker.example/api/v1/brokers/orrnn/logo';
+        let currentLogoVersion: string | undefined = 'v1hash';
+        vi.mocked(brokerV2Api.getServers).mockImplementation(async () => [{
+            broker_id: 'orrnn',
+            broker_name: 'Orrnn',
+            server: 'Orrnn',
+            server_url: 'https://broker.example',
+            logo_url: currentLogoUrl,
+            ...(currentLogoVersion ? { logo_version: currentLogoVersion } : {}),
+        } as never]);
+
+        const { result, unmount } = renderHook(useTerminalBrokerInfo);
+        await act(async () => {
+            await Promise.resolve();
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(result.current.logoUrl).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=v1hash');
+
+        currentLogoVersion = 'v2hash';
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(15_000);
+            await Promise.resolve();
+        });
+        expect(result.current.logoUrl).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=v2hash');
+
+        currentLogoUrl = 'https://broker.example/api/v1/brokers/orrnn/logo?v=v3hash';
+        currentLogoVersion = undefined;
+        await act(async () => {
+            window.dispatchEvent(new CustomEvent('rtx5-tcp-status', {
+                detail: { broker_id: 'orrnn', broker_name: 'Orrnn', logo_url: currentLogoUrl },
+            }));
+            await Promise.resolve();
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(result.current.logoUrl).toBe('https://broker.example/api/v1/brokers/orrnn/logo?v=v3hash');
+
+        unmount();
+        expect(vi.getTimerCount()).toBe(0);
+    } finally {
+        vi.useRealTimers();
+    }
+});

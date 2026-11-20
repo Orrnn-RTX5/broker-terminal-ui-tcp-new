@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getStoredAccountLogin } from '../../../api/tradeGateway';
 import { ContextMenu, type ContextMenuItemConfig } from '../../../components/ui/ContextMenu';
 import { Icon } from '../../../components/ui/Icon';
@@ -173,26 +173,29 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         window.localStorage.setItem(HISTORY_SHOW_ON_CHARTS_AUTO_UPDATE_STORAGE_KEY, String(showOnChartsAutoUpdate));
     }, [showOnChartsAutoUpdate]);
 
+    const visibleOrderHistoryRows = useMemo(
+        () => historyData.orders.filter((order) => (
+            resolveHistoryRowStatus(order) !== 'REJECTED'
+            && !order.placementErrorCode
+            && !order.placementErrorMessage
+        )),
+        [historyData.orders],
+    );
+
     const historyRows = useMemo(() => {
-        const rejectedSessionOrders = historyData.orders.filter(
-            (order) => Boolean(
-                (order.clientOrderId || order.placementErrorCode || order.placementErrorMessage)
-                && (resolveHistoryRowStatus(order) === 'REJECTED' || resolveHistoryRowStatus(order) === 'EXPIRED'),
-            ),
-        );
         const rows = historyView === 'positions'
-            ? [...rejectedSessionOrders, ...historyData.positions]
+            ? historyData.positions
             : historyView === 'deals'
                 ? historyData.deals
                 : historyView === 'orders'
-                    ? historyData.orders
-                    : [...historyData.orders, ...historyData.deals];
+                    ? visibleOrderHistoryRows
+                    : [...visibleOrderHistoryRows, ...historyData.deals];
         return [...rows].sort((left, right) => getHistoryRowTime(right) - getHistoryRowTime(left));
-    }, [historyData, historyView]);
+    }, [historyData.deals, historyData.positions, historyView, visibleOrderHistoryRows]);
 
     const availableSymbols = useMemo(() => {
         const symbols = new Map<string, string>();
-        [...historyData.positions, ...historyData.deals, ...historyData.orders].forEach((trade) => {
+        [...historyData.positions, ...historyData.deals, ...visibleOrderHistoryRows].forEach((trade) => {
             const display = String(trade.symbol ?? '').trim();
             const normalized = normalizeTradeSymbol(display);
             if (normalized && !symbols.has(normalized)) symbols.set(normalized, display || normalized);
@@ -200,7 +203,7 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         return Array.from(symbols.entries())
             .sort((left, right) => left[0].localeCompare(right[0]))
             .map(([normalized, display]) => ({ normalized, display }));
-    }, [historyData]);
+    }, [historyData.deals, historyData.positions, visibleOrderHistoryRows]);
 
     const { contractSizeBySymbol, digitsBySymbol } = useMemo(() => {
         const sizes = new Map<string, number>();
@@ -1010,17 +1013,7 @@ ${rows}
                             const changePercentLabel = formatHistoryPercent(order);
                             const profitLabel = formatMoney(order.profit);
                             const rowStatus = resolveHistoryRowStatus(order);
-                            const isRejectedOrExpired = rowStatus === 'REJECTED' || rowStatus === 'EXPIRED';
-                            const placementLabel = rowStatus === 'EXPIRED' ? tr('Expired') : tr('Rejected');
-                            const rawTicket = getHistoryTicket(order);
-                            const ticket = isRejectedOrExpired && typeof rawTicket === 'number' && rawTicket < 0
-                                ? placementLabel
-                                : rawTicket;
-                            const placementError = [order.placementErrorCode, order.placementErrorMessage].filter(Boolean).join(': ')
-                                || (isRejectedOrExpired && order.comment ? order.comment : '');
-                            const rejectionSummary = isRejectedOrExpired && (placementError || order.clientOrderId)
-                                ? `${placementLabel} · ${[order.symbol || '-', tr(sideLabel), tr('{{value0}} lots', { value0: volumeLabel })].join(' · ')}: ${placementError || tr('Order failed')}`
-                                : null;
+                            const ticket = getHistoryTicket(order);
                             const closePriceCellLabel = rowStatus !== 'FILLED' && !(Number(order.closePrice) > 0)
                                 ? '—'
                                 : formatPriceCell(order.closePrice, order.symbol, order.digits);
@@ -1034,7 +1027,7 @@ ${rows}
                                     >
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Open time: {{value0}}", { value0: formatTs(order.openTime) })}>{formatTs(order.openTime)}</td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 whitespace-nowrap`} title={tr("Symbol: {{value0}}", { value0: order.symbol || '-' })}>{order.symbol || '-'}</td>
-                                        {isColumnVisible('ticket') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={rejectionSummary || tr("Ticket: {{value0}}", { value0: ticket })}>{ticket}</td>}
+                                        {isColumnVisible('ticket') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Ticket: {{value0}}", { value0: ticket })}>{ticket}</td>}
                                         <td className={`text-zinc-100 px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-[13px]`} title={tr("Type: {{value0}}", { value0: tr(sideLabel) })}>
                                             <div className="flex items-center justify-center"><span>{tr(sideLabel)}</span></div>
                                         </td>
@@ -1062,20 +1055,6 @@ ${rows}
                                         {isColumnVisible('magicNumber') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Magic Number: {{value0}}", { value0: order.magicNumber ?? '-' })}>{order.magicNumber ?? '-'}</td>}
                                         {isColumnVisible('comment') && <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap" title={tr("Comment: {{value0}}", { value0: order.comment || '-' })}>{order.comment || '-'}</td>}
                                     </tr>
-                                    {rejectionSummary && (
-                                        <tr className="rtx-history-placement-message text-loss" data-placement-state={rowStatus.toLowerCase()}>
-                                            <td colSpan={Math.max(1, visibleColumnCount)} className="px-1.5 py-[2px] text-left">
-                                                <div
-                                                    role="status"
-                                                    className="truncate font-normal"
-                                                    style={{ '--rtx-type-size': '13px', '--rtx-type-weight': 400 } as CSSProperties}
-                                                    title={rejectionSummary}
-                                                >
-                                                    {rejectionSummary}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
                                 </Fragment>
                             );
                         })}

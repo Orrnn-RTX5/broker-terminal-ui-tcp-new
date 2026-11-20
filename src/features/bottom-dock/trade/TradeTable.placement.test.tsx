@@ -97,62 +97,40 @@ describe('Trade placement status presentation', () => {
   });
 
   it.each([
-    ['rejected', 'Rejected'], ['expired', 'Expired'],
-  ] as const)('shows the %s reason visibly and removes misleading progress placeholders', (state, label) => {
+    'rejected', 'expired', 'failed',
+  ] as const)('omits %s placement error rows from the Trade table (errors belong only in Journal)', (state) => {
     const position = {
       ...provisionalPosition(state),
-      placementErrorCode: 'TOO_MANY_ORDERS',
-      placementErrorMessage: 'Account order limit reached.',
+      placementErrorCode: 'COMMISSION_CALC_FAILED',
+      placementErrorMessage: 'Commission calculation failed for EURAUD',
     };
     const props = createProps([position]);
     const view = render(<TradeTable {...props} />);
-    const tradeRow = view.container.querySelector('tbody tr') as HTMLTableRowElement;
-    const reason = screen.getByRole('status');
-
-    expect(within(tradeRow).getByText(label)).toBeVisible();
-    expect(reason).toHaveTextContent(`${label} · BTCUSD · buy · 0.01 lots: TOO_MANY_ORDERS: Account order limit reached.`);
-    expect(reason).toHaveAttribute('title', reason.textContent);
-    expect(reason).toHaveClass('truncate', 'font-normal');
-    expect(reason.style.getPropertyValue('--rtx-type-size')).toBe('13px');
-    expect(reason.closest('tr')).toHaveClass('text-loss');
-    expect(reason.closest('td')).toHaveClass('text-left');
-    const [symbolCell, ...otherCells] = within(tradeRow).getAllByRole('cell');
-    expect(symbolCell).toHaveClass('text-left', 'pl-4');
-    for (const cell of otherCells) {
-      expect(cell).toHaveClass('text-center');
-    }
-    expect(within(tradeRow).queryByText('…')).not.toBeInTheDocument();
-    expect(within(tradeRow).getByRole('button', { name: label })).toBeDisabled();
-    for (const button of within(tradeRow).getAllByRole('button')) {
-      expect(button).toBeDisabled();
-      fireEvent.click(button);
-    }
-    expect(props.onClosePosition).not.toHaveBeenCalled();
-    expect(props.openModifyPosition).not.toHaveBeenCalled();
+    expect(view.container.querySelectorAll('tbody tr.rtx-trade-row')).toHaveLength(0);
+    expect(view.container.querySelector('.rtx-trade-placement-message')).toBeNull();
+    expect(screen.queryByText(/COMMISSION_CALC_FAILED/)).not.toBeInTheDocument();
+    expect(screen.getByText('No open positions')).toBeInTheDocument();
   });
 
-  it.each(['pending', 'rejected'] as const)('keeps %s status visible when Ticket and Comment columns are hidden', state => {
-    const props = createProps([{ ...provisionalPosition(state), placementErrorMessage: 'Order limit reached.' }]);
+  it('keeps pending status visible when Ticket and Comment columns are hidden', () => {
+    const props = createProps([provisionalPosition('pending')]);
     props.visibleTradeColumns = TRADE_COLUMN_DEFS.filter(column => column.key !== 'ticket' && column.key !== 'comment');
     props.visibleOptionalColumnCount = props.visibleTradeColumns.length;
     props.isColumnVisible = key => key !== 'ticket' && key !== 'comment';
     const view = render(<TradeTable {...props} />);
     const symbolCell = view.container.querySelector('tbody tr td')!;
-    expect(symbolCell).toHaveTextContent(state === 'pending' ? 'BTCUSD--' : 'BTCUSDRejected');
-    if (state === 'rejected') {
-      expect(screen.getByRole('status')).toHaveTextContent('Order limit reached.');
-      expect(screen.getByRole('status').closest('td')).toHaveAttribute('colspan', String(props.visibleOptionalColumnCount + 2));
-    }
+    expect(symbolCell).toHaveTextContent('BTCUSD--');
   });
 
-  it('keeps eight confirmed rows, their actions, and account totals unchanged beside a rejection', () => {
+  it('keeps eight confirmed rows, their actions, and account totals unchanged without rendering rejected rows', () => {
     const confirmed = Array.from({ length: 8 }, (_, index) => confirmedPosition(100 + index));
     const props = createProps([
       { ...provisionalPosition('rejected'), placementErrorMessage: 'Order limit reached.' }, ...confirmed,
     ]);
     const view = render(<TradeTable {...props} />);
-    expect(view.container.querySelectorAll('tbody tr.rtx-trade-row')).toHaveLength(9);
-    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(view.container.querySelectorAll('tbody tr.rtx-trade-row')).toHaveLength(8);
+    expect(view.container.querySelector('.rtx-trade-placement-message')).toBeNull();
+    expect(screen.queryByText(/Order limit reached/)).not.toBeInTheDocument();
     expect(view.container.querySelector('.rtx-trade-footer-floating')).toHaveTextContent('8.00USD');
     for (const position of confirmed) {
       const close = screen.getByRole('button', { name: `Close position ${position.ticket}` });
@@ -236,7 +214,7 @@ describe('Trade row updates', () => {
     expect(props.handleTradeContextMenu).toHaveBeenLastCalledWith(expect.anything(), latest);
   });
 
-  it('updates cached placement labels and failure details through an order lifecycle', () => {
+  it('updates cached placement labels through an order lifecycle and drops rejected rows cleanly', () => {
     const pending = provisionalPosition('pending');
     const props = createProps([pending]);
     const view = render(<TradeTable {...props} />);
@@ -247,10 +225,10 @@ describe('Trade row updates', () => {
     view.rerender(<TradeTable {...props} displayedLivePositions={[{
       ...pending, placementState: 'rejected', placementErrorMessage: 'Volume limit',
     }]} />);
-    expect(screen.getByRole('button', { name: 'Rejected' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('Volume limit');
+    expect(screen.queryByRole('button', { name: 'Rejected' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Volume limit/)).not.toBeInTheDocument();
+    expect(screen.getByText('No open positions')).toBeInTheDocument();
     view.rerender(<TradeTable {...props} displayedLivePositions={[confirmedPosition(100)]} />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close position 100' })).toBeEnabled();
   });
 

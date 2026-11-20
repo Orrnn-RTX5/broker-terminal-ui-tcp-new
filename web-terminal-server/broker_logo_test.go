@@ -170,6 +170,12 @@ func TestDynamicBrokerLogoServedAndUpdatedFromSuperAdmin(t *testing.T) {
 	if !strings.Contains(logoRec1.Header().Get("Cache-Control"), "no-cache") {
 		t.Fatalf("expected no-cache Cache-Control, got %q", logoRec1.Header().Get("Cache-Control"))
 	}
+	if logoRec1.Header().Get("Access-Control-Allow-Origin") == "" {
+		t.Fatalf("expected Access-Control-Allow-Origin header on logo response")
+	}
+	if !strings.Contains(logoRec1.Header().Get("Vary"), "Origin") {
+		t.Fatalf("expected Vary: Origin header on logo response, got %q", logoRec1.Header().Get("Vary"))
+	}
 	if !bytes.Equal(logoRec1.Body.Bytes(), logoPNGv1) {
 		t.Fatalf("logo v1 body mismatch")
 	}
@@ -212,5 +218,148 @@ func TestDynamicBrokerLogoServedAndUpdatedFromSuperAdmin(t *testing.T) {
 	srv.serveHTTP(missRec, missReq)
 	if missRec.Code != http.StatusOK || missRec.Header().Get("X-RTX5-Broker-Logo-Source") != "embedded" || !bytes.Equal(missRec.Body.Bytes(), embeddedFallback) {
 		t.Fatalf("expected embedded fallback for missing broker logo, got status=%d src=%q", missRec.Code, missRec.Header().Get("X-RTX5-Broker-Logo-Source"))
+	}
+}
+
+func TestRequestIsHTTPSAndOriginBehindProxies(t *testing.T) {
+	srv := &WebTerminalServer{defaultPort: 18403}
+
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "plain http",
+			headers: map[string]string{},
+			want:    "http://terminal.orrnn.com",
+		},
+		{
+			name:    "multi-hop X-Forwarded-Proto",
+			headers: map[string]string{"X-Forwarded-Proto": "https, http"},
+			want:    "https://terminal.orrnn.com",
+		},
+		{
+			name:    "RFC 7239 Forwarded proto=https",
+			headers: map[string]string{"Forwarded": "for=203.0.113.1;proto=https;host=terminal.orrnn.com"},
+			want:    "https://terminal.orrnn.com",
+		},
+		{
+			name:    "X-Forwarded-Ssl on",
+			headers: map[string]string{"X-Forwarded-Ssl": "on"},
+			want:    "https://terminal.orrnn.com",
+		},
+		{
+			name:    "X-Url-Scheme https",
+			headers: map[string]string{"X-Url-Scheme": "https"},
+			want:    "https://terminal.orrnn.com",
+		},
+		{
+			name:    "Cloudflare CF-Visitor https",
+			headers: map[string]string{"CF-Visitor": `{"scheme":"https"}`},
+			want:    "https://terminal.orrnn.com",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://terminal.orrnn.com/api/v2/broker/servers", nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			gotOrigin, _, _, _ := srv.requestOrigin(req)
+			if gotOrigin != tc.want {
+				t.Fatalf("requestOrigin() = %q, want %q", gotOrigin, tc.want)
+			}
+		})
+	}
+}
+
+func TestDynamicBrokerLogoFallsBackToGatewayWhenSuperAdminUnreachable(t *testing.T) {
+	gatewayLogoPNG := append(append([]byte(nil), pngMagicBytes...), []byte("gateway-v2-broker-logo")...)
+
+	// Mock local HTTP server representing Broker Gateway (:4443 -> gateway service).
+	// Return 404 on /api/v1 and serve the logo on /api/v2 to verify both paths are tried.
+	gwHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/brokers/orrnn/logo" {
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("ETag", `"gw-logo-1"`)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(gatewayLogoPNG)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer gwHTTP.Close()
+
+	// Mock Broker Gateway Binary TCP Access listener (:4443)
+	gwLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen mock gateway: %v", err)
+	}
+	defer gwLn.Close()
+
+	go func() {
+		for {
+			raw, aerr := gwLn.Accept()
+			if aerr != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				tc, terr := rtx5tcp.AcceptTunnel(conn, 2*time.Second)
+				if terr != nil {
+					return
+				}
+				sess := rtx5tcp.NewMuxSession(tc, true, func(svc, _ string) (string, string, error) {
+					if svc == "gateway" {
+						return gwHTTP.URL, gwHTTP.URL, nil
+					}
+					return "", "", http.ErrNotSupported
+				}, nil)
+				_ = sess.ServeLoop()
+			}(raw)
+		}
+	}()
+
+	// Pick an unused closed TCP port for unreachable SuperAdmin :9100
+	closedLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve closed port: %v", err)
+	}
+	deadSuperAdminAddr := closedLn.Addr().String()
+	_ = closedLn.Close()
+
+	embeddedFallback := append(append([]byte(nil), pngMagicBytes...), []byte("embedded-terminal-icon")...)
+	srv := &WebTerminalServer{
+		defaultPort:   18403,
+		exeDir:        t.TempDir(),
+		localUIOnly:   true,
+		superAdminTCP: deadSuperAdminAddr,
+		distRoot: fstest.MapFS{
+			"brand/terminal-icon.png": &fstest.MapFile{Data: embeddedFallback},
+		},
+		cachedBrokers: []DiscoveredBroker{
+			{BrokerID: "orrnn", BrokerName: "Orrnn", TCPAddr: gwLn.Addr().String(), Online: true},
+		},
+		cachedBrokersAt: time.Now(),
+	}
+	srv.setDefaultBroker("orrnn", "Orrnn", gwLn.Addr().String())
+
+	req := httptest.NewRequest(http.MethodGet, "https://terminal.orrnn.com/api/v1/brokers/orrnn/logo", nil)
+	rec := httptest.NewRecorder()
+	srv.serveHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if rec.Header().Get("X-RTX5-Broker-Logo-Source") != "gateway" {
+		t.Fatalf("expected gateway logo source when superadmin is unreachable, got %q", rec.Header().Get("X-RTX5-Broker-Logo-Source"))
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") == "" || !strings.Contains(rec.Header().Get("Vary"), "Origin") {
+		t.Fatalf("expected CORS + Vary: Origin headers, got ACAO=%q Vary=%q", rec.Header().Get("Access-Control-Allow-Origin"), rec.Header().Get("Vary"))
+	}
+	if !bytes.Equal(rec.Body.Bytes(), gatewayLogoPNG) {
+		t.Fatalf("gateway logo payload mismatch")
 	}
 }

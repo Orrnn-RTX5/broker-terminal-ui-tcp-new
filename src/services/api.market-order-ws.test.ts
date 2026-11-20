@@ -287,4 +287,55 @@ describe('ordersApi.placeMarketOrder binary-channel-only transport', () => {
     expect(mocks.restPlaceOrder).not.toHaveBeenCalled();
     expect(mocks.restGetOrderCommand).not.toHaveBeenCalled();
   });
+
+  it('never dispatches a provisional Trade row on slow rejection (>45ms) while still logging to Journal telemetry', async () => {
+    vi.useFakeTimers();
+    try {
+      let rejectOrder!: (err: unknown) => void;
+      mocks.sendBinaryTcpOrder.mockImplementationOnce(() => new Promise((_, reject) => {
+        rejectOrder = reject;
+      }));
+
+      const promise = api.orders.placeMarketOrder({
+        ...inputOrder,
+        symbol: 'EURAUD',
+        side: 'sell',
+        volume: 0.01,
+        client_order_id: CLIENT_ORDER_ID,
+      });
+
+      await vi.advanceTimersByTimeAsync(120);
+      expect(onPlacementState).not.toHaveBeenCalled();
+
+      rejectOrder(new BinaryTcpOrderError('Commission calculation failed for EURAUD', {
+        status: 400,
+        code: 'COMMISSION_CALC_FAILED',
+        backendMessage: 'Commission calculation failed for EURAUD',
+        retryable: false,
+      }));
+
+      await expect(promise).rejects.toMatchObject({
+        status: 400,
+        code: 'COMMISSION_CALC_FAILED',
+        backendMessage: 'Commission calculation failed for EURAUD',
+      });
+
+      expect(onPlacementState).not.toHaveBeenCalled();
+      expect(onNewTrade).not.toHaveBeenCalled();
+      expect(getTradeOrderLatencySamples()).toContainEqual(
+        expect.objectContaining({
+          phase: 'placement_terminal',
+          clientOrderId: CLIENT_ORDER_ID,
+          symbol: 'EURAUD',
+          side: 'sell',
+          volume: 0.01,
+          terminalStatus: 'rejected',
+          errorCode: 'COMMISSION_CALC_FAILED',
+          errorMessage: 'Commission calculation failed for EURAUD',
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

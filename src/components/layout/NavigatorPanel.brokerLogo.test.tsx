@@ -37,6 +37,7 @@ function authenticate(broker = nexa, serverName = broker.broker_name, login = 20
 
 describe('Navigator broker logo ownership', () => {
   beforeEach(() => {
+    applyBrokerChrome({});
     localStorage.clear();
     sessionStorage.clear();
     useAppStore.setState({ isAuthenticated: false, accountId: null, savedAccounts: [] });
@@ -54,6 +55,7 @@ describe('Navigator broker logo ownership', () => {
 
   afterEach(() => {
     cleanup();
+    applyBrokerChrome({});
     useAppStore.setState({ isAuthenticated: false, accountId: null, savedAccounts: [] });
     commitBrokerAccountSessionScope({ authenticated: false, brokerId: '', serverUrl: '' });
     delete (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__;
@@ -202,6 +204,43 @@ describe('Navigator broker logo ownership', () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByRole('img', { name: 'Nexa Logo' }))
+        .toHaveAttribute('src', 'https://directory.example/api/v1/brokers/Nexa/logo?v=new');
+    });
+  });
+
+  it('refreshes directory logos in deployed web mode when broker chrome broadcasts a new version over an unversioned runtime logo', async () => {
+    const runtime = (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__!;
+    runtime.BACKEND_TARGET = 'web';
+    runtime.BROKER_LOGO_URL = 'https://directory.example/api/v1/brokers/Nexa/logo';
+    authenticate(nexa);
+    directoryMocks.getCachedBrokerDirectory.mockReturnValue([
+      { ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=old' },
+    ]);
+    brokerApiMocks.getServers
+      .mockResolvedValueOnce([{ ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=old' }])
+      .mockResolvedValueOnce([{ ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=new' }]);
+    directoryMocks.loadAppBrokerDirectory.mockResolvedValueOnce([
+      { ...nexa, logo_url: 'https://directory.example/api/v1/brokers/Nexa/logo?v=new' },
+    ]);
+
+    render(<NavigatorPanel />);
+    expect(await screen.findByRole('img', { name: 'Nexa Logo' }))
+      .toHaveAttribute('src', 'https://directory.example/api/v1/brokers/Nexa/logo?v=old');
+
+    act(() => {
+      applyBrokerChrome({
+        brokerId: nexa.broker_id,
+        brokerName: nexa.broker_name,
+        logoUrl: 'https://directory.example/api/v1/brokers/Nexa/logo?v=new',
+      });
+    });
+
+    await waitFor(() => {
+      expect(directoryMocks.loadAppBrokerDirectory).toHaveBeenCalledWith({
+        forceRefresh: true,
+        desktop: false,
+      });
       expect(screen.getByRole('img', { name: 'Nexa Logo' }))
         .toHaveAttribute('src', 'https://directory.example/api/v1/brokers/Nexa/logo?v=new');
     });

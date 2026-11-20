@@ -122,12 +122,16 @@ export interface BrokerServer {
   region?: string;
   enabled?: boolean;
   logo_url?: string;
+  logo_version?: string;
+  logo_updated_at?: string;
   created_at?: number;
 }
 
 export interface BrokerConfig {
   name: string;
   logo_url?: string;
+  logo_version?: string;
+  logo_updated_at?: string;
   support_email?: string;
   theme_color?: string;
   timezone?: string;
@@ -140,6 +144,8 @@ export interface Broker {
   broker_id: string;
   license_plan: string;
   logo_url: string;
+  logo_version?: string;
+  logo_updated_at?: string;
   modules_enabled: string[];
   name: string;
   status: string;

@@ -2,11 +2,23 @@ import { saveWorkspaceFeature, printSetupFeature, printPreviewFeature, exitConfi
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import './file-menu-desktop.css';
 import { Icon } from '../ui/Icon';
-import React, { Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
+import {
+    appendBrokerLogoVersionParam,
+    BrokerLogoImage,
+    hasBrokerLogoVersionQuery,
+    isPlaceholderBrokerLogoUrl,
+    normalizeSameOriginHttpsUrl,
+} from '../BrokerLogoImage';
+import React, { Suspense, useState, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RetainedLazyFeature } from '../../startup/RetainedLazyFeature';
 import { useAppStore } from '../../store/useAppStore';
 import { getBrokerSavedAccountTypes } from '../../services/tradingAccountType';
+import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '../../services/brokerPresentation';
+import { getCommittedBrokerAccountSessionScope, onSessionChange } from '../../services/brokerSession';
+import { getCachedBrokerDirectory } from '../../services/brokerDirectory';
+import { getRuntimeBrokerConfiguration } from '../../config/backendTarget.js';
+import { toLocalDevProxyUrl } from '../../config/api';
 import { chartPrinter, type PrintPreferences, type ChartPrintData } from '../../services/chartPrinter';
 import {
     getActiveChartSource,
@@ -55,11 +67,32 @@ export interface FileMenuProps {
     onLoginTrade?: () => void;
     onLoginWebTrader?: () => void;
     accountId?: string;
+    brokerId?: string;
+    brokerName?: string;
+    brokerLogoUrl?: string;
+    brokerServerUrl?: string;
     onLogout?: () => void;
     onDialogOpenChange?: (open: boolean) => void;
     onExit?: () => void;
     hasUnsavedChanges?: boolean;
 }
+
+const readFileMenuStoredValue = (key: string): string => {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return '';
+    try {
+        return String(window.localStorage.getItem(key) || '').trim();
+    } catch {
+        return '';
+    }
+};
+
+const readRuntimeBrokerIdFallback = (): string => {
+    try {
+        return String(getRuntimeBrokerConfiguration().brokerId || '').trim();
+    } catch {
+        return '';
+    }
+};
 
 export const FileMenu: React.FC<FileMenuProps> = ({
     shortcutsOnly = false,
@@ -77,6 +110,10 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     onLoginTrade,
     onLoginWebTrader,
     accountId,
+    brokerId,
+    brokerName,
+    brokerLogoUrl,
+    brokerServerUrl,
     onLogout,
     onDialogOpenChange,
     onExit,
@@ -111,6 +148,116 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     const { hasDemoAndRealAccounts } = getBrokerSavedAccountTypes(savedAccounts);
     const hideOpenAccountOption = Boolean(isAuthenticated && hasDemoAndRealAccounts);
     const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
+    const [brokerChrome, setBrokerChrome] = useState<BrokerChromeState>(() => getBrokerChrome());
+    const [, bumpSessionRevision] = useReducer((value: number) => value + 1, 0);
+
+    useEffect(() => {
+        if (shortcutsOnly || typeof window === 'undefined') return undefined;
+        const onBrokerChrome = (event: Event) => {
+            const detail = (event as CustomEvent<BrokerChromeState>).detail;
+            setBrokerChrome(detail || getBrokerChrome());
+        };
+        window.addEventListener(BROKER_CHROME_EVENT, onBrokerChrome);
+        const unsubscribeSession = onSessionChange((reason) => {
+            if (reason !== 'token_rotation') bumpSessionRevision();
+        });
+        return () => {
+            window.removeEventListener(BROKER_CHROME_EVENT, onBrokerChrome);
+            unsubscribeSession();
+        };
+    }, [shortcutsOnly]);
+
+    const activeBrokerLogo = (() => {
+        if (shortcutsOnly) return { brokerSource: null, alt: '' };
+
+        const sessionScope = getCommittedBrokerAccountSessionScope();
+        const storedBrokerId = readFileMenuStoredValue('broker_id')
+            || readFileMenuStoredValue('rtx_broker_id')
+            || String(sessionScope.brokerId || '').trim()
+            || readRuntimeBrokerIdFallback();
+        const effectiveBrokerId = String(brokerId || brokerChrome.brokerId || storedBrokerId || '').trim();
+        const chromeMatchesActiveBroker = !brokerChrome.brokerId
+            || !effectiveBrokerId
+            || brokerChrome.brokerId.trim().toLowerCase() === effectiveBrokerId.toLowerCase();
+
+        const storedServerUrl = readFileMenuStoredValue('rtx_broker_server')
+            || readFileMenuStoredValue('server_url')
+            || readFileMenuStoredValue('backend_url');
+        const effectiveScopeServer = String(brokerServerUrl || sessionScope.serverUrl || storedServerUrl || '').trim();
+
+        const cachedDirectory = getCachedBrokerDirectory() || [];
+        const matchedDirectoryBroker = cachedDirectory.find((entry) => {
+            if (effectiveBrokerId && String(entry.broker_id || '').trim() === effectiveBrokerId) return true;
+            const entryServer = String(entry.server_url || '').trim().replace(/\/+$/, '').toLowerCase();
+            const scopeServer = effectiveScopeServer.replace(/\/+$/, '').toLowerCase();
+            return Boolean(entryServer && scopeServer && entryServer === scopeServer);
+        });
+
+        const cleanLogoUrl = (raw: unknown): string => {
+            const trimmed = normalizeSameOriginHttpsUrl(String(raw || '').trim());
+            if (!trimmed || isPlaceholderBrokerLogoUrl(trimmed)) return '';
+            return toLocalDevProxyUrl(trimmed);
+        };
+
+        const propLogo = cleanLogoUrl(brokerLogoUrl);
+        const chromeLogo = chromeMatchesActiveBroker ? cleanLogoUrl(brokerChrome.logoUrl) : '';
+        const directoryLogo = cleanLogoUrl(
+            appendBrokerLogoVersionParam(
+                matchedDirectoryBroker?.logo_url,
+                (matchedDirectoryBroker as { logo_version?: string; logo_updated_at?: string } | undefined)?.logo_version
+                || (matchedDirectoryBroker as { logo_updated_at?: string } | undefined)?.logo_updated_at,
+            ),
+        );
+        const storedLogo = cleanLogoUrl(readFileMenuStoredValue('logo_url'));
+        const orderedLogos = [propLogo, chromeLogo, directoryLogo, storedLogo].filter(Boolean);
+        const resolvedLogoUrl = orderedLogos.find((url) => hasBrokerLogoVersionQuery(url))
+            || orderedLogos[0]
+            || '';
+
+        const resolvedBrokerName = String(
+            brokerName
+            || (chromeMatchesActiveBroker ? brokerChrome.brokerName : '')
+            || readFileMenuStoredValue('broker_name')
+            || matchedDirectoryBroker?.broker_name
+            || '',
+        ).trim();
+        const resolvedServerUrl = String(
+            brokerServerUrl
+            || matchedDirectoryBroker?.server_url
+            || sessionScope.serverUrl
+            || storedServerUrl
+            || '',
+        ).trim();
+
+        const brokerSource = resolvedLogoUrl || effectiveBrokerId
+            ? {
+                broker_id: effectiveBrokerId,
+                broker_name: resolvedBrokerName,
+                logo_url: resolvedLogoUrl,
+                server_url: resolvedServerUrl,
+            }
+            : null;
+
+        return {
+            brokerSource,
+            alt: resolvedBrokerName
+                ? `${resolvedBrokerName} Logo`
+                : (effectiveBrokerId ? `${effectiveBrokerId} Logo` : 'Active broker logo'),
+        };
+    })();
+
+    const avatarBrokerKey = activeBrokerLogo.brokerSource
+        ? `${activeBrokerLogo.brokerSource.broker_id}|${activeBrokerLogo.brokerSource.logo_url}|${activeBrokerLogo.brokerSource.server_url}`
+        : '';
+    const [avatarMediaState, setAvatarMediaState] = useState<{
+        key: string;
+        exhausted: boolean;
+        wideBanner: boolean;
+    }>({ key: '', exhausted: false, wideBanner: false });
+    const currentAvatarMedia = avatarMediaState.key === avatarBrokerKey
+        ? avatarMediaState
+        : { key: avatarBrokerKey, exhausted: false, wideBanner: false };
+    const showingBrokerImage = Boolean(avatarBrokerKey) && !currentAvatarMedia.exhausted;
 
     useLayoutEffect(() => {
         const alignSubmenus = () => {
@@ -442,8 +589,41 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                             data-testid="file-menu-account-header"
                             role="presentation"
                         >
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400 [.rtx-advanced-view_&]:border-[#d6bbfb] [.rtx-advanced-view_&]:bg-[#f4f3ff] [.rtx-advanced-view_&]:text-[#6941C6]">
-                                <Icon name="user" size="sm" />
+                            <div
+                                className={`rtx-file-menu__account-avatar flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border ${
+                                    showingBrokerImage
+                                        ? 'border-white/15 bg-[#171a20] [.rtx-advanced-view_&]:border-[#d0d5dd] [.rtx-advanced-view_&]:bg-white'
+                                        : 'border-blue-500/30 bg-blue-500/10 text-blue-400 [.rtx-advanced-view_&]:border-[#d6bbfb] [.rtx-advanced-view_&]:bg-[#f4f3ff] [.rtx-advanced-view_&]:text-[#6941C6]'
+                                }`}
+                                data-testid="file-menu-broker-avatar"
+                            >
+                                <BrokerLogoImage
+                                    broker={activeBrokerLogo.brokerSource}
+                                    alt={activeBrokerLogo.alt}
+                                    className={currentAvatarMedia.wideBanner
+                                        ? 'h-full w-full rounded-full object-contain px-0.5'
+                                        : 'h-full w-full rounded-full object-cover'}
+                                    appFallbackUrl=""
+                                    onLoad={(event) => {
+                                        const { naturalWidth, naturalHeight } = event.currentTarget;
+                                        if (naturalWidth <= 0 || naturalHeight <= 0) return;
+                                        const ratio = naturalWidth / naturalHeight;
+                                        const isWideBanner = ratio > 2.2 || ratio < 0.45;
+                                        setAvatarMediaState({
+                                            key: avatarBrokerKey,
+                                            exhausted: false,
+                                            wideBanner: isWideBanner,
+                                        });
+                                    }}
+                                    onExhausted={() => {
+                                        setAvatarMediaState({
+                                            key: avatarBrokerKey,
+                                            exhausted: true,
+                                            wideBanner: false,
+                                        });
+                                    }}
+                                    fallback={<Icon name="user" size="sm" />}
+                                />
                             </div>
                             <div className="min-w-0 flex-1">
                                 <div className="text-[11px] font-normal text-zinc-500 [.rtx-advanced-view_&]:text-[#667085]">{tr("Current account")}</div>

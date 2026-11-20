@@ -40,7 +40,12 @@ import {
 } from '../services/brokerPresentation';
 import { resolveLoginHeroAsset, type LoginHeroAsset } from './welcomeHeroAssets';
 import { openAccountFeature } from '../startup/terminalFeatures';
-import { BrokerLogoImage, buildBrokerDirectoryLogoUrl, isPlaceholderBrokerLogoUrl } from './BrokerLogoImage';
+import {
+    BrokerLogoImage,
+    buildBrokerDirectoryLogoUrl,
+    isPlaceholderBrokerLogoUrl,
+    normalizeSameOriginHttpsUrl,
+} from './BrokerLogoImage';
 import { resolveLoginTitleBrandName } from './loginTitleBrand';
 import {
     beginLoginPerformanceMeasurement,
@@ -218,10 +223,12 @@ const buildDesktopBrokerPreview = (
             || savedBrokerId,
         server: savedBrokerId,
         server_url: configuredBroker?.server_url || '',
-        logo_url: cachedPresentation?.logoUrl
+        logo_url: normalizeSameOriginHttpsUrl(
+            cachedPresentation?.logoUrl
             || validStoredLogoUrl
             || validConfiguredLogoUrl
             || buildBrokerDirectoryLogoUrl(savedBrokerId),
+        ),
         region: cachedPresentation?.region || configuredBroker?.region,
         theme_color: normalizeBrokerThemeColor(localStorage.getItem('broker_theme_color'))
             || configuredBroker?.theme_color,
@@ -470,7 +477,13 @@ export const buildConfiguredRuntimeBroker = (): BrokerServerItem | undefined => 
         server_url: backendUrl,
         backend_url: backendUrl,
         market_api_url: backendUrl,
-        logo_url: configuration.brokerLogoUrl || buildBrokerDirectoryLogoUrl(brokerId) || cachedPresentation?.logoUrl || storedLogoUrl,
+        logo_url: normalizeSameOriginHttpsUrl(
+            configuration.brokerLogoUrl
+            || buildBrokerDirectoryLogoUrl(brokerId)
+            || buildBrokerDirectoryLogoUrl(brokerId, backendUrl)
+            || cachedPresentation?.logoUrl
+            || storedLogoUrl,
+        ),
         region: cachedPresentation?.region,
     };
 };
@@ -812,7 +825,7 @@ export function WelcomeTerminal({
             return;
         }
         void runHealthCheck(healthTargetUrl, nextBroker);
-        if (isDesktopBrokerSelection) {
+        if (serverUrl) {
             void hydrateBrokerPresentation(nextBroker, serverUrl);
         }
     }, [hydrateBrokerPresentation, isDesktopBrokerSelection, runHealthCheck]);
@@ -890,13 +903,13 @@ export function WelcomeTerminal({
     }, [applySelectedBroker, configuredRuntimeBroker, isDesktopBrokerSelection, directoryAttempt]);
 
     useEffect(() => {
-        if (!isDesktopBrokerSelection) return;
+        if (!isDesktopBrokerSelection && !selectedBroker) return;
         applyBrokerChrome({
             brokerId: selectedBroker?.broker_id,
             brokerName: selectedBroker?.broker_name,
             logoUrl: selectedBroker?.logo_url,
             themeColor: normalizeBrokerThemeColor(selectedBroker?.theme_color),
-            updateLoginTitle: true,
+            updateLoginTitle: isDesktopBrokerSelection,
         });
     }, [isDesktopBrokerSelection, selectedBroker]);
 

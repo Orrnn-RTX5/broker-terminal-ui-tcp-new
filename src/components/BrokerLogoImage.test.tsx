@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BrokerLogoImage, buildBrokerLogoCandidates } from './BrokerLogoImage';
+import {
+  BrokerLogoImage,
+  buildBrokerLogoCandidates,
+  normalizeSameOriginHttpsUrl,
+  shouldPreferDynamicLogoOverConfigured,
+} from './BrokerLogoImage';
 
 const testBroker = {
   broker_id: 'TEST',
@@ -106,5 +111,45 @@ describe('BrokerLogoImage', () => {
     fireEvent.error(screen.getByRole('img', { name: 'Active broker' }));
     rerender(<BrokerLogoImage broker={{ broker_id: 'broker-b', logo_url: 'https://broker-b.example/logo.svg' }} alt="Active broker" />);
     expect(screen.getByRole('img', { name: 'Active broker' })).toHaveAttribute('src', 'https://broker-b.example/logo.svg');
+  });
+
+  it('prefers live versioned broker logo updates over static unversioned deployment BROKER_LOGO_URL on the same route', () => {
+    (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__ = {
+      CONFIG_SOURCE: 'deployment',
+      BACKEND_TARGET: 'web',
+      API_HOST: 'https://broker.example',
+      WS_HOST: 'wss://broker.example',
+      BROKER_ID: testBroker.broker_id,
+      DEFAULT_MT5_SERVER: 'Test-Live',
+      BROKER_LOGO_URL: 'https://broker.example/api/v1/brokers/TEST/logo',
+    };
+
+    const versionedUrl = 'https://broker.example/api/v1/brokers/TEST/logo?v=abc123def456';
+    expect(shouldPreferDynamicLogoOverConfigured(
+      'https://broker.example/api/v1/brokers/TEST/logo',
+      versionedUrl,
+    )).toBe(true);
+
+    const candidates = buildBrokerLogoCandidates({
+      ...testBroker,
+      logo_url: versionedUrl,
+    });
+    expect(candidates[0]).toBe(versionedUrl);
+  });
+
+  it('upgrades same-host http:// logo URLs to https:// on HTTPS pages without mutating cross-origin URLs', () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL('https://terminal.orrnn.com/'),
+    });
+    try {
+      expect(normalizeSameOriginHttpsUrl('http://terminal.orrnn.com/api/v1/brokers/orrnn/logo?v=abc'))
+        .toBe('https://terminal.orrnn.com/api/v1/brokers/orrnn/logo?v=abc');
+      expect(normalizeSameOriginHttpsUrl('http://127.0.0.1:18403/api/v1/brokers/orrnn/logo'))
+        .toBe('http://127.0.0.1:18403/api/v1/brokers/orrnn/logo');
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
   });
 });
