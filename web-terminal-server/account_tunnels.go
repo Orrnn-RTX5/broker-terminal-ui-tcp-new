@@ -61,6 +61,12 @@ const (
 	// A tunnel that was never committed this long after its creation is closed.
 	accountTunnelCommitTimeout = 10 * time.Second
 	accountTunnelPingTimeout   = 3 * time.Second
+	// A keep-alive ping on a live tunnel that fails (write error) or whose pong is missing this long closes the
+	// tunnel, so the redial path runs. A silent market is NOT a dead tunnel: only the ping decides.
+	tunnelLivenessPingTimeout = 5 * time.Second
+	// Order / manager / admin sessions close only after this many consecutive failed keep-alive pings (an
+	// in-flight reply must survive one >3 s stall); guest and account market tunnels close on the first.
+	sessionPingFailLimit = 2
 	// A tunnel that has stayed uncommitted this long with no authenticating 0x3A is closed (the claim backoff
 	// then takes over).
 	accountTunnelStuckTimeout = 5 * time.Minute
@@ -84,6 +90,13 @@ var (
 	maxUncommittedTunnelsPerIP  = defaultMaxUncommittedTunnelsPerIP
 	// Peers whose X-Forwarded-For / X-Real-IP is believed (RTX5_WEB_TRUSTED_PROXY_CIDRS); empty = never.
 	trustedProxyNets []*net.IPNet
+	// How long a committed tunnel may receive no market frame before an identical 0x3B re-POST is written again
+	// (renews the quote subscription on the access server). The de-dup of identical payloads stays otherwise.
+	accountSubRenewQuiet = 30 * time.Second
+	// The keep-alive ping; a variable so tests can fail it.
+	keepAlivePing = func(s *rtx5tcp.MuxSession, timeout time.Duration) (float64, error) {
+		return s.MeasurePingRTT(timeout)
+	}
 	// The barrier ping; a variable so tests can lose a pong.
 	barrierPing = func(s *rtx5tcp.MuxSession) error {
 		_, err := s.MeasurePingRTT(accountTunnelPingTimeout)
@@ -256,6 +269,8 @@ type accountTunnel struct {
 	rearms        atomic.Int32 // consecutive re-arms that did not commit (indexes accountRearmDelays)
 	// unix nanos since when the tunnel has been uncommitted (0 while committed).
 	uncommittedSince atomic.Int64
+	lastMarket       atomic.Int64 // unix nanos: last market frame accepted from the tunnel (committed or arming)
+	lastRenew        atomic.Int64 // unix nanos: last identical 0x3B written again by renewSub
 
 	mu      sync.Mutex // sub, dialing, closed
 	sub     []byte     // latest 0x3B payload, re-sent after every dial
@@ -336,6 +351,83 @@ func (t *accountTunnel) resend() {
 	t.sendLatest()
 }
 
+// renewDue reports whether an identical 0x3B re-POST must be written again: the tunnel is up and committed and
+// has received no market frame (and no renewal / barrier) for accountSubRenewQuiet.
+func (t *accountTunnel) renewDue(now time.Time) bool {
+	if !t.live() || !t.hub.committed.Load() {
+		return false
+	}
+	last := max(t.lastMarket.Load(), t.lastRenew.Load(), t.lastBarrier.Load())
+	return now.UnixNano()-last >= int64(accountSubRenewQuiet)
+}
+
+// renewSub writes the latest 0x3B again on a committed tunnel without a barrier and without uncommitting it
+// (the payload is unchanged, so the gate stays the same and tabs stay on the tunnel's hub).
+func (t *accountTunnel) renewSub() {
+	t.sendMu.Lock()
+	defer t.sendMu.Unlock()
+	sess := t.cur.Load()
+	if !liveSession(sess) || !t.hub.committed.Load() {
+		return
+	}
+	t.mu.Lock()
+	payload := t.sub
+	t.mu.Unlock()
+	if len(payload) == 0 {
+		return
+	}
+	// Only the exact payload already written on this session may be re-sent here. A changed t.sub (a tab just
+	// posted a new payload and sendLatest is on its way) must go through sendLatest's uncommit + barrier, so
+	// renewSub leaves it to that and never writes it (and never sets sentPayload, which would make sendLatest skip).
+	if t.sentSess != sess || !bytes.Equal(t.sentPayload, payload) {
+		return
+	}
+	t.lastRenew.Store(time.Now().UnixNano())
+	if err := sess.SendControl(rtx5tcp.FrameBinaryAccountSub, rtx5tcp.FlagFIN, payload); err != nil {
+		return
+	}
+	t.sentSess, t.sentPayload = sess, payload
+}
+
+// pingOrClose runs a keep-alive ping on s and closes the session when it fails (write error) or its pong does
+// not arrive within timeout, so the owner's existing redial path runs. Close is idempotent.
+func pingOrClose(s *rtx5tcp.MuxSession, timeout time.Duration) (float64, error) {
+	rtt, err := keepAlivePing(s, timeout)
+	if err != nil {
+		_ = s.Close()
+	}
+	return rtt, err
+}
+
+// pingStrikes counts consecutive failed keep-alive pings of one long-lived session (order / manager / admin).
+// Those sessions carry in-flight replies, so one 3 s stall must not close them: only `limit` failures in a row
+// do, and any successful ping resets the count. The count is per session pointer (a redialed session starts at 0).
+type pingStrikes struct {
+	mu   sync.Mutex
+	sess *rtx5tcp.MuxSession
+	n    int
+}
+
+func (p *pingStrikes) ping(s *rtx5tcp.MuxSession, timeout time.Duration, limit int) (float64, error) {
+	rtt, err := keepAlivePing(s, timeout)
+	p.mu.Lock()
+	if p.sess != s {
+		p.sess, p.n = s, 0
+	}
+	closeNow := false
+	if err == nil {
+		p.n = 0
+	} else if p.n++; p.n >= limit {
+		closeNow = true
+		p.sess, p.n = nil, 0
+	}
+	p.mu.Unlock()
+	if closeNow {
+		_ = s.Close()
+	}
+	return rtt, err
+}
+
 // detach marks the tunnel closed and returns its session for the caller to Close outside any lock.
 func (t *accountTunnel) detach() *rtx5tcp.MuxSession {
 	t.mu.Lock()
@@ -377,6 +469,9 @@ func (t *accountTunnel) onFrame(s *rtx5tcp.MuxSession, frameType uint8, payload 
 			return // before the barrier: possibly pre-gate (guest snapshot / guest tick); never cached or sent
 		}
 		first = true
+	}
+	if isMarketFrame(frameType) {
+		t.lastMarket.Store(time.Now().UnixNano())
 	}
 	t.hub.handleControlFrame(frameType, payload)
 	if first && t.hub.armedAt.Load() != 0 && t.hub.committed.CompareAndSwap(false, true) {
@@ -519,6 +614,8 @@ func (l *brokerLink) setAccountSub(clientKey, ip string, key accountKey, payload
 	l.ensureAccountTunnel(t)
 	if !same {
 		go t.sendLatest()
+	} else if t.renewDue(time.Now()) {
+		go t.renewSub() // identical 0x3B on a tunnel that went quiet: renew it instead of skipping
 	}
 }
 
@@ -608,7 +705,7 @@ func (l *brokerLink) keepAccountTunnelsWarm() {
 			go func(t *accountTunnel) {
 				defer t.pinging.Store(false)
 				if s := t.cur.Load(); s != nil {
-					_, _ = s.MeasurePingRTT(2 * time.Second)
+					_, _ = pingOrClose(s, tunnelLivenessPingTimeout)
 				}
 			}(t)
 		}
@@ -957,6 +1054,7 @@ drain:
 		case s.ch <- pkt:
 		default:
 			webStreamMarketFramesDropped.Add(1)
+			s.needResync.Store(true)
 		}
 	}
 	for attempt := 0; ; attempt++ {
@@ -978,6 +1076,7 @@ drain:
 			case s.ch <- pkt:
 			default:
 				webStreamMarketFramesDropped.Add(1)
+				s.needResync.Store(true)
 			}
 		}
 		to.subs[s] = struct{}{}

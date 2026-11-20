@@ -19,6 +19,13 @@ type webBinaryStreamSub struct {
 	prioCh       chan []byte
 	ch           chan []byte
 	closed       atomic.Bool
+	// needResync is set (O(1), only on the drop path) when a market frame for this tab was dropped because ch was
+	// full. The tab's writer then discards its stale queue and re-sends the source's latest ticks/depth snapshot
+	// (what attachSub sends), so a quiet symbol whose newest tick was dropped is not frozen until a page refresh.
+	needResync atomic.Bool
+	// lastResync (unix nanos) is touched by the tab's writer goroutine only: at most one full snapshot resync
+	// per webResyncMinGap, so a persistent overflow cannot turn into a snapshot storm.
+	lastResync int64
 
 	// src is the one market source (guest hub or an account tunnel's hub) this tab takes 0x21/0x22/depth
 	// frames from. It only changes under brokerLink.srcMu (see moveSubLocked); the hot path never reads it.
@@ -268,6 +275,7 @@ func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 		case s.ch <- pkt:
 		default:
 			webStreamMarketFramesDropped.Add(1)
+			s.needResync.Store(true)
 		}
 	}
 	h.mu.RUnlock()
@@ -335,6 +343,61 @@ func (s *webBinaryStreamSub) deliverTradeEvent(pkt []byte, eventLogin int64, sum
 		}
 	}
 }
+
+// resyncPackets is the writer's answer to an overflow of this tab's queue (needResync). It discards the stale
+// queued market packets (queued 0x22 candle frames are kept: the hub caches no candles) and returns the source's
+// latest ticks/depth snapshot, followed by the kept candles, for the writer to send. Order matters: the queue is
+// emptied first and the snapshot taken after, so every packet queued afterwards is at least as new as the
+// snapshot's cache state (the hub updates its cache before it fans a packet out) and the tab converges on the
+// latest state. It returns nil when no resync is pending (one atomic swap on the writer's loop).
+func (s *webBinaryStreamSub) resyncPackets() [][]byte {
+	if !s.needResync.Load() {
+		return nil
+	}
+	if now := time.Now().UnixNano(); now-s.lastResync < int64(webResyncMinGap) {
+		return nil // too soon: needResync stays set, the writer retries on its resync timer
+	}
+	s.lastResync = time.Now().UnixNano()
+	s.needResync.Store(false)
+	var keep [][]byte
+	for n := len(s.ch); n > 0; n-- {
+		select {
+		case pkt := <-s.ch:
+			if len(pkt) > 0 && pkt[0] == rtx5tcp.FrameBinaryCandleBatch {
+				keep = append(keep, pkt)
+			}
+		default:
+			n = 0
+		}
+	}
+	var out [][]byte
+	if h := s.src.Load(); h != nil {
+		snap, _ := h.snapshotPackets()
+		if s.src.Load() != h {
+			// moveSubLocked switched the source meanwhile: never send the old hub's snapshot. The new hub's
+			// snapshot was queued by the move; resync again from the new source on the next allowed turn.
+			s.needResync.Store(true)
+			s.lastResync = 0
+		} else {
+			out = make([][]byte, 0, len(snap)+len(keep))
+			out = append(out, snap...) // the cached snapshot slice is shared: never append to it in place
+		}
+	}
+	out = append(out, keep...)
+	if out == nil {
+		out = [][]byte{}
+	}
+	return out
+}
+
+// webStreamWriteDeadline bounds one stalled write to a tab: a tab whose socket accepts nothing for this long is
+// dropped (the browser reconnects) instead of pinning its handler forever. A slow tab that keeps draining is
+// never cut: the deadline is pushed forward while the writer is active.
+const (
+	webStreamWriteDeadline        = 45 * time.Second
+	webStreamWriteDeadlineRefresh = 5 * time.Second
+	webResyncMinGap               = time.Second
+)
 
 func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -429,8 +492,41 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		}
 	}
 
+	rc := http.NewResponseController(w)
+	var deadlineSet time.Time
+	var resyncTimer *time.Timer
+	var resyncC <-chan time.Time
+	defer func() {
+		if resyncTimer != nil {
+			resyncTimer.Stop()
+		}
+	}()
 	ctxDone := r.Context().Done()
 	for {
+		// The 45 s write deadline is refreshed here, once per loop turn; on an idle stream it relies on the 10 s
+		// keep-alive ticker below waking the loop (45 s >> 10 s + 5 s refresh gap).
+		if now := time.Now(); now.Sub(deadlineSet) >= webStreamWriteDeadlineRefresh {
+			deadlineSet = now
+			_ = rc.SetWriteDeadline(now.Add(webStreamWriteDeadline)) // unsupported writers just ignore it
+		}
+		if sub.needResync.Load() {
+			if pkts := sub.resyncPackets(); pkts != nil {
+				for _, pkt := range pkts {
+					if _, err := w.Write(pkt); err != nil {
+						return
+					}
+				}
+				flusher.Flush()
+			}
+			if resyncC == nil && sub.needResync.Load() { // rate-limited: retry once the gap has passed
+				if resyncTimer == nil {
+					resyncTimer = time.NewTimer(webResyncMinGap)
+				} else {
+					resyncTimer.Reset(webResyncMinGap)
+				}
+				resyncC = resyncTimer.C
+			}
+		}
 		if wrote, err := drainPrio(); err != nil {
 			return
 		} else if wrote {
@@ -440,6 +536,8 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		select {
 		case <-ctxDone:
 			return
+		case <-resyncC:
+			resyncC = nil
 		case pkt := <-sub.prioCh:
 			if _, err := w.Write(pkt); err != nil {
 				return

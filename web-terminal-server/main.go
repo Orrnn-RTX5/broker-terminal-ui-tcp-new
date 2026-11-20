@@ -731,7 +731,7 @@ func keepLinkWarm(l *brokerLink, firstBoot bool) {
 		}()
 	}
 	if sess, err := l.getOrDialSession(); err == nil && sess != nil {
-		if rtt, perr := sess.MeasurePingRTT(2 * time.Second); perr == nil && rtt > 0 {
+		if rtt, perr := pingOrClose(sess, 4*time.Second); perr == nil && rtt > 0 {
 			l.recordRTT(rtt)
 		}
 	}
@@ -740,15 +740,15 @@ func keepLinkWarm(l *brokerLink, firstBoot bool) {
 	actSess, mgrSess, admSess := l.activeMux, l.managerMux, l.adminMux
 	l.mu.RUnlock()
 	if mgrSess != nil {
-		_, _ = mgrSess.MeasurePingRTT(1500 * time.Millisecond)
+		_, _ = l.managerStrikes.ping(mgrSess, 3*time.Second, sessionPingFailLimit)
 	}
 	if admSess != nil {
-		_, _ = admSess.MeasurePingRTT(1500 * time.Millisecond)
+		_, _ = l.adminStrikes.ping(admSess, 3*time.Second, sessionPingFailLimit)
 	}
 	if firstBoot {
 		wg.Wait()
 	} else if orderSess, oerr := l.getOrDialOrderSession(); oerr == nil && orderSess != nil && orderSess != actSess {
-		_, _ = orderSess.MeasurePingRTT(1500 * time.Millisecond)
+		_, _ = l.orderStrikes.ping(orderSess, 3*time.Second, sessionPingFailLimit)
 	}
 }
 

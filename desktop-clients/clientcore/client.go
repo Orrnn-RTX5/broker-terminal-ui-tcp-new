@@ -101,6 +101,8 @@ type DesktopClient struct {
 	masterPubHex string
 	ota          *clientOTAEngine
 	binHub       *clientBinaryMarketHub
+	// consecutive keep-alive ping failures of the order session (backgroundReconnectLoop)
+	orderStrikes pingStrikes
 
 	mu                       sync.RWMutex
 	targetTCPAddr            string
@@ -524,7 +526,7 @@ func (c *DesktopClient) backgroundReconnectLoop() {
 		}
 
 		if sess, err := c.getOrDialSession(); err == nil && sess != nil {
-			if rtt, perr := sess.MeasurePingRTT(2 * time.Second); perr == nil && rtt > 0 {
+			if rtt, perr := pingOrCloseSession(sess, 4*time.Second); perr == nil && rtt > 0 {
 				c.mu.Lock()
 				c.lastRTTMs = rtt
 				if c.avgRTTMs <= 0 {
@@ -544,7 +546,7 @@ func (c *DesktopClient) backgroundReconnectLoop() {
 			actSess := c.activeMux
 			c.mu.RUnlock()
 			if orderSess, oerr := c.getOrDialOrderSession(); oerr == nil && orderSess != nil && orderSess != actSess {
-				_, _ = orderSess.MeasurePingRTT(1500 * time.Millisecond)
+				_, _ = c.orderStrikes.ping(orderSess, 3*time.Second, orderPingFailLimit)
 			}
 		}
 
@@ -554,6 +556,54 @@ func (c *DesktopClient) backgroundReconnectLoop() {
 		}
 		time.Sleep(3 * time.Second)
 	}
+}
+
+// keepAlivePing is the keep-alive ping; a variable so tests can fail it.
+var keepAlivePing = func(s *rtx5tcp.MuxSession, timeout time.Duration) (float64, error) {
+	return s.MeasurePingRTT(timeout)
+}
+
+// pingOrCloseSession pings s and closes it when the ping write fails or its pong does not arrive within timeout,
+// so the existing redial path (getOrDialSession on the next keep-alive turn) runs. A quiet market never closes
+// a tunnel: only the ping decides. Close is idempotent.
+func pingOrCloseSession(s *rtx5tcp.MuxSession, timeout time.Duration) (float64, error) {
+	rtt, err := keepAlivePing(s, timeout)
+	if err != nil {
+		_ = s.Close()
+	}
+	return rtt, err
+}
+
+// orderPingFailLimit: the order session closes only after this many consecutive failed keep-alive pings, so an
+// in-flight order reply survives one >3 s stall. The market tunnel closes on the first failure.
+const orderPingFailLimit = 2
+
+// pingStrikes counts consecutive failed keep-alive pings of one session; any successful ping resets it, and the
+// count is per session pointer (a redialed session starts at 0).
+type pingStrikes struct {
+	mu   sync.Mutex
+	sess *rtx5tcp.MuxSession
+	n    int
+}
+
+func (p *pingStrikes) ping(s *rtx5tcp.MuxSession, timeout time.Duration, limit int) (float64, error) {
+	rtt, err := keepAlivePing(s, timeout)
+	p.mu.Lock()
+	if p.sess != s {
+		p.sess, p.n = s, 0
+	}
+	closeNow := false
+	if err == nil {
+		p.n = 0
+	} else if p.n++; p.n >= limit {
+		closeNow = true
+		p.sess, p.n = nil, 0
+	}
+	p.mu.Unlock()
+	if closeNow {
+		_ = s.Close()
+	}
+	return rtt, err
 }
 
 func (c *DesktopClient) resolveBrokerFromCache(brokerID, brokerName, tcpAddr string) (string, string, string) {

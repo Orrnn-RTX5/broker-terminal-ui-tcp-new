@@ -14,6 +14,12 @@ type localBinaryStreamSub struct {
 	prioCh chan []byte
 	ch     chan []byte
 	closed atomic.Bool
+	// needResync is set (O(1), only on the drop path) when a market frame for this stream was dropped because ch
+	// was full. The writer then discards its stale queue and re-sends the hub's latest tick snapshot.
+	needResync atomic.Bool
+	// lastResync (unix nanos) is touched by the stream's writer goroutine only: at most one full snapshot resync
+	// per localResyncMinGap.
+	lastResync int64
 }
 
 type clientBinaryMarketHub struct {
@@ -108,6 +114,7 @@ func (h *clientBinaryMarketHub) broadcastPacket(pkt []byte) {
 		select {
 		case s.ch <- pkt:
 		default:
+			s.needResync.Store(true)
 		}
 	}
 }
@@ -117,6 +124,55 @@ func (h *clientBinaryMarketHub) clearCache() {
 	h.latestTicks = make(map[string]rtx5tcp.BinaryTick, 256)
 	h.mu.Unlock()
 }
+
+// resyncPackets answers an overflow of the stream's queue (needResync): it discards the stale queued packets
+// (queued 0x22 candle frames are kept, the hub caches none) and returns the hub's latest tick snapshot followed by
+// the kept candles. The queue is emptied first and the snapshot taken after, so whatever is queued afterwards is
+// at least as new as the snapshot (the hub caches a tick before it fans it out). nil when nothing is pending.
+func (h *clientBinaryMarketHub) resyncPackets(s *localBinaryStreamSub) [][]byte {
+	if !s.needResync.Load() {
+		return nil
+	}
+	if time.Now().UnixNano()-s.lastResync < int64(localResyncMinGap) {
+		return nil // too soon: needResync stays set, the writer retries on its resync timer
+	}
+	s.lastResync = time.Now().UnixNano()
+	s.needResync.Store(false)
+	var keep [][]byte
+	for n := len(s.ch); n > 0; n-- {
+		select {
+		case pkt := <-s.ch:
+			if len(pkt) > 0 && pkt[0] == rtx5tcp.FrameBinaryCandleBatch {
+				keep = append(keep, pkt)
+			}
+		default:
+			n = 0
+		}
+	}
+	h.mu.RLock()
+	snaps := make([]rtx5tcp.BinaryTick, 0, len(h.latestTicks))
+	for _, bt := range h.latestTicks {
+		snaps = append(snaps, bt)
+	}
+	h.mu.RUnlock()
+	out := make([][]byte, 0, len(snaps)/64+1+len(keep))
+	const chunk = 64
+	for start := 0; start < len(snaps); start += chunk {
+		end := min(start+chunk, len(snaps))
+		if pkt := wrapLocalBinaryFrame(rtx5tcp.FrameBinaryTickBatch, rtx5tcp.EncodeBinaryTickBatch(snaps[start:end])); len(pkt) > 0 {
+			out = append(out, pkt)
+		}
+	}
+	return append(out, keep...)
+}
+
+// A stalled write to the local webview stream is cut after this long without progress; the deadline is pushed
+// forward while the writer is active, so a slow but draining reader is never disconnected.
+const (
+	localStreamWriteDeadline        = 45 * time.Second
+	localStreamWriteDeadlineRefresh = 5 * time.Second
+	localResyncMinGap               = time.Second
+)
 
 func (c *DesktopClient) handleServerControlFrame(_ *rtx5tcp.MuxSession, frameType uint8, _ uint32, _ uint8, payload []byte) {
 	if c.binHub != nil {
@@ -209,8 +265,41 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 		}
 	}
 
+	rc := http.NewResponseController(w)
+	var deadlineSet time.Time
+	var resyncTimer *time.Timer
+	var resyncC <-chan time.Time
+	defer func() {
+		if resyncTimer != nil {
+			resyncTimer.Stop()
+		}
+	}()
 	ctxDone := r.Context().Done()
 	for {
+		// The 45 s write deadline is refreshed here, once per loop turn; on an idle stream it relies on the 10 s
+		// keep-alive ticker below waking the loop (45 s >> 10 s + 5 s refresh gap).
+		if now := time.Now(); now.Sub(deadlineSet) >= localStreamWriteDeadlineRefresh {
+			deadlineSet = now
+			_ = rc.SetWriteDeadline(now.Add(localStreamWriteDeadline)) // unsupported writers just ignore it
+		}
+		if sub.needResync.Load() {
+			if pkts := c.binHub.resyncPackets(sub); pkts != nil {
+				for _, pkt := range pkts {
+					if _, err := w.Write(pkt); err != nil {
+						return
+					}
+				}
+				flusher.Flush()
+			}
+			if resyncC == nil && sub.needResync.Load() { // rate-limited: retry once the gap has passed
+				if resyncTimer == nil {
+					resyncTimer = time.NewTimer(localResyncMinGap)
+				} else {
+					resyncTimer.Reset(localResyncMinGap)
+				}
+				resyncC = resyncTimer.C
+			}
+		}
 		if wrote, err := drainPrio(); err != nil {
 			return
 		} else if wrote {
@@ -220,6 +309,8 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 		select {
 		case <-ctxDone:
 			return
+		case <-resyncC:
+			resyncC = nil
 		case pkt := <-sub.prioCh:
 			if _, err := w.Write(pkt); err != nil {
 				return

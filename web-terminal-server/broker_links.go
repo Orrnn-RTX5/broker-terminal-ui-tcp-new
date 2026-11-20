@@ -43,6 +43,8 @@ type brokerLink struct {
 
 	dialMu, orderDialMu, managerDialMu, adminDialMu sync.Mutex
 	orderFastLaneUnsupported                        atomic.Bool
+	// consecutive keep-alive ping failures of the order / manager / admin sessions (keepLinkWarm)
+	orderStrikes, managerStrikes, adminStrikes pingStrikes
 
 	binHub   *webBinaryMarketHub // the guest/public market source (shared tunnel's cache and tabs)
 	lastUsed atomic.Int64

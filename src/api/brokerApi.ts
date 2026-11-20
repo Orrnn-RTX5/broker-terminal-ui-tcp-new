@@ -197,8 +197,21 @@ export class BrokerAPI {
     return accessToken;
   }
 
+  /**
+   * Renews the token ahead of expiry (timer-driven, see proactiveTokenRefresh).
+   * Same refresh flow and propagation as the 60 s check, but a failure does NOT
+   * log the user out: the token is still valid and the caller retries.
+   */
+  public refreshTokenAhead(): Promise<string | null> {
+    if (typeof window === 'undefined') return Promise.resolve(null);
+    const refreshToken = getRefreshToken();
+    const accessToken = getAccessToken();
+    if (!refreshToken || !accessToken) return Promise.resolve(accessToken);
+    return this.coalesceRefresh(refreshToken, false);
+  }
+
   // Coalesce concurrent refresh triggers into a single shared Promise
-  private coalesceRefresh(refreshToken: string): Promise<string> {
+  private coalesceRefresh(refreshToken: string, logoutOnFailure = true): Promise<string> {
     const sessionKey = this.getSessionKey();
     if (this.refreshPromise && this.refreshSessionKey === sessionKey) {
       return this.refreshPromise;
@@ -248,8 +261,12 @@ export class BrokerAPI {
         return nextToken;
       } catch (err) {
         if (this.getSessionKey() !== sessionKey) throw this.sessionChangedError();
-        console.error('[BrokerAPI] Token refresh failed. Logging out...', err);
-        this.forceLogout('refresh_failed');
+        if (logoutOnFailure) {
+          console.error('[BrokerAPI] Token refresh failed. Logging out...', err);
+          this.forceLogout('refresh_failed');
+        } else {
+          console.warn('[BrokerAPI] Proactive token refresh failed; will retry.');
+        }
         throw err;
       } finally {
         if (this.refreshAttempt === attempt) {

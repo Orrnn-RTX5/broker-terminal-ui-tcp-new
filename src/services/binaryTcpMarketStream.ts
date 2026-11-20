@@ -18,6 +18,7 @@
 import type { OHLCData } from '../types/chartData';
 import { isDesktopBackendTarget } from '../config/backendTarget.js';
 import { decodeJwtPayload } from '../utils/jwt';
+import { TickTimestampGuard } from '../utils/tickTimestampGuard';
 import {
   getActiveBinaryTcpOrderCount,
   getBinaryTcpOrderActiveDurationMs,
@@ -409,6 +410,7 @@ class BinaryTcpMarketStream {
 
   private readonly latestTicks = new Map<string, DecodedBinaryTick>();
   private readonly dayStats = new Map<string, SymbolDayStats>();
+  private readonly tickTimestampGuard = new TickTimestampGuard();
   private readonly latestM1Candles = new Map<string, DecodedBinaryCandle>();
   private readonly latestDepths = new Map<string, DecodedBinaryDepth>();
 
@@ -447,6 +449,7 @@ class BinaryTcpMarketStream {
         if (reason === 'broker_url_change') {
           this.latestTicks.clear();
           this.dayStats.clear();
+          this.tickTimestampGuard.clear();
           this.latestM1Candles.clear();
           this.latestDepths.clear();
           this.deferredTicks.clear();
@@ -989,7 +992,8 @@ class BinaryTcpMarketStream {
 
       if (!Number.isFinite(bid) || bid <= 0) continue;
       const ask = Number.isFinite(askRaw) && askRaw > 0 ? askRaw : bid;
-      const timestamp = rawTsMs > 0 ? rawTsMs : Date.now();
+      // A wrong/future server timestamp must not make every later tick look older (see tickTimestampGuard).
+      const timestamp = rawTsMs > 0 ? this.tickTimestampGuard.resolve(symbol, rawTsMs) : Date.now();
       const utcDay = Math.floor(timestamp / UTC_DAY_MS);
 
       let stats = this.dayStats.get(symbol);

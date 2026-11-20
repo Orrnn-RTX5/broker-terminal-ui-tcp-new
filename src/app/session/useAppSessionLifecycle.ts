@@ -21,6 +21,7 @@ import {
   hasTokenExpiryElapsed,
   parseStoredTokenExpiryMs,
 } from './authSessionStorage';
+import { startProactiveTokenRefresh } from './proactiveTokenRefresh';
 import { parsePositiveLogin } from './sessionIdentity';
 
 interface UseAppSessionLifecycleOptions {
@@ -211,6 +212,18 @@ export const useAppSessionLifecycle = ({
     );
     return () => window.clearTimeout(timeoutId);
   }, [isAuthenticated, performSessionExpiredLogout, storeTokenExpiresAt, tokenSessionVersion]);
+
+  // Renew the token before it expires (quote streams issue no REST calls that
+  // would trigger the reactive 401 refresh). Re-armed for every new token/expiry;
+  // cleared on logout, account switch and any token change by effect cleanup.
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    return startProactiveTokenRefresh({
+      getExpiryMs: () => parseStoredTokenExpiryMs(useAppStore.getState().tokenExpiresAt) || getStoredTokenExpiryMs(),
+      getToken: getStoredAuthToken,
+      refresh: () => brokerApi.refreshTokenAhead(),
+    });
+  }, [isAuthenticated, storeTokenExpiresAt, tokenSessionVersion]);
 
   useEffect(() => {
     if (sessionRestoreStartedRef.current) return;
