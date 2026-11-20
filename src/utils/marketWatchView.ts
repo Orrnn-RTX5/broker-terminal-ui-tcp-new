@@ -353,7 +353,7 @@ export const sortMarketWatchSymbols = (
     (originalOrder.get(left) ?? 0) - (originalOrder.get(right) ?? 0)
   );
 
-  return [...symbols].sort((left, right) => {
+  const compareText = (left: string, right: string): number => {
     if (mode === 'symbol') return left.localeCompare(right) || stableFallback(left, right);
     if (mode === 'industry' || mode === 'sector') {
       const leftValue = String(metadata.get(left)?.[mode] ?? '');
@@ -363,16 +363,45 @@ export const sortMarketWatchSymbols = (
       return leftValue.localeCompare(rightValue) || left.localeCompare(right) || stableFallback(left, right);
     }
 
-    const field = mode === 'volume' ? 'volume' : mode === 'change-asc' || mode === 'change-desc' ? 'dailyChangePrice' : 'dailyChange';
-    const leftValue = readSortableNumber(getTick(left)?.[field]);
-    const rightValue = readSortableNumber(getTick(right)?.[field]);
-    if (leftValue === null && rightValue !== null) return 1;
-    if (leftValue !== null && rightValue === null) return -1;
-    if (leftValue !== null && rightValue !== null && leftValue !== rightValue) {
-      return mode === 'losers' || mode === 'change-asc' ? leftValue - rightValue : rightValue - leftValue;
+    return 0;
+  };
+
+  if (mode === 'symbol' || mode === 'industry' || mode === 'sector') return [...symbols].sort(compareText);
+
+  // Numeric modes (gainers, losers, change, volume): resolve each symbol's key once per pass
+  // (decorate-sort-undecorate) so every comparison is a plain number compare. Order is identical
+  // to the per-comparison resolver: missing values last, ties by original position (the last
+  // index of a duplicated symbol, as the Map lookup did).
+  const field = mode === 'volume' ? 'volume' : mode === 'change-asc' || mode === 'change-desc' ? 'dailyChangePrice' : 'dailyChange';
+  const ascending = mode === 'losers' || mode === 'change-asc';
+  const count = symbols.length;
+  const keys = new Float64Array(count);
+  const present = new Uint8Array(count);
+  const position = new Int32Array(count);
+  const order = new Array<number>(count);
+  for (let index = 0; index < count; index += 1) {
+    const symbol = symbols[index];
+    const value = readSortableNumber(getTick(symbol)?.[field]);
+    if (value !== null) {
+      keys[index] = value;
+      present[index] = 1;
     }
-    return stableFallback(left, right);
+    position[index] = originalOrder.get(symbol) ?? 0;
+    order[index] = index;
+  }
+  order.sort((left, right) => {
+    const leftPresent = present[left] === 1;
+    const rightPresent = present[right] === 1;
+    if (!leftPresent && rightPresent) return 1;
+    if (leftPresent && !rightPresent) return -1;
+    if (leftPresent && rightPresent && keys[left] !== keys[right]) {
+      return ascending ? keys[left] - keys[right] : keys[right] - keys[left];
+    }
+    return position[left] - position[right];
   });
+  const result = new Array<string>(count);
+  for (let index = 0; index < count; index += 1) result[index] = symbols[order[index]];
+  return result;
 };
 
 export const formatMarketWatchTime = (timestamp: unknown, showMilliseconds: boolean): string => {

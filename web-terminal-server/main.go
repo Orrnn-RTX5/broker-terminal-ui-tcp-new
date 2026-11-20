@@ -396,6 +396,7 @@ func main() {
 	}
 	go srv.backgroundReconnectLoop()
 	go srv.runBackgroundHotUIOTALoop()
+	startWebStreamDropReporter()
 
 	defID, defName, defTarget := srv.linkIdentity(srv.defaultLink())
 	modeLabel := "HTTP + WS (Direct Zero-Cloudflare Binary TCP)"

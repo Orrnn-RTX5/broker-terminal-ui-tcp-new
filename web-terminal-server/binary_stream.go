@@ -267,6 +267,7 @@ func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 		select {
 		case s.ch <- pkt:
 		default:
+			webStreamMarketFramesDropped.Add(1)
 		}
 	}
 	h.mu.RUnlock()
@@ -322,6 +323,7 @@ func (s *webBinaryStreamSub) deliverTradeEvent(pkt []byte, eventLogin int64, sum
 	select {
 	case s.prioCh <- pkt:
 	default:
+		webStreamTradeFramesEvicted.Add(1)
 		select {
 		case <-s.prioCh:
 		default:
@@ -329,6 +331,7 @@ func (s *webBinaryStreamSub) deliverTradeEvent(pkt []byte, eventLogin int64, sum
 		select {
 		case s.prioCh <- pkt:
 		default:
+			webStreamTradeFramesDropped.Add(1)
 		}
 	}
 }

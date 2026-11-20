@@ -14,7 +14,9 @@ import i18n from '../i18n';
  * - Keyboard shortcuts: Shift+B (Buy), Shift+S (Sell), Shift+X (Close)
  */
 
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import { getLiveQuotesVersion, subscribeLiveQuotes } from '../services/liveQuotes';
+import { getLiveSymbolPnLFromSource } from '../services/livePositionAggregates';
 import { useFloatingPanelDrag } from '../hooks/useFloatingPanelDrag';
 import { Icon } from './ui/Icon';
 import { DailyChangeSummary } from './market-watch/DailyChangeSummary';
@@ -75,6 +77,9 @@ const isOneClickTradingEnabledFailClosed = (): boolean => {
         return false;
     }
 };
+
+const noopSubscribe = () => () => {};
+const zeroSnapshot = () => 0;
 
 export function LastSymbolPanel({ symbol }: { symbol?: string } = {}) {
     const tr = useUiTranslation();
@@ -151,7 +156,17 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     const lastSymbolPositions = positions.filter(
         (position) => normalizeExactBrokerSymbol(position.symbol) === exactLastSymbol,
     );
-    const totalPnL = lastSymbolPositions.reduce((sum, p) => sum + (p.unrealizedPnL || 0), 0);
+    const hasSymbolPositions = lastSymbolPositions.length > 0;
+    useSyncExternalStore(
+        hasSymbolPositions ? subscribeLiveQuotes : noopSubscribe,
+        hasSymbolPositions ? getLiveQuotesVersion : zeroSnapshot,
+        zeroSnapshot,
+    );
+    const symbolLiveSummary = hasSymbolPositions
+        ? getLiveSymbolPnLFromSource(lastSymbolPositions, exactLastSymbol)
+        : { count: 0, totalPnL: 0 };
+    const openSymbolCount = symbolLiveSummary.count;
+    const totalPnL = symbolLiveSummary.totalPnL;
 
     // Broker contract size from the instrument catalog; null when the
     // catalog does not publish it (never guessed from the symbol name).
@@ -293,8 +308,9 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
 
     // Close positions on last symbol via MT5 Sync API
     const closeLastPositions = useCallback(async () => {
-        if (isClosing || !lastSymbol || lastSymbolPositions.length === 0) {
-            if (lastSymbolPositions.length === 0) flash(`${tr('No open positions')} · ${lastSymbol}`, 'info');
+        const targetPositions = lastSymbolPositions;
+        if (isClosing || !lastSymbol || targetPositions.length === 0) {
+            if (targetPositions.length === 0) flash(`${tr('No open positions')} · ${lastSymbol}`, 'info');
             return;
         }
 
@@ -302,11 +318,11 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
         setIsClosing(true);
         try {
             if (isBinaryTcpOrderEnabled() && accountId) {
-                const candidateIds = lastSymbolPositions.map((pos) => pos.id);
+                const candidateIds = targetPositions.map((pos) => pos.id);
                 const closedIdSet = new Set<number>(candidateIds);
                 await api.positions.closeBulk(Number(accountId), 'ALL', exactLastSymbol, {
                     intentAtMs,
-                    expectedCount: lastSymbolPositions.length,
+                    expectedCount: targetPositions.length,
                 });
                 useAppStore.getState().setPositions(
                     useAppStore.getState().positions.filter((position) => !closedIdSet.has(position.id)),
@@ -321,7 +337,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
             // rejected close keeps its row open.
             const closedIds = new Set<number>();
             let staleMessage: string | null = null;
-            for (const pos of lastSymbolPositions) {
+            for (const pos of targetPositions) {
                 try {
                     await api.positions.closePosition(String(pos.id));
                     closedIds.add(pos.id);
@@ -628,7 +644,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                     <button
                         type="button"
                         onClick={closeLastPositions}
-                        disabled={isClosing || lastSymbolPositions.length === 0}
+                        disabled={isClosing || openSymbolCount === 0}
                         className="last-symbol-close-button"
                         aria-label={tr("Close all {{value0}} positions", { value0: lastSymbol || tr('Last Symbol') })}
                         title={tr("Close positions (Shift+X)")}
@@ -638,9 +654,9 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                             {isClosing ? tr("Closing positions") : tr("Close positions")}
                         </span>
                         <span className="last-symbol-close-button__value">
-                            {lastSymbolPositions.length > 0 ? (
+                            {openSymbolCount > 0 ? (
                                 <>
-                                    {lastSymbolPositions.length}
+                                    {openSymbolCount}
                                     <strong data-tone={totalPnL >= 0 ? 'profit' : 'loss'}>
                                         {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(accountCurrencyDigits)}
                                     </strong>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MarketWatchLastPrice } from '../../hooks/useLastMarketWatchQuotes';
 import type { ContextMenuItemConfig } from '../ui/ContextMenu';
 import {
@@ -26,6 +26,11 @@ interface MarketWatchGridProps {
   lastPrices: ReadonlyMap<string, MarketWatchLastPrice>;
   liveQuoteSymbolSet: ReadonlySet<string>;
   marketWatchOptions: MarketWatchOptions;
+  /**
+   * Rows drawn in full (visible rows plus overscan). Other rows render as placeholders with the
+   * same height and ref. null/undefined: draw every row in full.
+   */
+  fullRowSymbolSet?: ReadonlySet<string> | null;
   marketWatchRowRefCallbacks: ReadonlyMap<string, (node: HTMLTableRowElement | null) => void>;
   marketWatchSelectionSymbol: string;
   onContextSelect: (symbol: string) => void;
@@ -54,6 +59,7 @@ export const MarketWatchGrid = ({
   lastPrices,
   liveQuoteSymbolSet,
   marketWatchOptions,
+  fullRowSymbolSet = null,
   marketWatchRowRefCallbacks,
   marketWatchSelectionSymbol,
   onContextSelect,
@@ -70,6 +76,24 @@ export const MarketWatchGrid = ({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
   const [isLightSkin, setIsLightSkin] = useState(false);
+
+  // Row handlers keep a fixed identity (so memoized rows do not re-render when the panel does)
+  // and read the latest props at event time.
+  const latestRef = useRef({ actionableSymbolSet, getContextMenuItems, onContextSelect, onSymbolSelect });
+  useLayoutEffect(() => {
+    latestRef.current = { actionableSymbolSet, getContextMenuItems, onContextSelect, onSymbolSelect };
+  });
+  const handleSymbolClick = useCallback((symbol: string) => latestRef.current.onSymbolSelect(symbol), []);
+  const handleSymbolContextSelect = useCallback((symbol: string) => latestRef.current.onContextSelect(symbol), []);
+  const handleSymbolDoubleClick = useCallback((symbol: string) => {
+    if (latestRef.current.actionableSymbolSet.has(symbol)) {
+      window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } }));
+    }
+  }, []);
+  const buildContextMenuItems = useCallback(
+    (symbol: string) => latestRef.current.getContextMenuItems(symbol),
+    [],
+  );
 
   const bindViewport = useCallback((node: HTMLDivElement | null) => {
     viewportRef.current = node;
@@ -374,30 +398,40 @@ export const MarketWatchGrid = ({
           </thead>
           <tbody>
             {rows.map((symbol) => (
+              fullRowSymbolSet && !fullRowSymbolSet.has(symbol) && symbol !== marketWatchSelectionSymbol ? (
+                // Off-screen row: same height and ref (so visibility tracking and scrollIntoView
+                // keep working), but no tick/metadata subscriptions and no cells to render.
+                <tr
+                  key={symbol}
+                  ref={marketWatchRowRefCallbacks.get(symbol)}
+                  aria-hidden="true"
+                  data-rtx-market-watch-placeholder=""
+                  style={{ height: 20 }}
+                >
+                  <td colSpan={Math.max(1, columns.length)} style={{ padding: 0, border: 'none' }} />
+                </tr>
+              ) : (
               <MarketWatchRow
                 key={symbol}
                 symbol={symbol}
                 isSelected={symbol === marketWatchSelectionSymbol}
                 isLive={liveQuoteSymbolSet.has(symbol)}
                 isChartOpenable={chartOpenableSymbolSet.has(symbol)}
-                onClick={() => onSymbolSelect(symbol)}
-                onContextSelect={() => onContextSelect(symbol)}
-                onDoubleClick={() => {
-                  if (actionableSymbolSet.has(symbol)) {
-                    window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } }));
-                  }
-                }}
-                contextMenuItems={getContextMenuItems(symbol)}
+                onSymbolClick={handleSymbolClick}
+                onSymbolContextSelect={handleSymbolContextSelect}
+                onSymbolDoubleClick={handleSymbolDoubleClick}
+                getContextMenuItems={buildContextMenuItems}
                 columns={columns}
                 showMilliseconds={marketWatchOptions.showMilliseconds}
                 isLightSkin={isLightSkin}
                 closedDailyChange={closedDailyChanges.get(symbol)}
                 lastPrice={lastPrices.get(symbol)}
-                instrumentSources={getInstrumentSources?.(symbol)}
+                getInstrumentSources={getInstrumentSources}
                 catalogPriceDigits={catalogPriceDigits?.get(normalizeSymbol(symbol)) ?? null}
                 symbolUniverse={quoteEligibleSymbols}
                 rowRef={marketWatchRowRefCallbacks.get(symbol)}
               />
+              )
             ))}
           </tbody>
         </table>

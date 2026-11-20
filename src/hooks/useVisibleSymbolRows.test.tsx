@@ -108,6 +108,34 @@ describe('useVisibleSymbolRows', () => {
     expect(result.current.visibleSymbols).toEqual(['GBPUSD', 'USDJPY']);
   });
 
+  it('keeps a visible row visible when its element is swapped in one commit (placeholder <-> full row)', () => {
+    const symbols = ['EURUSD', 'GBPUSD'];
+    const { result } = renderHook(() => useVisibleSymbolRows(symbols));
+    const { rows, observer } = bindRows(result, symbols);
+    const oldRow = rows.get('EURUSD')!;
+    act(() => {
+      observer.emit({ target: oldRow, isIntersecting: true });
+    });
+    expect(result.current.visibleSymbols).toEqual(['EURUSD']);
+
+    // React detaches the old <tr> and attaches the new one inside the same commit.
+    const newRow = document.createElement('div');
+    act(() => {
+      result.current.setRowRef('EURUSD', null);
+      result.current.setRowRef('EURUSD', newRow);
+    });
+
+    expect(result.current.visibleSymbols).toEqual(['EURUSD']);
+    expect(observer.unobserve).toHaveBeenCalledWith(oldRow);
+    expect(observer.observed.has(newRow)).toBe(true);
+
+    // The observer's first report for the new element still decides.
+    act(() => {
+      observer.emit({ target: newRow, isIntersecting: false });
+    });
+    expect(result.current.visibleSymbols).toEqual([]);
+  });
+
   it('unobserves detached rows and disconnects the observer on cleanup', () => {
     const symbols = ['EURUSD', 'GBPUSD'];
     const { result, unmount } = renderHook(() => useVisibleSymbolRows(symbols));

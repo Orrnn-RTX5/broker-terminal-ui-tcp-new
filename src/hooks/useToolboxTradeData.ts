@@ -35,7 +35,10 @@ import { resolvePositionOpenTime } from '../services/tradePositionTime';
 import { readBackendNumber } from '../services/backendAccountMetrics';
 import { isConfiguredBrokerEndpoint } from '../config/backendTarget.js';
 import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
-import { createTickPositionCoalescer, overlayRelevantPositionsChanged } from './toolboxTickCoalescer';
+import { overlayRelevantPositionsChanged } from './toolboxTickCoalescer';
+import { clearLiveQuotes, setLiveQuote } from '../services/liveQuotes';
+import { getLivePositionRoundedProfit } from '../services/livePositionMetrics';
+import { getPositionAggregatesForArray } from '../services/livePositionAggregates';
 
 type TradeWsState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -787,6 +790,8 @@ export function useToolboxTradeData() {
 
   const accountRef = useRef<Account | null>(state.account);
   const positionsRef = useRef<ToolboxTradePosition[]>(state.positions);
+  // Symbols with open positions: only their ticks are written to the live quote cache.
+  const heldSymbolsRef = useRef<Set<string>>(getPositionAggregatesForArray(state.positions).heldSymbols);
   const positionsSigRef = useRef<{ list: ToolboxTradePosition[]; sig: string } | null>(null);
   const storeSigRef = useRef<{ list: ToolboxTradePosition[]; sig: string } | null>(null);
   const retainedImmediatePositionsRef = useRef<Map<number, RetainedImmediateToolboxPosition>>(new Map());
@@ -858,6 +863,7 @@ export function useToolboxTradeData() {
     }
     positionsRef.current = positions;
     positionsSigRef.current = { list: positions, sig: nextSig };
+    heldSymbolsRef.current = getPositionAggregatesForArray(positions).heldSymbols;
     if (previousSig === nextSig) return;
     setState((prev) => ({ ...prev, positions }));
   }, []);
@@ -1055,12 +1061,9 @@ export function useToolboxTradeData() {
       return;
     }
     const retained = current.filter((position) => {
-      if (position.hasBackendProfit === false) return true;
-      const raw: unknown = position.profit ?? position.unrealizedPnL;
-      if (raw === undefined || raw === null || raw === '') return true;
-      const pnl = toNumber(raw, Number.NaN);
-      if (!Number.isFinite(pnl)) return true;
-      return mode === 'WINNERS' ? pnl <= 0 : pnl >= 0;
+      const livePnl = getLivePositionRoundedProfit(position);
+      if (livePnl === null || !Number.isFinite(livePnl)) return true;
+      return mode === 'WINNERS' ? livePnl <= 0 : livePnl >= 0;
     });
     const retainedTickets = new Set(retained.map((position) => position.id));
     retainedImmediatePositionsRef.current.forEach((_value, ticket) => {
@@ -1075,6 +1078,8 @@ export function useToolboxTradeData() {
       stateSessionKeyRef.current = sessionKey;
       accountRef.current = null;
       positionsRef.current = [];
+      heldSymbolsRef.current = new Set();
+      clearLiveQuotes();
       pendingPlacementTimersRef.current.forEach((timer) => clearTimeout(timer));
       pendingPlacementTimersRef.current.clear();
       pendingMarketOrdersRef.current.clear();
@@ -1160,8 +1165,10 @@ export function useToolboxTradeData() {
           // A lagging empty stream snapshot must not remove confirmed rows.
           // Account metrics can still advance while REST revalidates them.
           requestPositionSnapshotRevalidation();
-        } else if (positionsSignature(positionsRef.current) !== positionsSignature(nextPositions)) {
+        } else if (memoPositionsSignature(positionsSigRef, positionsRef.current) !== memoPositionsSignature(storeSigRef, nextPositions)) {
           positionsRef.current = nextPositions;
+          positionsSigRef.current = { list: nextPositions, sig: memoPositionsSignature(storeSigRef, nextPositions) };
+          heldSymbolsRef.current = getPositionAggregatesForArray(nextPositions).heldSymbols;
         }
       }
       const account = accountRef.current;
@@ -1194,24 +1201,11 @@ export function useToolboxTradeData() {
   }, [refresh]);
 
   useEffect(() => {
-    const tickCoalescer = createTickPositionCoalescer<ToolboxTradePosition, { symbol: string; bid: number; ask: number; timestamp: unknown }>({
-      getPositions: () => positionsRef.current,
-      patch: patchPositionsFromTick,
-      commit: commitPositions,
-    });
     const unsubscribeTick = binaryTcpMarketStream.onTick((bt) => {
-      const currentPositions = positionsRef.current;
-      if (currentPositions.length === 0) return;
+      const held = heldSymbolsRef.current;
+      if (held.size === 0) return;
       const symUpper = String(bt.symbol ?? '').toUpperCase();
-      if (!symUpper) return;
-      let hasMatchingSymbol = false;
-      for (let i = 0; i < currentPositions.length; i += 1) {
-        if (String(currentPositions[i].symbol ?? '').toUpperCase() === symUpper) {
-          hasMatchingSymbol = true;
-          break;
-        }
-      }
-      if (!hasMatchingSymbol) return;
+      if (!symUpper || !held.has(symUpper)) return;
 
       const widened = applyAccountSpreadMarkup(bt.symbol, {
         symbol: bt.symbol,
@@ -1220,9 +1214,9 @@ export function useToolboxTradeData() {
         spread: bt.spread,
         timestamp: bt.timestamp,
       });
-      // At most one commit (store write + signatures) per frame; the latest tick per symbol wins.
-      tickCoalescer.push({
-        symbol: bt.symbol,
+      // O(1) quote cache write + rAF/timer coalesced subscriber notify.
+      setLiveQuote({
+        symbol: symUpper,
         bid: Number(widened.bid ?? bt.bid),
         ask: Number(widened.ask ?? bt.ask),
         timestamp: bt.sourceTimestamp || bt.timestamp,
@@ -1230,9 +1224,8 @@ export function useToolboxTradeData() {
     });
     return () => {
       unsubscribeTick();
-      tickCoalescer.dispose();
     };
-  }, [commitPositions]);
+  }, []);
 
   useEffect(() => {
     const handleMarketOrderPlacement = (event: Event) => {

@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand';
+import { clearLiveQuotes, invalidateLiveQuote, pruneLiveQuotes } from '../services/liveQuotes';
 import { pickAccountDisplayName } from '../utils/accountDisplayName';
 import type { TradingAccountType } from '../services/tradingAccountType';
 import { createJSONStorage, devtools, persist, type StateStorage } from 'zustand/middleware';
@@ -378,6 +379,10 @@ interface AppState {
   // Market Data
   ticks: Record<string, Tick>;
   tickLookup: Record<string, string>;
+  /** Number of keys in `ticks`; maintained O(1) on writes. Read through selectTickCount. */
+  tickCount: number;
+  /** The `ticks` object `tickCount` was computed for (detects direct setState({ ticks })). */
+  tickCountSource: Record<string, Tick>;
   selectedSymbol: string;
 
   // Trading
@@ -450,6 +455,8 @@ interface AppState {
   reset: () => void;
 }
 
+const INITIAL_TICKS: Record<string, Tick> = {};
+
 const initialState = {
   isAuthenticated: false,
   accountId: null,
@@ -457,8 +464,10 @@ const initialState = {
   refreshToken: null,
   tokenExpiresAt: null,
   isRefreshing: false,
-  ticks: {},
+  ticks: INITIAL_TICKS,
   tickLookup: {},
+  tickCount: 0,
+  tickCountSource: INITIAL_TICKS,
   selectedSymbol: '',
   positions: [],
   orders: [],
@@ -721,8 +730,9 @@ const coalesceAppTickEntries = (
 const applyAppTickBatch = (
   state: AppState,
   entries: readonly AppTickEntry[],
-): AppState | Pick<AppState, 'ticks' | 'tickLookup'> => {
+): AppState | Pick<AppState, 'ticks' | 'tickLookup' | 'tickCount' | 'tickCountSource'> => {
   const latestTicks = coalesceAppTickEntries(entries);
+  let addedKeys = 0;
 
   let nextTicks = state.ticks;
   let nextLookup = state.tickLookup;
@@ -818,16 +828,26 @@ const applyAppTickBatch = (
     };
 
     if (!changed) nextTicks = { ...state.ticks };
+    if (prevTick === undefined) addedKeys += 1;
     nextTicks[symbol] = nextTick;
     nextLookup = updateTickLookup(nextLookup, nextTicks, symbol, nextTick, state.tickLookup);
     changed = true;
   });
 
-  return changed ? { ticks: nextTicks, tickLookup: nextLookup } : state;
+  return changed
+    ? { ticks: nextTicks, tickLookup: nextLookup, tickCount: selectTickCount(state) + addedKeys, tickCountSource: nextTicks }
+    : state;
 };
 
-export const selectTickCount = (state: { ticks: Record<string, Tick> }): number => (
-  Object.keys(state.ticks).length
+// O(1) on the hot path: the store maintains the count on every ticks write. If `ticks` was
+// replaced directly (setState({ ticks })) the cached source no longer matches, so fall back to an
+// exact recount instead of returning a stale number.
+export const selectTickCount = (
+  state: { ticks: Record<string, Tick>; tickCount?: number; tickCountSource?: Record<string, Tick> },
+): number => (
+  state.tickCountSource === state.ticks && state.tickCount !== undefined
+    ? state.tickCount
+    : Object.keys(state.ticks).length
 );
 
 export const resolveTickFromLookup = (
@@ -928,6 +948,7 @@ export const useAppStore = create<AppState>()(
               expiresAt: expiresAt || undefined,
             });
           }
+          if (sessionChangeReason && sessionChangeReason !== 'token_rotation') clearLiveQuotes();
           if (sessionChangeReason) emitSessionChange(sessionChangeReason);
         },
 
@@ -992,6 +1013,7 @@ export const useAppStore = create<AppState>()(
             sessionStorage.removeItem('refresh_token');
             sessionStorage.removeItem('token_expires_at');
           }
+          clearLiveQuotes();
           set({ isAuthenticated: false, accountId: null, authToken: null, refreshToken: null, tokenExpiresAt: null });
           commitBrokerAccountSessionScope({ authenticated: false, accountId: null });
           dispatchAuthTokenUpdated();
@@ -1031,6 +1053,7 @@ export const useAppStore = create<AppState>()(
             // NOTE: Do NOT remove 'trading-app-storage' — it holds savedAccounts
           }
           // Reset auth state but KEEP savedAccounts for multi-account switching
+          clearLiveQuotes();
           set({
             isAuthenticated: false,
             accountId: null,
@@ -1053,7 +1076,7 @@ export const useAppStore = create<AppState>()(
 
         setTicksBatch: (ticks) => set((state) => applyAppTickBatch(state, ticks)),
 
-        setTicks: (ticks) => set({ ticks, tickLookup: buildTickLookup(ticks) }),
+        setTicks: (ticks) => set({ ticks, tickLookup: buildTickLookup(ticks), tickCount: Object.keys(ticks).length, tickCountSource: ticks }),
 
         setSelectedSymbol: (symbol) => set({ selectedSymbol: symbol }),
 
@@ -1308,6 +1331,32 @@ export const useAppStore = create<AppState>()(
               store.setPositions(store.positions.filter((position) => !retainedOnlyTickets.has(position.id)));
             }, Math.max(0, retentionEndsAt - now) + 1);
 
+            // Live quotes (services/liveQuotes) price the rows between backend writes. A write that
+            // carries new price/profit data (or a new row) is newer than the cached quote of its
+            // symbol, so it wins until the next tick arrives (last-arrival-wins, as the former
+            // per-tick patch did). Writes that only echo the same values keep the live quote.
+            // Quotes of symbols that no open position holds are dropped.
+            const heldSymbols = new Set<string>();
+            for (let i = 0; i < nextPositions.length; i += 1) {
+              const next = nextPositions[i];
+              const sym = String(next?.symbol ?? '').trim().toUpperCase();
+              if (!sym) continue;
+              heldSymbols.add(sym);
+              const prev = existingById.get(next.id);
+              if (
+                !prev
+                || (prev !== next && (
+                  next.price_current !== prev.price_current
+                  || next.current_price !== prev.current_price
+                  || next.currentPrice !== prev.currentPrice
+                  || next.profit !== prev.profit
+                  || next.unrealizedPnL !== prev.unrealizedPnL
+                ))
+              ) {
+                invalidateLiveQuote(sym);
+              }
+            }
+            pruneLiveQuotes(heldSymbols);
             return { positions: nextPositions };
           }),
 
@@ -1389,6 +1438,7 @@ export const useAppStore = create<AppState>()(
           // broker/account scope own the new login, and only for a real
           // authenticated identity change. Re-selecting the same account is
           // intentionally silent so it cannot create duplicate reconnects.
+          if (accountChanged) clearLiveQuotes();
           if (accountChanged && sessionAuthenticated) emitSessionChange('account_change');
         },
 
@@ -1423,6 +1473,7 @@ export const useAppStore = create<AppState>()(
           confirmedAt.clear();
           touchedAt.clear();
           closedBySnapshotTickets.clear();
+          clearLiveQuotes();
           set((state) => ({ ...initialState, savedAccounts: state.savedAccounts }));
         },
       }),

@@ -291,6 +291,7 @@ const MarketWatchPanelContent: React.FC<MarketWatchPanelBaseProps & {
       lastPrices,
       liveQuoteSymbolSet,
       liveTickCount,
+      fullRowSymbolSet,
       marketWatchRowRefCallbacks,
       marketWatchSymbolSet,
       persistedSymbols,
@@ -932,6 +933,7 @@ const MarketWatchPanelContent: React.FC<MarketWatchPanelBaseProps & {
               lastPrices={lastPrices}
               liveQuoteSymbolSet={liveQuoteSymbolSet}
               marketWatchOptions={marketWatchOptions}
+              fullRowSymbolSet={fullRowSymbolSet}
               marketWatchRowRefCallbacks={marketWatchRowRefCallbacks}
               marketWatchSelectionSymbol={marketWatchSelectionSymbol}
               onContextSelect={(symbol) => setContextSelection({

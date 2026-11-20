@@ -1,9 +1,11 @@
-import { lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { getLiveQuotesVersion, subscribeLiveQuotes } from '../../../services/liveQuotes';
+import { applyLiveQuoteToPosition, getLivePositionProfit } from '../../../services/livePositionMetrics';
+import { getPositionAggregatesForArray } from '../../../services/livePositionAggregates';
 import { RetainedLazyFeature } from '../../../startup/RetainedLazyFeature';
 import { translateUi, useUiTranslation } from '../../../hooks/useUiTranslation';
 import { useAppStore, type Account } from '../../../store/useAppStore';
 import { useChartSettingsStore } from '../../../store/useChartSettingsStore';
-import { useLiveAccountMetrics } from '../../../hooks/useLiveAccountMetrics';
 import type { ToolboxTradePosition } from '../../../hooks/useToolboxTradeData';
 import { ContextMenu, type ContextMenuItemConfig } from '../../../components/ui/ContextMenu';
 import { Icon } from '../../../components/ui/Icon';
@@ -11,8 +13,8 @@ import { resolveSymbolPriceDigits } from '../../../components/market-watch/marke
 import { formatPrice } from '../../../utils/symbolUtils';
 import { rememberTradeHistoryPositionLevels } from '../../../utils/tradeHistoryLevelCache';
 import {
+  resolveTradeAccountMetrics,
   resolveTradeProfit,
-  toBackendFinancialNumber,
 } from '../../../components/BottomDock.trade';
 import { onCommittedBrokerAccountSessionScopeChange } from '../../../services/brokerSession';
 import { TRADE_MODIFIED_EVENT, type TradeModifiedEventDetail } from '../../../contracts/terminalEvents';
@@ -28,7 +30,6 @@ import { PendingOrdersPanel, type PendingOrderView } from './PendingOrdersPanel'
 import { safeReadBoolean, safeReadJson, safeReadString } from '../preferences';
 import { escapeHtml } from '../reporting';
 import { getCurrentBrokerAccountSessionScopeKey, normalizeTradeSymbol } from '../sessionScope';
-import { TradeMetricValue, UnavailableTradeMetric } from './TradeMetricValue';
 import { TradeTable } from './TradeTable';
 import { closePositionsBy, buildCloseByPairKey, findCloseByCounterpart, readCloseByLegTicket } from '../../../api/closeBy';
 import { handleStalePositionRefusal, requestPositionsRefresh } from '../../../utils/stalePositionRefusal';
@@ -49,7 +50,6 @@ import {
   TRADE_COLUMN_STORAGE_KEY,
   TRADE_COLUMN_WIDTH_STORAGE_KEY,
   TRADE_DEFAULT_SORT_DIRECTION,
-  TRADE_FOOTER_METRIC_COMMENTS,
   TRADE_FOOTER_METRIC_DEFS,
   TRADE_FOOTER_METRIC_STORAGE_KEY,
   TRADE_PROFIT_MODE_STORAGE_KEY,
@@ -93,6 +93,9 @@ type TradeTabProps = {
 
 // Pass only displayed data and actions. Transport timestamps/status otherwise
 // defeat memo() and repaint the entire table when no trade values changed.
+const noopSubscribe = () => () => {};
+const zeroSnapshot = () => 0;
+
 export const TradeTab = memo(function TradeTab({
     positions,
     pendingPositions = EMPTY_PENDING_POSITIONS,
@@ -287,81 +290,13 @@ export const TradeTab = memo(function TradeTab({
         return () => obs.disconnect();
     }, []);
 
-    // Display backend prices and P/L, with pending SL/TP edits from local overrides.
-    const livePositions = useMemo(() => {
-        return positions.map((position: ToolboxTradePosition) => {
-            // Some gateway payloads still expose this documented wire alias even though the
-            // canonical hook position type has already normalized it to `volume`.
-            const pos = position as ToolboxTradePosition & { volume_lots?: number };
-            const symbol = pos?.symbol ?? '';
-            const openPrice = Number(
-                pos?.price_open ?? pos?.open_price ?? pos?.openPrice ?? pos?.entryPrice ?? pos?.chartEntryPrice ?? pos?.price ?? 0
-            );
-            const livePrice = pos.hasBackendCurrentPrice === false
-                ? null
-                : toBackendFinancialNumber(pos?.price_current ?? pos?.current_price ?? pos?.currentPrice);
+    const activeCount = positions.length;
+    // Per-symbol aggregates are cached per positions array: O(N) once per backend write, not per tick.
+    const activeAgg = useMemo(() => getPositionAggregatesForArray(positions), [positions]);
 
-            const openTime = pos?.time_create ?? pos?.openTime ?? pos?.open_time ?? pos?.time ?? pos?.chartEntryTime;
-            const volume = Number(pos?.volume_lots ?? pos?.volume ?? pos?.quantity ?? 0);
-
-            // MERGE: HEAD's single-argument call. origin/main additionally threaded the
-            // live prices and `{ accountCurrency }` into the resolver, but both branches
-            // stripped the local-estimate paths out of resolveTradeProfit, so those inputs
-            // no longer influence the result. `profitResolution.value` is null exactly when
-            // `source !== 'backend'`, which is origin/main's livePnL derivation.
-            const profitResolution = resolveTradeProfit(pos);
-            const livePnL = profitResolution.value;
-
-            // Apply local overrides while the Gateway API catches up.
-            const override = tradeOverrides[pos?.id];
-            const backendSl = Number(pos?.price_sl ?? pos?.sl ?? 0);
-            const backendTp = Number(pos?.price_tp ?? pos?.tp ?? 0);
-            const backendUpdatedFromBase = Boolean(
-                override && (
-                    (override.baseSl !== undefined && Math.abs(backendSl - override.baseSl) > 1e-8 && Math.abs(backendSl - override.sl) > 1e-8)
-                    || (override.baseTp !== undefined && Math.abs(backendTp - override.baseTp) > 1e-8 && Math.abs(backendTp - override.tp) > 1e-8)
-                )
-            );
-            const useOverride = Boolean(
-                override
-                && !backendUpdatedFromBase
-                && ((Date.now() - (override.updatedAt ?? 0)) <= 5000 || (Math.abs(backendSl - (override.baseSl ?? backendSl)) <= 1e-8 && Math.abs(backendTp - (override.baseTp ?? backendTp)) <= 1e-8))
-            );
-            const sl = useOverride ? override.sl : (pos?.price_sl ?? pos?.sl ?? 0);
-            const tp = useOverride ? override.tp : (pos?.price_tp ?? pos?.tp ?? 0);
-            const comment = (useOverride ? override?.comment : undefined) ?? pos?.comment ?? '';
-
-            return {
-                ...pos,
-                symbol,
-                volume,
-                openPrice,
-                price_open: openPrice,
-                open_price: openPrice,
-                currentPrice: livePrice,
-                price_current: livePrice,
-                current_price: livePrice,
-                openTime,
-                time_create: openTime,
-                open_time: openTime,
-                sl: Number(sl ?? 0),
-                tp: Number(tp ?? 0),
-                price_sl: Number(sl ?? 0),
-                price_tp: Number(tp ?? 0),
-                comment,
-                profit: livePnL,
-                unrealizedPnL: livePnL ?? pos?.unrealizedPnL,
-                livePrice,
-                livePnL,
-                hasBackendProfit: profitResolution.source === 'backend',
-                profitSource: profitResolution.source,
-                profitWarnings: profitResolution.warnings,
-            } as ToolboxTradePosition;
-        });
-    }, [positions, tradeOverrides]);
-
-    const livePositionLevelSignature = useMemo(() => (
-        livePositions
+    // Level signature (not the array identity) gates the history cache write, as before.
+    const positionLevelSignature = useMemo(() => (
+        positions
             .map((pos: ToolboxTradePosition) => [
                 pos?.id ?? '',
                 pos?.symbol ?? '',
@@ -373,30 +308,23 @@ export const TradeTab = memo(function TradeTab({
                 pos?.price_tp ?? pos?.tp ?? '',
             ].join(':'))
             .join('|')
-    ), [livePositions]);
+    ), [positions]);
 
     useEffect(() => {
-        rememberTradeHistoryPositionLevels(livePositions, accountId);
+        rememberTradeHistoryPositionLevels(positions, accountId);
     // The stable signature intentionally prevents store object churn from rewriting the cache.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [accountId, livePositionLevelSignature]);
+    }, [accountId, positionLevelSignature]);
 
-    // MERGE (union): Row-level totals. These drive the per-tile Floating P/L, Swap and
-    // Commission displays only - they must never feed the account metrics, which are
-    // backend-authoritative.
-    const totalSwap = useMemo(() => livePositions.reduce((acc, pos) => acc + (Number(pos.swap) || 0), 0), [livePositions]);
-    const totalCommission = useMemo(() => livePositions.reduce((acc, pos) => acc + (Number(pos.commission) || 0), 0), [livePositions]);
-    // Equity / free margin / margin level come from the backend. When the backend omits one
-    // it resolves to null and the footer renders a dash, not a zero. A quiet account keeps its
-    // last published figures; the 1s clock only re-checks future-dated snapshots.
+    const totalSwap = activeAgg.totalSwap;
+    const totalCommission = activeAgg.totalCommission;
     const [metricsNow, setMetricsNow] = useState(Date.now);
     useEffect(() => {
         const timer = window.setInterval(() => setMetricsNow(Date.now()), 1000);
         return () => window.clearInterval(timer);
     }, []);
-    // Every account total comes from the backend, including floating P/L, and follows
-    // the live position profit stream between backend snapshots.
-    const accountMetricResolution = useLiveAccountMetrics(account, livePositions, metricsNow);
+    const baseAccountResolution = useMemo(() => resolveTradeAccountMetrics(account, metricsNow), [account, metricsNow]);
+    const accountCredit = baseAccountResolution.credit;
     useEffect(() => {
         if (!account?.publicationToken) return;
         let nextFrame = 0;
@@ -409,26 +337,11 @@ export const TradeTab = memo(function TradeTab({
         });
         return () => { window.cancelAnimationFrame(frame); window.cancelAnimationFrame(nextFrame); };
     }, [account?.publicationToken, account?.metricsScope]);
-    const floatingPnL = accountMetricResolution.floatingPnL;
-    // Kept nullable (HEAD) rather than `floatingPnL ?? 0` (origin/main) so the footer can
-    // distinguish "backend reported 0" from "backend reported nothing" and render the
-    // placeholder instead of a misleading zero.
-    const totalLivePnL = floatingPnL;
-    const floatingProfitColor = totalLivePnL !== null && totalLivePnL > 0
-        ? 'text-profit'
-        : totalLivePnL !== null && totalLivePnL < 0 ? 'text-loss' : 'text-zinc-100';
-    const floatingProfitLabel = totalLivePnL === null ? METRIC_UNAVAILABLE : formatMoney(totalLivePnL);
-    const accountBalance = accountMetricResolution.balance;
-    const accountCredit = accountMetricResolution.credit;
-    const liveEquity = accountMetricResolution.equity;
-    const margin = accountMetricResolution.margin;
-    const liveFreeMargin = accountMetricResolution.freeMargin;
-    const liveMarginLevel = accountMetricResolution.marginLevel;
 
-    const formatMarginLevel = (value: number | null) => {
+    const formatMarginLevel = useCallback((value: number | null) => {
         if (value === null) return METRIC_UNAVAILABLE;
         return `${value.toFixed(2)}%`;
-    };
+    }, []);
 
     const formatTradeTime = useCallback((value?: number | string | null) => {
         if (value === undefined || value === null || value === '' || value === 0) return '-';
@@ -474,7 +387,7 @@ export const TradeTab = memo(function TradeTab({
             case 'time_create':
                 return getTradeTimeValue(pos.time_create ?? pos.openTime ?? pos.open_time ?? pos.time);
             case 'profit':
-                return Number(pos.profit ?? pos.unrealizedPnL ?? 0);
+                return getLivePositionProfit(pos) ?? Number(pos.profit ?? pos.unrealizedPnL ?? 0);
             default:
                 return '';
         }
@@ -540,70 +453,7 @@ export const TradeTab = memo(function TradeTab({
         [accountCredit, isFooterMetricVisible]
     );
 
-    const renderFooterMetricValue = (key: TradeFooterMetricKey) => {
-        switch (key) {
-            case 'positions':
-                return <TradeMetricValue value={livePositions.length} />;
-            case 'balance':
-                return accountBalance === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={accountBalance} formatFn={formatMoney} />;
-            case 'credit':
-                return accountCredit === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={accountCredit} formatFn={formatMoney} />;
-            case 'equity':
-                return liveEquity === null
-                    ? <UnavailableTradeMetric />
-                    : <TradeMetricValue value={liveEquity} formatFn={formatMoney} flashDirection={false} />;
-            case 'margin':
-                return margin === null ? <UnavailableTradeMetric /> : <TradeMetricValue value={margin} formatFn={formatMoney} />;
-            case 'freeMargin':
-                return liveFreeMargin === null
-                    ? <UnavailableTradeMetric />
-                    : <TradeMetricValue value={liveFreeMargin} formatFn={formatMoney} flashDirection={false} />;
-            case 'marginLevel':
-                return liveMarginLevel === null
-                    ? <UnavailableTradeMetric />
-                    : <TradeMetricValue value={liveMarginLevel} formatFn={formatMarginLevel} flashDirection={false} />;
-            case 'swap':
-                return <TradeMetricValue value={totalSwap} formatFn={formatMoney} defaultColor={totalSwap < 0 ? 'text-[#f87171]' : 'text-zinc-300'} />;
-            case 'commission':
-                return <TradeMetricValue value={totalCommission} formatFn={formatMoney} defaultColor={totalCommission < 0 ? 'text-[#f87171]' : 'text-zinc-300'} />;
-            default:
-                return null;
-        }
-    };
 
-    const getFooterMetricComment = (key: TradeFooterMetricKey) => {
-        let value = '';
-        switch (key) {
-            case 'positions':
-                value = String(livePositions.length);
-                break;
-            case 'balance':
-                value = accountBalance === null ? METRIC_UNAVAILABLE : `${formatMoney(accountBalance)} ${account?.currency || 'USD'}`;
-                break;
-            case 'credit':
-                value = accountCredit === null ? METRIC_UNAVAILABLE : `${formatMoney(accountCredit)} ${account?.currency || 'USD'}`;
-                break;
-            case 'equity':
-                value = liveEquity === null ? METRIC_UNAVAILABLE : formatMoney(liveEquity);
-                break;
-            case 'margin':
-                value = margin === null ? METRIC_UNAVAILABLE : formatMoney(margin);
-                break;
-            case 'freeMargin':
-                value = liveFreeMargin === null ? METRIC_UNAVAILABLE : formatMoney(liveFreeMargin);
-                break;
-            case 'marginLevel':
-                value = formatMarginLevel(liveMarginLevel);
-                break;
-            case 'swap':
-                value = formatMoney(totalSwap);
-                break;
-            case 'commission':
-                value = formatMoney(totalCommission);
-                break;
-        }
-        return `${tr(TRADE_FOOTER_METRIC_COMMENTS[key])}: ${value}`;
-    };
 
     const visibleTradeColumns = useMemo(
         () => TRADE_COLUMN_DEFS.filter(column => isColumnVisible(column.key)),
@@ -674,9 +524,18 @@ export const TradeTab = memo(function TradeTab({
         String(pos.id ?? pos.ticket ?? `${pos.symbol ?? ''}-${pos.time_create ?? ''}`)
     ), []);
 
-    const sortedLivePositions = useMemo(() => {
-        if (!sortState) return livePositions;
-        return [...livePositions].sort((a: ToolboxTradePosition, b: ToolboxTradePosition) => {
+    // Subscribe to liveQuotes inside TradeTab ONLY while Sort-by-Profit is active.
+    const isProfitSortActive = sortState?.column === 'profit' && activeCount > 0;
+    const profitSortQuotesVersion = useSyncExternalStore(
+        isProfitSortActive ? subscribeLiveQuotes : noopSubscribe,
+        isProfitSortActive ? getLiveQuotesVersion : zeroSnapshot,
+        zeroSnapshot,
+    );
+    const profitSortVersion = isProfitSortActive ? profitSortQuotesVersion : 0;
+
+    const sortedArrayPositions = useMemo(() => {
+        if (!sortState) return positions;
+        return [...positions].sort((a: ToolboxTradePosition, b: ToolboxTradePosition) => {
             const aValue = getSortValue(a, sortState.column);
             const bValue = getSortValue(b, sortState.column);
             const comparison = typeof aValue === 'string' || typeof bValue === 'string'
@@ -684,19 +543,21 @@ export const TradeTab = memo(function TradeTab({
                 : Number(aValue) - Number(bValue);
             return sortState.direction === 'asc' ? comparison : -comparison;
         });
-    }, [livePositions, sortState, getSortValue]);
-    const displayedLivePositions = useMemo(
-        () => [...pendingPositions, ...sortedLivePositions],
-        [pendingPositions, sortedLivePositions],
-    );
+    // profitSortVersion re-sorts on quote batches, only while Sort-by-Profit is active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [positions, sortState, getSortValue, profitSortVersion]);
+
+    const displayedLivePositions = useMemo(() => {
+        if (pendingPositions.length === 0) return sortedArrayPositions;
+        return [...pendingPositions, ...sortedArrayPositions];
+    }, [pendingPositions, sortedArrayPositions]);
 
     useEffect(() => {
         if (!selectedPositionKey) return;
-        if (!livePositions.some((position: ToolboxTradePosition) => getPositionKey(position) === selectedPositionKey)) {
-            // Selection is derived from the externally refreshed position collection.
+        if (!positions.some((position: ToolboxTradePosition) => getPositionKey(position) === selectedPositionKey)) {
             setSelectedPositionKey(null);
         }
-    }, [getPositionKey, livePositions, selectedPositionKey]);
+    }, [getPositionKey, positions, selectedPositionKey]);
 
     useEffect(() => {
         if (!selectedPositionKey) return;
@@ -788,10 +649,16 @@ export const TradeTab = memo(function TradeTab({
         return columns;
     };
 
+    const getLiveReportPositions = (): ToolboxTradePosition[] => {
+        // Rows carry the latest live price/profit at export time.
+        return sortedArrayPositions.map((pos) => applyLiveQuoteToPosition(pos, tradeOverrides[pos?.id]));
+    };
+
     const buildTradeReportHtml = (title: string) => {
         const columns = getVisibleReportColumns();
+        const reportPositions = getLiveReportPositions();
         const header = columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join('');
-        const body = sortedLivePositions.map(position => (
+        const body = reportPositions.map(position => (
             `<tr>${columns.map(column => `<td>${escapeHtml(column.value(position))}</td>`).join('')}</tr>`
         )).join('');
         return `<!doctype html>
@@ -808,7 +675,7 @@ th{background:#ececec;font-weight:600}
 </style>
 </head>
 <body>
-<div class="summary">${escapeHtml(title)} - ${sortedLivePositions.length} position(s)</div>
+<div class="summary">${escapeHtml(title)} - ${reportPositions.length} position(s)</div>
 <table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
 </body>
 </html>`;
@@ -826,7 +693,8 @@ th{background:#ececec;font-weight:600}
 
     const downloadTradeXml = () => {
         const columns = getVisibleReportColumns();
-        const rows = sortedLivePositions.map(position => (
+        const reportPositions = getLiveReportPositions();
+        const rows = reportPositions.map(position => (
             `<Row>${columns.map(column => `<Cell><Data ss:Type="String">${escapeHtml(column.value(position))}</Data></Cell>`).join('')}</Row>`
         )).join('');
         const xml = `<?xml version="1.0"?>
@@ -851,12 +719,7 @@ ${rows}
         window.dispatchEvent(new CustomEvent(visible ? 'rtx:refresh-trade-overlay' : 'rtx:flush-trade-overlay', { detail: { symbol } }));
     };
 
-    const ensureTradeLevelsVisibleForLivePositions = useCallback((positions: ToolboxTradePosition[]) => {
-        const symbols = Array.from(new Set(
-            positions
-                .map(position => String(position.symbol ?? '').trim())
-                .filter(Boolean),
-        ));
+    const ensureTradeLevelsVisibleForSymbols = useCallback((symbols: readonly string[]) => {
         if (symbols.length === 0) return;
 
         const store = useChartSettingsStore.getState();
@@ -933,12 +796,9 @@ ${rows}
 
     const buildTradeContextMenuItems = (position?: ToolboxTradePosition): ContextMenuItemConfig[] => {
         const activeChartSymbol = String(useAppStore.getState().selectedSymbol || '').trim();
-        const symbol = String(position?.symbol ?? (activeChartSymbol || livePositions[0]?.symbol || '')).trim();
+        const symbol = String(position?.symbol ?? (activeChartSymbol || positions[0]?.symbol || '')).trim();
         const hasPosition = Boolean(position);
-        const hasPositions = positions.length > 0;
-        // Close-by is offered only while an opposite-side same-symbol
-        // counterpart is present; the lowest-ticket one is named (see
-        // findCloseByCounterpart). Otherwise the item stays hidden.
+        const hasPositions = activeCount > 0;
         const closeByCounterpart = position ? findCloseByCounterpart(position, positions) : null;
         const closeByTicket = closeByCounterpart ? readCloseByLegTicket(closeByCounterpart) : null;
         return [
@@ -973,7 +833,7 @@ ${rows}
                     { label: 'Close All', disabled: !hasPositions, action: () => onCloseBulk?.('ALL') },
                     { label: 'Close In-Profit', disabled: !hasPositions, action: () => onCloseBulk?.('WINNERS') },
                     { label: 'Close In-Loss', disabled: !hasPositions, action: () => onCloseBulk?.('LOSERS') },
-                    ...(symbol ? [{ label: `Close All ${symbol}`, disabled: !positions.some(p => p.symbol === symbol), action: () => onCloseBulk?.('ALL', symbol) }] : []),
+                    ...(symbol ? [{ label: `Close All ${symbol}`, disabled: !activeAgg.heldSymbols.has(symbol.toUpperCase()), action: () => onCloseBulk?.('ALL', symbol) }] : []),
                 ],
             },
             { divider: true },
@@ -1165,11 +1025,11 @@ ${rows}
     };
 
     useEffect(() => {
-        if (showOnChartsAutoUpdate && livePositions.length > 0) {
-            ensureTradeLevelsVisibleForLivePositions(livePositions);
+        if (showOnChartsAutoUpdate && activeCount > 0) {
+            ensureTradeLevelsVisibleForSymbols(activeAgg.symbols);
             window.dispatchEvent(new CustomEvent('rtx:refresh-trade-overlay'));
         }
-    }, [ensureTradeLevelsVisibleForLivePositions, showOnChartsAutoUpdate, livePositions]);
+    }, [ensureTradeLevelsVisibleForSymbols, showOnChartsAutoUpdate, activeAgg.symbols, activeCount]);
 
     return (
         <div
@@ -1210,9 +1070,14 @@ ${rows}
                 account={account}
                 columnWidths={columnWidths}
                 displayedLivePositions={displayedLivePositions}
+                metricsPositions={positions}
+                tradeOverrides={tradeOverrides}
+                metricsNow={metricsNow}
+                totalSwap={totalSwap}
+                totalCommission={totalCommission}
+                openCount={activeCount}
+                formatMarginLevel={formatMarginLevel}
                 error={error}
-                floatingProfitColor={floatingProfitColor}
-                floatingProfitLabel={floatingProfitLabel}
                 footerCloseColumnWidth={footerCloseColumnWidth}
                 footerMetricMenuOpen={footerMetricMenu !== null}
                 footerProfitColumnWidth={footerProfitColumnWidth}
@@ -1222,17 +1087,14 @@ ${rows}
                 formatTradePrice={formatTradePrice}
                 formatTradeTime={formatTradeTime}
                 formatTradeVolume={formatTradeVolume}
-                getFooterMetricComment={getFooterMetricComment}
                 getPositionKey={getPositionKey}
                 getTradePointsValue={getTradePointsValue}
                 handleTradeContextMenu={handleTradeContextMenu}
                 isColumnVisible={isColumnVisible}
-                liveEquity={liveEquity}
                 loading={loading}
                 onClosePosition={onClosePosition}
                 openModifyPosition={openModifyPosition}
                 profitMode={profitMode}
-                renderFooterMetricValue={renderFooterMetricValue}
                 resizingColumn={resizingColumn}
                 selectedPositionKey={selectedPositionKey}
                 setColumnWidths={setColumnWidths}
@@ -1241,7 +1103,6 @@ ${rows}
                 startColumnResize={startColumnResize}
                 toggleFooterMetricMenu={toggleFooterMetricMenu}
                 toggleSort={toggleSort}
-                totalLivePnL={totalLivePnL}
                 visibleFooterMetrics={visibleFooterMetrics}
                 visibleOptionalColumnCount={visibleOptionalColumnCount}
                 visibleTradeColumns={visibleTradeColumns}

@@ -3,6 +3,17 @@ import { shouldDeferEmptyPositionSnapshot } from './positionSnapshotSafety';
 import { readPositionStateVersion } from './positionStateVersion';
 import { resolveSpecDigits, stripFloatPrecisionNoise } from '../utils/symbolUtils';
 
+// Live (latest-quote) profit for the WINNERS / LOSERS bulk-close filter. livePositionMetrics
+// registers it when it loads, so this low-level stream module stays free of UI/catalog imports
+// (importing it must not pull the symbol registry or broker session). Unset -> stored profit.
+let liveRoundedProfitResolver: ((pos: unknown) => number | null) | null = null;
+export const registerLiveRoundedProfitResolver = (fn: ((pos: unknown) => number | null) | null): void => {
+  liveRoundedProfitResolver = fn;
+};
+const readLiveRoundedProfit = (pos: unknown): number | null => (
+  liveRoundedProfitResolver ? liveRoundedProfitResolver(pos) : null
+);
+
 const toFinite = (v: unknown, fallback = 0): number => {
   // FIX: Partial account packets may carry omitted/null fields or Money-like
   // `{ amount }` values. Neither may silently erase a known metric with zero.
@@ -389,10 +400,10 @@ export const reconcilePositionBulkClose = <T extends { id: number }>(
 
     let matchesFilter = true;
     if (filterType === 'WINNERS') {
-      const profit = toFinite(pos?.profit ?? pos?.unrealizedPnL ?? pos?.unrealized_pl, 0);
+      const profit = readLiveRoundedProfit(pos) ?? toFinite(pos?.profit ?? pos?.unrealizedPnL ?? pos?.unrealized_pl, 0);
       matchesFilter = profit > 0;
     } else if (filterType === 'LOSERS') {
-      const profit = toFinite(pos?.profit ?? pos?.unrealizedPnL ?? pos?.unrealized_pl, 0);
+      const profit = readLiveRoundedProfit(pos) ?? toFinite(pos?.profit ?? pos?.unrealizedPnL ?? pos?.unrealized_pl, 0);
       matchesFilter = profit < 0;
     } else if (filterType === 'BUY_ONLY') {
       const side = String(pos?.side ?? '').trim().toUpperCase();

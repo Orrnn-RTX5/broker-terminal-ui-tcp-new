@@ -21,7 +21,10 @@ export const isLocalViteDevServer = (): boolean => {
   if (!import.meta.env.DEV || import.meta.env.MODE === 'test' || typeof window === 'undefined' || isElectronRuntime()) return false;
   const protocol = window.location?.protocol || '';
   const hostname = window.location?.hostname || '';
-  return protocol.startsWith('http') && isLocalDevHostname(hostname);
+  // Dev-server-only opt-in (dead code in production): a remote page host such as a
+  // dev tunnel must still use the same-origin Vite proxy instead of absolute loopback URLs.
+  const forceDevProxy = import.meta.env.VITE_FORCE_DEV_PROXY === 'true';
+  return protocol.startsWith('http') && (forceDevProxy || isLocalDevHostname(hostname));
 };
 
 export const toLocalDevProxyUrl = (

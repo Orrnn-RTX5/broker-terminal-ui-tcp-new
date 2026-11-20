@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useUiTranslation } from '../hooks/useUiTranslation';
 import { Icon } from './ui/Icon';
@@ -6,6 +6,7 @@ import { isUnavailableDockSection, unavailableDockSections } from '../config/ter
 import { RetainedLazyFeature } from '../startup/RetainedLazyFeature';
 import { useAppStore } from '../store/useAppStore';
 import { useToolboxTradeData } from '../hooks/useToolboxTradeData';
+import { useLiveBulkCloseCounts } from '../services/livePositionAggregates';
 import { loadTerminalHistory, resetTerminalHistorySession } from '../services/terminalHistory';
 import { acknowledgeBottomDockTab, getRequestedBottomDockTab } from '../services/bottomDockNavigation';
 import { onCommittedBrokerAccountSessionScopeChange } from '../services/brokerSession';
@@ -144,17 +145,7 @@ export function BottomDock({
     // This prevents DockWorkspace.renderPanel from needing to re-create when positions change
     const { account, positions } = useBottomDockStoreBridge();
     const toolboxTrade = useToolboxTradeData();
-    const bulkCloseCounts = useMemo(() => {
-        const openPositions = toolboxTrade.positions ?? [];
-        let profitable = 0;
-        let losing = 0;
-        for (const position of openPositions) {
-            const profit = position.profit ?? 0;
-            if (profit > 0) profitable += 1;
-            else if (profit < 0) losing += 1;
-        }
-        return { all: openPositions.length, profitable, losing };
-    }, [toolboxTrade.positions]);
+    const bulkCloseCounts = useLiveBulkCloseCounts(toolboxTrade.positions);
 
     const [activeTab, setActiveTab] = useState<TabType>(() => getRequestedBottomDockTab() ?? 'Trade');
     const [historyMounted, setHistoryMounted] = useState(activeTab === 'History');

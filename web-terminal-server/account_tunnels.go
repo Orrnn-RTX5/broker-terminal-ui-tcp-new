@@ -956,6 +956,7 @@ drain:
 		select {
 		case s.ch <- pkt:
 		default:
+			webStreamMarketFramesDropped.Add(1)
 		}
 	}
 	for attempt := 0; ; attempt++ {
@@ -976,6 +977,7 @@ drain:
 			select {
 			case s.ch <- pkt:
 			default:
+				webStreamMarketFramesDropped.Add(1)
 			}
 		}
 		to.subs[s] = struct{}{}

@@ -2,6 +2,7 @@ import { extractAccountMetrics, normalizeAccountMetrics } from '../../services/a
 import { readBackendNumber } from '../../services/backendAccountMetrics';
 import { getTradeEntryPriceFromQuote } from '../../services/chartPriceGuards';
 import { readBackendPositionProfit } from '../../components/BottomDock.trade';
+import { getLivePositionPrice, getLivePositionRoundedProfit } from '../../services/livePositionMetrics';
 import { readPositionStreamEvent } from '../../services/positionStream';
 import { resolveOptionalPositionTime, resolvePositionOpenTime } from '../../services/tradePositionTime';
 import { resolveTickFromLookup, shouldReplaceOpenPositionSnapshot, useAppStore, type Position } from '../../store/useAppStore';
@@ -141,7 +142,9 @@ export const applyOpenPositionSnapshot = (
   }
 };
 
-export const backendCloseProfit = (position: Position): number | null => readBackendPositionProfit(position);
+export const backendCloseProfit = (position: Position): number | null => (
+  getLivePositionRoundedProfit(position) ?? readBackendPositionProfit(position)
+);
 
 const getTradeExitPriceFromQuote = (tick: Tick | undefined, side: 'BUY' | 'SELL'): number | null => {
   if (!tick) return null;
@@ -169,7 +172,9 @@ export const buildTradeOverlayCloseSnapshots = (positions: readonly Position[]):
     const tick = resolveTickFromLookup(ticks, tickLookup, position.symbol);
     const entryPrice = Number(position.chartEntryPrice || position.openPrice || 0);
     const entryTime = position.chartEntryTime || position.openTime;
-    const exitPrice = getTradeExitPriceFromQuote(tick, side)
+    const liveQuotePrice = getLivePositionPrice(position);
+    const exitPrice = (liveQuotePrice !== null && liveQuotePrice > 0 ? liveQuotePrice : null)
+      ?? getTradeExitPriceFromQuote(tick, side)
       ?? (Number(position.currentPrice) > 0 ? Number(position.currentPrice) : 0);
     if (!position.id || !position.symbol || !(entryPrice > 0) || !entryTime || !(exitPrice > 0)) return [];
 

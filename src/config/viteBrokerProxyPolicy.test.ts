@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import viteConfig, { createBrokerProxyAccess, getBrokerProxyTargets, learnBrokerOrigins, parseDynamicProxyTarget, validateProxyTarget } from '../../vite.config';
+import viteConfig, { createBrokerProxyAccess, getBrokerProxyTargets, learnBrokerOrigins, parseDynamicProxyTarget, resolveRtx5WsOrigin, validateProxyTarget } from '../../vite.config';
 import { resolveProxyAddresses } from '../../viteBrokerProxyAddress';
 
 vi.mock('../../viteBrokerProxyAddress', async importOriginal => ({
@@ -113,5 +113,28 @@ describe('canonical broker development proxy policy', () => {
     for (const proxy of Object.values(proxies)) expect((proxy as { secure: boolean }).secure).toBe(true);
     const source = readFileSync(resolve('vite.config.ts'), 'utf8');
     expect(source).not.toMatch(/rejectUnauthorized:\s*false|secure:\s*false/);
+  });
+});
+
+describe('rtx5 binary order WS origin policy', () => {
+  const backendOrigin = 'http://127.0.0.1:8443';
+  it('rewrites a same-host tunnel origin to the backend origin', () => {
+    expect(resolveRtx5WsOrigin({ origin: 'https://abc-5183.euw.devtunnels.ms', host: 'abc-5183.euw.devtunnels.ms', backendOrigin })).toBe(backendOrigin);
+  });
+  it('rewrites a same-host localhost origin with port', () => {
+    expect(resolveRtx5WsOrigin({ origin: 'http://127.0.0.1:5199', host: '127.0.0.1:5199', backendOrigin })).toBe(backendOrigin);
+    expect(resolveRtx5WsOrigin({ origin: 'http://localhost:5173', host: 'LOCALHOST:5173', backendOrigin })).toBe(backendOrigin);
+  });
+  it('keeps an absent origin absent', () => {
+    expect(resolveRtx5WsOrigin({ origin: undefined, host: 'abc.devtunnels.ms', backendOrigin })).toBeUndefined();
+    expect(resolveRtx5WsOrigin({ origin: '  ', host: 'abc.devtunnels.ms', backendOrigin })).toBeUndefined();
+  });
+  it('rejects foreign, malformed, credentialed or non-http origins', () => {
+    expect(resolveRtx5WsOrigin({ origin: 'https://evil.example.com', host: 'abc.devtunnels.ms', backendOrigin })).toBeNull();
+    expect(resolveRtx5WsOrigin({ origin: 'http://localhost:9999', host: '127.0.0.1:5199', backendOrigin })).toBeNull();
+    expect(resolveRtx5WsOrigin({ origin: 'null', host: 'abc.devtunnels.ms', backendOrigin })).toBeNull();
+    expect(resolveRtx5WsOrigin({ origin: 'https://u:p@abc.devtunnels.ms', host: 'abc.devtunnels.ms', backendOrigin })).toBeNull();
+    expect(resolveRtx5WsOrigin({ origin: 'file://abc.devtunnels.ms', host: 'abc.devtunnels.ms', backendOrigin })).toBeNull();
+    expect(resolveRtx5WsOrigin({ origin: 'https://abc.devtunnels.ms', host: undefined, backendOrigin })).toBeNull();
   });
 });

@@ -74,9 +74,35 @@ const replaceSocketErrorLogger = (label: string, socket: Socket): void => {
   })
 }
 
+/**
+ * Origin decision for WebSocket upgrades proxied to the local web-terminal-server.
+ * The proxy rewrites Host to the backend, so the page origin (local or dev tunnel)
+ * no longer equals Host there. Only the dev server's own origin is re-stamped with
+ * the backend origin; a foreign origin returns null (caller rejects with 403) so
+ * cross-site WebSocket hijacking through a tunnel stays blocked. Absent -> undefined.
+ */
+export const resolveRtx5WsOrigin = (input: {
+  origin: string | undefined
+  host: string | undefined
+  backendOrigin: string
+}): string | null | undefined => {
+  const origin = (input.origin ?? '').trim()
+  if (!origin) return undefined
+  const host = (input.host ?? '').trim().toLowerCase()
+  if (!host) return null
+  try {
+    const parsed = new URL(origin)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    if (parsed.username || parsed.password) return null
+    return parsed.host.toLowerCase() === host ? input.backendOrigin : null
+  } catch {
+    return null
+  }
+}
+
 const configureWsProxy = (
   label: string,
-  options: { stripOrigin?: boolean } = {}
+  options: { stripOrigin?: boolean; backendOrigin?: string } = {}
 ): NonNullable<ProxyOptions['configure']> => {
   return (proxy: ViteProxyServer) => {
     queueMicrotask(() => {
@@ -100,8 +126,22 @@ const configureWsProxy = (
       })
     })
 
-    proxy.on('proxyReqWs', (proxyReq, _req, socket) => {
-      if (options.stripOrigin) {
+    proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+      if (options.backendOrigin) {
+        const next = resolveRtx5WsOrigin({
+          origin: req.headers.origin,
+          host: req.headers.host,
+          backendOrigin: options.backendOrigin,
+        })
+        if (next === null) {
+          proxyReq.destroy()
+          if (!socket.destroyed) {
+            socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+          }
+          return
+        }
+        if (next !== undefined) proxyReq.setHeader('origin', next)
+      } else if (options.stripOrigin) {
         proxyReq.removeHeader('origin')
       }
       replaceSocketErrorLogger(label, socket)
@@ -1128,6 +1168,10 @@ export default defineConfig(({ mode, command }) => {
       host: '127.0.0.1',
       port: 5173,
       open: true,
+      // Dev tunnels: Vite only appends the raw env value as ONE host, so a comma list never matches.
+      ...(command === 'serve' && process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+        ? { allowedHosts: process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean) }
+        : {}),
       watch: {
         // Build output, installers, captured artifacts and tool caches hold
         // thousands of files the app never imports. Watching them costs seconds
@@ -1147,7 +1191,23 @@ export default defineConfig(({ mode, command }) => {
           './src/components/layout/TopToolbar.tsx',
         ],
       },
-      proxy: staticProxy
+      // Dev-server only (preview keeps staticProxy). The '/__rtx5_' prefix is listed first so
+      // it wins over the specific '/__rtx5_*' entries in staticProxy: every local
+      // web-terminal-server route (binary stream, account_sub, order, order_ws, drawing_ws)
+      // goes to backendTarget with ws:true. http-proxy streams by default and sets no timeout.
+      // The local server accepts WS origins only when loopback or equal to its Host, so
+      // same-origin pages (local or dev tunnel) are re-stamped with the backend origin;
+      // foreign origins are rejected here (403); absent origins stay absent.
+      proxy: Object.fromEntries(Object.entries({
+        '/__rtx5_': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: true,
+          ws: true,
+          configure: configureWsProxy('rtx5-binary', { backendOrigin: (() => { try { return new URL(backendTarget).origin } catch { return undefined } })() }),
+        },
+        ...staticProxy,
+      } satisfies Record<string, ProxyOptions>).filter(([, proxy]) => Boolean(proxy.target)))
     },
     optimizeDeps: {
       include: ['lightweight-charts', 'html2canvas-pro'],

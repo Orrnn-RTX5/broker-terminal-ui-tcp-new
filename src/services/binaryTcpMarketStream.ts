@@ -29,6 +29,16 @@ import { getAccessToken, getAccountLogin, onSessionChange } from './brokerSessio
 
 const MAX_BINARY_ORDER_STREAM_DEFER_MS = 250;
 
+/**
+ * Silence watchdog. The stream server (local Go DesktopClient / web-terminal server) writes a FramePing keepalive
+ * every 10 s even when no price moves, so a stream that delivers no byte at all for 30 s (three missed keepalives) is
+ * stuck: a proxy or socket stalled without closing it. `reader.read()` would then wait forever and prices would stay
+ * frozen while the stream still reports connected. The watchdog aborts such a stream and reconnects.
+ * The read loop only increments a counter per chunk; the check runs on a timer, so the hot path gains no timer work.
+ */
+export const STREAM_SILENCE_RECONNECT_MS = 30_000;
+const STREAM_SILENCE_CHECK_MS = 5_000;
+
 export const FRAME_BINARY_TICK_BATCH = 0x21;
 export const FRAME_BINARY_CANDLE_BATCH = 0x22;
 export const FRAME_BINARY_DEPTH_BATCH = 0x24;
@@ -424,6 +434,9 @@ class BinaryTcpMarketStream {
   private accumBuf = new Uint8Array(131_072);
   private accumLen = 0;
 
+  // Chunks received on the current stream; read by the silence watchdog (see STREAM_SILENCE_RECONNECT_MS).
+  private chunksReceived = 0;
+
   constructor() {
     if (typeof window !== 'undefined') {
       onBinaryTcpOrdersIdle(() => {
@@ -712,6 +725,24 @@ class BinaryTcpMarketStream {
     this.abortController = controller;
     this.accumLen = 0;
 
+    // Silence watchdog: started before the request so it also covers a server that never answers.
+    let silenced = false;
+    let lastSeenChunks = this.chunksReceived;
+    let lastProgressAt = Date.now();
+    const silenceWatchdog = setInterval(() => {
+      const now = Date.now();
+      if (this.chunksReceived !== lastSeenChunks) {
+        lastSeenChunks = this.chunksReceived;
+        lastProgressAt = now;
+        return;
+      }
+      if (now - lastProgressAt >= STREAM_SILENCE_RECONNECT_MS && !controller.signal.aborted) {
+        silenced = true;
+        console.warn(`[BinaryTcpMarketStream] no data or keepalive for ${Math.round((now - lastProgressAt) / 1000)}s; reconnecting the stream`);
+        try { controller.abort(); } catch { /* ignore */ }
+      }
+    }, STREAM_SILENCE_CHECK_MS);
+
     try {
       const response = await fetch('/__rtx5_binary_stream', {
         method: 'GET',
@@ -741,19 +772,24 @@ class BinaryTcpMarketStream {
         const { value, done } = await reader.read();
         if (done) break;
         if (value && value.byteLength > 0) {
+          this.chunksReceived++;
           this.consumeChunk(value);
         }
       }
     } catch {
       // Stream interrupted or aborted — reconnect cleanly below
     } finally {
+      clearInterval(silenceWatchdog);
+      // A newer stream already started (forceReconnect): this one must not schedule a second one.
+      const superseded = this.abortController !== null && this.abortController !== controller;
       if (this.abortController === controller) {
         this.abortController = null;
       }
       this.boundAccountKey = null;
       this.inFlightAccountKey = null;
       this.setConnected(false);
-      if (!controller.signal.aborted) {
+      // An abort by forceReconnect() starts its own new stream; an abort by the silence watchdog must reconnect here.
+      if ((!controller.signal.aborted || silenced) && !superseded) {
         this.scheduleReconnect();
       }
     }

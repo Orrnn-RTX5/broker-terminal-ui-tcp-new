@@ -1,6 +1,7 @@
 import { readRegisteredSymbolContractSpec } from '../services/dailyChangePriceModeRegistry';
 import { useAppStore } from '../store/useAppStore';
 import { useMarketDataStore } from '../store/useMarketDataStore';
+import { getLivePositionPrice } from '../services/livePositionMetrics';
 
 export interface ExposurePositionInput {
   symbol?: string | null;
@@ -159,6 +160,8 @@ export const getExposureContractSize = (position: ExposurePositionInput): number
 };
 
 const getPositionRate = (position: ExposurePositionInput): number => {
+  const live = getLivePositionPrice(position);
+  if (live !== null && Number.isFinite(live) && live > 0) return live;
   return toFiniteNumber(
     position.price_current
     ?? position.current_price

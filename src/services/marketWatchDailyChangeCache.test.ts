@@ -308,6 +308,33 @@ describe('marketWatchDailyChangeCache', () => {
     expect(stored.entries).toHaveLength(40);
   });
 
+  it('evicts in O(1) without sorting when more symbols than the cap are live on the tick path', () => {
+    const live = MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES + 100;
+    for (let index = 0; index < live; index += 1) {
+      vi.setSystemTime(NOW + index);
+      rememberMarketWatchDailyChange(scopeA, `LIVE${index}`, index, NOW + index, 'quote');
+    }
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+    try {
+      // Every tick re-inserts a symbol that was evicted before (the old code sorted the whole
+      // cache on each of these inserts).
+      for (let tick = 0; tick < 300; tick += 1) {
+        vi.setSystemTime(NOW + live + tick);
+        rememberMarketWatchDailyChange(scopeA, `LIVE${tick}`, 10_000 + tick, NOW + live + tick, 'quote');
+      }
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+    // Still bounded, newest kept, oldest evicted.
+    expect(readMarketWatchDailyChange(scopeA, 'LIVE299')).toBe(10_299);
+    expect(readMarketWatchDailyChange(scopeA, `LIVE${live - 1}`)).toBe(live - 1);
+    expect(readMarketWatchDailyChange(scopeA, 'LIVE300')).toBeNull();
+    flushMarketWatchDailyChangeCache();
+    const stored = JSON.parse(localStorage.getItem(MARKET_WATCH_DAILY_CHANGE_CACHE_STORAGE_KEY) || '{}');
+    expect(stored.entries).toHaveLength(MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES);
+  });
+
   it('keeps the batch path bounded and prunes only when a new key exceeds the cap', () => {
     const rows = Array.from({ length: MAX_MARKET_WATCH_DAILY_CHANGE_CACHE_ENTRIES + 25 }, (_, index) => ({
       symbol: `SYM${index}`, value: index, asOf: NOW + index, source: 'quote' as const,

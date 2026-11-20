@@ -112,7 +112,7 @@ describe('BottomDock trade type presentation', () => {
         const tradeTab = tradeTableSource;
         const loadingState = tradeTab.slice(
             tradeTab.indexOf('<tbody'),
-            tradeTab.indexOf('{displayedLivePositions.map'),
+            tradeTab.indexOf('{slice.map'),
         );
 
         expect(loadingState).toContain('loading || error');
