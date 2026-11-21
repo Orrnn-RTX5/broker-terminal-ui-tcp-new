@@ -15,8 +15,17 @@ export function useTerminalStartupReady(part: StartupPart, ready: boolean) {
 
 // The chart keeps its own loading surface. Do not leave the whole terminal
 // on the startup screen for a slow candle response; once the single logo splash
-// finishes (600ms), show the workspace and let the remaining data fill in.
+// finishes (550ms–600ms), show the workspace and let the remaining data fill in.
 const STARTUP_REVEAL_CAP_MS = 600;
+const MIN_LOGO_SPLASH_MS = 550;
+
+function readRemainingLogoSplashMs(): number {
+  if (typeof window === 'undefined' || typeof performance === 'undefined') return 0;
+  const startedAt = (window as Window & { __RTX_SPLASH_STARTED_AT_MS__?: unknown }).__RTX_SPLASH_STARTED_AT_MS__;
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return 0;
+  const elapsed = Math.max(0, performance.now() - startedAt);
+  return Math.max(0, Math.ceil(MIN_LOGO_SPLASH_MS - elapsed));
+}
 
 /** Keep the real workspace mounted and measured while its first data arrives. */
 export function TerminalStartupBoundary({
@@ -30,16 +39,25 @@ export function TerminalStartupBoundary({
 }) {
   const [parts, setParts] = useState({ chart: false, marketWatch: false });
   const [revealed, setRevealed] = useState(false);
+  const [splashComplete, setSplashComplete] = useState(() => readRemainingLogoSplashMs() <= 0);
   const reportReady = useCallback((part: StartupPart) => {
     setParts(previous => previous[part] ? previous : { ...previous, [part]: true });
   }, []);
   const ready = dataReady && parts.marketWatch && (!waitForChart || parts.chart);
-  const pending = !revealed && !ready;
+  const canReveal = ready && splashComplete;
+  const pending = !revealed && !canReveal;
   useDesktopStartupReady(!pending);
 
   useEffect(() => {
-    if (ready) setRevealed(true);
-  }, [ready]);
+    if (splashComplete) return;
+    const remaining = readRemainingLogoSplashMs();
+    const timer = window.setTimeout(() => setSplashComplete(true), Math.max(0, remaining));
+    return () => window.clearTimeout(timer);
+  }, [splashComplete]);
+
+  useEffect(() => {
+    if (canReveal) setRevealed(true);
+  }, [canReveal]);
 
   // A slow or unreachable backend must not trap the user on the loading
   // screen: open the terminal anyway and let data stream in when it arrives.

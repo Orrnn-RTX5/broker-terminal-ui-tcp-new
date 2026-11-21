@@ -94,7 +94,7 @@ import {
 } from './utils/chartTradeControls';
 import { getSharedChartTrade } from './utils/tradeShareLink';
 import { closePositionsLocalFirst } from './services/localFirstCloseCoordinator';
-import { getActiveChartSource } from './services/activeChartSource';
+import { getActiveChartSource, getActiveChartSourceId, subscribeActiveChartSource } from './services/activeChartSource';
 import {
   getCommittedBrokerAccountSessionScope,
   getCommittedBrokerAccountSessionScopeKey,
@@ -166,6 +166,11 @@ import { applyChartTimeframeCommand } from './services/chartTimeframeCommand';
 import { getDockPanelChartType } from './services/chartTypeCommand';
 import { changeChartPanelSymbol, findChartPanelById, getChartPanelSymbolUpdates, requestActiveChartSymbolChange } from './services/chartPanelNavigation';
 import { hasArrangedChartWindows } from './utils/chartSymbolTabs';
+import {
+  normalizePersistedTimeframe,
+  readPersistedTimeframe,
+  writePersistedTimeframe,
+} from './utils/chartTimeframePersistence';
 
 // Services
 import { windowManager, type LayoutMode } from './services/windowManager';
@@ -278,7 +283,15 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     const saved = localStorage.getItem('rtx5_chart_type');
     return (saved as ChartType) || 'candlestick';
   });
-  const [timeframe, setTimeframe] = useState<Timeframe>(DEFAULT_CHART_TIMEFRAME);
+  const [timeframe, setTimeframe] = useState<Timeframe>(() => (
+    readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME
+  ));
+  const commitSelectedTimeframe = useCallback((nextTimeframe: unknown): Timeframe | null => {
+    const normalized = writePersistedTimeframe(nextTimeframe);
+    if (!normalized) return null;
+    setTimeframe(normalized);
+    return normalized;
+  }, []);
   const [dockHeight, setDockHeight] = useState(() => {
     const saved = localStorage.getItem('dockHeight');
     return saved ? parseInt(saved, 10) : 250;
@@ -608,10 +621,10 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     sharedTradeLinkAppliedRef.current = true;
     const validTimeframes: Timeframe[] = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'];
     if ((validTimeframes as string[]).includes(sharedTrade.timeframe)) {
-      setTimeframe(sharedTrade.timeframe as Timeframe);
+      commitSelectedTimeframe(sharedTrade.timeframe);
     }
     handleSymbolSelect(sharedTrade.symbol);
-  }, [accountId, handleSymbolSelect, hasLoadedChartSymbols, isAuthenticated, restoredLayoutAccountId]);
+  }, [accountId, commitSelectedTimeframe, handleSymbolSelect, hasLoadedChartSymbols, isAuthenticated, restoredLayoutAccountId]);
 
   const isChartCatalogAuthoritative = isAuthenticated
     ? marketInstrumentsSnapshot.chartCatalogCurrent === true
@@ -649,7 +662,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   ]);
 
   useEffect(() => {
-    localStorage.setItem('rtx5_timeframe', timeframe);
+    writePersistedTimeframe(timeframe);
   }, [timeframe]);
 
   useEffect(() => {
@@ -685,10 +698,19 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       }
     });
     const unsub2 = commandBus.subscribe('SET_TIMEFRAME' as any, (payload: any) => {
-      applyChartTimeframeCommand(payload, setTimeframe);
+      if (!applyChartTimeframeCommand(payload, commitSelectedTimeframe)) return;
+      const nextTimeframe = normalizePersistedTimeframe(payload?.timeframe);
+      if (!nextTimeframe) return;
+      const activeTarget = getActiveChartCommandTarget();
+      const activePanelId = getPanelIdFromChartContextId(activeTarget.targetContextId);
+      const targetPanelId = getPanelIdFromChartContextId(payload?.targetContextId) ?? payload?.panelId;
+      const isForActivePanel = !targetPanelId || !activePanelId || targetPanelId === activePanelId;
+      if (isForActivePanel && (!targetPanelId || findChartPanelById(useDockLayoutStore.getState().layout, targetPanelId))) {
+        commitSelectedTimeframe(nextTimeframe);
+      }
     });
     return () => { unsub1(); unsub2(); };
-  }, []);
+  }, [commitSelectedTimeframe]);
 
   // Order Panel State
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
@@ -767,11 +789,6 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     localStorage.setItem('dockHeight', dockHeight.toString());
   }, [dockHeight]);
 
-  // Persist timeframe selection
-  useEffect(() => {
-    localStorage.setItem('rtx5_timeframe', timeframe);
-  }, [timeframe]);
-
   // Redundant persistence blocks removed (handled above)
 
   // Handle Escape key for closing order panel
@@ -812,27 +829,37 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     return unsubscribe;
   }, []);
 
-  // Every launch opens the shipped default arrangement on BTCUSD M1 in web
-  // and desktop builds. Account switches reset the panes and selection; a
-  // same-source guest login keeps the public chart already on the screen.
-  // Saved per-account layouts are neither restored nor auto-saved at startup.
+  // Every launch opens the shipped default arrangement while restoring the
+  // last selected symbol and timeframe in web and desktop builds. Account
+  // switches reset the panes; a same-source guest login keeps the public
+  // chart already on the screen. Saved per-account layouts are neither
+  // restored nor auto-saved at startup.
+  const hasBootedLayoutRef = useRef(false);
   useEffect(() => {
     // A same-source guest login keeps its existing chart hosts and selection.
     // A new launch, account switch or changed broker still opens the defaults.
     if (!guestChartLoginContinuity.preserveGuestLayout) {
       const persistedSymbol = readPersistedSelectedSymbol();
+      const restoredTimeframe = readPersistedTimeframe() || DEFAULT_CHART_TIMEFRAME;
       useDockLayoutStore.getState().resetToDefaultLayout();
       if (persistedSymbol) {
         useDockLayoutStore.getState().updatePanelProps('chart-default-container', {
-          title: `${persistedSymbol},${DEFAULT_CHART_TIMEFRAME}`,
-          props: { symbol: persistedSymbol, timeframe: DEFAULT_CHART_TIMEFRAME },
+          title: `${persistedSymbol},${restoredTimeframe}`,
+          props: { symbol: persistedSymbol, timeframe: restoredTimeframe },
         });
         setSelectedSymbol(persistedSymbol);
       } else {
+        if (restoredTimeframe !== DEFAULT_CHART_TIMEFRAME) {
+          useDockLayoutStore.getState().updatePanelProps('chart-default-container', {
+            title: `${DEFAULT_CHART_SYMBOL || 'Chart'},${restoredTimeframe}`,
+            props: { timeframe: restoredTimeframe },
+          });
+        }
         setSelectedSymbol(DEFAULT_CHART_SYMBOL);
       }
-      setTimeframe(DEFAULT_CHART_TIMEFRAME);
+      setTimeframe(restoredTimeframe);
     }
+    hasBootedLayoutRef.current = true;
 
     if (!isAuthenticated || !accountId) {
       setRestoredLayoutAccountId('');
@@ -976,7 +1003,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         { closedTickets: [id], removedTickets: [id] },
       );
       dispatchTradeOverlayCloseState([id], 'confirmed', { snapshots: closeSnapshots });
-      import('./utils/audio').then(m => m.playSystemSound('close'));
+      import('./utils/audio').then(m => m.playSystemSound('close-single')).catch(() => undefined);
       const loginId = closeLogin;
       if (useBinaryFastClose) {
         scheduleIdlePostTradeSync(loginId, true);
@@ -1044,6 +1071,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         volume: positionVolume,
         login,
       }, { intentAtMs });
+      import('./utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
       refreshHistoryAfterFill(login);
       if (!isTradeOperationContextCurrent(operationContext)) return;
       publishOrderFeedback(
@@ -1086,6 +1114,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         volume: position.volume,
         login,
       }, { intentAtMs });
+      import('./utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
       // Adding volume only opens: closed history is unchanged.
       refreshHistoryAfterFill(login, undefined, { skipHistory: true });
       if (!isTradeOperationContextCurrent(operationContext)) return;
@@ -1377,7 +1406,12 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             { removedTickets: candidateIds, closedTickets: candidateIds },
           );
           dispatchTradeOverlayCloseState(candidateIds, 'confirmed', { snapshots });
-          import('./utils/audio').then((m) => m.playSystemSound('close'));
+          const bulkCloseSound = type === 'WINNERS'
+            ? 'close-profit'
+            : type === 'LOSERS'
+              ? 'close-loss'
+              : 'close-all';
+          import('./utils/audio').then((m) => m.playSystemSound(bulkCloseSound)).catch(() => undefined);
           scheduleIdlePostTradeSync(accId, true);
         } catch (err) {
           clearOptimisticClosedTickets(candidateIds, closeMarkerScope);
@@ -1448,6 +1482,14 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       }
 
       const { confirmedTicketIds, failedTicketIds, failedReasons } = closeResult;
+      if (confirmedTicketIds.length > 0) {
+        const bulkCloseSound = type === 'WINNERS'
+          ? 'close-profit'
+          : type === 'LOSERS'
+            ? 'close-loss'
+            : 'close-all';
+        import('./utils/audio').then((m) => m.playSystemSound(bulkCloseSound)).catch(() => undefined);
+      }
 
       if (failedTicketIds.length > 0) {
         // Failed tickets were never hidden on the frontend, so they stay open.
@@ -1825,6 +1867,21 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     if (!renderedChartSymbol || renderedChartSymbol === normalizeSymbolName(selectedSymbol)) return;
     setSelectedSymbol(renderedChartSymbol);
   }, [chartSelectionReadiness.renderedChartSymbol, dockLayout, selectedSymbol]);
+  useEffect(() => subscribeActiveChartSource(() => {
+    if (!hasBootedLayoutRef.current) return;
+    if (isAuthenticated && (!accountId || restoredLayoutAccountId !== accountId)) return;
+    const activePanelId = getPanelIdFromChartContextId(getActiveChartSourceId());
+    if (!activePanelId) return;
+    const activePanel = findChartPanelById(useDockLayoutStore.getState().layout, activePanelId);
+    if (!activePanel) return;
+    const panelTimeframe = normalizePersistedTimeframe(activePanel.props?.timeframe);
+    if (panelTimeframe) commitSelectedTimeframe(panelTimeframe);
+    const panelSymbol = getChartEligibleSymbol(activePanel.props?.symbol);
+    if (panelSymbol) {
+      writePersistedSelectedSymbol(panelSymbol);
+      setSelectedSymbol(panelSymbol);
+    }
+  }), [accountId, commitSelectedTimeframe, getChartEligibleSymbol, isAuthenticated, restoredLayoutAccountId]);
   // FIX: During the one reconciliation render, never pair the visible chart
   // symbol with another symbol's cached market-status metadata.
   const desktopToolbarMarketStatus = normalizeSymbolName(selectedMarketStatus.symbol) === normalizeSymbolName(desktopToolbarSymbol)
@@ -2214,7 +2271,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             chartType={chartType}
             timeframe={timeframe}
             onChartTypeChange={setChartType}
-            onTimeframeChange={setTimeframe}
+            onTimeframeChange={commitSelectedTimeframe}
             symbol={desktopToolbarSymbol}
             marketStatus={desktopToolbarMarketStatus}
             accountBrokerName={terminalBrokerInfo.brokerName}
@@ -2228,7 +2285,10 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             onLoadTemplate={(template) => {
               // Apply chart settings from template
               if (template.chartType) setChartType(template.chartType);
-              if (template.timeframe) setTimeframe(template.timeframe);
+              if (template.timeframe) {
+                commitSelectedTimeframe(template.timeframe);
+                applyChartTimeframeCommand({ timeframe: template.timeframe }, commitSelectedTimeframe);
+              }
 
               // Emit event for TradingChart to handle grid/volumes/indicators
               const event = new CustomEvent('loadChartTemplate', { detail: template });

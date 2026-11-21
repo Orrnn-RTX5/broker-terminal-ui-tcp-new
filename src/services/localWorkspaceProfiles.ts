@@ -65,6 +65,7 @@ export interface WorkspaceChartSettingsSnapshot {
   periodSeparatorsDefaultMigrationVersion: number;
   chartShiftDefaultMigrationVersion: number;
   ohlcDefaultMigrationVersion: number;
+  fineGridDefaultMigrationVersion?: number;
 }
 
 export interface WorkspaceMarketWatchOptions {
@@ -324,6 +325,9 @@ const normalizeChartSettings = (value: unknown): WorkspaceChartSettingsSnapshot 
     periodSeparatorsDefaultMigrationVersion: Math.max(0, Number(value.periodSeparatorsDefaultMigrationVersion) || 0),
     chartShiftDefaultMigrationVersion: Math.max(0, Number(value.chartShiftDefaultMigrationVersion) || 0),
     ohlcDefaultMigrationVersion: Math.max(0, Number(value.ohlcDefaultMigrationVersion) || 0),
+    ...(value.fineGridDefaultMigrationVersion !== undefined
+      ? { fineGridDefaultMigrationVersion: Math.max(0, Number(value.fineGridDefaultMigrationVersion) || 0) }
+      : {}),
   };
 };
 
@@ -533,6 +537,7 @@ export class LocalWorkspaceProfileService {
           periodSeparatorsDefaultMigrationVersion: chartSettings.periodSeparatorsDefaultMigrationVersion,
           chartShiftDefaultMigrationVersion: chartSettings.chartShiftDefaultMigrationVersion,
           ohlcDefaultMigrationVersion: chartSettings.ohlcDefaultMigrationVersion,
+          fineGridDefaultMigrationVersion: chartSettings.fineGridDefaultMigrationVersion,
         },
         marketWatch: {
           watchlists: cloneJson(watchlistState.watchlists),
@@ -624,6 +629,9 @@ export class LocalWorkspaceProfileService {
       periodSeparatorsDefaultMigrationVersion: normalized.state.chartSettings.periodSeparatorsDefaultMigrationVersion,
       chartShiftDefaultMigrationVersion: normalized.state.chartSettings.chartShiftDefaultMigrationVersion,
       ohlcDefaultMigrationVersion: normalized.state.chartSettings.ohlcDefaultMigrationVersion,
+      ...(normalized.state.chartSettings.fineGridDefaultMigrationVersion !== undefined
+        ? { fineGridDefaultMigrationVersion: normalized.state.chartSettings.fineGridDefaultMigrationVersion }
+        : {}),
     });
     useWatchlistStore.setState({
       watchlists: cloneJson(normalized.state.marketWatch.watchlists),
@@ -840,6 +848,7 @@ export const createBuiltinWorkspaceProfile = (
         periodSeparatorsDefaultMigrationVersion: chartSettings.periodSeparatorsDefaultMigrationVersion,
         chartShiftDefaultMigrationVersion: chartSettings.chartShiftDefaultMigrationVersion,
         ohlcDefaultMigrationVersion: chartSettings.ohlcDefaultMigrationVersion,
+        fineGridDefaultMigrationVersion: chartSettings.fineGridDefaultMigrationVersion,
       },
       marketWatch: {
         watchlists: cloneJson(watchlistState.watchlists),

@@ -97,7 +97,7 @@ export const ChartTemplateDialog: React.FC<ChartTemplateDialogProps> = ({
       chartType: currentConfig.chartType,
       timeframe: currentConfig.timeframe,
       showGrid: currentConfig.showGrid,
-      gridType: currentConfig.gridType ?? 'square',
+      gridType: currentConfig.gridType ?? 'mt5',
       gridLineStyle: currentConfig.gridLineStyle ?? 'dashed',
       showVolumes: currentConfig.showVolumes,
       indicators: currentConfig.indicators || [],

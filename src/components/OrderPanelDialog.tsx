@@ -633,8 +633,8 @@ function MiniTickChart({
       const gridCols = 7;
       ctx.strokeStyle = palette.grid;
       ctx.globalAlpha = 0.65;
-      ctx.lineWidth = 0.8;
-      if (typeof ctx.setLineDash === 'function') ctx.setLineDash([2, 2]);
+      ctx.lineWidth = 0.25;
+      if (typeof ctx.setLineDash === 'function') ctx.setLineDash([1, 2]);
       for (let r = 1; r < gridRows; r += 1) {
         const y = Math.round(top + (r / gridRows) * plotHeight) + 0.5;
         ctx.beginPath();

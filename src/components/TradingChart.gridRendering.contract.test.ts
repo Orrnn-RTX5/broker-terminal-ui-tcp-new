@@ -65,10 +65,13 @@ describe('TradingChart enterprise grid rendering contract', () => {
     expect(dialogSource).toContain('showGrid: showState.showGrid');
     expect(dialogSource).toContain('lineStyle: showState.gridLineStyle,');
     expect(dialogSource).toContain('getGridPreviewImage(previewGridColors, showState.gridLineStyle, previewGridCellSize, showState.gridType)');
-    expect(dialogSource).toContain('stroke-dasharray="8 4"');
-    expect(dialogSource).toContain('stroke-width="0.75"');
+    expect(dialogSource).toContain('CHART_GRID_STROKE_CSS_PX');
+    expect(dialogSource).toContain('CHART_GRID_DASH_PATTERN_CSS_PX');
+    expect(dialogSource).toContain('FINE_CHART_GRID_STROKE_CSS_PX');
+    expect(dialogSource).toContain('FINE_CHART_GRID_OPACITY');
+    expect(dialogSource).toContain('FINE_CHART_GRID_DASH_PATTERN_CSS_PX');
+    expect(dialogSource).toContain('stroke-width="${strokeWidth}"');
     expect(dialogSource).toContain('stroke-dasharray="2 2"');
-    expect(dialogSource).toContain('stroke-dasharray="3 3"');
     expect(dialogSource).toContain("showState.gridType === 'scale'");
     expect(dialogSource).toContain('{ width: 128, height: 48 }');
     expect(dialogSource).toContain('`${previewGridCellSize.width}px ${previewGridCellSize.height}px`');

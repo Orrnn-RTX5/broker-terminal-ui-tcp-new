@@ -496,6 +496,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                 upsertImmediatePosition(immediatePosition);
             }
             useLastSymbolStore.getState().setLastSymbol(symbol, side.toUpperCase() as 'BUY' | 'SELL');
+            import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
             scheduleIdlePositionsReconcile();
         } catch (err: unknown) {
             if (!ownsOrderSession()) return;

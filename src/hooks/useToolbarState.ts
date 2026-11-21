@@ -7,8 +7,12 @@ import { getActiveChartSource } from '../services/activeChartSource';
 import { useDrawingToolPreferencesStore } from '../store/useDrawingToolPreferencesStore';
 import { chartCursorShowsCrosshair, useChartCursorStore } from '../store/useChartCursorStore';
 
-export function useToolbarState() {
-  const [state, dispatchLocal] = useReducer(toolbarReducer, initialToolbarState);
+export function useToolbarState(initialTimeframe?: string) {
+  const [state, dispatchLocal] = useReducer(
+    toolbarReducer,
+    initialTimeframe,
+    (timeframe) => (timeframe ? { ...initialToolbarState, timeframe } : initialToolbarState),
+  );
   const { dispatch: dispatchCommand, subscribe } = useCommandBus();
   // Track which command types we just dispatched ourselves, so we don't re-apply them
   const selfDispatchedRef = useRef<Set<string>>(new Set());

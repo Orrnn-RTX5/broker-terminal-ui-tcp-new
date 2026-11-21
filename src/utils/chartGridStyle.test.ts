@@ -12,7 +12,7 @@ describe('getChartGridLineColors', () => {
     const options = { grid: '#2b2b2b', showGrid: true, gridType: 'mt5' as const, lineStyle: 'dashed' as const };
     expect(getChartGridLineColors({ ...options, background: '#000000' })).toEqual({ vertical: '#778899', horizontal: '#778899' });
     const light = getChartGridLineColors({ ...options, background: '#ffffff' });
-    expect(light).toEqual({ vertical: 'rgba(71, 85, 105, 0.45)', horizontal: 'rgba(71, 85, 105, 0.45)' });
+    expect(light).toEqual({ vertical: 'rgba(71, 85, 105, 0.6)', horizontal: 'rgba(71, 85, 105, 0.6)' });
     const custom = { ...options, background: '#000000', colorScheme: 'Custom' as const, grid: 'rgba(120, 30, 180, 0.2)' };
     expect(getChartGridLineColors(custom)).toEqual({ vertical: custom.grid, horizontal: custom.grid });
     expect(getChartGridLineColors({ ...custom, showGrid: false })).toEqual({ vertical: 'rgba(0, 0, 0, 0)', horizontal: 'rgba(0, 0, 0, 0)' });

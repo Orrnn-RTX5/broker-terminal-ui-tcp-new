@@ -906,6 +906,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 price_tp: tpVal > 0 ? tpVal : undefined,
                 comment: comment.trim() || undefined,
             }, { intentAtMs });
+            import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
             refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
             if (!isCurrentDialogSession(mutationContext)) return;
             setSuccessMessage(`${side === 'BUY' ? 'Buy' : 'Sell'} market order placed successfully`);
@@ -956,6 +957,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 return;
             }
             await api.positions.closePosition(String(position.id), isPartialClose ? { volume: actionVolume } : undefined);
+            import('../utils/audio').then((m) => m.playSystemSound('close-single')).catch(() => undefined);
             refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
             if (!isCurrentDialogSession(mutationContext)) return;
             if (!isPartialClose) {
@@ -1453,8 +1455,8 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
     if (typeof document === 'undefined') return null;
 
-    const dialogWidthClass = showMiniMarketDepth ? 'w-[980px]' : 'w-[880px]';
-    const chartPanelWidthClass = showMiniMarketDepth ? 'w-[520px]' : 'w-[450px]';
+    const dialogWidthClass = showMiniMarketDepth ? 'w-[800px]' : 'w-[700px]';
+    const chartPanelWidthClass = showMiniMarketDepth ? 'w-[400px]' : 'w-[310px]';
 
     return createPortal(
         <div className="rtx-modify-overlay sm:p-4">
@@ -1596,8 +1598,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
                         {/* Stop Loss with Points */}
                         <div className="rtx-modify-field-row">
-                            <label htmlFor={slFieldId} className="rtx-modify-label rtx-modify-label--sl text-[14px] font-normal">
-                                <span className="rtx-modify-label-dot--sl" aria-hidden="true" />
+                            <label htmlFor={slFieldId} className="rtx-modify-label rtx-modify-label--sl text-[13px] font-normal">
                                 {tr("Stop Loss:")}
                             </label>
                             <div className="rtx-modify-points-group">
@@ -1633,8 +1634,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
                         {/* Take Profit with Points */}
                         <div className="rtx-modify-field-row">
-                            <label htmlFor={tpFieldId} className="rtx-modify-label rtx-modify-label--tp text-[14px] font-normal">
-                                <span className="rtx-modify-label-dot--tp" aria-hidden="true" />
+                            <label htmlFor={tpFieldId} className="rtx-modify-label rtx-modify-label--tp text-[13px] font-normal">
                                 {tr("Take Profit:")}
                             </label>
                             <div className="rtx-modify-points-group">

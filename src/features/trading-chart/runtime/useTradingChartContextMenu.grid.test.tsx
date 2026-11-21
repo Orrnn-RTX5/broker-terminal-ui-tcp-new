@@ -11,7 +11,13 @@ import { useTradingChartContextMenuController } from './useTradingChartContextMe
 
 const initialState = useChartSettingsStore.getState();
 
-const renderController = (symbol = 'EURUSD') => {
+const renderController = (
+  symbol = 'EURUSD',
+  overrides?: {
+    loadHistory?: (symbol: string, timeframe: 'M1') => Promise<void>;
+    resetViewportOnRefresh?: () => void;
+  },
+) => {
   const noop = vi.fn();
   return renderHook(({ currentSymbol }) => useTradingChartContextMenuController({
     activeChartSourceId: 'grid-test',
@@ -20,11 +26,12 @@ const renderController = (symbol = 'EURUSD') => {
     applyChartTypeInPlace: () => true,
     chartSettingsRef: { current: useChartSettingsStore.getState().symbolProperties[currentSymbol] },
     clearLocalIndicators: noop,
-    loadHistory: async () => undefined,
+    loadHistory: overrides?.loadHistory ?? (async () => undefined),
     localIndicatorManager: {} as IndicatorManager,
     persistCurrentIndicators: noop,
     prevTimeframeRef: { current: 'M1' },
     refreshCurrentIndicators: noop,
+    resetViewportOnRefresh: overrides?.resetViewportOnRefresh,
     setCtxAutoScroll: noop,
     setCtxChartShift: noop,
     setCtxMenu: noop,
@@ -104,13 +111,26 @@ describe('chart context menu grid settings', () => {
 
   it('toggles and persists showBackgroundLogo for the target symbol only', () => {
     const { result } = renderController();
+    expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showBackgroundLogo).toBe(false);
+
+    act(() => result.current.handleCtxToggleBackgroundLogo());
     expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showBackgroundLogo).toBe(true);
+    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(false);
 
     act(() => result.current.handleCtxToggleBackgroundLogo());
     expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showBackgroundLogo).toBe(false);
-    expect(useChartSettingsStore.getState().symbolProperties.XAUUSD.showBackgroundLogo).toBe(true);
+  });
 
-    act(() => result.current.handleCtxToggleBackgroundLogo());
-    expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showBackgroundLogo).toBe(true);
+  it('resets the viewport to default candle size when Refresh is selected from the context menu', () => {
+    const callOrder: string[] = [];
+    const resetViewportOnRefresh = vi.fn(() => { callOrder.push('reset'); });
+    const loadHistory = vi.fn(async () => { callOrder.push('load'); });
+    const { result } = renderController('EURUSD', { loadHistory, resetViewportOnRefresh });
+
+    act(() => result.current.handleCtxRefresh());
+
+    expect(resetViewportOnRefresh).toHaveBeenCalledTimes(1);
+    expect(loadHistory).toHaveBeenCalledWith('EURUSD', 'M1');
+    expect(callOrder).toEqual(['reset', 'load']);
   });
 });

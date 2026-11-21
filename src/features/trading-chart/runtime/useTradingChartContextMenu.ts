@@ -129,6 +129,7 @@ interface UseTradingChartContextMenuControllerOptions {
   persistCurrentIndicators: () => void;
   prevTimeframeRef: MutableRefObject<Timeframe>;
   refreshCurrentIndicators: () => void;
+  resetViewportOnRefresh?: () => void;
   setBackgroundImageDialogOpen?: Dispatch<SetStateAction<boolean>>;
   setCtxAutoScroll: Dispatch<SetStateAction<boolean>>;
   setCtxChartShift: Dispatch<SetStateAction<boolean>>;
@@ -161,6 +162,7 @@ export function useTradingChartContextMenuController({
   persistCurrentIndicators,
   prevTimeframeRef,
   refreshCurrentIndicators,
+  resetViewportOnRefresh,
   setBackgroundImageDialogOpen,
   setCtxAutoScroll,
   setCtxChartShift,
@@ -359,7 +361,13 @@ export function useTradingChartContextMenuController({
 
     const settingsStore = useChartSettingsStore.getState();
     settingsStore.updateSymbolProperty(symbol, 'showGrid', template.showGrid);
-    settingsStore.updateSymbolProperty(symbol, 'gridType', template.gridType === 'scale' || template.gridType === 'mt5' ? template.gridType : 'square');
+    settingsStore.updateSymbolProperty(
+      symbol,
+      'gridType',
+      template.gridType === 'square' || template.gridType === 'scale' || template.gridType === 'mt5'
+        ? template.gridType
+        : 'mt5',
+    );
     const gridLineStyle = template.gridLineStyle === 'solid' ? 'solid' : 'dashed';
     settingsStore.updateSymbolProperty(symbol, 'gridLineStyle', gridLineStyle);
     settingsStore.updateSymbolProperty(symbol, 'showTickVolumes', template.showVolumes);
@@ -403,8 +411,9 @@ export function useTradingChartContextMenuController({
   }, [symbol]);
 
   const handleCtxRefresh = useCallback(() => {
+    resetViewportOnRefresh?.();
     void loadHistory(symbol, prevTimeframeRef.current || timeframe);
-  }, [loadHistory, prevTimeframeRef, symbol, timeframe]);
+  }, [loadHistory, prevTimeframeRef, resetViewportOnRefresh, symbol, timeframe]);
 
   const handleCtxSaveAsPicture = useCallback(() => {
     captureFullPage();

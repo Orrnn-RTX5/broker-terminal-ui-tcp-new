@@ -50,6 +50,8 @@ type BrokerLogoInfo = {
 
 type BrokerLogoTarget = { serverName: string; brokerId: string; serverUrl: string };
 type StoredBrokerLogo = BrokerLogoTarget & { logoUrl: string; brokerName: string };
+type BrokerMenuTarget = BrokerLogoTarget & { displayLabel: string };
+type BrokerActionMenuState = BrokerMenuTarget & { position: { x: number; y: number }; scopeKey: string };
 
 const brokerLogoKey = (target: BrokerLogoTarget) => JSON.stringify(target);
 
@@ -278,10 +280,15 @@ export const NavigatorPanel: React.FC = () => {
     const [loginDialogOpen, setLoginDialogOpen] = useState(false);
     const [openAccountDialogOpen, setOpenAccountDialogOpen] = useState(false);
     const [selectedAccountForLogin, setSelectedAccountForLogin] = useState<SavedAccount | null>(null);
+    const [addAccountTarget, setAddAccountTarget] = useState<BrokerMenuTarget | null>(null);
+    const [brokerActionMenu, setBrokerActionMenu] = useState<BrokerActionMenuState | null>(null);
     const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
     const [selectedAccountForPassword, setSelectedAccountForPassword] = useState<SavedAccount | null>(null);
     const [switchingLogin, setSwitchingLogin] = useState<number | null>(null);
     const [brokerLogoState, setBrokerLogoState] = useState<{ scope: string; logos: Record<string, BrokerLogoInfo> }>({ scope: '', logos: {} });
+
+    const menuScopeKey = `${sessionScope}:${isAuthenticated}:${accountId}`;
+    const activeBrokerActionMenu = brokerActionMenu?.scopeKey === menuScopeKey ? brokerActionMenu : null;
 
     useEffect(() => {
         localStorage.removeItem('rtx_saved_password');
@@ -337,18 +344,25 @@ export const NavigatorPanel: React.FC = () => {
         const groups = new Map<string, {
             serverName: string;
             displayLabel: string;
+            brokerId: string;
+            serverUrl: string;
             logoInfo: BrokerLogoInfo;
             accounts: SavedAccount[];
         }>();
         for (const acc of visibleAccounts) {
+            const target = getLogoTarget(acc.server, acc);
             const info = logoFor(acc.server, acc);
-            const displayLabel = info.brokerName || brokerDisplayName(acc.server);
-            const groupKey = (displayLabel || acc.server).trim().toLowerCase();
+            const displayLabel = info.brokerName || brokerDisplayName(acc.server, target.brokerId);
+            const groupKey = target.brokerId
+                ? `broker:${target.brokerId.toLowerCase()}|${normalizeSavedAccountServer(target.serverUrl).toLowerCase()}`
+                : (displayLabel || acc.server).trim().toLowerCase();
             const existing = groups.get(groupKey);
             if (!existing) {
                 groups.set(groupKey, {
                     serverName: acc.server,
                     displayLabel,
+                    brokerId: target.brokerId,
+                    serverUrl: target.serverUrl,
                     logoInfo: info,
                     accounts: [acc],
                 });
@@ -363,9 +377,11 @@ export const NavigatorPanel: React.FC = () => {
                         name: acc.name || existing.accounts[existingLoginIdx].name,
                     };
                 }
-                if (isAccountActive(acc)) {
+                if (isAccountActive(acc) || (existing.displayLabel === 'Broker' && displayLabel !== 'Broker')) {
                     existing.serverName = acc.server;
                     existing.displayLabel = displayLabel;
+                    existing.brokerId = target.brokerId || existing.brokerId;
+                    existing.serverUrl = target.serverUrl || existing.serverUrl;
                     existing.logoInfo = info;
                 }
             }
@@ -449,6 +465,8 @@ export const NavigatorPanel: React.FC = () => {
     const hideAccountCreationScreens = Boolean(isAuthenticated && hasDemoAndRealAccounts);
 
     const handleLoginToAccount = (acc?: SavedAccount) => {
+        setBrokerActionMenu(null);
+        setAddAccountTarget(null);
         if (acc) {
             setSelectedAccountForLogin(acc);
             setLoginDialogOpen(true);
@@ -458,6 +476,31 @@ export const NavigatorPanel: React.FC = () => {
             setSelectedAccountForLogin(null);
             setLoginDialogOpen(true);
         }
+    };
+
+    const openBrokerActionMenu = (
+        event: React.MouseEvent<HTMLDivElement>,
+        target: BrokerMenuTarget,
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const hasPointerCoords = event.clientX > 0 || event.clientY > 0;
+        setBrokerActionMenu({
+            ...target,
+            scopeKey: menuScopeKey,
+            position: {
+                x: hasPointerCoords ? event.clientX : Math.round(rect.left + 16),
+                y: hasPointerCoords ? event.clientY : Math.round(rect.bottom + 2),
+            },
+        });
+    };
+
+    const handleAddAnotherAccount = (target: BrokerMenuTarget) => {
+        setBrokerActionMenu(null);
+        setSelectedAccountForLogin(null);
+        setAddAccountTarget(target);
+        setLoginDialogOpen(true);
     };
 
     // Switch account: seamlessly switch via cached session token or saved password when authenticated,
@@ -727,14 +770,33 @@ export const NavigatorPanel: React.FC = () => {
         },
     ];
 
+    const getBrokerActionMenuItems = (target: BrokerMenuTarget): ContextMenuItemConfig[] => [
+        {
+            label: 'Add another account',
+            icon: <Icon name="user-plus" size="xs" />,
+            action: () => handleAddAnotherAccount(target),
+        },
+    ];
+
+    const placeholderLogoTarget = getLogoTarget(placeholderServer);
+    const placeholderLogoInfo = logoFor(placeholderServer);
+    const placeholderDisplayLabel = placeholderLogoInfo.brokerName || brokerDisplayName(placeholderServer);
+    const placeholderBrokerTarget: BrokerMenuTarget = {
+        serverName: placeholderServer,
+        displayLabel: placeholderDisplayLabel,
+        brokerId: placeholderLogoTarget.brokerId,
+        serverUrl: placeholderLogoTarget.serverUrl,
+    };
+
     return (
         <div className="navigator-panel flex flex-col h-full bg-[#131316] text-zinc-100 select-none border-r border-zinc-700">
             <div className="navigator-panel__body flex-1 overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-zinc-700">
                 {/* Accounts */}
                 <ContextMenu key={`${sessionScope}:${isAuthenticated}:${accountId}`} items={getGeneralAccountContextMenuItems()} variant="theme">
                     <TreeItem label={tr("Accounts")} icon={<Icon name="user" size="sm" />} defaultOpen>
-                        {serverGroups.map(({ serverName, displayLabel, logoInfo, accounts: accountsInServer }, sIdx) => {
+                        {serverGroups.map(({ serverName, displayLabel, brokerId, serverUrl, logoInfo, accounts: accountsInServer }, sIdx) => {
                             const isLastServer = sIdx === serverGroups.length - 1 && visibleAccounts.length > 0;
+                            const brokerTarget: BrokerMenuTarget = { serverName, displayLabel, brokerId, serverUrl };
                             return (
                                 <TreeItem
                                     key={displayLabel.toLowerCase() || serverName}
@@ -742,11 +804,15 @@ export const NavigatorPanel: React.FC = () => {
                                     icon={<BrokerServerIcon serverName={serverName} logoInfo={logoInfo} />}
                                     defaultOpen
                                     isLast={isLastServer && visibleAccounts.length > 0}
+                                    tooltip={tr("Double-click to add another account")}
+                                    onItemDoubleClick={(event) => openBrokerActionMenu(event, brokerTarget)}
+                                    onContextMenu={(event) => openBrokerActionMenu(event, brokerTarget)}
                                 >
                                     {accountsInServer.map((acc, aIdx) => {
                                         const isActive = isAccountActive(acc);
                                         const isLastAccount = aIdx === accountsInServer.length - 1;
                                         const isSwitching = switchingLogin === acc.login;
+                                        const accountType = resolveDisplayAccountType(acc);
                                         // Only show name if it's different from login number
                                         const displayName = acc.name && acc.name !== acc.login.toString()
                                             ? `${acc.login}: ${acc.name}`
@@ -755,10 +821,11 @@ export const NavigatorPanel: React.FC = () => {
                                             <ContextMenu key={accountKey(acc)} items={getAccountContextMenuItems(acc)} variant="theme">
                                                 <TreeItem
                                                     label={isSwitching ? tr("{{value0}} (switching...)", { value0: displayName }) : tr(displayName)}
-                                                    icon={<AccountIcon isActive={isActive} accountType={resolveDisplayAccountType(acc)} />}
+                                                    icon={<AccountIcon isActive={isActive} accountType={accountType} />}
                                                     isLast={isLastAccount}
                                                     isFavorite={acc.isFavorite}
                                                     accountActive={isActive}
+                                                    accountType={accountType}
                                                     onItemDoubleClick={() => {
                                                         void handleSwitchAccount(acc);
                                                     }}
@@ -773,16 +840,19 @@ export const NavigatorPanel: React.FC = () => {
                         {/* Add Account Placeholder if empty */}
                         {visibleAccounts.length === 0 && (
                             <TreeItem
-                                label={logoFor(placeholderServer).brokerName || brokerDisplayName(placeholderServer)}
+                                label={placeholderDisplayLabel}
                                 icon={
                                     <BrokerServerIcon
                                         serverName={placeholderServer}
-                                        logoInfo={logoFor(placeholderServer)}
+                                        logoInfo={placeholderLogoInfo}
                                         muted
                                     />
                                 }
                                 defaultOpen
                                 isLast
+                                tooltip={tr("Double-click to add another account")}
+                                onItemDoubleClick={(event) => openBrokerActionMenu(event, placeholderBrokerTarget)}
+                                onContextMenu={(event) => openBrokerActionMenu(event, placeholderBrokerTarget)}
                             >
                                 <TreeItem
                                     label={tr("Click to login...")}
@@ -877,6 +947,15 @@ export const NavigatorPanel: React.FC = () => {
                 </TreeItem>
             </div>
 
+            {activeBrokerActionMenu && (
+                <ContextMenu
+                    position={activeBrokerActionMenu.position}
+                    onClose={() => setBrokerActionMenu(null)}
+                    items={getBrokerActionMenuItems(activeBrokerActionMenu)}
+                    variant="theme"
+                />
+            )}
+
             <RetainedLazyFeature active={openAccountDialogOpen}>
                 <OpenAccountDialog
                     isOpen={openAccountDialogOpen}
@@ -887,9 +966,19 @@ export const NavigatorPanel: React.FC = () => {
             <RetainedLazyFeature active={loginDialogOpen}>
             <LoginDialog
                 isOpen={loginDialogOpen}
-                onClose={() => setLoginDialogOpen(false)}
-                initialLogin={selectedAccountForLogin?.login.toString()}
-                initialServer={selectedAccountForLogin?.brokerId || selectedAccountForLogin?.server}
+                onClose={() => {
+                    setLoginDialogOpen(false);
+                    setAddAccountTarget(null);
+                }}
+                reason={addAccountTarget ? 'add-account' : undefined}
+                initialLogin={addAccountTarget ? '' : selectedAccountForLogin?.login.toString()}
+                initialServer={
+                    addAccountTarget
+                        ? (addAccountTarget.brokerId || addAccountTarget.serverName)
+                        : (selectedAccountForLogin?.brokerId || selectedAccountForLogin?.server)
+                }
+                lockedBrokerId={addAccountTarget && isDesktopBackendTarget() && addAccountTarget.brokerId ? addAccountTarget.brokerId : undefined}
+                lockedBrokerDisplayName={addAccountTarget && isDesktopBackendTarget() && addAccountTarget.brokerId ? addAccountTarget.displayLabel : undefined}
             />
             </RetainedLazyFeature>
 
@@ -962,6 +1051,8 @@ function TreeItem({
     onContextMenu,
     isFavorite = false,
     accountActive,
+    accountType,
+    tooltip,
     disabled = false,
 }: {
     label: string;
@@ -970,10 +1061,12 @@ function TreeItem({
     defaultOpen?: boolean;
     isLast?: boolean;
     onItemClick?: () => void;
-    onItemDoubleClick?: () => void;
+    onItemDoubleClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
     onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
     isFavorite?: boolean;
     accountActive?: boolean;
+    accountType?: TradingAccountType;
+    tooltip?: string;
     disabled?: boolean;
 }) {
     const tr = useUiTranslation();
@@ -981,6 +1074,13 @@ function TreeItem({
     const hasChildren = React.Children.count(children) > 0;
     const isExpandable = hasChildren && !disabled;
     const isInactiveAccount = accountActive === false;
+    const accountTypeBadgeLabel = accountType === 'demo'
+        ? tr('Demo')
+        : accountType === 'real'
+            ? tr('Live')
+            : accountType === 'contest'
+                ? tr('Contest')
+                : null;
 
     return (
         <div className="navigator-tree-item relative" style={{ paddingLeft: 12 }}>
@@ -1026,7 +1126,7 @@ function TreeItem({
                 aria-disabled={disabled || undefined}
                 onContextMenu={disabled ? undefined : onContextMenu}
                 aria-label={disabled ? tr("{{value0}}, currently unavailable", { value0: label }) : undefined}
-                title={disabled ? tr("{{value0}} is currently unavailable", { value0: label }) : undefined}
+                title={disabled ? tr("{{value0}} is currently unavailable", { value0: label }) : tooltip}
                 onClick={disabled ? undefined : () => {
                     if (hasChildren) {
                         setIsOpen(!isOpen);
@@ -1034,11 +1134,14 @@ function TreeItem({
                         onItemClick();
                     }
                 }}
-                onDoubleClick={disabled ? undefined : () => {
-                    if (hasChildren) {
+                onDoubleClick={disabled ? undefined : (event) => {
+                    if (onItemDoubleClick) {
+                        if (hasChildren) {
+                            setIsOpen(true);
+                        }
+                        onItemDoubleClick(event);
+                    } else if (hasChildren) {
                         setIsOpen(!isOpen);
-                    } else if (onItemDoubleClick) {
-                        onItemDoubleClick();
                     } else if (onItemClick) {
                         onItemClick();
                     }
@@ -1052,7 +1155,7 @@ function TreeItem({
                 {!isExpandable && <span className="w-3 flex-shrink-0" />}
                 <span className={`navigator-tree-item__icon flex-shrink-0 ${disabled ? 'text-zinc-600' : isInactiveAccount ? 'text-zinc-500 group-hover:text-zinc-400' : 'text-zinc-300 group-hover:text-zinc-100'}`}>{icon}</span>
                 <span
-                    className={`navigator-tree-item__label truncate text-[14px] font-normal ${disabled
+                    className={`navigator-tree-item__label min-w-0 truncate text-[14px] font-normal ${disabled
                         ? 'text-zinc-500'
                         : isInactiveAccount
                             ? 'navigator-tree-item__label--inactive text-zinc-500 group-hover:text-zinc-400'
@@ -1062,9 +1165,22 @@ function TreeItem({
                 >
                     {label}
                 </span>
-                {isFavorite && (
-                    <span className="ml-auto mr-1 flex-shrink-0" title={tr('Favorite account')} aria-label={tr('Favorite account')}>
-                        <Icon name="star" size="xs" className="text-amber-400" />
+                {(accountTypeBadgeLabel || isFavorite) && (
+                    <span className="ml-auto mr-1 flex items-center gap-1 flex-shrink-0">
+                        {accountTypeBadgeLabel && (
+                            <span
+                                className="navigator-account-type-badge"
+                                data-account-type={accountType}
+                                data-active={accountActive === undefined ? undefined : String(accountActive)}
+                            >
+                                {accountTypeBadgeLabel}
+                            </span>
+                        )}
+                        {isFavorite && (
+                            <span title={tr('Favorite account')} aria-label={tr('Favorite account')}>
+                                <Icon name="star" size="xs" className="text-amber-400" />
+                            </span>
+                        )}
                     </span>
                 )}
                 {disabled && (

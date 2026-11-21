@@ -58,3 +58,23 @@ it('clears the restored password and loads only the new broker scope', async () 
   expect(result.current.savePassword).toBe(false);
   expect(loadSavedLogin).toHaveBeenLastCalledWith({ ...scope, serverUrl: 'https://other.test' }, '12345');
 });
+
+it('keeps an empty login blank when restoreEmptyLogin is false and clears restoring when a password is typed', async () => {
+  const response = pending();
+  vi.mocked(loadSavedLogin).mockReturnValue(response.promise);
+  const { result } = renderHook(() => useSavedLogin(true, '', scope, { restoreEmptyLogin: false }));
+  expect(loadSavedLogin).not.toHaveBeenCalled();
+  expect(result.current.login).toBe('');
+  expect(result.current.password).toBe('');
+  expect(result.current.restoring).toBe(false);
+
+  act(() => result.current.setLogin('200002'));
+  expect(loadSavedLogin).toHaveBeenCalledWith(scope, '200002');
+  expect(result.current.restoring).toBe(true);
+
+  act(() => result.current.setPassword('TypedPass123'));
+  expect(result.current.restoring).toBe(false);
+  expect(result.current.password).toBe('TypedPass123');
+
+  await act(async () => response.resolve(null));
+});

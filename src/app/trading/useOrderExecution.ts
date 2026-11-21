@@ -11,6 +11,7 @@ import { captureTradeOrderIntent } from '../../services/orderLatencyTelemetry';
 import { requireTradingAuth } from '../../services/tradingAuthGate';
 import { getPositionsAuthoritativeSeq, useAppStore, type Position } from '../../store/useAppStore';
 import { formatOrderError } from '../../utils/orderError';
+import { playSystemSound } from '../../utils/audio';
 import {
   createUnavailableMarketStatus,
   getMarketStatusTradeBlockMessage,
@@ -291,6 +292,7 @@ export const useOrderExecution = ({
         },
       );
       if (!resultCommitted) return;
+      playSystemSound('open');
       scheduleRefreshPositions(loginId);
       refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {
@@ -378,6 +380,7 @@ export const useOrderExecution = ({
         ...(request.priceTp ? { price_tp: request.priceTp } : {}),
       }, { intentAtMs });
       if (!isTradeOperationContextCurrent(operationContext)) return;
+      playSystemSound('open');
       publishOrderFeedback([
         feedbackLabel(side === 'buy' ? (pendingKind === 'stop' ? 'Buy Stop' : 'Buy Limit') : (pendingKind === 'stop' ? 'Sell Stop' : 'Sell Limit')),
         feedbackValue(` · ${submitSymbol} · `),
@@ -505,6 +508,7 @@ export const useOrderExecution = ({
           ...(order.comment ? { comment: order.comment } : {}),
         }, { intentAtMs });
         if (!isTradeOperationContextCurrent(operationContext)) return;
+        playSystemSound('open');
         const labelText = pendingKind === 'stop_limit'
           ? (side === 'BUY' ? 'Buy Stop Limit' : 'Sell Stop Limit')
           : pendingKind === 'stop'
@@ -556,6 +560,7 @@ export const useOrderExecution = ({
         },
       );
       if (!resultCommitted) return;
+      playSystemSound('open');
       scheduleRefreshPositions(loginId);
       refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {

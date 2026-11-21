@@ -2,7 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { forgetSavedLogin, loadSavedLogin, saveLogin, savedLoginScopeKey, supportsSavedLogins, type SavedLoginScope } from '../services/savedLogins';
 import { getCachedAccountSession } from '../services/accountSessionCache';
 
-export function useSavedLogin(open: boolean, initialLogin: string, scope: SavedLoginScope | null) {
+export interface UseSavedLoginOptions {
+  /** When false, an empty login stays blank instead of restoring the last-used saved account. */
+  restoreEmptyLogin?: boolean;
+}
+
+export function useSavedLogin(
+  open: boolean,
+  initialLogin: string,
+  scope: SavedLoginScope | null,
+  options: UseSavedLoginOptions = {},
+) {
+  const restoreEmptyLogin = options.restoreEmptyLogin !== false;
   const [login, updateLogin] = useState(initialLogin);
   const [password, updatePassword] = useState('');
   const [savePassword, updateSavePassword] = useState(false);
@@ -21,7 +32,7 @@ export function useSavedLogin(open: boolean, initialLogin: string, scope: SavedL
     updateSavePassword(false);
     setStorageError(null);
     restored.current = false;
-  }, [open, initialLogin]);
+  }, [open, initialLogin, restoreEmptyLogin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +43,7 @@ export function useSavedLogin(open: boolean, initialLogin: string, scope: SavedL
       restored.current = false;
     }
     previousScope.current = scopeKey;
-    if (!open || !scopeKey || !available) { setRestoring(false); return; }
+    if (!open || !scopeKey || !available || (!restoreEmptyLogin && !login.trim())) { setRestoring(false); return; }
     const version = edits.current;
     setRestoring(true);
     const [brokerId, serverUrl] = JSON.parse(scopeKey) as [string, string];
@@ -57,7 +68,7 @@ export function useSavedLogin(open: boolean, initialLogin: string, scope: SavedL
       if (!cancelled && edits.current === version) setStorageError('Unable to restore the saved password. Enter it again.');
     }).finally(() => { if (!cancelled) setRestoring(false); });
     return () => { cancelled = true; };
-  }, [open, scopeKey, login, available]);
+  }, [open, scopeKey, login, available, restoreEmptyLogin]);
 
   const setLogin = useCallback((value: string) => {
     edits.current += 1;
@@ -70,6 +81,7 @@ export function useSavedLogin(open: boolean, initialLogin: string, scope: SavedL
   const setPassword = useCallback((value: string) => {
     edits.current += 1;
     restored.current = false;
+    setRestoring(false);
     updatePassword(value);
     setStorageError(null);
   }, []);

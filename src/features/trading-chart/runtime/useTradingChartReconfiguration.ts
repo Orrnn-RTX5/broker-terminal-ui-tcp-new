@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import {
-  HistogramSeries,
   type Coordinate,
   type IChartApi,
   type IPriceLine,
@@ -20,6 +19,9 @@ import {
 import { createRenderedPriceReference, type RenderedPriceReference } from '../../../services/chartPriceGuards';
 import { drawingManager } from '../../../services/drawingManager';
 import { buildChartSeriesPriceFormat } from '../../../utils/chartPriceScale';
+import { createChartVolumeSeries } from '../../../utils/chartVolumeSeries';
+import type { ChartProperties } from '../../../store/useChartSettingsStore';
+import { shouldBuildVolumeData } from './chartRuntime';
 import type { ChartInteractionOwnership } from '../../../utils/chartInteractionOwnership';
 import type { ChartPostInteractionCoordinator } from '../../../utils/chartPostInteractionCoordinator';
 import type { LogicalRangeLike } from '../../../utils/candleHistory';
@@ -62,6 +64,7 @@ interface UseTradingChartReconfigurationOptions {
   candlesRef: RefObject<Candle[]>;
   chartInteractionOwnershipRef: RefObject<ChartInteractionOwnership | null>;
   chartRef: RefObject<IChartApi | null>;
+  chartSettingsRef?: RefObject<ChartProperties>;
   chartThemeRef: RefObject<TradingViewChartTheme>;
   chartType: ChartType;
   clearLocalChartPointerStateRef: RefObject<() => void>;
@@ -117,7 +120,7 @@ export const useTradingChartReconfiguration = (options: UseTradingChartReconfigu
   const {
     activeChartSourceId, activeToolRef, applyChartTypeInPlace, askPriceLineRef,
     bindDrawingManagerToChart, brokerTimeOffsetSecRef, cancelQueuedChartRender, candlesRef,
-    chartInteractionOwnershipRef, chartRef, chartThemeRef, chartType,
+    chartInteractionOwnershipRef, chartRef, chartSettingsRef, chartThemeRef, chartType,
     clearLocalChartPointerStateRef, clearPeriodSeparators, containerRef, createPriceSeries,
     currentCandleRef, drawingCommandTargetRef, drawingRuntimeContextRef,
     firstRenderedCandleTimeRef, getDrawingSeriesData, hasDisplayedHistoryRef,
@@ -293,25 +296,22 @@ export const useTradingChartReconfiguration = (options: UseTradingChartReconfigu
       volumeRef.current = null;
     }
 
-    // Create new series
+    // Create volume series before price series so thin vertical volume lines
+    // render cleanly behind candlesticks and wicks.
     const chart = chartRef.current;
+    const theme = chartThemeRef.current;
+    const volSeries = createChartVolumeSeries(chart, {
+      color: theme.volumeUp,
+      visible: chartSettingsRef ? shouldBuildVolumeData(chartSettingsRef.current) : true,
+    });
+    volumeRef.current = volSeries;
+
+    // Create new price series
     console.log(`[TradingChart] Creating series for chartType=${chartType}, symbol=${symbol}, digits=${resolvedPriceDigits}`);
     const series = createPriceSeries(chart, chartType);
-    const theme = chartThemeRef.current;
 
     seriesRef.current = series;
     console.log(`[TradingChart] Series created and stored in ref`);
-
-    // Create volume series
-    const volSeries = chart.addSeries(HistogramSeries, {
-      color: theme.volumeUp,
-      priceScaleId: '',
-      priceFormat: { type: 'volume' },
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    volSeries.priceScale().applyOptions({ scaleMargins: { top: 0.68, bottom: 0 } });
-    volumeRef.current = volSeries;
 
     // (price line removed — live DOM badge replaces it)
 

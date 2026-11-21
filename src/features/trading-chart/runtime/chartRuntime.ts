@@ -8,9 +8,9 @@ import {
 } from '../../../utils/candleHistory';
 import type { Candle, Timeframe } from '../../../types/chart';
 
-export const TARGET_BAR_PX = 25;
+export const TARGET_BAR_PX = 7;
 export const MIN_ADAPTIVE_BARS = 30;
-export const MAX_ADAPTIVE_BARS = 200;
+export const MAX_ADAPTIVE_BARS = 500;
 export const INITIAL_HISTORY_COUNT = 500;
 export const HISTORY_RENDER_IDLE_TIMEOUT_MS = 700;
 export const HISTORY_BACKFILL_IDLE_YIELD_TIMEOUT_MS = 120;

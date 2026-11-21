@@ -763,6 +763,7 @@ ${rows}
         try {
             // account_login rides in the body (gateway requires it in-body).
             await closePositionsBy(position, counterpart, { account_login: accountId ?? undefined });
+            import('../../../utils/audio').then((m) => m.playSystemSound('close-single')).catch(() => undefined);
             // Authoritative refresh through the trade-refresh controller
             // (it maps rows to the store shape; no direct setPositions cast).
             window.dispatchEvent(new Event('rtx:force-refresh-positions'));

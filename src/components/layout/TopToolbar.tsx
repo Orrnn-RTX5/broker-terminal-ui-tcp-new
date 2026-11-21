@@ -132,7 +132,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     webMenuSlot,
     expectWebMenuInRail = false,
 }) => {
-    const { state: toolbarState, dispatch: dispatchToolbar, syncState: syncToolbarState } = useToolbarState();
+    const { state: toolbarState, dispatch: dispatchToolbar, syncState: syncToolbarState } = useToolbarState(timeframe);
     const { dispatch: dispatchCommand } = useCommandBus();
     const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const dockLayout = useDockLayoutStore(state => state.layout);

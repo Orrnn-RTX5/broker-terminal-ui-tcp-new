@@ -42,6 +42,19 @@ func ApplyDarkTitlebarAndIcon(hwnd uintptr) {
 	_, _, _ = procDwmSetWindowAttribute.Call(hwnd, 20, uintptr(unsafe.Pointer(&darkMode)), unsafe.Sizeof(darkMode))
 	_, _, _ = procDwmSetWindowAttribute.Call(hwnd, 19, uintptr(unsafe.Pointer(&darkMode)), unsafe.Sizeof(darkMode))
 
+	// Paint a matching dark (#0a0c10) Win32 window background brush so WebView2
+	// never flashes a white frame before the logo splash paints on Windows.
+	gdi32 := syscall.NewLazyDLL("gdi32.dll")
+	procCreateSolidBrush := gdi32.NewProc("CreateSolidBrush")
+	if darkBrush, _, _ := procCreateSolidBrush.Call(uintptr(0x00100c0a)); darkBrush != 0 {
+		user32Bg := syscall.NewLazyDLL("user32.dll")
+		procSetClassBg := user32Bg.NewProc("SetClassLongPtrW")
+		procInvalidateRect := user32Bg.NewProc("InvalidateRect")
+		gclpHbrBackground := ^uintptr(9) // -10 in two's complement uintptr
+		_, _, _ = procSetClassBg.Call(hwnd, gclpHbrBackground, darkBrush)
+		_, _, _ = procInvalidateRect.Call(hwnd, 0, 1)
+	}
+
 	// 2. Load Icon ID 1 from embedded PE .rsrc (RT_GROUP_ICON ID 1) via LoadImageW
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	user32 := syscall.NewLazyDLL("user32.dll")

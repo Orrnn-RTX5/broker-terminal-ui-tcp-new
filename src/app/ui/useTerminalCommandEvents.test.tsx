@@ -59,17 +59,18 @@ describe('useTerminalCommandEvents', () => {
     }).not.toThrow();
   });
 
-  it('persists the active symbol in localStorage on chart symbol change events so hard refresh and reopen restore it', () => {
+  it('persists the active symbol and timeframe in localStorage on chart events so hard refresh and reopen restore them for all symbols', () => {
     localStorage.clear();
     const setSelectedSymbol = vi.fn();
-    const symbols = ['BTCUSD', 'XAUUSD', 'EURUSD'];
+    const setTimeframe = vi.fn();
+    const symbols = ['BTCUSD', 'XAUUSD', 'EURUSD', 'ETHUSD'];
 
     const useHarness = () => {
       useTerminalCommandEvents({
         selectedSymbol: 'BTCUSD',
         setSelectedSymbol,
         timeframe: 'M1' as Timeframe,
-        setTimeframe: setter<Timeframe>(),
+        setTimeframe,
         chartType: 'candlestick' as ChartType,
         setChartType: setter<ChartType>(),
         chartEligibleSymbolNames: symbols,
@@ -106,6 +107,17 @@ describe('useTerminalCommandEvents', () => {
 
     expect(setSelectedSymbol).toHaveBeenCalledWith('XAUUSD');
     expect(localStorage.getItem('rtx5_selected_symbol')).toBe('XAUUSD');
+    expect(setTimeframe).toHaveBeenCalledWith('M15');
+    expect(localStorage.getItem('rtx5_timeframe')).toBe('M15');
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('change-timeframe', {
+        detail: { timeframe: 'H4' },
+      }));
+    });
+
+    expect(setTimeframe).toHaveBeenLastCalledWith('H4');
+    expect(localStorage.getItem('rtx5_timeframe')).toBe('H4');
 
     act(() => {
       window.dispatchEvent(new CustomEvent('openChart', {

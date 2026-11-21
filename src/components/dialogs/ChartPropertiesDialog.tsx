@@ -11,7 +11,15 @@ import {
   type ColorScheme,
 } from '../../store/useChartSettingsStore';
 import { getChartGridLineColors } from '../../utils/chartGridStyle';
-import { FINE_CHART_GRID_CELL_SIZE_PX, SQUARE_CHART_GRID_CELL_SIZE_PX } from '../../utils/squareChartGridPrimitive';
+import {
+  CHART_GRID_DASH_PATTERN_CSS_PX,
+  CHART_GRID_STROKE_CSS_PX,
+  FINE_CHART_GRID_CELL_SIZE_PX,
+  FINE_CHART_GRID_DASH_PATTERN_CSS_PX,
+  FINE_CHART_GRID_OPACITY,
+  FINE_CHART_GRID_STROKE_CSS_PX,
+  SQUARE_CHART_GRID_CELL_SIZE_PX,
+} from '../../utils/squareChartGridPrimitive';
 import type { ChartType } from '../../types/chart';
 import { commandBus } from '../../services/commandBus';
 import { isShortcutOwnedBy, shouldIgnoreShortcutEvent } from '../../services/keyboardShortcutManager';
@@ -100,13 +108,22 @@ const getGridPreviewImage = (
     .replace(/>/g, '&gt;');
   const dashed = lineStyle !== 'solid';
   const lineOffset = 0.5;
-  const dashedStroke = gridType === 'scale'
-    ? ' stroke-width="1" stroke-dasharray="2 2"'
+  const strokeWidth = gridType === 'scale'
+    ? '1'
     : gridType === 'mt5'
-      ? ' stroke-width="1" stroke-dasharray="3 3"'
-      : ' stroke-width="0.75" stroke-dasharray="8 4"';
-  const dash = dashed ? dashedStroke : '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cellSize.width}" height="${cellSize.height}" fill="none"><path d="M${lineOffset} 0V${cellSize.height}" stroke="${escapeAttribute(colors.vertical)}"${dash}/><path d="M0 ${lineOffset}H${cellSize.width}" stroke="${escapeAttribute(colors.horizontal)}"${dash}/></svg>`;
+      ? String(FINE_CHART_GRID_STROKE_CSS_PX)
+      : String(CHART_GRID_STROKE_CSS_PX);
+  const dashPattern = gridType === 'mt5'
+    ? FINE_CHART_GRID_DASH_PATTERN_CSS_PX
+    : CHART_GRID_DASH_PATTERN_CSS_PX;
+  const dashArray = !dashed
+    ? ''
+    : gridType === 'scale'
+      ? ' stroke-dasharray="2 2"'
+      : ` stroke-dasharray="${dashPattern[0]} ${dashPattern[1]}"`;
+  const strokeOpacity = gridType === 'mt5' ? ` stroke-opacity="${FINE_CHART_GRID_OPACITY}"` : '';
+  const strokeAttrs = ` stroke-width="${strokeWidth}"${strokeOpacity}${dashArray}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cellSize.width}" height="${cellSize.height}" fill="none"><path d="M${lineOffset} 0V${cellSize.height}" stroke="${escapeAttribute(colors.vertical)}"${strokeAttrs}/><path d="M0 ${lineOffset}H${cellSize.width}" stroke="${escapeAttribute(colors.horizontal)}"${strokeAttrs}/></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 };
 

@@ -35,7 +35,7 @@ interface SnapshotState {
 }
 
 function readSnapshot(props: ChartProperties): SnapshotState {
-  const showLogo = props.showBackgroundLogo !== false;
+  const showLogo = props.showBackgroundLogo === true && props.backgroundLogoMode !== 'none';
   const mode: ChartBackgroundLogoMode = !showLogo
     ? 'none'
     : props.backgroundLogoMode && props.backgroundLogoMode !== 'none'
@@ -65,23 +65,49 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
   const tr = useUiTranslation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialSnapshotRef = useRef<SnapshotState | null>(null);
+  const hasEditedRef = useRef<boolean>(false);
   const { dragStyle, dragHandleProps, setSheetElement } = useDraggableSheet({ isOpen });
 
-  const [mode, setMode] = useState<ChartBackgroundLogoMode>('default');
-  const [opacity, setOpacity] = useState<number>(18);
+  const [mode, setMode] = useState<ChartBackgroundLogoMode>('none');
+  const [opacity, setOpacity] = useState<number>(36);
   const [area, setArea] = useState<ChartBackgroundLogoArea>('chart');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [applyToDefaultTemplate, setApplyToDefaultTemplate] = useState<boolean>(false);
   const [applyToAllOpenCharts, setApplyToAllOpenCharts] = useState<boolean>(false);
+  const [brokerWatermarkTick, setBrokerWatermarkTick] = useState(0);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) return undefined;
+    return subscribeBrokerWatermarkChanges(() => setBrokerWatermarkTick((v) => v + 1));
+  }, [isOpen]);
+
+  const brokerWatermarkCandidates = brokerWatermarkTick >= 0
+    ? [...resolveActiveBrokerWatermarkCandidates().map((url) => toLocalDevProxyUrl(url)), RTX5_DEFAULT_CHART_WATERMARK_SRC]
+    : [RTX5_DEFAULT_CHART_WATERMARK_SRC];
+  const headerLogoSignature = brokerWatermarkCandidates.join('\n');
+  const [headerLogoAttempt, setHeaderLogoAttempt] = useState({ signature: headerLogoSignature, index: 0 });
+  const headerLogoIndex = headerLogoAttempt.signature === headerLogoSignature ? headerLogoAttempt.index : 0;
+  const headerLogoSrc = brokerWatermarkCandidates[headerLogoIndex] || RTX5_DEFAULT_CHART_WATERMARK_SRC;
+
+  const defaultBrokerWatermarkUrl = brokerWatermarkTick >= 0 ? getPrimaryBrokerWatermarkUrl() : undefined;
+  const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
+    typeof window !== 'undefined' && window.location?.origin
+      ? `${window.location.origin}${RTX5_DEFAULT_CHART_WATERMARK_SRC}`
+      : RTX5_DEFAULT_CHART_WATERMARK_SRC
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      hasEditedRef.current = false;
+      return;
+    }
     const store = useChartSettingsStore.getState();
     const currentProps = store.symbolProperties[symbol] || store.globalProperties;
     const snap = readSnapshot(currentProps);
     initialSnapshotRef.current = snap;
+    hasEditedRef.current = false;
     setMode(snap.backgroundLogoMode);
     setOpacity(snap.backgroundLogoOpacity);
     setArea(snap.backgroundLogoArea);
@@ -126,7 +152,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
 
   // Live preview on active chart while adjusting inside the dialog
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !hasEditedRef.current) return;
     const showLogo = mode !== 'none';
     applyPatchToSymbol(
       {
@@ -143,6 +169,27 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, opacity, area, imageUrl, fileName, fileDataUrl]);
+
+  const handleCancel = () => {
+    const snap = initialSnapshotRef.current;
+    if (snap && hasEditedRef.current) {
+      applyPatchToSymbol(
+        {
+          showBackgroundLogo: snap.showBackgroundLogo,
+          backgroundLogoMode: snap.backgroundLogoMode,
+          backgroundLogoOpacity: snap.backgroundLogoOpacity,
+          backgroundLogoArea: snap.backgroundLogoArea,
+          backgroundLogoUrl: snap.backgroundLogoUrl,
+          backgroundLogoFileName: snap.backgroundLogoFileName,
+          backgroundLogoFileDataUrl: snap.backgroundLogoFileDataUrl,
+        },
+        false,
+        false,
+      );
+    }
+    hasEditedRef.current = false;
+    onClose();
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -216,45 +263,9 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         secondaryBtnText: '#ffffff',
       };
 
-  const [brokerWatermarkTick, setBrokerWatermarkTick] = useState(0);
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    return subscribeBrokerWatermarkChanges(() => setBrokerWatermarkTick(v => v + 1));
-  }, [isOpen]);
-
-  const brokerWatermarkCandidates = brokerWatermarkTick >= 0
-    ? [...resolveActiveBrokerWatermarkCandidates().map((url) => toLocalDevProxyUrl(url)), RTX5_DEFAULT_CHART_WATERMARK_SRC]
-    : [RTX5_DEFAULT_CHART_WATERMARK_SRC];
-  const headerLogoSignature = brokerWatermarkCandidates.join('\n');
-  const [headerLogoAttempt, setHeaderLogoAttempt] = useState({ signature: headerLogoSignature, index: 0 });
-  const headerLogoIndex = headerLogoAttempt.signature === headerLogoSignature ? headerLogoAttempt.index : 0;
-  const headerLogoSrc = brokerWatermarkCandidates[headerLogoIndex] || RTX5_DEFAULT_CHART_WATERMARK_SRC;
-
-  const defaultBrokerWatermarkUrl = brokerWatermarkTick >= 0 ? getPrimaryBrokerWatermarkUrl() : undefined;
-  const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
-    typeof window !== 'undefined' && window.location?.origin
-      ? `${window.location.origin}${RTX5_DEFAULT_CHART_WATERMARK_SRC}`
-      : RTX5_DEFAULT_CHART_WATERMARK_SRC
-  );
-
-  const handleCancel = () => {
-    const snap = initialSnapshotRef.current;
-    if (snap) {
-      applyPatchToSymbol(
-        {
-          showBackgroundLogo: snap.showBackgroundLogo,
-          backgroundLogoMode: snap.backgroundLogoMode,
-          backgroundLogoOpacity: snap.backgroundLogoOpacity,
-          backgroundLogoArea: snap.backgroundLogoArea,
-          backgroundLogoUrl: snap.backgroundLogoUrl,
-          backgroundLogoFileName: snap.backgroundLogoFileName,
-          backgroundLogoFileDataUrl: snap.backgroundLogoFileDataUrl,
-        },
-        false,
-        false,
-      );
-    }
-    onClose();
+  const selectMode = (nextMode: ChartBackgroundLogoMode) => {
+    hasEditedRef.current = true;
+    setMode(nextMode);
   };
 
   const handleSave = () => {
@@ -272,16 +283,19 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
       applyToAllOpenCharts,
       applyToDefaultTemplate || applyToAllOpenCharts,
     );
+    hasEditedRef.current = false;
     onClose();
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    hasEditedRef.current = true;
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
+        hasEditedRef.current = true;
         setFileDataUrl(reader.result);
         setMode('file');
       }
@@ -456,7 +470,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                 cursor: 'pointer',
                 color: palette.bodyText,
               }}
-              onClick={() => setMode('none')}
+              onClick={() => selectMode('none')}
             >
               {renderRadioCircle(mode === 'none')}
               <span>{tr('None')}</span>
@@ -476,7 +490,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                 cursor: 'pointer',
                 color: palette.bodyText,
               }}
-              onClick={() => setMode('default')}
+              onClick={() => selectMode('default')}
             >
               {renderRadioCircle(mode === 'default')}
               <span>{tr('Default')}</span>
@@ -485,7 +499,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               type="text"
               readOnly
               value={defaultWatermarkDisplayUrl}
-              onClick={() => setMode('default')}
+              onClick={() => selectMode('default')}
               style={{
                 flex: 1,
                 height: 22,
@@ -514,7 +528,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                 cursor: 'pointer',
                 color: palette.bodyText,
               }}
-              onClick={() => setMode('url')}
+              onClick={() => selectMode('url')}
             >
               {renderRadioCircle(mode === 'url')}
               <span>{tr('URL')}</span>
@@ -522,8 +536,9 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
             <input
               type="url"
               value={imageUrl}
-              onFocus={() => setMode('url')}
+              onFocus={() => selectMode('url')}
               onChange={(e) => {
+                hasEditedRef.current = true;
                 setMode('url');
                 setImageUrl(e.target.value);
               }}
@@ -545,6 +560,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               className="rtx-bg-image-dialog__secondary"
               title={tr('Use default image URL')}
               onClick={() => {
+                hasEditedRef.current = true;
                 setMode('url');
                 if (!imageUrl) setImageUrl(defaultWatermarkDisplayUrl);
               }}
@@ -579,7 +595,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                 cursor: 'pointer',
                 color: palette.bodyText,
               }}
-              onClick={() => setMode('file')}
+              onClick={() => selectMode('file')}
             >
               {renderRadioCircle(mode === 'file')}
               <span>{tr('Local file')}</span>
@@ -589,7 +605,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               readOnly
               value={fileName}
               onClick={() => {
-                setMode('file');
+                selectMode('file');
                 fileInputRef.current?.click();
               }}
               style={{
@@ -616,7 +632,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               type="button"
               className="rtx-bg-image-dialog__secondary"
               onClick={() => {
-                setMode('file');
+                selectMode('file');
                 fileInputRef.current?.click();
               }}
               style={{
@@ -649,7 +665,10 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               max={100}
               value={opacity}
               disabled={mode === 'none'}
-              onChange={(e) => setOpacity(Number(e.target.value))}
+              onChange={(e) => {
+                hasEditedRef.current = true;
+                setOpacity(Number(e.target.value));
+              }}
               style={{
                 flex: 1,
                 accentColor: '#009245',
@@ -676,7 +695,10 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                   opacity: mode === 'none' ? 0.45 : 1,
                 }}
                 onClick={() => {
-                  if (mode !== 'none') setArea('chart');
+                  if (mode !== 'none') {
+                    hasEditedRef.current = true;
+                    setArea('chart');
+                  }
                 }}
               >
                 {renderRadioCircle(area === 'chart')}
@@ -693,7 +715,10 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
                   opacity: mode === 'none' ? 0.45 : 1,
                 }}
                 onClick={() => {
-                  if (mode !== 'none') setArea('chart_and_axes');
+                  if (mode !== 'none') {
+                    hasEditedRef.current = true;
+                    setArea('chart_and_axes');
+                  }
                 }}
               >
                 {renderRadioCircle(area === 'chart_and_axes')}

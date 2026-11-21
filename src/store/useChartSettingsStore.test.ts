@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyChartShiftDefaultMigration,
+  applyFineGridDefaultMigration,
   applyOhlcDefaultMigration,
   applyPeriodSeparatorsDefaultMigration,
   applyVolumeBarsDefaultMigration,
@@ -157,13 +158,17 @@ describe('chart settings trade history overlay defaults', () => {
     expect(normalizeChartProperties({ gridLineStyle: 'dashed' }).gridLineStyle).toBe('dashed');
   });
 
-  it('keeps existing square grids and restores saved grid types independently of line style', () => {
-    expect(defaultChartProperties.gridType).toBe('square');
+  it('defaults to the Fine grid and restores saved grid types independently of line style', () => {
+    expect(defaultChartProperties.gridType).toBe('mt5');
     expect(normalizeChartProperties({ gridLineStyle: 'solid' })).toMatchObject({
-      gridType: 'square',
+      gridType: 'mt5',
       gridLineStyle: 'solid',
     });
-    expect(normalizeChartProperties(JSON.parse('{"gridType":"invalid"}')).gridType).toBe('square');
+    expect(normalizeChartProperties(JSON.parse('{"gridType":"invalid"}')).gridType).toBe('mt5');
+    expect(normalizeChartProperties({ gridType: 'square', gridLineStyle: 'dashed' })).toMatchObject({
+      gridType: 'square',
+      gridLineStyle: 'dashed',
+    });
     expect(normalizeChartProperties({ gridType: 'scale', gridLineStyle: 'dashed' })).toMatchObject({
       gridType: 'scale',
       gridLineStyle: 'dashed',
@@ -174,16 +179,29 @@ describe('chart settings trade history overlay defaults', () => {
     });
   });
 
-  it('hydrates legacy square grids and preserves global and symbol grid choices', () => {
+  it('migrates legacy square defaults to Fine grid once and preserves subsequent user grid changes across refreshes', () => {
     const initial = useChartSettingsStore.getState();
     const merge = useChartSettingsStore.persist.getOptions().merge!;
     const legacy = merge({
-      globalProperties: { showGrid: true },
-      symbolProperties: { EURUSD: { showGrid: false } },
+      globalProperties: { showGrid: true, gridType: 'square' },
+      symbolProperties: {
+        EURUSD: { showGrid: false, gridType: 'square' },
+        GBPUSD: { showGrid: true, gridType: 'scale' },
+      },
     }, initial);
+    expect(legacy.fineGridDefaultMigrationVersion).toBe(1);
     expect(legacy.globalProperties.gridLineStyle).toBe('dashed');
-    expect(legacy.globalProperties.gridType).toBe('square');
-    expect(legacy.symbolProperties.EURUSD).toMatchObject({ showGrid: false, gridType: 'square', gridLineStyle: 'dashed' });
+    expect(legacy.globalProperties.gridType).toBe('mt5');
+    expect(legacy.symbolProperties.EURUSD).toMatchObject({ showGrid: false, gridType: 'mt5', gridLineStyle: 'dashed' });
+    expect(legacy.symbolProperties.GBPUSD).toMatchObject({ showGrid: true, gridType: 'scale', gridLineStyle: 'dashed' });
+
+    const directMigrated = applyFineGridDefaultMigration(
+      normalizeChartProperties({ gridType: 'square' }),
+      { EURUSD: normalizeChartProperties({ gridType: 'square' }) },
+      1,
+    );
+    expect(directMigrated.globalProperties.gridType).toBe('square');
+    expect(directMigrated.symbolProperties.EURUSD.gridType).toBe('square');
 
     try {
       initial.updateGlobalProperty('gridLineStyle', 'solid');
@@ -195,6 +213,7 @@ describe('chart settings trade history overlay defaults', () => {
       initial.updateSymbolProperty('USDCAD', 'gridLineStyle', 'solid');
       const saved = JSON.parse(JSON.stringify(useChartSettingsStore.getState()));
       const restored = merge(saved, initial);
+      expect(restored.fineGridDefaultMigrationVersion).toBe(1);
       expect(restored.globalProperties.gridLineStyle).toBe('solid');
       expect(restored.globalProperties.gridType).toBe('scale');
       expect(restored.symbolProperties.EURUSD.gridLineStyle).toBe('dashed');

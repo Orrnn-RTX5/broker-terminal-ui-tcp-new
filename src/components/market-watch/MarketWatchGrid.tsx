@@ -140,19 +140,20 @@ export const MarketWatchGrid = ({
 
   const columnHeaders = MARKET_WATCH_COLUMN_HEADERS;
   const hasSeparateDailyChangePrice = columns.includes('dailyChangePrice');
+  const showInlineLiveChangeActualValue = marketWatchOptions.showLiveChangeActualValue && !hasSeparateDailyChangePrice;
   const isLaptopViewport = typeof window !== 'undefined'
     && (window.innerWidth <= 1720 || window.innerHeight <= 920 || (panelWidth > 0 && panelWidth <= 260));
   const columnWidths = useMemo<Partial<Record<MarketWatchColumnId, number>>>(() => ({
     symbol: isLaptopViewport ? 86 : 78,
-    bid: hasSeparateDailyChangePrice ? 74 : 58,
-    ask: hasSeparateDailyChangePrice ? 74 : 58,
+    bid: showInlineLiveChangeActualValue ? 58 : 74,
+    ask: showInlineLiveChangeActualValue ? 58 : 74,
     last: 80,
     high: 80,
     low: 80,
     volume: 76,
     spread: 64,
     time: marketWatchOptions.showMilliseconds ? 104 : 82,
-    dailyChange: hasSeparateDailyChangePrice ? 76 : (isLaptopViewport ? 88 : 96),
+    dailyChange: showInlineLiveChangeActualValue ? (isLaptopViewport ? 88 : 96) : 76,
     dailyChangePrice: 76,
     source: 110,
     accruedInterest: 102,
@@ -165,7 +166,7 @@ export const MarketWatchGrid = ({
     openInterest: 92,
     averageWeightedPrice: 138,
     theoreticalPrice: 106,
-  }), [hasSeparateDailyChangePrice, isLaptopViewport, marketWatchOptions.showMilliseconds]);
+  }), [isLaptopViewport, marketWatchOptions.showMilliseconds, showInlineLiveChangeActualValue]);
   const totalBaseColumnWidth = Math.max(
     1,
     columns.reduce((total, column) => total + (columnWidths[column] ?? 82), 0),
@@ -423,6 +424,7 @@ export const MarketWatchGrid = ({
                 getContextMenuItems={buildContextMenuItems}
                 columns={columns}
                 showMilliseconds={marketWatchOptions.showMilliseconds}
+                showLiveChangeActualValue={marketWatchOptions.showLiveChangeActualValue}
                 isLightSkin={isLightSkin}
                 closedDailyChange={closedDailyChanges.get(symbol)}
                 lastPrice={lastPrices.get(symbol)}

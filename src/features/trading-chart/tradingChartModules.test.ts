@@ -50,7 +50,7 @@ describe('trading chart extracted modules', () => {
       barUp: '#00ff00', barDown: '#00ff00', wickUp: '#00ff00', wickDown: '#00ff00',
       areaUpLine: '#00ff00', areaDownLine: '#ffffff',
       gridVertical: '#778899', gridHorizontal: '#778899',
-      volumeUp: '#32cd32', volumeDown: '#32cd32',
+      volumeUp: '#00ff00', volumeDown: '#ffffff',
     });
     const lightColors = getEffectiveChartColors(properties, { isAdvancedUntitledLight: true });
     const lightTheme = buildChartTheme(lightColors, true, true, 'dashed', 'mt5', properties.colorScheme);
@@ -59,8 +59,8 @@ describe('trading chart extracted modules', () => {
       candleUp: '#000000', candleDown: '#15803d',
       barUp: '#15803d', barDown: '#15803d', wickUp: '#15803d', wickDown: '#15803d',
       areaUpLine: '#15803d', areaDownLine: '#15803d',
-      gridVertical: 'rgba(71, 85, 105, 0.45)', gridHorizontal: 'rgba(71, 85, 105, 0.45)',
-      volumeUp: 'rgba(21, 128, 61, 0.4)', volumeDown: 'rgba(21, 128, 61, 0.4)',
+      gridVertical: 'rgba(71, 85, 105, 0.6)', gridHorizontal: 'rgba(71, 85, 105, 0.6)',
+      volumeUp: '#000000', volumeDown: '#15803d',
     });
     expect(buildChartTheme(lightColors, false, true, 'dashed', 'mt5', properties.colorScheme).gridHorizontal).toBe('rgba(0, 0, 0, 0)');
 
@@ -72,7 +72,7 @@ describe('trading chart extracted modules', () => {
       candleUp: '#7cfc00', candleDown: '#0000ff',
       barUp: '#00ff00', barDown: '#00ff00', wickUp: '#00ff00', wickDown: '#00ff00',
       gridVertical: '#778899', gridHorizontal: '#778899',
-      volumeUp: '#32cd32', volumeDown: '#32cd32',
+      volumeUp: '#7cfc00', volumeDown: '#0000ff',
     });
     const greenBlueLightColors = getEffectiveChartColors(greenBlueProps, { isAdvancedUntitledLight: true });
     const greenBlueLightTheme = buildChartTheme(greenBlueLightColors, true, true, 'dashed', 'mt5', greenBlueProps.colorScheme);
@@ -80,8 +80,8 @@ describe('trading chart extracted modules', () => {
       background: '#fafbfc',
       candleUp: '#16a34a', candleDown: '#0000ff',
       barUp: '#15803d', barDown: '#15803d', wickUp: '#15803d', wickDown: '#15803d',
-      gridVertical: 'rgba(71, 85, 105, 0.45)', gridHorizontal: 'rgba(71, 85, 105, 0.45)',
-      volumeUp: 'rgba(21, 128, 61, 0.4)', volumeDown: 'rgba(21, 128, 61, 0.4)',
+      gridVertical: 'rgba(71, 85, 105, 0.6)', gridHorizontal: 'rgba(71, 85, 105, 0.6)',
+      volumeUp: '#16a34a', volumeDown: '#0000ff',
     });
 
     const blueWhiteProps = normalizeChartProperties({ colorScheme: 'Blue and White', gridType: 'mt5' });
@@ -131,7 +131,7 @@ describe('trading chart extracted modules', () => {
       chart as never,
       500,
       20,
-    )).toBe(36);
+    )).toBe(128);
     expect(computeAdaptiveVisibleBars(container as HTMLElement, chart as never, 0, 20)).toBe(0);
     expect(shouldBuildVolumeData({ showTickVolumes: false, showRealVolumes: true })).toBe(true);
     expect(shouldScrollToRealtime(chart as never, true, true)).toBe(true);
@@ -178,7 +178,35 @@ describe('trading chart extracted modules', () => {
       barUp: up, barDown: down,
       wickUp: up, wickDown: down,
       areaUpLine: up, areaDownLine: down,
+      volumeUp: up, volumeDown: down,
     });
+  });
+
+  it('derives volume colors dynamically from custom candle colors without hardcoding', () => {
+    const customTheme = buildChartTheme({
+      ...defaultChartProperties.colors,
+      background: '#000000',
+      bullCandle: '#00e676',
+      bearCandle: '#ff9100',
+      barUp: '#00e676',
+      barDown: '#ff9100',
+    }, true, false, 'dashed', 'mt5', 'Custom');
+
+    expect(customTheme.volumeUp).toBe('#00e676');
+    expect(customTheme.volumeDown).toBe('#ff9100');
+
+    // Hollow black bull candle on black background falls back to visible bar outline color.
+    const hollowTheme = buildChartTheme({
+      ...defaultChartProperties.colors,
+      background: '#000000',
+      bullCandle: '#000000',
+      bearCandle: '#f8fafc',
+      barUp: '#facc15',
+      barDown: '#facc15',
+    }, true, false, 'dashed', 'mt5', 'Yellow and White');
+
+    expect(hollowTheme.volumeUp).toBe('#facc15');
+    expect(hollowTheme.volumeDown).toBe('#f8fafc');
   });
 
   it('owns trade overlay clipping, tooltip placement, and palette selection', () => {

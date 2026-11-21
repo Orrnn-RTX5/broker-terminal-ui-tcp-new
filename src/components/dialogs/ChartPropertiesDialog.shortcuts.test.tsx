@@ -98,17 +98,21 @@ describe('Chart Properties grid settings', () => {
       const typeSelector = screen.getByRole('combobox', { name: 'Grid type' });
       const preview = screen.getByRole('dialog').querySelector<HTMLElement>('.rtx-cp-preview-inner')!;
       expect(selector).toHaveValue('dashed');
-      expect(typeSelector).toHaveValue('square');
-      expect(preview.style.backgroundSize).toBe('64px 64px');
+      expect(typeSelector).toHaveValue('mt5');
+      expect(preview.style.backgroundSize).toBe('32px 32px');
       expect(screen.getByRole('option', { name: 'Dashed' })).toBeInTheDocument();
-      expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="0.75" stroke-dasharray="8 4"');
+      expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="1" stroke-opacity="0.5" stroke-dasharray="1 2"');
+
+      fireEvent.change(typeSelector, { target: { value: 'square' } });
+      expect(preview.style.backgroundSize).toBe('64px 64px');
+      expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="0.25" stroke-dasharray="1 2"');
 
       fireEvent.change(typeSelector, { target: { value: 'scale' } });
       expect(useChartSettingsStore.getState().symbolProperties.EURUSD).toMatchObject({
         gridType: 'scale',
         gridLineStyle: 'dashed',
       });
-      expect(useChartSettingsStore.getState().globalProperties.gridType).toBe('square');
+      expect(useChartSettingsStore.getState().globalProperties.gridType).toBe('mt5');
       expect(preview.style.backgroundSize).toBe('128px 48px');
       expect(decodeURIComponent(preview.style.backgroundImage)).toContain('width="128" height="48"');
       expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="1" stroke-dasharray="2 2"');
@@ -127,7 +131,7 @@ describe('Chart Properties grid settings', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(useChartSettingsStore.getState().symbolProperties.EURUSD).toMatchObject({
         showGrid: true,
-        gridType: 'square',
+        gridType: 'mt5',
         gridLineStyle: 'dashed',
       });
       expect(onClose).toHaveBeenCalledOnce();
@@ -171,7 +175,7 @@ describe('Chart Properties grid settings', () => {
       expect(screen.getByRole('option', { name: 'Fine grid' })).toBeInTheDocument();
       expect(style).toHaveValue('dashed');
       expect(preview.style.backgroundSize).toBe('32px 32px');
-      expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="1" stroke-dasharray="3 3"');
+      expect(decodeURIComponent(preview.style.backgroundImage)).toContain('stroke-width="1" stroke-opacity="0.5" stroke-dasharray="1 2"');
       expect(useChartSettingsStore.getState().symbolProperties.EURUSD.colors).toEqual(original.colors);
 
       fireEvent.change(style, { target: { value: 'solid' } });
