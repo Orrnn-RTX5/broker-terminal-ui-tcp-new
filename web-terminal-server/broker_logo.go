@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -255,76 +254,9 @@ func (c *WebTerminalServer) resolveLinkForBrokerID(fallbackLink *brokerLink, bro
 // a short per-candidate cap respecting ctx so an unreachable SuperAdmin hub never
 // starves the Broker Gateway (:4443) secondary logo source.
 func (c *WebTerminalServer) getOrDialSuperAdminForLogo(ctx context.Context, link *brokerLink) (*rtx5tcp.MuxSession, error) {
-	c.mu.RLock()
-	sess := c.superAdminMux
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
-		}
-	}
-
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	c.saDialMu.Lock()
-	defer c.saDialMu.Unlock()
-
-	c.mu.RLock()
-	sess = c.superAdminMux
-	c.mu.RUnlock()
-	if sess != nil {
-		select {
-		case <-sess.Done():
-		default:
-			return sess, nil
-		}
-	}
-
-	candidates := c.superAdminCandidatesForLink(link)
-	var lastErr error
-	for _, cand := range candidates {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		dialTimeout := 1500 * time.Millisecond
-		if deadline, ok := ctx.Deadline(); ok {
-			rem := time.Until(deadline)
-			if rem <= 0 {
-				return nil, context.DeadlineExceeded
-			}
-			if rem < dialTimeout {
-				dialTimeout = rem
-			}
-		}
-		tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleSuperAdminClient, dialTimeout)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
-		c.mu.Lock()
-		c.superAdminMux = newSess
-		c.superAdminTCP = cand
-		c.mu.Unlock()
-
-		go func(s *rtx5tcp.MuxSession) {
-			_ = s.ServeLoop()
-			c.mu.Lock()
-			if c.superAdminMux == s {
-				c.superAdminMux = nil
-			}
-			c.mu.Unlock()
-		}(newSess)
-		return newSess, nil
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
+	// One shared dial path: the session it creates feeds the Super Admin market hub (control handler), ends the
+	// feed's tabs when it dies, and honours ctx for the lock wait and every dial.
+	return c.getOrDialSuperAdminSessionFor(ctx, link, false)
 }
 
 func (c *WebTerminalServer) fetchDynamicBrokerLogo(ctx context.Context, link *brokerLink, brokerID string, forceRefresh bool) (*cachedBrokerLogo, bool) {

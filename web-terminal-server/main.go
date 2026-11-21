@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"embed"
@@ -88,6 +89,7 @@ type WebTerminalServer struct {
 	cachedBrokersAt      time.Time
 	superAdminMux        *rtx5tcp.MuxSession
 	saDialMu             sync.Mutex
+	saFeed               superAdminFeed // Super Admin market hub + admin-token check (superadmin_feed.go)
 	dirRefreshMu         sync.Mutex
 	cachedOrderAuthToken atomic.Value // fallback string
 
@@ -656,66 +658,111 @@ func (c *WebTerminalServer) superAdminCandidates() []string {
 	return c.superAdminCandidatesForLink(nil)
 }
 
-func (c *WebTerminalServer) getOrDialSessionForApp(link *brokerLink, appKind string) (*rtx5tcp.MuxSession, error) {
-	switch appKind {
-	case "superadmin":
+// getOrDialSuperAdminSession returns the live :9100 session, dialling it when needed. needFeed demands the session
+// that feeds the Super Admin market hub (superadmin_feed.go): a live session made by another dial path without the
+// control handler (broker logo fetch) is replaced once. ctx bounds the lock wait and every dial; a context that
+// can never be cancelled keeps the plain blocking behaviour.
+func (c *WebTerminalServer) getOrDialSuperAdminSession(ctx context.Context, needFeed bool) (*rtx5tcp.MuxSession, error) {
+	return c.getOrDialSuperAdminSessionFor(ctx, nil, needFeed)
+}
+
+// getOrDialSuperAdminSessionFor is getOrDialSuperAdminSession with the candidate order of link's broker (nil = none).
+func (c *WebTerminalServer) getOrDialSuperAdminSessionFor(ctx context.Context, link *brokerLink, needFeed bool) (*rtx5tcp.MuxSession, error) {
+	usable := func() *rtx5tcp.MuxSession {
 		c.mu.RLock()
 		sess := c.superAdminMux
 		c.mu.RUnlock()
-		if sess != nil {
-			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
-			}
+		if sess == nil {
+			return nil
 		}
-
+		select {
+		case <-sess.Done():
+			return nil
+		default:
+		}
+		if needFeed && !c.saFeed.isFeedSession(sess) {
+			return nil
+		}
+		return sess
+	}
+	if sess := usable(); sess != nil {
+		return sess, nil
+	}
+	if ctx.Done() == nil {
 		c.saDialMu.Lock()
-		defer c.saDialMu.Unlock()
-
-		c.mu.RLock()
-		sess = c.superAdminMux
-		c.mu.RUnlock()
-		if sess != nil {
+	} else {
+		for !c.saDialMu.TryLock() {
 			select {
-			case <-sess.Done():
-			default:
-				return sess, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(10 * time.Millisecond):
 			}
 		}
+	}
+	defer c.saDialMu.Unlock()
+	if sess := usable(); sess != nil {
+		return sess, nil
+	}
 
-		candidates := c.superAdminCandidates()
-		var lastErr error
-		for _, cand := range candidates {
-			timeout := 5 * time.Second
-			if strings.HasPrefix(cand, "127.0.0.1:") || strings.HasPrefix(cand, "localhost:") {
-				timeout = 1500 * time.Millisecond
+	candidates := c.superAdminCandidatesForLink(link)
+	var lastErr error
+	for _, cand := range candidates {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		timeout := 5 * time.Second
+		if strings.HasPrefix(cand, "127.0.0.1:") || strings.HasPrefix(cand, "localhost:") {
+			timeout = 1500 * time.Millisecond
+		}
+		if dl, ok := ctx.Deadline(); ok {
+			rem := time.Until(dl)
+			if rem <= 0 {
+				return nil, context.DeadlineExceeded
 			}
-			tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleSuperAdminClient, timeout)
-			if err != nil {
-				lastErr = err
-				continue
+			if rem < timeout {
+				timeout = rem
 			}
-			newSess := rtx5tcp.NewMuxSession(tc, false, nil, nil)
+		}
+		tc, err := rtx5tcp.DialTunnel(cand, rtx5tcp.RoleSuperAdminClient, timeout)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		// The :9100 hub pushes 0x21/0x24 market frames: feed them into the Super Admin market hub. The cache is
+		// cleared and a new epoch starts first, so a redial never replays stale prices; tabs of the previous
+		// session were already closed when it ended (superadmin_feed.go).
+		newSess := rtx5tcp.NewMuxSession(tc, false, nil, c.superAdminControlFrame)
+		c.saFeed.beginSession(c.superAdminHub(), newSess)
+		c.mu.Lock()
+		old := c.superAdminMux
+		c.superAdminMux = newSess
+		c.superAdminTCP = cand
+		c.mu.Unlock()
+		if old != nil {
+			_ = old.Close() // a live session without the feed handler (logo dial path) is retired
+		}
+
+		go func(s *rtx5tcp.MuxSession) {
+			_ = s.ServeLoop()
+			c.saFeed.endSession(s)
 			c.mu.Lock()
-			c.superAdminMux = newSess
-			c.superAdminTCP = cand
+			if c.superAdminMux == s {
+				c.superAdminMux = nil
+			}
 			c.mu.Unlock()
+		}(newSess)
+		return newSess, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
+}
 
-			go func(s *rtx5tcp.MuxSession) {
-				_ = s.ServeLoop()
-				c.mu.Lock()
-				if c.superAdminMux == s {
-					c.superAdminMux = nil
-				}
-				c.mu.Unlock()
-			}(newSess)
-			return newSess, nil
-		}
-		if lastErr != nil {
-			return nil, lastErr
-		}
-		return nil, fmt.Errorf("superadmin :9100 binary TCP hub unreachable")
+func (c *WebTerminalServer) getOrDialSessionForApp(link *brokerLink, appKind string) (*rtx5tcp.MuxSession, error) {
+	switch appKind {
+	case "superadmin":
+		return c.getOrDialSuperAdminSession(context.Background(), false)
 
 	case "manager":
 		if link == nil {
@@ -1251,7 +1298,12 @@ func (c *WebTerminalServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		marketFeed := "broker-guest"
+		if appKind == "superadmin" {
+			marketFeed = "superadmin-hub"
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
+			"market_feed":       marketFeed,
 			"app":               appKindToStatusAppName(appKind),
 			"mode":              "web-terminal-tcp",
 			"connected":         connected,

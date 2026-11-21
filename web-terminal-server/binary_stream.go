@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"math/big"
 	"net/http"
@@ -582,13 +583,39 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 	}
 
 	clientKey := s.resolveClientSessionKey(w, r)
-	// Prices come from this page's own broker (per-session broker targets).
-	link := s.linkForSession(clientKey)
-	if link == nil || link.binHub == nil {
-		http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
-		return
+	isSA := resolveWebAppKind(r) == "superadmin"
+	tabCtx := r.Context()
+	var link *brokerLink
+	if isSA {
+		// Super Admin tab: unfiltered :9100 hub feed, only for a valid Super Admin token (never trust the app
+		// kind alone: it is client-settable).
+		switch s.superAdminVerdict(r) {
+		case saValid:
+		case saInvalid:
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		default: // could not verify (hub down, timeout, overload): try again, never cached as "invalid"
+			w.Header().Set("Retry-After", "2")
+			http.Error(w, "cannot verify session", http.StatusServiceUnavailable)
+			return
+		}
+		dctx, dcancel := context.WithTimeout(r.Context(), saStreamDialWait)
+		err := s.ensureSuperAdminSession(dctx)
+		dcancel()
+		if err != nil {
+			w.Header().Set("Retry-After", "2")
+			http.Error(w, "superadmin hub unreachable", http.StatusServiceUnavailable)
+			return
+		}
+	} else {
+		// Prices come from this page's own broker (per-session broker targets).
+		link = s.linkForSession(clientKey)
+		if link == nil || link.binHub == nil {
+			http.Error(w, errNoBrokerTarget.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = link.getOrDialSession()
 	}
-	_, _ = link.getOrDialSession()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store, no-transform")
@@ -603,11 +630,26 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		pend:      newTickConflator(),
 	}
 
-	// Registers the tab on its market source (guest hub, or its account tunnel's hub when that is up) and
-	// returns that source's snapshot.
-	snaps, depthSnaps := link.attachSub(sub)
-	defer sub.pend.discard() // runs after detachSub: frees the pending map when the tab closes
-	defer link.detachSub(sub)
+	// Registers the tab on its market source (guest hub, or its account tunnel's hub when that is up; the Super
+	// Admin hub for a Super Admin tab) and returns that source's snapshot.
+	var snaps []rtx5tcp.BinaryTick
+	var depthSnaps []rtx5tcp.BinaryDepth
+	if isSA {
+		saHub := s.superAdminHub()
+		snaps, depthSnaps = saHub.attachDirect(sub)
+		defer sub.pend.discard()
+		defer saHub.detachDirect(sub)
+		// The tab ends with its request or with the :9100 session (so it never shows stale prices as live); one
+		// shared redialer keeps the session up while any Super Admin tab is open.
+		var stopTab func()
+		tabCtx, stopTab = s.superAdminTabContext(r.Context())
+		defer stopTab()
+		defer s.acquireSuperAdminRedialer()()
+	} else {
+		snaps, depthSnaps = link.attachSub(sub)
+		defer sub.pend.discard() // runs after detachSub: frees the pending map when the tab closes
+		defer link.detachSub(sub)
+	}
 
 	bytesSent := 0
 	const chunk = 64
@@ -727,7 +769,7 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		_, err := drainPrio(webStreamMaxPrioBurst)
 		return err
 	}
-	ctxDone := r.Context().Done()
+	ctxDone := tabCtx.Done()
 	for {
 		select {
 		case <-ctxDone:
