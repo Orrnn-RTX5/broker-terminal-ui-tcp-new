@@ -565,36 +565,88 @@ func (c *WebTerminalServer) getActiveDistFSForApp(appKind string) fs.FS {
 	if appKind == "" {
 		appKind = "terminal"
 	}
-	if c.localUIOnly && appKind == "terminal" && c.externalDist != "" {
-		if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
-			return os.DirFS(c.externalDist)
+	terminalEmbeddedFS := func() fs.FS {
+		if c.externalDist != "" {
+			if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
+				return os.DirFS(c.externalDist)
+			}
 		}
+		return c.distRoot
 	}
-	candidates := []string{
+	cacheCandidates := []string{
 		filepath.Join(c.exeDir, "..", "runtime-data", "ui-cache", appKind),
 		filepath.Join(c.exeDir, "ui-cache", appKind),
+	}
+	distCandidates := []string{
 		filepath.Join(c.exeDir, "..", "ui-dist", appKind),
 		filepath.Join(c.exeDir, "ui-dist", appKind),
 	}
 	if c.localUIOnly {
-		candidates = candidates[2:] // local builds only; an old OTA cache must not shadow them
+		if appKind == "terminal" && c.externalDist != "" {
+			if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
+				return os.DirFS(c.externalDist)
+			}
+		}
+		// Local dev mode: serve local ui-dist builds only; an old OTA cache must not shadow them.
+		for _, cand := range distCandidates {
+			if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+				return os.DirFS(cand)
+			}
+		}
+		return c.distRoot
 	}
-	for _, cand := range candidates {
+
+	var terminalUISource string
+	if appKind == "terminal" {
+		c.otaMu.RLock()
+		terminalUISource = c.appUISources["terminal"]
+		verifiedEmbedded := terminalUISource == "embedded" && c.lastOTACheckedUnix > 0 && c.lastOTAError == ""
+		c.otaMu.RUnlock()
+		// When OTA explicitly verified that this binary's embedded (or externalDist) bundle
+		// matches the signed manifest, serve it directly so stale disk directories in
+		// ui-cache/terminal or ui-dist/terminal can never shadow a newly deployed binary.
+		if verifiedEmbedded {
+			if embFS := terminalEmbeddedFS(); embFS != nil {
+				return embFS
+			}
+		}
+	}
+
+	for _, cand := range cacheCandidates {
+		if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+			return os.DirFS(cand)
+		}
+	}
+
+	if appKind == "terminal" && terminalUISource != "ui-dist" {
+		// In production mode, never let an unverified stale ui-dist/terminal directory
+		// shadow the deployed binary's embedded terminal bundle.
+		if embFS := terminalEmbeddedFS(); embFS != nil {
+			return embFS
+		}
+	}
+
+	for _, cand := range distCandidates {
 		if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
 			return os.DirFS(cand)
 		}
 	}
 	if appKind != "terminal" {
 		_ = c.syncHotUIOTA()
-		for _, cand := range candidates {
+		for _, cand := range cacheCandidates {
+			if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
+				return os.DirFS(cand)
+			}
+		}
+		for _, cand := range distCandidates {
 			if st, err := os.Stat(filepath.Join(cand, "index.html")); err == nil && !st.IsDir() {
 				return os.DirFS(cand)
 			}
 		}
 	}
-	if appKind == "terminal" && c.externalDist != "" {
-		if st, err := os.Stat(filepath.Join(c.externalDist, "index.html")); err == nil && !st.IsDir() {
-			return os.DirFS(c.externalDist)
+	if appKind == "terminal" {
+		if embFS := terminalEmbeddedFS(); embFS != nil {
+			return embFS
 		}
 	}
 	return c.distRoot
