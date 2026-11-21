@@ -910,7 +910,16 @@ describe('WebDrawingToolsRail', () => {
     expect(css).toContain('@media (max-height: 620px)');
     expect(css).toContain('@media (max-height: 480px), (max-width: 768px)');
     expect(css).toMatch(
-      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?flex:\s*0 1 auto;[\s\S]*?justify-content:\s*flex-start;/
+      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s*\{[\s\S]*?--rtx-drawing-rail-gap:\s*8px;/
+    );
+    expect(css).toMatch(
+      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?flex:\s*0 1 auto;[\s\S]*?justify-content:\s*flex-start;[\s\S]*?gap:\s*var\(--rtx-drawing-rail-gap\);/
+    );
+    expect(css).toMatch(
+      /\.web-drawing-tools-rail\[data-orientation='vertical'\]\s+\.web-drawing-tools-rail__footer\s*\{[\s\S]*?gap:\s*var\(--rtx-drawing-rail-gap\);/
+    );
+    expect(css).toMatch(
+      /\.rtx-desktop-inline-drawings\s+\.web-drawing-tools-rail\[data-orientation='horizontal'\]\s+\.web-drawing-tools-rail__tools\s*\{[\s\S]*?justify-content:\s*flex-start;[\s\S]*?gap:\s*var\(--rtx-drawing-item-gap\);/
     );
   });
 

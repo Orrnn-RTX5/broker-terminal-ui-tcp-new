@@ -31,6 +31,7 @@ vi.mock('../services/api', () => ({
 }));
 
 const originalAccountId = useAppStore.getState().accountId;
+const originalAccount = useAppStore.getState().account;
 const originalSavedAccounts = useAppStore.getState().savedAccounts;
 const originalIsAuthenticated = useAppStore.getState().isAuthenticated;
 const originalSelectedSymbol = useAppStore.getState().selectedSymbol;
@@ -48,6 +49,7 @@ afterEach(() => {
     cleanup();
     useAppStore.setState({
         accountId: originalAccountId,
+        account: originalAccount,
         savedAccounts: originalSavedAccounts,
         isAuthenticated: originalIsAuthenticated,
         selectedSymbol: originalSelectedSymbol,
@@ -524,4 +526,41 @@ it('polls for broker logo updates while open and refreshes immediately on rtx5-t
     } finally {
         vi.useRealTimers();
     }
+});
+
+it('resolves short Demo, Real, and Contest status labels aligned with Navigator account types', async () => {
+    useAppStore.setState({ accountId: null, savedAccounts: [], account: null });
+    const { result } = renderHook(useTerminalBrokerInfo);
+    expect(result.current.accountType).toBeUndefined();
+    expect(result.current.accountTypeLabel).toBe('');
+
+    const savedAccounts = [
+        { login: 200034, name: 'Trader', server: 'Orrnn', accountType: 'demo' as const, isLive: false },
+        { login: 200035, name: 'Trader', server: 'Orrnn', accountType: 'real' as const, isLive: true },
+        { login: 200036, name: 'demo acc1', server: 'Orrnn', isLive: true },
+        { login: 200037, name: 'Standard Trader', server: 'Orrnn' },
+        { login: 200038, name: 'Contest Trader', server: 'Orrnn', accountType: 'contest' as const, isLive: false },
+    ];
+
+    await act(async () => useAppStore.setState({ accountId: '200034', savedAccounts }));
+    expect(result.current.accountType).toBe('demo');
+    expect(result.current.accountTypeLabel).toBe('Demo');
+
+    await act(async () => useAppStore.setState({ accountId: '200035' }));
+    expect(result.current.accountType).toBe('real');
+    expect(result.current.accountTypeLabel).toBe('Real');
+
+    // Matches NavigatorPanel's resolveDisplayAccountType when name identifies a demo account.
+    await act(async () => useAppStore.setState({ accountId: '200036' }));
+    expect(result.current.accountType).toBe('demo');
+    expect(result.current.accountTypeLabel).toBe('Demo');
+
+    // Standard account without explicit demo/contest flags resolves to Real, matching NavigatorPanel.
+    await act(async () => useAppStore.setState({ accountId: '200037' }));
+    expect(result.current.accountType).toBe('real');
+    expect(result.current.accountTypeLabel).toBe('Real');
+
+    await act(async () => useAppStore.setState({ accountId: '200038' }));
+    expect(result.current.accountType).toBe('contest');
+    expect(result.current.accountTypeLabel).toBe('Contest');
 });

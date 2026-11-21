@@ -282,8 +282,8 @@ export const DARK_CHART_TRADE_COLORS = {
   actionHover: '#292a30',
   buy: '#72b0ff',
   sell: '#ff8589',
-  pendingBuy: '#ea580c',
-  pendingSell: '#a855f7',
+  pendingBuy: '#72b0ff',
+  pendingSell: '#ff8589',
   buyBackground: '#191a1e',
   sellBackground: '#191a1e',
   tp: '#4ade80',
@@ -302,8 +302,8 @@ export const LIGHT_CHART_TRADE_COLORS = {
   actionHover: '#e2e8f0',
   buy: '#153eaa',
   sell: '#981b24',
-  pendingBuy: '#c2410c',
-  pendingSell: '#7e22ce',
+  pendingBuy: '#153eaa',
+  pendingSell: '#981b24',
   tp: '#05564f',
   sl: '#664300',
   profit: '#153eaa',
@@ -492,14 +492,16 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
   } = options;
   const isPending = options.kind === 'pending';
   const sideColor = isPending
-    ? (side === 'BUY'
-      ? (isLightSurface ? LIGHT_CHART_TRADE_COLORS.pendingBuy : DARK_CHART_TRADE_COLORS.pendingBuy)
-      : (isLightSurface ? LIGHT_CHART_TRADE_COLORS.pendingSell : DARK_CHART_TRADE_COLORS.pendingSell))
+    ? (isLightSurface
+      ? (side === 'BUY' ? LIGHT_CHART_TRADE_COLORS.pendingBuy : LIGHT_CHART_TRADE_COLORS.pendingSell)
+      : TRADE_CONTROL_SIDE_COLORS[side])
     : (isLightSurface ? TRADE_CONTROL_LIGHT_SIDE_COLORS : TRADE_CONTROL_SIDE_COLORS)[side];
   const surface = getTradeControlSurface(isLightSurface);
   const actionHoverColor = isLightSurface ? LIGHT_CHART_TRADE_COLORS.buy : TRADE_CONTROL_ACTION_HOVER_COLOR;
   const plainSideColor = isPending
-    ? sideColor
+    ? (isLightSurface
+      ? (side === 'BUY' ? LIGHT_CHART_TRADE_COLORS.pendingBuy : LIGHT_CHART_TRADE_COLORS.pendingSell)
+      : (side === 'BUY' ? DARK_CHART_TRADE_COLORS.pendingBuy : DARK_CHART_TRADE_COLORS.pendingSell))
     : (isLightSurface
       ? (side === 'BUY' ? LIGHT_CHART_TRADE_COLORS.buy : LIGHT_CHART_TRADE_COLORS.sell)
       : (side === 'BUY' ? DARK_CHART_TRADE_COLORS.buy : DARK_CHART_TRADE_COLORS.sell));
@@ -792,7 +794,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     const lotsSpan = document.createElement('span');
     lotsSpan.style.cssText = `font-size:11.5px;font-weight:600;color:${tooltipPrimaryColor};`;
     const sep1 = document.createElement('span');
-    sep1.textContent = ' · ';
+    sep1.textContent = ' ';
     sep1.style.cssText = 'opacity:0;width:0;overflow:hidden;display:inline-block;';
     const ticketPill = document.createElement('span');
     ticketPill.style.cssText = `margin-left:auto;padding:1px 5px;border-radius:3px;font-size:10.5px;font-weight:600;line-height:14px;color:${tooltipSecondaryColor};background:${ticketChipBg};font-family:Consolas,'Courier New',monospace;`;
@@ -927,7 +929,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       positionTooltip(event);
     };
 
-    const getVolumeHint = () => `${tr(options.orderTypeLabel || side)} ${tr('{{value0}} lots', { value0: formatVolumeLots(volume) })} · #${normalizedTicket}`;
+    const getVolumeHint = () => `${tr(options.orderTypeLabel || side)} ${tr('{{value0}} lots', { value0: formatVolumeLots(volume) })} #${normalizedTicket}`;
     const getMoneyHint = () => {
       if (isPending) return tr('Modify order');
       const moneyVal = (money.valueEl.textContent || '0.00').trim();

@@ -292,7 +292,7 @@ export const useOrderExecution = ({
         },
       );
       if (!resultCommitted) return;
-      playSystemSound('open');
+      playSystemSound(side.toLowerCase() === 'sell' ? 'sell' : 'buy');
       scheduleRefreshPositions(loginId);
       refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {
@@ -380,16 +380,7 @@ export const useOrderExecution = ({
         ...(request.priceTp ? { price_tp: request.priceTp } : {}),
       }, { intentAtMs });
       if (!isTradeOperationContextCurrent(operationContext)) return;
-      playSystemSound('open');
-      publishOrderFeedback([
-        feedbackLabel(side === 'buy' ? (pendingKind === 'stop' ? 'Buy Stop' : 'Buy Limit') : (pendingKind === 'stop' ? 'Sell Stop' : 'Sell Limit')),
-        feedbackValue(` · ${submitSymbol} · `),
-        feedbackLabel('Volume'),
-        feedbackValue(`: ${request.volume} · `),
-        feedbackLabel('Price'),
-        feedbackValue(`: ${request.price} · `),
-        feedbackLabel('request submitted successfully!'),
-      ], 'success');
+      playSystemSound(side === 'sell' ? 'sell' : 'buy');
       // A placed pending order changes the orders list, not closed history.
       refreshHistoryAfterFill(loginId, historyOwnerRef.current, { skipHistory: true });
     } catch (error) {
@@ -508,21 +499,11 @@ export const useOrderExecution = ({
           ...(order.comment ? { comment: order.comment } : {}),
         }, { intentAtMs });
         if (!isTradeOperationContextCurrent(operationContext)) return;
-        playSystemSound('open');
-        const labelText = pendingKind === 'stop_limit'
-          ? (side === 'BUY' ? 'Buy Stop Limit' : 'Sell Stop Limit')
-          : pendingKind === 'stop'
-            ? (side === 'BUY' ? 'Buy Stop' : 'Sell Stop')
-            : (side === 'BUY' ? 'Buy Limit' : 'Sell Limit');
-        publishOrderFeedback([
-          feedbackLabel(labelText),
-          feedbackValue(` · ${submitSymbol} · `),
-          feedbackLabel('Volume'),
-          feedbackValue(`: ${order.volume} · `),
-          feedbackLabel('Price'),
-          feedbackValue(`: ${orderPrice} · `),
-          feedbackLabel('request submitted successfully!'),
-        ], 'success');
+        playSystemSound(lowerSide === 'sell' ? 'sell' : 'buy');
+        if (isBinaryTcpOrderEnabled()) {
+          void Promise.resolve(refreshOrdersAndHistory(loginId, { skipHistory: true })).catch(() => undefined);
+        }
+        // A placed pending order changes the orders list, not closed history.
         refreshHistoryAfterFill(loginId, historyOwnerRef.current, { skipHistory: true });
         return;
       }
@@ -560,7 +541,7 @@ export const useOrderExecution = ({
         },
       );
       if (!resultCommitted) return;
-      playSystemSound('open');
+      playSystemSound(side.toLowerCase() === 'sell' ? 'sell' : 'buy');
       scheduleRefreshPositions(loginId);
       refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {
@@ -576,6 +557,7 @@ export const useOrderExecution = ({
     isTradeOperationContextCurrent,
     historyOwnerRef,
     orderPanelSymbol,
+    refreshOrdersAndHistory,
     scheduleRefreshPositions,
   ]);
 

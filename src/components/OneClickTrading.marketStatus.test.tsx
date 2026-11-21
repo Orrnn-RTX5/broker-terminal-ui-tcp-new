@@ -13,6 +13,8 @@ vi.mock('../services/api', () => ({
 }));
 
 import { useAppStore } from '../store/useAppStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { normalizeMarketStatus, type KnownMarketStatus } from '../utils/marketStatus';
 import { OneClickTrading } from './OneClickTrading';
 
@@ -27,6 +29,10 @@ const getTradeButton = (label: 'BUY' | 'SELL'): HTMLButtonElement => {
 describe('OneClickTrading market status', () => {
   beforeEach(() => {
     useAppStore.getState().reset();
+    useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateTradeSettings({ oneClickTrading: true });
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useOneClickDisclaimerStore.getState().setAcceptedInSession(true);
     useAppStore.setState({ isAuthenticated: true, accountId: '200002' });
     orderMocks.placeMarketOrder.mockReset();
     useAppStore.setState({
@@ -49,6 +55,8 @@ describe('OneClickTrading market status', () => {
 
   afterEach(() => {
     cleanup();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useSettingsStore.getState().resetToDefaults();
     document.documentElement.classList.remove('rtx-advanced-view', 'rtx-skin-untitled-light');
     vi.restoreAllMocks();
   });

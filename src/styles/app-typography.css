@@ -470,19 +470,19 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root .rtx-bottom-dock__tabs {
-    height: 24px !important;
-    min-height: 24px !important;
-    max-height: 24px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    max-height: 28px !important;
   }
 
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
     --rtx-type-size: 10.5px;
-    line-height: 22px !important;
+    line-height: 1 !important;
   }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
-  html:root body :is(.rtx-history-summary-bar, .rtx-withdrawal-summary-bar) :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
+  html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
     --rtx-type-size: 10.5px;
     line-height: 18px !important;
   }
@@ -600,7 +600,7 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
-  html:root body :is(.rtx-history-summary-bar, .rtx-withdrawal-summary-bar) :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
+  html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
     --rtx-type-size: 10px;
   }
 
@@ -634,7 +634,7 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
-  html:root body :is(.rtx-history-summary-bar, .rtx-withdrawal-summary-bar) :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
+  html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
     --rtx-type-size: 10px;
   }
 }
@@ -665,7 +665,7 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 @media (max-width: 860px) {
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
-  html:root body :is(.rtx-history-summary-bar, .rtx-withdrawal-summary-bar) :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
+  html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
     --rtx-type-size: 9px;
   }
 }

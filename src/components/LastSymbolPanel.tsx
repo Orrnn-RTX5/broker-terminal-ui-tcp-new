@@ -294,7 +294,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                 // Do not serialize deliberate one-click orders behind a prior
                 // terminal fill; every call owns separate durable correlation IDs.
                 await orderPromise;
-                import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
+                import('../utils/audio').then((m) => m.playSystemSound(side === 'SELL' ? 'sell' : 'buy')).catch(() => undefined);
                 refreshHistoryAfterFill(Number(accountId));
                 setLastSymbol(exactLastSymbol, side);
                 window.dispatchEvent(new Event('rtx:force-refresh-positions'));

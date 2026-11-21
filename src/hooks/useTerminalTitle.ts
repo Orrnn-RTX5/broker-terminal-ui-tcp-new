@@ -24,6 +24,11 @@ import {
     resolveServerDisplayLabel,
     useKnownBrokerServerName,
 } from '../services/brokerServerIdentity';
+import {
+    resolveDisplayAccountType,
+    resolveTradingAccountType,
+    type TradingAccountType,
+} from '../services/tradingAccountType';
 
 /** Neutral fallback title. No vendor string; prefer getWebTerminalTitle(). */
 export const WEB_TERMINAL_TITLE = NEUTRAL_TERMINAL_TITLE;
@@ -433,12 +438,45 @@ const fetchAccountMode = (key: string, accountId: string, symbol: string): Promi
 export interface TerminalBrokerInfo {
     accountId: string;
     accountName?: string;
+    accountType?: TradingAccountType;
+    accountTypeLabel?: string;
     serverName: string;
     brokerName: string;
     marginMode: string;
     logoUrl: string;
     logoBaseCandidates: string[];
 }
+
+const resolveTerminalAccountType = (
+    activeAccount: { accountType?: unknown; isLive?: unknown; name?: unknown; server?: unknown } | undefined,
+    storeAccount: Record<string, unknown> | null | undefined,
+    serverName: string,
+    accountId: string,
+): TradingAccountType | undefined => {
+    if (!accountId || accountId === '---') return undefined;
+
+    // Match Navigator's account color classification: prefer the active saved account
+    // and live account snapshot, falling back to stored account_type/server hints.
+    const resolvedFromAccount = resolveTradingAccountType(activeAccount, storeAccount);
+    if (resolvedFromAccount) return resolvedFromAccount;
+
+    if (typeof activeAccount?.isLive === 'boolean') return activeAccount.isLive ? 'real' : 'demo';
+    if (typeof storeAccount?.isLive === 'boolean') return storeAccount.isLive ? 'real' : 'demo';
+
+    const storedAccountType = getStoredHeaderValue('account_type');
+    const serverFallback = serverName && serverName !== DEFAULT_BROKER_SERVER ? serverName : '';
+    return resolveDisplayAccountType(
+        storedAccountType ? { account_type: storedAccountType } : undefined,
+        serverFallback ? { server: serverFallback } : undefined,
+    );
+};
+
+const formatAccountTypeLabel = (accountType?: TradingAccountType): string => {
+    if (accountType === 'demo') return 'Demo';
+    if (accountType === 'real') return 'Real';
+    if (accountType === 'contest') return 'Contest';
+    return '';
+};
 
 /**
  * @param symbol the chart symbol the caller shows (required: App / StatusBar own
@@ -455,12 +493,15 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
         getBrokerMetadataRefreshTick,
     );
     const accountId = useAppStore((s) => s.accountId) || '---';
+    const storeAccount = useAppStore((s) => s.account) as unknown as Record<string, unknown> | null | undefined;
     const rawSavedAccounts = useAppStore((s) => s.savedAccounts);
     const savedAccounts = Array.isArray(rawSavedAccounts) ? rawSavedAccounts : [];
     const activeAccount = savedAccounts.find(a => a && String(a.login) === String(accountId));
     const accountName = normalizeHeaderText(activeAccount?.name);
     const storedServer = typeof window !== 'undefined' ? localStorage.getItem('rtx_broker_server') : '';
     const serverName = storedServer || activeAccount?.server || DEFAULT_BROKER_SERVER;
+    const accountType = resolveTerminalAccountType(activeAccount, storeAccount, serverName, accountId);
+    const accountTypeLabel = formatAccountTypeLabel(accountType);
     const brokerId = getStoredBrokerId();
     const infoKey = `${brokerId}|${serverName}|${accountId}|${sessionRevision}`;
     const detailsFetchKey = `${infoKey}|r${metadataRefreshTick}`;
@@ -640,7 +681,7 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
         ? (hasExplicitBroker ? brokerName : resolveServerDisplayLabel(brokerName))
         : (explicitFallback || resolveServerDisplayLabel(brokerDisplayName(serverName)));
     return {
-        accountId, accountName, serverName: resolveServerDisplayLabel(serverName), marginMode,
+        accountId, accountName, accountType, accountTypeLabel, serverName: resolveServerDisplayLabel(serverName), marginMode,
         brokerName: resolvedDisplayBrokerName,
         logoUrl: currentDetails ? logoUrl : getStoredLogoUrl(),
         logoBaseCandidates: currentDetails ? logoBaseCandidates : [],

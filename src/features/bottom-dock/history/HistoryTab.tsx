@@ -10,12 +10,21 @@ import { useAppStore, type Trade } from '../../../store/useAppStore';
 import { formatPrice, resolveSpecDigits } from '../../../utils/symbolUtils';
 import { lookupStoreCatalogPriceDigits, resolveMarketWatchPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
 import { safeReadBoolean, safeReadJson, safeReadString } from '../preferences';
+import {
+  readSessionJson,
+  readSessionString,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionJson,
+  writeSessionString,
+} from '../../../services/sessionViewState';
 import { escapeHtml } from '../reporting';
 import { getCurrentBrokerAccountSessionScopeKey, normalizeTradeSymbol } from '../sessionScope';
 import {
   createDefaultHistoryCustomPeriod,
   getHistoryPeriodStart,
   getHistoryRowTime,
+  HISTORY_PERIOD_LABELS,
   HISTORY_PERIOD_PRESETS,
   parseLocalDateBoundary,
   type HistoryCustomPeriod,
@@ -24,7 +33,7 @@ import {
 import { useHistoryDataController } from './useHistoryDataController';
 import { useHistoryVirtualWindow } from './useHistoryVirtualWindow';
 import { calculateHistoryFinancialSummary } from './historyFinancialSummary';
-import { WithdrawalHistoryPanel } from './WithdrawalHistoryPanel';
+import type { HistoryBalanceOperation } from './balanceHistory';
 import './history-summary.css';
 import './history-status.css';
 import {
@@ -52,7 +61,87 @@ type HistoryTabProps = {
     accountBalance?: number | null;
 };
 
-type HistorySectionTab = 'history' | 'withdrawals';
+type HistoryTableRow =
+    | { kind: 'trade'; trade: Trade; sortTime: number; sortId: number; key: string }
+    | { kind: 'balance'; operation: HistoryBalanceOperation; sortTime: number; sortId: number; key: string };
+
+const HISTORY_VIEW_MODES: readonly HistoryViewMode[] = ['positions', 'deals', 'orders', 'orders-and-deals'];
+const HISTORY_PERIOD_FILTERS: readonly HistoryPeriodFilter[] = [
+    'today',
+    'last-hour',
+    'last-three-hours',
+    'last-six-hours',
+    'last-twelve-hours',
+    'last-24-hours',
+    'last-three-days',
+    'last-seven-days',
+    'last-fourteen-days',
+    'last-thirty-days',
+    'last-month',
+    'last-three-months',
+    'last-six-months',
+    'all',
+    'custom',
+];
+
+const readPersistedHistorySymbolFilter = (): HistorySymbolFilter => {
+    const parsed = readSessionJson<unknown>(SESSION_VIEW_KEYS.historySymbolFilter, null);
+    if (parsed && typeof parsed === 'object') {
+        const record = parsed as { mode?: unknown; symbol?: unknown };
+        if (record.mode === 'symbol' && typeof record.symbol === 'string' && record.symbol.trim()) {
+            return { mode: 'symbol', symbol: record.symbol };
+        }
+    }
+    return { mode: 'all' };
+};
+
+const readPersistedHistoryCustomPeriod = (): HistoryCustomPeriod => {
+    const fallback = createDefaultHistoryCustomPeriod();
+    const parsed = readSessionJson<unknown>(SESSION_VIEW_KEYS.historyCustomPeriod, null);
+    if (parsed && typeof parsed === 'object') {
+        const record = parsed as { from?: unknown; to?: unknown };
+        if (typeof record.from === 'string' && typeof record.to === 'string' && record.from && record.to) {
+            return { from: record.from, to: record.to };
+        }
+    }
+    return fallback;
+};
+
+const isRawBalanceDeal = (trade: Trade): boolean => {
+    const normalized = String(trade.dealType || trade.side || trade.type || '').trim().toLowerCase()
+        .replace(/^deal_(?:type_)?/, '')
+        .replace(/[\s-]+/g, '_');
+    return normalized === 'balance' || normalized === 'deposit' || normalized === 'withdrawal';
+};
+
+const formatBalanceStatus = (status?: string): { label: string; toneClass: string; isNonCompleted: boolean } => {
+    const normalized = (status ?? 'completed').trim().toLowerCase();
+    if (normalized === 'rejected' || normalized === 'failed' || normalized === 'cancelled' || normalized === 'canceled') {
+        return {
+            label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+            toneClass: 'text-loss',
+            isNonCompleted: true,
+        };
+    }
+    if (normalized === 'pending' || normalized === 'processing' || normalized === 'requested' || normalized === 'queued') {
+        return {
+            label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+            toneClass: 'text-amber-300',
+            isNonCompleted: true,
+        };
+    }
+    return {
+        label: normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Completed',
+        toneClass: 'text-profit',
+        isNonCompleted: false,
+    };
+};
+
+const formatBalanceNote = (operation: HistoryBalanceOperation): string => (
+    operation.method && operation.comment && operation.method !== operation.comment
+        ? `${operation.method} — ${operation.comment}`
+        : (operation.method || operation.comment || '-')
+);
 
 export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance = null }: HistoryTabProps) {
     const tr = useUiTranslation();
@@ -60,7 +149,6 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
     const activeChartSymbol = useAppStore((state) => state.selectedSymbol);
     const activeLogin = Number.parseInt(String(accountId ?? getStoredAccountLogin() ?? ''), 10);
     const activeScopeKey = getCurrentBrokerAccountSessionScopeKey();
-    const [historySection, setHistorySection] = useState<HistorySectionTab>('history');
     const {
         historyData,
         historyLoadedAt,
@@ -70,18 +158,41 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         error,
         sessionResetVersion,
         fetchHistory,
-        refreshBalanceHistory,
         financialDealsAvailable,
         balanceHistory,
         balanceHistoryError,
     } = useHistoryDataController(activeLogin, activeScopeKey, {
-        liveWithdrawalSync: historySection === 'withdrawals',
+        liveWithdrawalSync: true,
     });
-    const [historyView, setHistoryView] = useState<HistoryViewMode>('positions');
-    const [periodFilter, setPeriodFilter] = useState<HistoryPeriodFilter>('all');
-    const [symbolFilter, setSymbolFilter] = useState<HistorySymbolFilter>({ mode: 'all' });
-    const [customPeriod, setCustomPeriod] = useState<HistoryCustomPeriod>(createDefaultHistoryCustomPeriod);
-    const [customPeriodDraft, setCustomPeriodDraft] = useState<HistoryCustomPeriod>(createDefaultHistoryCustomPeriod);
+    const [historyView, setHistoryView] = useState<HistoryViewMode>(() => (
+        readSessionString(SESSION_VIEW_KEYS.historyView, HISTORY_VIEW_MODES, 'positions')
+    ));
+    const [periodFilter, setPeriodFilter] = useState<HistoryPeriodFilter>(() => (
+        readSessionString(SESSION_VIEW_KEYS.historyPeriod, HISTORY_PERIOD_FILTERS, 'all')
+    ));
+    const [symbolFilter, setSymbolFilter] = useState<HistorySymbolFilter>(readPersistedHistorySymbolFilter);
+    const [customPeriod, setCustomPeriod] = useState<HistoryCustomPeriod>(readPersistedHistoryCustomPeriod);
+    const [customPeriodDraft, setCustomPeriodDraft] = useState<HistoryCustomPeriod>(readPersistedHistoryCustomPeriod);
+    useEffect(() => {
+        writeSessionString(SESSION_VIEW_KEYS.historyView, historyView);
+    }, [historyView]);
+    useEffect(() => {
+        writeSessionString(SESSION_VIEW_KEYS.historyPeriod, periodFilter);
+    }, [periodFilter]);
+    useEffect(() => {
+        writeSessionJson(SESSION_VIEW_KEYS.historySymbolFilter, symbolFilter);
+    }, [symbolFilter]);
+    useEffect(() => {
+        writeSessionJson(SESSION_VIEW_KEYS.historyCustomPeriod, customPeriod);
+    }, [customPeriod]);
+    useEffect(() => subscribeWorkspaceViewReset(() => {
+        const defaults = createDefaultHistoryCustomPeriod();
+        setHistoryView('positions');
+        setPeriodFilter('all');
+        setSymbolFilter({ mode: 'all' });
+        setCustomPeriod(defaults);
+        setCustomPeriodDraft(defaults);
+    }), []);
     const [customPeriodDialogOpen, setCustomPeriodDialogOpen] = useState(false);
     const customPeriodDialogRef = useRef<HTMLFormElement>(null);
     useDialogFocusScope({
@@ -140,7 +251,6 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setHistoryContextMenu(null);
         setSelectedTradeKey(null);
-        setHistorySection('history');
         setHistoryView('positions');
         setSymbolFilter({ mode: 'all' });
         setPeriodFilter('all');
@@ -182,16 +292,22 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         [historyData.orders],
     );
 
+    const visibleDealRows = useMemo(() => (
+        balanceHistory === null
+            ? historyData.deals
+            : historyData.deals.filter((deal) => !isRawBalanceDeal(deal))
+    ), [balanceHistory, historyData.deals]);
+
     const historyRows = useMemo(() => {
         const rows = historyView === 'positions'
             ? historyData.positions
             : historyView === 'deals'
-                ? historyData.deals
+                ? visibleDealRows
                 : historyView === 'orders'
                     ? visibleOrderHistoryRows
-                    : [...visibleOrderHistoryRows, ...historyData.deals];
+                    : [...visibleOrderHistoryRows, ...visibleDealRows];
         return [...rows].sort((left, right) => getHistoryRowTime(right) - getHistoryRowTime(left));
-    }, [historyData.deals, historyData.positions, historyView, visibleOrderHistoryRows]);
+    }, [historyData.positions, historyView, visibleDealRows, visibleOrderHistoryRows]);
 
     const availableSymbols = useMemo(() => {
         const symbols = new Map<string, string>();
@@ -260,10 +376,11 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         [historyData.positions, matchesCurrentHistoryFilters],
     );
 
-    const filteredWithdrawals = useMemo(() => {
+    const filteredBalanceOperations = useMemo(() => {
+        if (historyView === 'orders' || symbolFilter.mode !== 'all') return [];
         const { start, end } = periodRange;
-        const rows = (balanceHistory ?? []).filter((operation) => {
-            if (operation.type !== 'withdrawal') return false;
+        return (balanceHistory ?? []).filter((operation) => {
+            if (operation.type !== 'deposit' && operation.type !== 'withdrawal') return false;
             if (periodFilter === 'all') return true;
             return (
                 operation.time !== null
@@ -272,17 +389,51 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
                 && operation.time <= end
             );
         });
-        return [...rows].sort((left, right) => {
-            const timeDiff = (right.time ?? 0) - (left.time ?? 0);
-            if (timeDiff !== 0) return timeDiff;
-            const leftNum = Number(left.id);
-            const rightNum = Number(right.id);
-            if (Number.isFinite(leftNum) && Number.isFinite(rightNum) && leftNum !== rightNum) {
-                return rightNum - leftNum;
-            }
-            return right.id.localeCompare(left.id);
+    }, [balanceHistory, historyView, periodFilter, periodRange, symbolFilter.mode]);
+
+    const getTradeKey = useCallback((trade: Trade) => [
+        trade.historySource ?? trade.type,
+        trade.positionId ?? '',
+        trade.dealTicket ?? trade.orderTicket ?? trade.id,
+        trade.openTime,
+        trade.closeTime ?? '',
+    ].join(':'), []);
+
+    const filteredRows = useMemo<HistoryTableRow[]>(() => {
+        const tradeRows: HistoryTableRow[] = filteredOrders.map((trade) => {
+            const rawTicket = historyView === 'positions'
+                ? (trade.positionId ?? trade.id)
+                : trade.historySource === 'deal'
+                    ? (trade.dealTicket ?? trade.id)
+                    : trade.historySource === 'order'
+                        ? (trade.orderTicket ?? trade.id)
+                        : trade.id;
+            const numericTicket = Number(rawTicket);
+            return {
+                kind: 'trade',
+                trade,
+                key: getTradeKey(trade),
+                sortTime: getHistoryRowTime(trade),
+                sortId: Number.isFinite(numericTicket) ? numericTicket : 0,
+            };
         });
-    }, [balanceHistory, periodFilter, periodRange]);
+        const balanceRows: HistoryTableRow[] = filteredBalanceOperations.map((operation) => {
+            const numericId = Number(operation.id);
+            return {
+                kind: 'balance',
+                operation,
+                key: `balance:${operation.type}:${operation.id}:${operation.time ?? 'na'}`,
+                sortTime: operation.time ?? 0,
+                sortId: Number.isFinite(numericId) ? numericId : 0,
+            };
+        });
+        return [...tradeRows, ...balanceRows].sort((left, right) => {
+            const timeDiff = right.sortTime - left.sortTime;
+            if (timeDiff !== 0) return timeDiff;
+            if (right.sortId !== left.sortId) return right.sortId - left.sortId;
+            return right.key.localeCompare(left.key);
+        });
+    }, [filteredBalanceOperations, filteredOrders, getTradeKey, historyView]);
 
     const financialSummary = useMemo(() => {
         const { start, end } = periodRange;
@@ -313,28 +464,29 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
                 : [historyData.errors.orders, historyData.errors.deals].filter(Boolean).join(' · ') || null;
     const displayError = error ?? viewError;
 
-    const getTradeKey = (trade: Trade) => [
-        trade.historySource ?? trade.type,
-        trade.positionId ?? '',
-        trade.dealTicket ?? trade.orderTicket ?? trade.id,
-        trade.openTime,
-        trade.closeTime ?? '',
-    ].join(':');
-
     useEffect(() => {
         if (!selectedTradeKey) return;
-        if (!filteredOrders.some(order => getTradeKey(order) === selectedTradeKey)) {
+        if (!filteredRows.some(row => row.key === selectedTradeKey)) {
             // The selected row disappeared from the externally refreshed history result.
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setSelectedTradeKey(null);
             setHistoryContextMenu(null);
         }
-    }, [filteredOrders, selectedTradeKey]);
+    }, [filteredRows, selectedTradeKey]);
 
     const formatTs = (value?: string) => {
         if (!value) return '-';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return value;
+        const pad = (number: number, length = 2) => String(number).padStart(length, '0');
+        const milliseconds = showMilliseconds ? `.${pad(date.getMilliseconds(), 3)}` : '';
+        return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${milliseconds}`;
+    };
+
+    const formatBalanceTs = (timeMs: number | null) => {
+        if (timeMs === null || !Number.isFinite(timeMs)) return '—';
+        const date = new Date(timeMs);
+        if (Number.isNaN(date.getTime())) return '—';
         const pad = (number: number, length = 2) => String(number).padStart(length, '0');
         const milliseconds = showMilliseconds ? `.${pad(date.getMilliseconds(), 3)}` : '';
         return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${milliseconds}`;
@@ -477,8 +629,9 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
                 ? 'Orders'
                 : 'Orders & Deals';
 
-    const periodFilterLabel = periodFilter === 'custom' ? `${customPeriod.from} - ${customPeriod.to}`
-        : HISTORY_PERIOD_PRESETS.find(([period]) => period === periodFilter)![1];
+    const periodFilterLabel = periodFilter === 'custom'
+        ? `${customPeriod.from} - ${customPeriod.to}`
+        : HISTORY_PERIOD_LABELS[periodFilter];
 
     const symbolFilterLabel = symbolFilter.mode === 'all'
         ? 'All Symbols'
@@ -498,34 +651,35 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
     };
 
     const getHistoryReportColumns = () => [
-        { label: 'Time', value: (trade: Trade): string | number => formatTs(trade.openTime) },
-        { label: 'Symbol', value: (trade: Trade): string | number => trade.symbol || '-' },
-        ...(isColumnVisible('ticket') ? [{ label: 'Ticket', value: (trade: Trade): string | number => getHistoryTicket(trade) }] : []),
-        { label: 'Type', value: (trade: Trade): string | number => String(trade.orderType || trade.side || trade.type || '-').toLowerCase() },
-        { label: 'Volume', value: (trade: Trade): string | number => formatHistoryVolume(trade) },
-        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.openPrice, trade.symbol, trade.digits) },
-        { label: 'S/L', value: (trade: Trade): string | number => formatLevelCell(trade.sl, trade.symbol, trade.digits) },
-        { label: 'T/P', value: (trade: Trade): string | number => formatLevelCell(trade.tp, trade.symbol, trade.digits) },
-        { label: 'Time', value: (trade: Trade): string | number => formatTs(trade.closeTime) },
-        { label: 'Price', value: (trade: Trade): string | number => formatPriceCell(trade.closePrice, trade.symbol, trade.digits) },
-        ...(isColumnVisible('marketValue') ? [{ label: 'Market Value', value: (trade: Trade): string | number => {
-            const value = getHistoryMarketValue(trade);
+        { label: 'Time', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatBalanceTs(row.operation.time) : formatTs(row.trade.openTime)) },
+        { label: 'Symbol', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : row.trade.symbol || '-') },
+        ...(isColumnVisible('ticket') ? [{ label: 'Ticket', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.id : getHistoryTicket(row.trade)) }] : []),
+        { label: 'Type', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.type : String(row.trade.orderType || row.trade.side || row.trade.type || '-').toLowerCase()) },
+        { label: 'Volume', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatHistoryVolume(row.trade)) },
+        { label: 'Price', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatPriceCell(row.trade.openPrice, row.trade.symbol, row.trade.digits)) },
+        { label: 'S/L', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatLevelCell(row.trade.sl, row.trade.symbol, row.trade.digits)) },
+        { label: 'T/P', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatLevelCell(row.trade.tp, row.trade.symbol, row.trade.digits)) },
+        { label: 'Time', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatTs(row.trade.closeTime)) },
+        { label: 'Price', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatPriceCell(row.trade.closePrice, row.trade.symbol, row.trade.digits)) },
+        ...(isColumnVisible('marketValue') ? [{ label: 'Market Value', value: (row: HistoryTableRow): string | number => {
+            if (row.kind === 'balance') return '\u2014';
+            const value = getHistoryMarketValue(row.trade);
             return value === null ? '\u2014' : formatGroupedNumber(value, 2, 2);
         } }] : []),
-        ...(isColumnVisible('commission') ? [{ label: 'Commission', value: (trade: Trade): string | number => formatMoney(trade.commission) }] : []),
-        ...(isColumnVisible('swap') ? [{ label: 'Swap', value: (trade: Trade): string | number => formatMoney(trade.swap) }] : []),
-        ...(isColumnVisible('fee') ? [{ label: 'Fee', value: (trade: Trade): string | number => formatMoney(trade.fee) }] : []),
-        { label: 'Profit', value: (trade: Trade): string | number => formatMoney(trade.profit) },
-        ...(isColumnVisible('changePercent') ? [{ label: 'Change %', value: (trade: Trade): string | number => formatHistoryPercent(trade) }] : []),
-        ...(isColumnVisible('magicNumber') ? [{ label: 'Magic Number', value: (trade: Trade): string | number => trade.magicNumber ?? '-' }] : []),
-        ...(isColumnVisible('comment') ? [{ label: 'Comment', value: (trade: Trade): string | number => trade.comment || '-' }] : []),
+        ...(isColumnVisible('commission') ? [{ label: 'Commission', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.commission)) }] : []),
+        ...(isColumnVisible('swap') ? [{ label: 'Swap', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.swap)) }] : []),
+        ...(isColumnVisible('fee') ? [{ label: 'Fee', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.fee)) }] : []),
+        { label: 'Profit', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatMoney(row.operation.amount) : formatMoney(row.trade.profit)) },
+        ...(isColumnVisible('changePercent') ? [{ label: 'Change %', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatHistoryPercent(row.trade)) }] : []),
+        ...(isColumnVisible('magicNumber') ? [{ label: 'Magic Number', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : row.trade.magicNumber ?? '-') }] : []),
+        ...(isColumnVisible('comment') ? [{ label: 'Comment', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatBalanceNote(row.operation) : row.trade.comment || '-') }] : []),
     ];
 
     const buildHistoryReportHtml = (title: string) => {
         const columns = getHistoryReportColumns();
         const header = columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join('');
-        const body = filteredOrders.map(order => (
-            `<tr>${columns.map(column => `<td>${escapeHtml(column.value(order))}</td>`).join('')}</tr>`
+        const body = filteredRows.map(row => (
+            `<tr>${columns.map(column => `<td>${escapeHtml(column.value(row))}</td>`).join('')}</tr>`
         )).join('');
         return `<!doctype html>
 <html>
@@ -541,7 +695,7 @@ th{background:#ececec;font-weight:600}
 </style>
 </head>
 <body>
-<div class="summary">${escapeHtml(title)} - ${filteredOrders.length} record(s)</div>
+<div class="summary">${escapeHtml(title)} - ${filteredRows.length} record(s)</div>
 <table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
 </body>
 </html>`;
@@ -559,8 +713,8 @@ th{background:#ececec;font-weight:600}
 
     const downloadHistoryXml = () => {
         const columns = getHistoryReportColumns();
-        const rows = filteredOrders.map(order => (
-            `<Row>${columns.map(column => `<Cell><Data ss:Type="String">${escapeHtml(column.value(order))}</Data></Cell>`).join('')}</Row>`
+        const rows = filteredRows.map(row => (
+            `<Row>${columns.map(column => `<Cell><Data ss:Type="String">${escapeHtml(column.value(row))}</Data></Cell>`).join('')}</Row>`
         )).join('');
         const xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -666,10 +820,10 @@ ${rows}
                 disabled: !symbol,
                 action: () => window.dispatchEvent(new CustomEvent('openOrderDialog', { detail: { symbol } })),
             },
-            { label: 'Positions', checked: historySection === 'history' && historyView === 'positions', action: () => { setHistorySection('history'); setHistoryView('positions'); } },
-            { label: 'Deals', checked: historySection === 'history' && historyView === 'deals', action: () => { setHistorySection('history'); setHistoryView('deals'); } },
-            { label: 'Orders', checked: historySection === 'history' && historyView === 'orders', action: () => { setHistorySection('history'); setHistoryView('orders'); } },
-            { label: 'Orders & Deals', checked: historySection === 'history' && historyView === 'orders-and-deals', action: () => { setHistorySection('history'); setHistoryView('orders-and-deals'); } },
+            { label: 'Positions', checked: historyView === 'positions', action: () => setHistoryView('positions') },
+            { label: 'Deals', checked: historyView === 'deals', action: () => setHistoryView('deals') },
+            { label: 'Orders', checked: historyView === 'orders', action: () => setHistoryView('orders') },
+            { label: 'Orders & Deals', checked: historyView === 'orders-and-deals', action: () => setHistoryView('orders-and-deals') },
             { divider: true },
             { label: 'Symbols', submenu: symbolsSubmenu },
             {
@@ -683,6 +837,11 @@ ${rows}
             ...HISTORY_PERIOD_PRESETS.map(([period, label]) => ({
                 label, checked: periodFilter === period, action: () => selectPeriod(period),
             })),
+            {
+                label: 'All History',
+                checked: periodFilter === 'all',
+                action: () => selectPeriod('all'),
+            },
             {
                 label: 'Custom Period',
                 checked: periodFilter === 'custom',
@@ -759,7 +918,7 @@ ${rows}
     const historyViewportReset = useMemo(() => ({ historyView, periodFilter, symbolFilter, customPeriod, activeScopeKey, activeLogin }),
         [historyView, periodFilter, symbolFilter, customPeriod, activeScopeKey, activeLogin]);
     const { scrollRef: historyScrollRef, window: historyVirtualWindow, onScroll: syncHistoryViewport }
-        = useHistoryVirtualWindow(filteredOrders.length, historyViewportReset);
+        = useHistoryVirtualWindow(filteredRows.length, historyViewportReset);
     const historyTableRef = useRef<HTMLTableElement>(null);
     const historySummaryBarRef = useRef<HTMLDivElement>(null);
     const historySummaryTableRef = useRef<HTMLTableElement>(null);
@@ -778,7 +937,6 @@ ${rows}
     }, [syncHistoryViewport, syncHistorySummaryHorizontalScroll]);
 
     useLayoutEffect(() => {
-        if (historySection !== 'history') return undefined;
         const scroller = historyScrollRef.current;
         const table = historyTableRef.current;
         const summaryBar = historySummaryBarRef.current;
@@ -827,10 +985,9 @@ ${rows}
     }, [
         autoArrange,
         columnVisibility,
-        filteredOrders.length,
+        filteredRows.length,
         historyLoadedAt,
         historyScrollRef,
-        historySection,
         historyView,
         loading,
         ordersPending,
@@ -838,8 +995,8 @@ ${rows}
         summaryTrailingColumns,
         visibleColumnCount,
     ]);
-    const visibleHistoryOrders = filteredOrders.slice(historyVirtualWindow.startIndex, historyVirtualWindow.endIndex);
-    const historyRowsLoading = filteredOrders.length === 0 && (
+    const visibleHistoryRows = filteredRows.slice(historyVirtualWindow.startIndex, historyVirtualWindow.endIndex);
+    const historyRowsLoading = filteredRows.length === 0 && (
         loading || (ordersPending && (historyView === 'orders' || historyView === 'orders-and-deals'))
     );
 
@@ -847,73 +1004,41 @@ ${rows}
     const cellDividerClass = '';
     const rowDividerClass = 'divide-y divide-zinc-800/90';
 
-    const activeToolbarLoading = historySection === 'withdrawals' ? balanceLoading : loading;
-    const activeToolbarCount = historySection === 'withdrawals' ? filteredWithdrawals.length : filteredOrders.length;
-    const activeToolbarSummary = historySection === 'withdrawals'
-        ? `${tr('Withdrawal History')} · ${tr(periodFilterLabel)}`
-        : `${tr(historyViewLabel)} · ${tr(symbolFilterLabel)} · ${tr(periodFilterLabel)}`;
+    const activeToolbarLoading = loading || balanceLoading;
+    const activeToolbarCount = filteredRows.length;
+    const activeToolbarSummary = `${tr(historyViewLabel)} · ${tr(symbolFilterLabel)} · ${tr(periodFilterLabel)}`;
 
     return (
         <div
             className="rtx-history-tab h-full flex flex-col relative bg-[#131316] overflow-hidden"
             onContextMenu={(event) => handleHistoryContextMenu(event)}
         >
-            <div className="rtx-trade-view-bar rtx-history-view-bar flex min-h-[28px] items-center gap-1 border-b border-zinc-800/80 px-2 py-0.5 pr-7">
-                <button
-                    type="button"
-                    onClick={() => {
-                        setHistoryContextMenu(null);
-                        setHistorySection('history');
-                    }}
-                    aria-pressed={historySection === 'history'}
-                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${historySection === 'history' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-                >
-                    {tr('History')}
-                </button>
-                <button
-                    type="button"
-                    onClick={() => {
-                        setHistoryContextMenu(null);
-                        setHistorySection('withdrawals');
-                    }}
-                    aria-pressed={historySection === 'withdrawals'}
-                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${historySection === 'withdrawals' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-                >
-                    {tr('Withdrawal History')}{filteredWithdrawals.length > 0 ? ` (${filteredWithdrawals.length})` : ''}
-                </button>
-            </div>
             <div className="rtx-history-toolbar flex h-7 min-h-[28px] flex-nowrap items-center justify-between gap-1.5 px-1.5 py-0 border-b border-zinc-700 bg-[#191a1e] shrink-0 text-[11.5px] font-normal text-zinc-300 tabular-nums">
-                <div className="rtx-history-toolbar__periods flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto whitespace-nowrap" role="group" aria-label={tr('History time filters')}>
-                    {HISTORY_PERIOD_PRESETS.map(([period, label]) => (
-                        <button
-                            key={period}
-                            type="button"
-                            aria-pressed={periodFilter === period}
-                            onClick={() => selectPeriod(period)}
-                            className={`rtx-history-time-btn inline-flex h-[22px] shrink-0 items-center px-1.5 py-0 text-[11.5px] leading-[20px] font-normal rounded-sm transition-colors ${periodFilter === period ? 'bg-zinc-700/70 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
-                        >
-                            {tr(label)}
-                        </button>
-                    ))}
-                    <button
-                        type="button"
-                        aria-pressed={periodFilter === 'custom'}
-                        onClick={openCustomPeriodDialog}
-                        className={`rtx-history-time-btn inline-flex h-[22px] shrink-0 items-center px-1.5 py-0 text-[11.5px] leading-[20px] font-normal rounded-sm transition-colors ${periodFilter === 'custom' ? 'bg-zinc-700/70 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                <div className="rtx-history-toolbar__periods flex h-full min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap">
+                    <div
+                        className="rtx-history-filter-box inline-flex h-[24px] shrink-0 items-center gap-0.5 rounded border border-zinc-700 bg-[#131316] px-1"
+                        role="group"
+                        aria-label={tr('History time filters')}
                     >
-                        {tr('Custom Period')}
-                    </button>
+                        {HISTORY_PERIOD_PRESETS.map(([period, label]) => (
+                            <button
+                                key={period}
+                                type="button"
+                                aria-pressed={periodFilter === period}
+                                onClick={() => selectPeriod(periodFilter === period ? 'all' : period)}
+                                className={`rtx-history-time-btn inline-flex h-[22px] shrink-0 items-center px-2 py-0 text-[12px] leading-[20px] font-normal rounded-sm transition-colors ${periodFilter === period ? 'bg-zinc-700/70 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            >
+                                {tr(label)}
+                            </button>
+                        ))}
+                    </div>
                 </div>
                 <div className="rtx-history-toolbar__meta flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap">
                     <span className="rtx-history-toolbar__summary hidden h-[22px] shrink-0 items-center text-[11.5px] leading-[20px] font-normal text-zinc-400 lg:inline-flex">{activeToolbarSummary}</span>
                     <span className="rtx-history-toolbar__count inline-flex h-[22px] shrink-0 items-center whitespace-nowrap text-[11.5px] leading-[20px] font-normal text-zinc-400">{activeToolbarCount} {tr(" records")}</span>
                     <button
                         type="button"
-                        onClick={() => (
-                            historySection === 'withdrawals'
-                                ? void refreshBalanceHistory()
-                                : void fetchHistory({ force: true })
-                        )}
+                        onClick={() => void fetchHistory({ force: true })}
                         disabled={activeToolbarLoading}
                         className="rtx-history-refresh-btn inline-flex h-[22px] shrink-0 items-center gap-1 px-1.5 py-0 text-[11.5px] leading-[20px] font-normal rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-300 disabled:cursor-wait disabled:opacity-50"
                     >
@@ -923,21 +1048,7 @@ ${rows}
                 </div>
             </div>
 
-            {historySection === 'withdrawals' ? (
-                <WithdrawalHistoryPanel
-                    withdrawals={filteredWithdrawals}
-                    loading={balanceLoading || (balanceHistory === null && !balanceHistoryError)}
-                    error={balanceHistoryError}
-                    accountBalance={accountBalance}
-                    autoArrange={autoArrange}
-                    showGrid={showGrid}
-                    showMilliseconds={showMilliseconds}
-                    formatMoney={formatMoney}
-                    onRetry={() => void refreshBalanceHistory()}
-                />
-            ) : (
-                <>
-            {displayError && filteredOrders.length > 0 && (
+            {displayError && filteredRows.length > 0 && (
                 <div
                     role="status"
                     className="rtx-history-status-warning shrink-0 border-b border-amber-700/50 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-300"
@@ -956,7 +1067,7 @@ ${rows}
                 <table
                     ref={historyTableRef}
                     className="rtx-trade-table rtx-history-table w-full text-center border-collapse"
-                    aria-rowcount={filteredOrders.length + 1}
+                    aria-rowcount={filteredRows.length + 1}
                     data-auto-arrange={autoArrange ? 'true' : 'false'}
                     data-grid={showGrid ? 'true' : 'false'}
                     style={{
@@ -989,7 +1100,7 @@ ${rows}
                         </tr>
                     </thead>
                     <tbody className={`${rowDividerClass} text-[#d8dde8] text-[13px] leading-[19.5px] font-normal`}>
-                        {filteredOrders.length === 0 && (
+                        {filteredRows.length === 0 && (
                             <tr>
                                 <td colSpan={Math.max(1, visibleColumnCount)} className="h-16 text-center text-zinc-600 text-xs italic">
                                     {historyRowsLoading ? tr("Loading trade history…") : displayError ? displayError : tr("No history records for the selected filters")}
@@ -1001,11 +1112,68 @@ ${rows}
                                 <td colSpan={Math.max(1, visibleColumnCount)} style={{ height: historyVirtualWindow.topSpacerHeight, padding: 0, border: 0, lineHeight: 0 }} />
                             </tr>
                         )}
-                        {visibleHistoryOrders.map((order, visibleIndex) => {
+                        {visibleHistoryRows.map((row, visibleIndex) => {
                             const index = historyVirtualWindow.startIndex + visibleIndex;
+                            const isSelected = row.key === selectedTradeKey;
+                            if (row.kind === 'balance') {
+                                const op = row.operation;
+                                const isDeposit = op.type === 'deposit';
+                                const timeLabel = formatBalanceTs(op.time);
+                                const statusInfo = formatBalanceStatus(op.status);
+                                const note = formatBalanceNote(op);
+                                const amountLabel = formatMoney(op.amount);
+                                const amountWithCurrency = op.currency ? `${amountLabel} ${op.currency}` : amountLabel;
+                                const typeLabel = isDeposit ? 'Deposit' : 'Withdrawal';
+                                return (
+                                    <Fragment key={`${row.key}-${index}`}>
+                                        <tr
+                                            aria-selected={isSelected}
+                                            data-history-row-kind={op.type}
+                                            className={`rtx-trade-row rtx-history-row rtx-history-row--${op.type} h-[30px] transition-colors cursor-default ${isSelected ? 'rtx-trade-row--selected' : ''}`}
+                                            title={note !== '-' ? note : undefined}
+                                            onClick={() => setSelectedTradeKey(row.key)}
+                                            onContextMenu={(event) => {
+                                                setSelectedTradeKey(row.key);
+                                                handleHistoryContextMenu(event);
+                                            }}
+                                        >
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Time: {{value0}}", { value0: timeLabel })}>{timeLabel}</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 whitespace-nowrap`} title={note !== '-' ? note : undefined}>—</td>
+                                            {isColumnVisible('ticket') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Ticket: {{value0}}", { value0: op.id })}>{op.id}</td>}
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-[13px] whitespace-nowrap`} title={note !== '-' ? `${tr(typeLabel)}: ${note}` : tr("Type: {{value0}}", { value0: tr(typeLabel) })}>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <span className={isDeposit ? 'text-profit' : 'text-loss'}>{tr(typeLabel)}</span>
+                                                    {statusInfo.isNonCompleted && !isColumnVisible('status') && (
+                                                        <span className={`text-[11px] font-normal ${statusInfo.toneClass}`}>({tr(statusInfo.label)})</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums whitespace-nowrap`}>—</td>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>
+                                            {isColumnVisible('status') && (
+                                                <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center whitespace-nowrap`} title={tr("Status: {{value0}}", { value0: tr(statusInfo.label) })}>
+                                                    <span className={`rtx-history-status-label inline-flex items-center text-[11px] font-normal ${statusInfo.toneClass}`}>{tr(statusInfo.label)}</span>
+                                                </td>
+                                            )}
+                                            {isColumnVisible('marketValue') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            {isColumnVisible('commission') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            {isColumnVisible('swap') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            {isColumnVisible('fee') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal tabular-nums ${op.amount < 0 ? 'text-loss' : 'text-profit'}`} title={tr("Amount: {{value0}}", { value0: amountWithCurrency })}>{amountWithCurrency}</td>
+                                            {isColumnVisible('changePercent') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            {isColumnVisible('magicNumber') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-500 tabular-nums`}>—</td>}
+                                            {isColumnVisible('comment') && <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap" title={tr("Comment: {{value0}}", { value0: note })}>{note}</td>}
+                                        </tr>
+                                    </Fragment>
+                                );
+                            }
+                            const order = row.trade;
                             const sideLabel = String(order.orderType || order.side || order.type || '-').toLowerCase();
-                            const tradeKey = getTradeKey(order);
-                            const isSelected = tradeKey === selectedTradeKey;
+                            const tradeKey = row.key;
                             const volumeLabel = formatHistoryVolume(order);
                             const marketValue = getHistoryMarketValue(order);
                             const marketValueLabel = marketValue === null ? '\u2014' : formatGroupedNumber(marketValue, 2, 2);
@@ -1042,8 +1210,12 @@ ${rows}
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Close time: {{value0}}", { value0: formatTs(order.closeTime) })}>{formatTs(order.closeTime)}</td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Close price: {{value0}}", { value0: closePriceCellLabel })}>{closePriceCellLabel}</td>
                                         {isColumnVisible('status') && (
-                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center whitespace-nowrap`} data-testid={`history-row-status-${order.id}`} title={tr("Status: {{value0}}", { value0: tr(rowStatus) })}>
-                                                <span className={getHistoryStatusBadgeClass(rowStatus)}>{tr(rowStatus)}</span>
+                                            <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center whitespace-nowrap`} data-testid={`history-row-status-${order.id}`} title={rowStatus === 'FILLED' ? undefined : tr("Status: {{value0}}", { value0: tr(rowStatus) })}>
+                                                {rowStatus === 'FILLED' ? (
+                                                    <span className="text-zinc-500">—</span>
+                                                ) : (
+                                                    <span className={getHistoryStatusBadgeClass(rowStatus)}>{tr(rowStatus)}</span>
+                                                )}
                                             </td>
                                         )}
                                         {isColumnVisible('marketValue') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Market Value: {{value0}}", { value0: marketValueLabel })}>{marketValueLabel}</td>}
@@ -1129,8 +1301,6 @@ ${rows}
                     </tfoot>
                 </table>
             </div>
-                </>
-            )}
 
             {historyContextMenu && (
                 <ContextMenu

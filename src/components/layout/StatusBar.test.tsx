@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createPortal } from 'react-dom';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +17,11 @@ vi.mock('../../hooks/useUiTranslation', () => ({
 vi.mock('../../hooks/useTerminalTitle', () => ({
   WEB_TERMINAL_TITLE: 'Web Terminal',
   getWebTerminalTitle: () => 'Web Terminal',
+  isSameTerminalLabel: (a: unknown, b: unknown) => {
+    const x = String(a ?? '').trim().toLowerCase();
+    const y = String(b ?? '').trim().toLowerCase();
+    return Boolean(x) && x === y;
+  },
   useTerminalBrokerInfo: vi.fn(() => ({
     accountId: '---',
     brokerName: 'Test Broker',
@@ -123,6 +130,79 @@ describe.each(['web', 'packaged desktop'] as const)('StatusBar in %s', (runtime)
     const fallbackRender = render(<StatusBar wsRef={{ current: null }} />);
     const fallbackLogo = fallbackRender.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__logo');
     expect(fallbackLogo).toHaveAttribute('src', toPublicAssetPath('favicon.png'));
+  });
+
+  it('shows Demo in green, Real in yellow, and Contest in blue matching account colors without background and separated by a hyphen', () => {
+    const brokerInfoMock = vi.mocked(useTerminalBrokerInfo);
+    const defaultImpl = brokerInfoMock.getMockImplementation();
+    const statusBarCss = readFileSync(resolve(process.cwd(), 'src/components/layout/StatusBar.css'), 'utf8');
+    try {
+      brokerInfoMock.mockReturnValue({
+        accountId: '500123',
+        accountName: 'Trader',
+        accountType: 'demo',
+        accountTypeLabel: 'Demo',
+        serverName: 'Broker-Demo',
+        brokerName: 'Test Broker',
+        marginMode: 'Hedge',
+        logoUrl: 'https://broker.example/custom-logo.png',
+        logoBaseCandidates: ['https://broker.example'],
+      });
+      const demoView = render(<StatusBar wsRef={{ current: null }} />);
+      const demoBadge = demoView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type');
+      const demoSep = demoView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type-sep');
+      expect(demoSep).toHaveTextContent('-');
+      expect(demoBadge).toHaveTextContent('Demo');
+      expect(demoBadge).toHaveAttribute('data-account-type', 'demo');
+      demoView.unmount();
+
+      brokerInfoMock.mockReturnValue({
+        accountId: '900456',
+        accountName: 'Trader',
+        accountType: 'real',
+        accountTypeLabel: 'Real',
+        serverName: 'Broker-Live',
+        brokerName: 'Test Broker',
+        marginMode: 'Hedge',
+        logoUrl: 'https://broker.example/custom-logo.png',
+        logoBaseCandidates: ['https://broker.example'],
+      });
+      const realView = render(<StatusBar wsRef={{ current: null }} />);
+      const realBadge = realView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type');
+      const realSep = realView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type-sep');
+      expect(realSep).toHaveTextContent('-');
+      expect(realBadge).toHaveTextContent('Real');
+      expect(realBadge).toHaveAttribute('data-account-type', 'real');
+      realView.unmount();
+
+      brokerInfoMock.mockReturnValue({
+        accountId: '700789',
+        accountName: 'Trader',
+        accountType: 'contest',
+        accountTypeLabel: 'Contest',
+        serverName: 'Broker-Contest',
+        brokerName: 'Test Broker',
+        marginMode: 'Hedge',
+        logoUrl: 'https://broker.example/custom-logo.png',
+        logoBaseCandidates: ['https://broker.example'],
+      });
+      const contestView = render(<StatusBar wsRef={{ current: null }} />);
+      const contestBadge = contestView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type');
+      const contestSep = contestView.container.querySelector('.rtx-status-bar__identity .rtx-status-bar__account-type-sep');
+      expect(contestSep).toHaveTextContent('-');
+      expect(contestBadge).toHaveTextContent('Contest');
+      expect(contestBadge).toHaveAttribute('data-account-type', 'contest');
+
+      // Account labels use transparent text matching the Navigator account colors in dark and light themes.
+      expect(statusBarCss).toMatch(/html:root \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='demo'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#4ade80;/);
+      expect(statusBarCss).toMatch(/html:root \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='real'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#facc15;/);
+      expect(statusBarCss).toMatch(/html:root \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='contest'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#60a5fa;/);
+      expect(statusBarCss).toMatch(/html:root\.rtx-skin-untitled-light \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='demo'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#15803d;/);
+      expect(statusBarCss).toMatch(/html:root\.rtx-skin-untitled-light \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='real'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#a16207;/);
+      expect(statusBarCss).toMatch(/html:root\.rtx-skin-untitled-light \.rtx-status-bar \.rtx-status-bar__account-type\[data-account-type='contest'\]\s*\{[^}]*border:\s*none;[^}]*background-color:\s*transparent;[^}]*color:\s*#2563eb;/);
+    } finally {
+      if (defaultImpl) brokerInfoMock.mockImplementation(defaultImpl);
+    }
   });
 
   it('hides and restores the bar while preserving the mounted connection control', () => {

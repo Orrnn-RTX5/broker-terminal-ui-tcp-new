@@ -21,7 +21,6 @@ export const unavailableDockSections = {
     News: 'News is currently unavailable.',
     Mailbox: 'Mailbox is currently unavailable.',
     Calendar: 'Calendar is currently unavailable.',
-    Company: 'Company is currently unavailable.',
     Alerts: 'Alerts is currently unavailable.',
     Articles: 'Articles is currently unavailable.',
     'Code Base': 'Code Base is currently unavailable.',

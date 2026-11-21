@@ -61,6 +61,8 @@ interface TemplateState {
   resetToDefaults: () => void;
 }
 
+const DEFAULT_TEMPLATE_IDS = new Set(['default', 'clean-chart', 'technical-analysis']);
+
 // Built-in default templates (MT5-inspired)
 const defaultTemplates: ChartTemplate[] = [
   {
@@ -69,7 +71,7 @@ const defaultTemplates: ChartTemplate[] = [
     chartType: 'candlestick',
     timeframe: 'M1',
     showGrid: true,
-    showVolumes: true,
+    showVolumes: false,
     indicators: [],
     drawingTools: [],
     colors: {
@@ -119,7 +121,7 @@ const defaultTemplates: ChartTemplate[] = [
     chartType: 'candlestick',
     timeframe: 'H4',
     showGrid: true,
-    showVolumes: true,
+    showVolumes: false,
     indicators: [
       {
         id: 'sma-20',
@@ -238,6 +240,21 @@ export const useTemplateStore = create<TemplateState>()(
         partialize: (state) => ({
           templates: state.templates,
         }),
+        merge: (persisted, current) => {
+          const persistedState = persisted as Partial<TemplateState> | undefined;
+          const templates = Array.isArray(persistedState?.templates)
+            ? persistedState.templates.map((template) => (
+                template?.isDefault && DEFAULT_TEMPLATE_IDS.has(template.id)
+                  ? { ...template, showVolumes: false }
+                  : template
+              ))
+            : current.templates;
+          return {
+            ...current,
+            ...persistedState,
+            templates,
+          };
+        },
       }
     )
   )

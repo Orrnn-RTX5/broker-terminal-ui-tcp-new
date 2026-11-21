@@ -388,9 +388,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs {
   flex-shrink: 0;
   flex-wrap: nowrap;
   gap: 0;
-  padding: 0 0 5px !important;
+  padding: 0 4px 5px 4px !important;
   border: 0 !important;
-  background: #f8fafc !important;
+  background: #f0f2f5 !important;
   box-shadow: none !important;
 }
 
@@ -443,7 +443,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs :is(
   .rtx-dock-tab-scroller .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)),
-  .rtx-dock-tab-actions .rtx-dock-tab:not(:last-child)
+  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)):not(:last-child)
 )::after {
   content: '';
   position: absolute;
@@ -452,11 +452,32 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs :is(
   bottom: 4px;
   width: 1px;
   background: var(--rtx-light-line-border, #64748b);
+  opacity: 0.45;
   pointer-events: none;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs:has(.rtx-dock-tab-actions .rtx-dock-tab:first-child.active-tab) .rtx-dock-tab-scroller .rtx-dock-tab:last-child::after {
+  display: none;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
   z-index: 2;
+  margin-top: 0 !important;
+  height: 100% !important;
+  background: var(--rtx-light-elevated) !important;
+  border: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  border-top: 0 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):active {
+  z-index: 2;
+  margin-top: 0 !important;
+  height: 100% !important;
   background: var(--rtx-light-elevated) !important;
   border: 1px solid var(--rtx-light-line-border, #64748b) !important;
   border-top: 0 !important;

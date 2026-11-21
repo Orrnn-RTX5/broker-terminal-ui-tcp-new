@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { SESSION_VIEW_KEYS } from '../services/sessionViewState';
 
 export interface ChartObjectState {
   drawingsHidden: boolean;
@@ -25,6 +27,7 @@ interface ChartObjectStateStore {
   setDrawingsLocked: (contextId: string, locked: boolean) => void;
   setIndicatorsLocked: (contextId: string, locked: boolean) => void;
   setAllLocked: (contextId: string, locked: boolean) => void;
+  resetAll: () => void;
 }
 
 const patchContext = (
@@ -45,31 +48,41 @@ export const getChartObjectState = (
   contextId: string | null | undefined,
 ): ChartObjectState => (contextId ? byContext[contextId] ?? defaultChartObjectState : defaultChartObjectState);
 
-export const useChartObjectStateStore = create<ChartObjectStateStore>()((set) => ({
-  byContext: {},
-  setDrawingsHidden: (contextId, drawingsHidden) =>
-    set((state) => ({ byContext: patchContext(state.byContext, contextId, { drawingsHidden }) })),
-  setIndicatorsHidden: (contextId, indicatorsHidden) =>
-    set((state) => ({ byContext: patchContext(state.byContext, contextId, { indicatorsHidden }) })),
-  setTradesHidden: (contextId, tradesHidden) =>
-    set((state) => ({ byContext: patchContext(state.byContext, contextId, { tradesHidden }) })),
-  setAllHidden: (contextId, hidden) =>
-    set((state) => ({
-      byContext: patchContext(state.byContext, contextId, {
-        drawingsHidden: hidden,
-        indicatorsHidden: hidden,
-        tradesHidden: hidden,
-      }),
-    })),
-  setDrawingsLocked: (contextId, drawingsLocked) =>
-    set((state) => ({ byContext: patchContext(state.byContext, contextId, { drawingsLocked }) })),
-  setIndicatorsLocked: (contextId, indicatorsLocked) =>
-    set((state) => ({ byContext: patchContext(state.byContext, contextId, { indicatorsLocked }) })),
-  setAllLocked: (contextId, locked) =>
-    set((state) => ({
-      byContext: patchContext(state.byContext, contextId, {
-        drawingsLocked: locked,
-        indicatorsLocked: locked,
-      }),
-    })),
-}));
+export const useChartObjectStateStore = create<ChartObjectStateStore>()(
+  persist(
+    (set) => ({
+      byContext: {},
+      setDrawingsHidden: (contextId, drawingsHidden) =>
+        set((state) => ({ byContext: patchContext(state.byContext, contextId, { drawingsHidden }) })),
+      setIndicatorsHidden: (contextId, indicatorsHidden) =>
+        set((state) => ({ byContext: patchContext(state.byContext, contextId, { indicatorsHidden }) })),
+      setTradesHidden: (contextId, tradesHidden) =>
+        set((state) => ({ byContext: patchContext(state.byContext, contextId, { tradesHidden }) })),
+      setAllHidden: (contextId, hidden) =>
+        set((state) => ({
+          byContext: patchContext(state.byContext, contextId, {
+            drawingsHidden: hidden,
+            indicatorsHidden: hidden,
+            tradesHidden: hidden,
+          }),
+        })),
+      setDrawingsLocked: (contextId, drawingsLocked) =>
+        set((state) => ({ byContext: patchContext(state.byContext, contextId, { drawingsLocked }) })),
+      setIndicatorsLocked: (contextId, indicatorsLocked) =>
+        set((state) => ({ byContext: patchContext(state.byContext, contextId, { indicatorsLocked }) })),
+      setAllLocked: (contextId, locked) =>
+        set((state) => ({
+          byContext: patchContext(state.byContext, contextId, {
+            drawingsLocked: locked,
+            indicatorsLocked: locked,
+          }),
+        })),
+      resetAll: () => set({ byContext: {} }),
+    }),
+    {
+      name: SESSION_VIEW_KEYS.chartObjectState,
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({ byContext: state.byContext }),
+    },
+  ),
+);

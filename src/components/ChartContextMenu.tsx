@@ -497,7 +497,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
     showGrid = true,
     gridType = 'mt5',
     gridLineStyle = 'dashed',
-    showVolumes = true,
+    showVolumes = false,
     autoScroll = false,
     chartShift = false,
     showTradeLevels = true,
@@ -726,6 +726,23 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                         : { symbol, orderType: 'Sell Stop', side: 'SELL', price: formattedPrice.value })
                     : null;
 
+                const submitPendingLimitOrOpenDialog = (draft: ChartPendingOrderDraft) => {
+                    const isLimitOrder = draft.orderType === 'Buy Limit' || draft.orderType === 'Sell Limit';
+                    if (isLimitOrder && typeof draft.price === 'number' && Number.isFinite(draft.price) && draft.price > 0) {
+                        window.dispatchEvent(new CustomEvent('quickPendingOrder', {
+                            detail: {
+                                symbol: draft.symbol,
+                                side: draft.side,
+                                orderType: draft.orderType,
+                                price: draft.price,
+                                volume: Number(pendingVolumeLabel),
+                            },
+                        }));
+                        return;
+                    }
+                    onOpenNewOrder(draft);
+                };
+
                 const renderOrderArrowIcon = (side: 'BUY' | 'SELL') => (
                     side === 'BUY'
                         ? <ArrowUp size={13} strokeWidth={2} style={{ color: '#22c55e' }} />
@@ -739,7 +756,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                                 icon={renderOrderArrowIcon(primaryOrder.side)}
                                 label={`${tr(primaryOrder.orderType)} ${pendingVolumeLabel}`}
                                 shortcut={formattedPrice.text}
-                                onClick={() => closeThen(() => { onOpenNewOrder(primaryOrder); })}
+                                onClick={() => closeThen(() => { submitPendingLimitOrOpenDialog(primaryOrder); })}
                             />
                         ) : (
                             <MenuItem
@@ -762,7 +779,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                                         icon={renderOrderArrowIcon(primaryOrder.side)}
                                         label={`${tr(primaryOrder.orderType)} ${pendingVolumeLabel}`}
                                         shortcut={formattedPrice.text}
-                                        onClick={() => closeThen(() => { onOpenNewOrder(primaryOrder); })}
+                                        onClick={() => closeThen(() => { submitPendingLimitOrOpenDialog(primaryOrder); })}
                                     />
                                     <MenuItem
                                         icon={renderOrderArrowIcon(secondaryOrder.side)}
@@ -810,8 +827,8 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                                         openChartMarketDialog('SELL', symbol);
                                     })} />
                                     <MenuSeparator />
-                                    <MenuItem label={tr("Buy Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Limit', side: 'BUY', price: formattedPrice?.value }); })} />
-                                    <MenuItem label={tr("Sell Limit")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Limit', side: 'SELL', price: formattedPrice?.value }); })} />
+                                    <MenuItem label={tr("Buy Limit")} onClick={() => closeThen(() => { submitPendingLimitOrOpenDialog({ symbol, orderType: 'Buy Limit', side: 'BUY', price: formattedPrice?.value }); })} />
+                                    <MenuItem label={tr("Sell Limit")} onClick={() => closeThen(() => { submitPendingLimitOrOpenDialog({ symbol, orderType: 'Sell Limit', side: 'SELL', price: formattedPrice?.value }); })} />
                                     <MenuItem label={tr("Buy Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Buy Stop', side: 'BUY', price: formattedPrice?.value }); })} />
                                     <MenuItem label={tr("Sell Stop")} onClick={() => closeThen(() => { onOpenNewOrder({ symbol, orderType: 'Sell Stop', side: 'SELL', price: formattedPrice?.value }); })} />
                                     <MenuSeparator />

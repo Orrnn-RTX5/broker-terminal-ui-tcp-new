@@ -84,7 +84,7 @@ describe('ModifyPositionDialog spec digits (position.digits over name table)', (
         // digits=3 on the position; the tick carries no digits field, so
         // initialDigits falls to position.digits (spec path).
         mocks.tick = { symbol: 'TESTFIX', bid: 1.234, ask: 1.236, spread: 2, timestamp: 1_797_341_377_000 };
-        mocks.modifyPosition.mockResolvedValueOnce(undefined);
+        mocks.placeMarketOrder.mockResolvedValueOnce(undefined);
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition({ symbol: 'TESTFIX', openPrice: 1.234, digits: 3 })} />);
         // BUY: SL below Bid 1.234, TP above Bid, 3-digit 5pt standoff.
         // A 5-digit fallback would seed '1.23395' / '1.23405' instead.
@@ -95,9 +95,9 @@ describe('ModifyPositionDialog spec digits (position.digits over name table)', (
         // Free-typed levels arrive rounded to the 3-digit grid, not raw.
         fireEvent.change(slInput(), { target: { value: '1.22844' } });
         fireEvent.change(tpInput(), { target: { value: '1.23966' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
-        const payload = mocks.modifyPosition.mock.calls[0][1] as { price_sl?: number; price_tp?: number };
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
+        const payload = mocks.placeMarketOrder.mock.calls[0][0] as { price_sl?: number; price_tp?: number };
         expect(payload.price_sl).toBe(1.228);
         expect(payload.price_tp).toBe(1.24);
         expect(payload.price_sl).not.toBe(1.22844);
@@ -116,18 +116,19 @@ describe('ModifyPositionDialog spec digits (position.digits over name table)', (
         expect(tpInput().value).toBe('');
         expect(slInput().disabled).toBe(false);
         expect(tpInput().disabled).toBe(false);
-        expect(screen.getByRole('button', { name: /modify #201/i })).not.toBeNull();
+        expect(screen.getByRole('button', { name: /buy by market/i })).not.toBeNull();
+        expect(screen.queryByRole('button', { name: /modify #201/i })).toBeNull();
     });
 
     it('unknown digits: submit sends the typed value UNROUNDED', async () => {
-        mocks.modifyPosition.mockResolvedValueOnce(undefined);
+        mocks.placeMarketOrder.mockResolvedValueOnce(undefined);
         mocks.tick = { symbol: 'TESTFIX', bid: 1.234, ask: 1.236, spread: 2, timestamp: 1_797_341_377_000 };
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition({ symbol: 'TESTFIX', openPrice: 1.234 })} />);
         fireEvent.change(slInput(), { target: { value: '1.228444' } });
         fireEvent.change(tpInput(), { target: { value: '1.239666' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
-        const payload = mocks.modifyPosition.mock.calls[0][1] as { price_sl?: number; price_tp?: number };
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
+        const payload = mocks.placeMarketOrder.mock.calls[0][0] as { price_sl?: number; price_tp?: number };
         // Sent exactly as typed (no rounding by guessed precision).
         expect(payload.price_sl).toBe(1.228444);
         expect(payload.price_tp).toBe(1.239666);
@@ -156,14 +157,14 @@ describe('ModifyPositionDialog broker catalog geometry (no name table, no defaul
         // Catalog spec wins over the quote/position fields (and over any name guess).
         registerDailyChangePriceModes([{ symbol: 'TESTFIX', digits: 2, tickSize: 0.05 }]);
         mocks.tick = { symbol: 'TESTFIX', bid: 100, ask: 100.1, spread: 10, timestamp: 1_797_341_377_000 };
-        mocks.modifyPosition.mockResolvedValueOnce(undefined);
+        mocks.placeMarketOrder.mockResolvedValueOnce(undefined);
         // Existing SL 99.5 so that the rounded value (seed 99.90) is a real change to send.
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition({ symbol: 'TESTFIX', openPrice: 100, digits: 5, sl: 99.5 })} />);
         fireEvent.change(slInput(), { target: { value: '99.92' } });
         fireEvent.change(tpInput(), { target: { value: '101.13' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
-        const payload = mocks.modifyPosition.mock.calls[0][1] as { price_sl?: number; price_tp?: number };
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
+        const payload = mocks.placeMarketOrder.mock.calls[0][0] as { price_sl?: number; price_tp?: number };
         expect(payload.price_sl).toBe(99.9);
         expect(payload.price_tp).toBe(101.15);
     });

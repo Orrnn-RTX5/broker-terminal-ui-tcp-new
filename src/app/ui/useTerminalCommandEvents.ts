@@ -22,6 +22,7 @@ import { writePersistedTimeframe } from '../../utils/chartTimeframePersistence';
 import { normalizeSymbolName } from '../../utils/symbolEligibility';
 import { resolveQuickTradeRoute, selectOneClickTrading, useSettingsStore } from '../../store/useSettingsStore';
 import { translateUi } from '../../hooks/useUiTranslation';
+import type { OrderPanelSubmission } from '../trading/useOrderExecution';
 import type { UiMessage } from '../../utils/uiFeedback';
 import type { ActionFeedbackType } from '../../components/notifications/ActionFeedbackToast';
 
@@ -52,6 +53,8 @@ interface UseTerminalCommandEventsOptions {
   chartEligibleSymbolNames: string[];
   displayToast: (message: UiMessage, type?: ActionFeedbackType) => void;
   placeOrder: (side: 'BUY' | 'SELL', symbol?: string) => void | Promise<unknown>;
+  volume?: number;
+  handleOrderPanelSubmit?: (order: OrderPanelSubmission) => Promise<void>;
   handleOpenDOM: (symbolOrEvent: string | CustomEvent) => void;
   handleSaveWorkspace: () => void;
   handleOpenDataFolder: () => void | Promise<void>;
@@ -105,6 +108,8 @@ export const useTerminalCommandEvents = ({
   chartEligibleSymbolNames,
   displayToast,
   placeOrder,
+  volume = 0.01,
+  handleOrderPanelSubmit,
   handleOpenDOM,
   handleSaveWorkspace,
   handleOpenDataFolder,
@@ -255,9 +260,45 @@ export const useTerminalCommandEvents = ({
           const toolbox = centerMain?.children.find((child) => 'component' in child && child.component === 'Terminal');
           if (toolbox) useDockLayoutStore.getState().updateContainerSize(toolbox.id, 0.25);
         }, 50);
+      } else if (panelType === 'MarketWatch' || panelType === 'Navigator') {
+        store.addPanel({ ...config, closable: true, floatable: true }, 'left-sidebar', 'left');
       } else {
         store.addPanel({ ...config, closable: true, floatable: true }, 'root', 'left');
       }
+    };
+    const handleQuickPendingOrder = (event: CustomEvent<{
+      symbol?: unknown;
+      side?: 'BUY' | 'SELL';
+      orderType?: string;
+      price?: number;
+      volume?: number;
+    }>) => {
+      const detail = event.detail;
+      const allowedSymbol = getAllowedSymbol(detail?.symbol || selectedSymbol);
+      const price = Number(detail?.price);
+      if (!handleOrderPanelSubmit || !allowedSymbol || !Number.isFinite(price) || price <= 0) {
+        openOrderPanelForSymbol(detail?.symbol || selectedSymbol, undefined, {
+          orderType: detail?.orderType,
+          side: detail?.side,
+          price: Number.isFinite(price) && price > 0 ? price : undefined,
+        });
+        return;
+      }
+      setSelectedSymbol(allowedSymbol);
+      const side: 'buy' | 'sell' = String(detail?.side || detail?.orderType || '').toUpperCase().includes('SELL') ? 'sell' : 'buy';
+      const pendingType = side === 'sell' ? 'sell_limit' : 'buy_limit';
+      const orderTypeLabel = side === 'sell' ? 'Sell Limit' : 'Buy Limit';
+      const parsedVolume = Number(detail?.volume);
+      const submitVolume = Number.isFinite(parsedVolume) && parsedVolume > 0 ? parsedVolume : volume;
+      void handleOrderPanelSubmit({
+        type: side,
+        orderKind: 'pending',
+        pendingType,
+        orderType: orderTypeLabel,
+        symbol: allowedSymbol,
+        volume: submitVolume,
+        price,
+      }).catch(() => undefined);
     };
     // SUI-T9: one-click OFF opens the prefilled order dialog (never an
     // instant order); ON places immediately. Fail-closed (unreadable
@@ -335,6 +376,7 @@ export const useTerminalCommandEvents = ({
       ['change-timeframe', ((event: CustomEvent<{ timeframe?: unknown }>) => commitSelectedTimeframe(event.detail?.timeframe)) as EventListener],
       ['change-chart-type', handleChangeChartType as EventListener],
       ['quickTrade', handleQuickTrade as EventListener],
+      ['quickPendingOrder', handleQuickPendingOrder as EventListener],
     ];
     listeners.forEach(([name, listener]) => window.addEventListener(name, listener));
     return () => listeners.forEach(([name, listener]) => window.removeEventListener(name, listener));
@@ -346,6 +388,7 @@ export const useTerminalCommandEvents = ({
     getChartEligibleSymbol,
     handleOpenDOM,
     handleOpenDataFolder,
+    handleOrderPanelSubmit,
     handlePrintChart,
     handleSaveWorkspace,
     openOrderPanelForSymbol,
@@ -364,5 +407,6 @@ export const useTerminalCommandEvents = ({
     setShowDataWindow,
     setTimeframe,
     timeframe,
+    volume,
   ]);
 };

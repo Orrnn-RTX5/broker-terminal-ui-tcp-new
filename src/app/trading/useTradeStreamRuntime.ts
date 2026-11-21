@@ -406,6 +406,7 @@ export const useTradeStreamRuntime = ({
                   description: msg,
                   meta: `#${notice.ticket}`,
                   metaIcon: 'check-circle',
+                  placement: 'chart-bottom-left',
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -421,6 +422,7 @@ export const useTradeStreamRuntime = ({
                   description: msg,
                   meta: `#${notice.ticket}`,
                   metaIcon: 'clock',
+                  placement: 'chart-bottom-left',
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -435,6 +437,7 @@ export const useTradeStreamRuntime = ({
                   description: msg,
                   meta: `#${notice.ticket}`,
                   metaIcon: 'clock',
+                  placement: 'chart-bottom-left',
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -449,6 +452,7 @@ export const useTradeStreamRuntime = ({
                   description: msg,
                   meta: `#${notice.ticket}`,
                   metaIcon: 'alert-triangle',
+                  placement: 'chart-bottom-left',
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',

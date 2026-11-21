@@ -1052,15 +1052,15 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__cancel {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm {
-  background: var(--rtx-light-accent) !important;
-  border-color: var(--rtx-light-accent) !important;
+  background: var(--rtx-light-buy, #2563eb) !important;
+  border-color: var(--rtx-light-buy, #2563eb) !important;
   color: #ffffff !important;
   box-shadow: none !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-confirm-dialog__confirm:hover {
-  background: var(--rtx-light-accent-strong) !important;
-  border-color: var(--rtx-light-accent-strong) !important;
+  background: var(--rtx-light-buy-hover, #1d4ed8) !important;
+  border-color: var(--rtx-light-buy-hover, #1d4ed8) !important;
   color: #ffffff !important;
 }
 
@@ -1777,15 +1777,15 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--sell {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--buy:not(:disabled):hover {
-  background: #eff6ff !important;
-  border-color: #3b82f6 !important;
-  color: #1d4ed8 !important;
+  background: var(--rtx-light-buy, #2563eb) !important;
+  border-color: var(--rtx-light-buy, #2563eb) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--sell:not(:disabled):hover {
-  background: #fef2f2 !important;
-  border-color: #ef4444 !important;
-  color: #b91c1c !important;
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-sep {
@@ -1834,8 +1834,8 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel:not(:disabled):hover {
-  background: var(--color-loss, #a51f26) !important;
-  border-color: var(--color-loss, #a51f26) !important;
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
   color: #ffffff !important;
 }
 

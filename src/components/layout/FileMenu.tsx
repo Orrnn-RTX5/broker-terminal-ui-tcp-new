@@ -2,6 +2,7 @@ import { saveWorkspaceFeature, printSetupFeature, printPreviewFeature, exitConfi
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import './file-menu-desktop.css';
 import { Icon } from '../ui/Icon';
+import { useInlineSubmenuPlacement } from './inlineSubmenuPosition';
 import {
     appendBrokerLogoVersionParam,
     BrokerLogoImage,
@@ -9,7 +10,7 @@ import {
     isPlaceholderBrokerLogoUrl,
     normalizeSameOriginHttpsUrl,
 } from '../BrokerLogoImage';
-import React, { Suspense, useState, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RetainedLazyFeature } from '../../startup/RetainedLazyFeature';
 import { useAppStore } from '../../store/useAppStore';
@@ -73,6 +74,7 @@ export interface FileMenuProps {
     brokerServerUrl?: string;
     onLogout?: () => void;
     onDialogOpenChange?: (open: boolean) => void;
+    onInteractPin?: () => void;
     onExit?: () => void;
     hasUnsavedChanges?: boolean;
 }
@@ -116,6 +118,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     brokerServerUrl,
     onLogout,
     onDialogOpenChange,
+    onInteractPin,
     onExit,
     hasUnsavedChanges = false
 }) => {
@@ -128,12 +131,29 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     const [showPrintPreviewDialog, setShowPrintPreviewDialog] = useState(false);
     const [showExitDialog, setShowExitDialog] = useState(false);
     const [showOpenAccountDialog, setShowOpenAccountDialog] = useState(false);
+    const [openDeletedOpen, setOpenDeletedOpen] = useState(false);
     const [profilesOpen, setProfilesOpen] = useState(false);
     const [deleteSubmenuOpen, setDeleteSubmenuOpen] = useState(false);
+    const openDeletedAnchor = useRef<HTMLDivElement>(null);
+    const openDeletedSubmenuRef = useRef<HTMLDivElement>(null);
     const profilesAnchor = useRef<HTMLDivElement>(null);
+    const profilesSubmenuRef = useRef<HTMLDivElement>(null);
     const deleteAnchor = useRef<HTMLDivElement>(null);
-    const [profilesAlignLeft, setProfilesAlignLeft] = useState(false);
-    const [deleteAlignLeft, setDeleteAlignLeft] = useState(false);
+    const deleteSubmenuRef = useRef<HTMLDivElement>(null);
+    const hoverOpenedDeletedRef = useRef(false);
+    const hoverOpenedProfilesRef = useRef(false);
+    const hoverOpenedDeleteRef = useRef(false);
+    const openDeletedPlacement = useInlineSubmenuPlacement(openDeletedOpen, openDeletedAnchor, openDeletedSubmenuRef, 'open-deleted');
+    const profilesPlacement = useInlineSubmenuPlacement(profilesOpen, profilesAnchor, profilesSubmenuRef, 'profiles');
+    const deletePlacement = useInlineSubmenuPlacement(deleteSubmenuOpen, deleteAnchor, deleteSubmenuRef, 'delete-profile');
+    const closeFileSubmenus = () => {
+        hoverOpenedDeletedRef.current = false;
+        hoverOpenedProfilesRef.current = false;
+        hoverOpenedDeleteRef.current = false;
+        setOpenDeletedOpen(false);
+        setProfilesOpen(false);
+        setDeleteSubmenuOpen(false);
+    };
     const effectiveAccount = accountId?.trim() || 'default';
     const activeProfileName = useWorkspaceProfileSelectionStore(state => (
         state.accountId === effectiveAccount ? state.profileName : 'Default'
@@ -259,26 +279,16 @@ export const FileMenu: React.FC<FileMenuProps> = ({
         : { key: avatarBrokerKey, exhausted: false, wideBanner: false };
     const showingBrokerImage = Boolean(avatarBrokerKey) && !currentAvatarMedia.exhausted;
 
-    useLayoutEffect(() => {
-        const alignSubmenus = () => {
-            if (profilesOpen && profilesAnchor.current) {
-                setProfilesAlignLeft(profilesAnchor.current.getBoundingClientRect().right + 200 > window.innerWidth);
-            }
-            if (deleteSubmenuOpen && deleteAnchor.current) {
-                setDeleteAlignLeft(deleteAnchor.current.getBoundingClientRect().right + 160 > window.innerWidth);
-            }
-        };
-        alignSubmenus();
-        window.addEventListener('resize', alignSubmenus);
-        return () => window.removeEventListener('resize', alignSubmenus);
-    }, [profilesOpen, deleteSubmenuOpen]);
-
     useEffect(() => {
         const selection = useWorkspaceProfileSelectionStore.getState();
         if (shortcutsOnly || selection.accountId !== effectiveAccount) {
             selection.selectProfile(effectiveAccount, 'Default');
         }
         setShowSaveDialog(false);
+        hoverOpenedDeletedRef.current = false;
+        hoverOpenedProfilesRef.current = false;
+        hoverOpenedDeleteRef.current = false;
+        setOpenDeletedOpen(false);
         setProfilesOpen(false);
         setDeleteSubmenuOpen(false);
     }, [effectiveAccount, shortcutsOnly]);
@@ -523,6 +533,11 @@ export const FileMenu: React.FC<FileMenuProps> = ({
         if (!shortcutsOnly) {
             const handleRevealSubmenu = (event: Event) => {
                 const submenu = (event as CustomEvent<{ submenu?: 'profiles' | null }>).detail?.submenu;
+                hoverOpenedDeletedRef.current = false;
+                hoverOpenedProfilesRef.current = false;
+                hoverOpenedDeleteRef.current = false;
+                setOpenDeletedOpen(false);
+                setDeleteSubmenuOpen(false);
                 setProfilesOpen(submenu === 'profiles');
             };
             window.addEventListener('rtx:reveal-file-submenu', handleRevealSubmenu);
@@ -588,6 +603,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                             aria-label={tr('Current trading account {{value0}}', { value0: accountId || '' }).trim()}
                             data-testid="file-menu-account-header"
                             role="presentation"
+                            onMouseEnter={closeFileSubmenus}
                         >
                             <div
                                 className={`rtx-file-menu__account-avatar flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border ${
@@ -654,12 +670,44 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                     groups are browsed and searched. */}
 
                 {/* Open Deleted */}
-                <div className="relative group/deleted px-1 [&:hover>div.submenu]:block">
+                <div
+                    ref={openDeletedAnchor}
+                    className="relative group/deleted px-1"
+                    onMouseEnter={() => {
+                        hoverOpenedProfilesRef.current = false;
+                        hoverOpenedDeleteRef.current = false;
+                        setProfilesOpen(false);
+                        setDeleteSubmenuOpen(false);
+                        if (recentlyClosedCharts.length > 0) {
+                            if (!openDeletedOpen) hoverOpenedDeletedRef.current = true;
+                            setOpenDeletedOpen(true);
+                        }
+                    }}
+                >
                     <button
+                        type="button"
                         data-file-menu-item="open-deleted"
                         disabled={recentlyClosedCharts.length === 0}
+                        aria-haspopup={recentlyClosedCharts.length > 0 ? 'menu' : undefined}
+                        aria-expanded={recentlyClosedCharts.length > 0 ? openDeletedOpen : undefined}
+                        onClick={() => {
+                            if (recentlyClosedCharts.length === 0) return;
+                            onInteractPin?.();
+                            hoverOpenedProfilesRef.current = false;
+                            hoverOpenedDeleteRef.current = false;
+                            setProfilesOpen(false);
+                            setDeleteSubmenuOpen(false);
+                            if (openDeletedOpen && !hoverOpenedDeletedRef.current) {
+                                setOpenDeletedOpen(false);
+                            } else {
+                                hoverOpenedDeletedRef.current = false;
+                                setOpenDeletedOpen(true);
+                            }
+                        }}
                         className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left ${recentlyClosedCharts.length > 0
-                            ? 'text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default'
+                            ? (openDeletedOpen
+                                ? 'bg-[#2a2e39] [.rtx-advanced-view_&]:bg-[#f3f4f6] text-white [.rtx-advanced-view_&]:text-[#111827] cursor-default'
+                                : 'text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default')
                             : 'text-zinc-600 [.rtx-advanced-view_&]:text-gray-400 cursor-not-allowed'}`}
                         title={recentlyClosedCharts.length > 0 ? tr("Restore a recently closed chart") : tr("No recently closed charts")}
                     >
@@ -670,7 +718,16 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         {recentlyClosedCharts.length > 0 && <Icon name="chevron-right" size="xs" className="rtx-menu-icon--neutral" />}
                     </button>
                     {recentlyClosedCharts.length > 0 && (
-                        <div className="rtx-menu-surface submenu absolute left-full top-0 -ml-1 hidden min-w-[190px] max-w-[280px] py-1 z-[101]">
+                        <div
+                            ref={openDeletedSubmenuRef}
+                            role="menu"
+                            aria-label={tr("{{value0}} menu", { value0: t('menu.file.openDeleted') })}
+                            data-submenu-side={openDeletedPlacement.alignLeft ? 'left' : 'right'}
+                            style={{ top: openDeletedPlacement.topOffset }}
+                            className={`rtx-menu-surface submenu absolute min-w-[190px] max-w-[280px] py-1 z-[101] ${
+                                openDeletedPlacement.alignLeft ? 'right-full -mr-px' : 'left-full -ml-px'
+                            } ${openDeletedOpen ? 'block' : 'hidden'}`}
+                        >
                             {recentlyClosedCharts.map(panel => (
                                 <button
                                     key={panel.id}
@@ -691,17 +748,29 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 <div
                     ref={profilesAnchor}
                     className="relative group/profiles px-1"
-                    onMouseEnter={() => setProfilesOpen(true)}
-                    onMouseLeave={() => {
-                        setProfilesOpen(false);
-                        setDeleteSubmenuOpen(false);
+                    onMouseEnter={() => {
+                        hoverOpenedDeletedRef.current = false;
+                        setOpenDeletedOpen(false);
+                        if (!profilesOpen) hoverOpenedProfilesRef.current = true;
+                        setProfilesOpen(true);
                     }}
                 >
                     <button
                         type="button"
                         data-file-menu-item="profiles"
                         aria-haspopup="menu"
-                        onClick={() => setProfilesOpen(true)}
+                        onClick={() => {
+                            onInteractPin?.();
+                            hoverOpenedDeletedRef.current = false;
+                            setOpenDeletedOpen(false);
+                            if (profilesOpen && !hoverOpenedProfilesRef.current) {
+                                setProfilesOpen(false);
+                                setDeleteSubmenuOpen(false);
+                            } else {
+                                hoverOpenedProfilesRef.current = false;
+                                setProfilesOpen(true);
+                            }
+                        }}
                         className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left cursor-default ${
                             profilesOpen
                                 ? 'bg-[#2a2e39] [.rtx-advanced-view_&]:bg-[#f3f4f6] text-white [.rtx-advanced-view_&]:text-[#111827]'
@@ -717,13 +786,22 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         <Icon name="chevron-right" size="xs" className="rtx-menu-icon--neutral" />
                     </button>
                     <div
-                        className={`rtx-menu-surface submenu absolute top-0 min-w-[220px] w-max py-1 z-[101] ${profilesAlignLeft ? 'right-full -mr-1' : 'left-full -ml-1'} ${
-                            profilesOpen ? 'block' : 'hidden group-hover/profiles:block'
+                        ref={profilesSubmenuRef}
+                        role="menu"
+                        aria-label={tr("{{value0}} menu", { value0: t('menu.file.profiles') })}
+                        data-submenu-side={profilesPlacement.alignLeft ? 'left' : 'right'}
+                        style={{ top: profilesPlacement.topOffset }}
+                        className={`rtx-menu-surface submenu absolute min-w-[220px] w-max py-1 z-[101] ${profilesPlacement.alignLeft ? 'right-full -mr-px' : 'left-full -ml-px'} ${
+                            profilesOpen ? 'block' : 'hidden'
                         }`}
                     >
                         {/* Next */}
                         <button
                             type="button"
+                            onMouseEnter={() => {
+                                hoverOpenedDeleteRef.current = false;
+                                setDeleteSubmenuOpen(false);
+                            }}
                             onClick={() => {
                                 handleNextProfile();
                                 setProfilesOpen(false);
@@ -739,6 +817,10 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         {/* Previous */}
                         <button
                             type="button"
+                            onMouseEnter={() => {
+                                hoverOpenedDeleteRef.current = false;
+                                setDeleteSubmenuOpen(false);
+                            }}
                             onClick={() => {
                                 handlePreviousProfile();
                                 setProfilesOpen(false);
@@ -754,6 +836,10 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         {/* Save As... */}
                         <button
                             type="button"
+                            onMouseEnter={() => {
+                                hoverOpenedDeleteRef.current = false;
+                                setDeleteSubmenuOpen(false);
+                            }}
                             onClick={() => {
                                 setProfilesOpen(false);
                                 setShowSaveDialog(true);
@@ -769,17 +855,33 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         <div
                             ref={deleteAnchor}
                             className="relative group/delete px-0"
-                            onMouseEnter={() => customProfiles.length > 0 && setDeleteSubmenuOpen(true)}
-                            onMouseLeave={() => setDeleteSubmenuOpen(false)}
+                            onMouseEnter={() => {
+                                if (customProfiles.length > 0) {
+                                    if (!deleteSubmenuOpen) hoverOpenedDeleteRef.current = true;
+                                    setDeleteSubmenuOpen(true);
+                                }
+                            }}
                         >
                             <button
                                 type="button"
                                 disabled={customProfiles.length === 0}
-                                onClick={() => customProfiles.length > 0 && setDeleteSubmenuOpen(true)}
+                                aria-haspopup={customProfiles.length > 0 ? 'menu' : undefined}
+                                onClick={() => {
+                                    if (customProfiles.length === 0) return;
+                                    onInteractPin?.();
+                                    if (deleteSubmenuOpen && !hoverOpenedDeleteRef.current) {
+                                        setDeleteSubmenuOpen(false);
+                                    } else {
+                                        hoverOpenedDeleteRef.current = false;
+                                        setDeleteSubmenuOpen(true);
+                                    }
+                                }}
                                 aria-expanded={deleteSubmenuOpen}
                                 className={`w-full flex min-h-[28px] items-center gap-2 px-3 py-1 text-[13px] font-normal rounded-sm text-left ${
                                     customProfiles.length > 0
-                                        ? 'text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default'
+                                        ? (deleteSubmenuOpen
+                                            ? 'bg-[#2a2e39] [.rtx-advanced-view_&]:bg-[#f3f4f6] text-white [.rtx-advanced-view_&]:text-[#111827] cursor-default'
+                                            : 'text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default')
                                         : 'text-zinc-600 [.rtx-advanced-view_&]:text-gray-400 cursor-not-allowed'
                                 }`}
                                 title={customProfiles.length > 0 ? tr("Delete a custom profile") : tr("No custom profiles to delete")}
@@ -791,8 +893,13 @@ export const FileMenu: React.FC<FileMenuProps> = ({
 
                             {customProfiles.length > 0 && (
                                 <div
-                                    className={`rtx-menu-surface submenu absolute top-0 min-w-[160px] py-1 z-[102] ${deleteAlignLeft ? 'right-full -mr-1' : 'left-full -ml-1'} ${
-                                        deleteSubmenuOpen ? 'block' : 'hidden group-hover/delete:block'
+                                    ref={deleteSubmenuRef}
+                                    role="menu"
+                                    aria-label={tr("{{value0}} menu", { value0: tr("Delete") })}
+                                    data-submenu-side={deletePlacement.alignLeft ? 'left' : 'right'}
+                                    style={{ top: deletePlacement.topOffset }}
+                                    className={`rtx-menu-surface submenu absolute min-w-[160px] py-1 z-[102] ${deletePlacement.alignLeft ? 'right-full -mr-px' : 'left-full -ml-px'} ${
+                                        deleteSubmenuOpen ? 'block' : 'hidden'
                                     }`}
                                 >
                                     {customProfiles.map(p => (
@@ -822,6 +929,10 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                                     key={profileName}
                                     type="button"
                                     aria-pressed={isActive}
+                                    onMouseEnter={() => {
+                                        hoverOpenedDeleteRef.current = false;
+                                        setDeleteSubmenuOpen(false);
+                                    }}
                                     onClick={() => handleRestoreProfile(profileName)}
                                     className={`rtx-file-menu__profile w-full flex min-h-[28px] items-center gap-2 px-3 py-1 text-[13px] font-normal rounded-sm text-left cursor-default transition-colors duration-75 ${
                                         isActive
@@ -848,6 +959,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Close */}
                 <button
                     data-file-menu-item="close"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handleCloseActiveChart}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title={tr("Close current chart")}
@@ -864,6 +976,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Save */}
                 <button
                     data-file-menu-item="save"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handleSave}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title={tr("Save workspace configuration")}
@@ -878,6 +991,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Save As Picture */}
                 <button
                     data-file-menu-item="save-picture"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handleSaveAsPicture}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title={tr("Export chart as image")}
@@ -894,6 +1008,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Open Data Folder */}
                 <button
                     data-file-menu-item="open-data-folder"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handleOpenDataFolder}
                     disabled={!onOpenDataFolder}
                     className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left group ${onOpenDataFolder
@@ -915,6 +1030,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Print */}
                 <button
                     data-file-menu-item="print"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={() => { void handleDirectPrint(); }}
                     disabled={preparingPrint}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
@@ -930,6 +1046,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Print Preview */}
                 <button
                     data-file-menu-item="print-preview"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handlePrintPreview}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title={tr("Preview before printing")}
@@ -944,6 +1061,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Print Setup */}
                 <button
                     data-file-menu-item="print-setup"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handlePrintSetup}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title={tr("Configure print settings")}
@@ -960,6 +1078,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {!hideOpenAccountOption && (
                     <button
                         data-file-menu-item="open-account"
+                        onMouseEnter={closeFileSubmenus}
                         onClick={() => setShowOpenAccountDialog(true)}
                         className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                         title={tr("Register new trading account")}
@@ -974,6 +1093,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Login to Trade Account */}
                 <button
                     data-file-menu-item="login-trade"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={onLoginTrade}
                     disabled={!onLoginTrade}
                     className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left ${onLoginTrade
@@ -989,6 +1109,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
 
                 {/* TCP Server (:4443) */}
                 <button
+                    onMouseEnter={closeFileSubmenus}
                     onClick={handleOpenTcpServerDialog}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                     title="Configure Broker TCP Access Server (:4443)"
@@ -1003,6 +1124,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Login to Web Trader */}
                 <button
                     data-file-menu-item="login-web"
+                    onMouseEnter={closeFileSubmenus}
                     onClick={onLoginWebTrader}
                     disabled={!onLoginWebTrader}
                     className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left ${onLoginWebTrader
@@ -1019,6 +1141,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                 {/* Login to RTX5.community */}
                 <button
                     data-file-menu-item="login-community"
+                    onMouseEnter={closeFileSubmenus}
                     disabled
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-600 [.rtx-advanced-view_&]:text-gray-400 cursor-not-allowed"
                     title={tr("RTX5 Community is not configured for this deployment")}
@@ -1035,6 +1158,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         <div className="rtx-menu-divider" role="separator"></div>
                         <button
                             data-file-menu-item="exit"
+                            onMouseEnter={closeFileSubmenus}
                             onClick={handleExit}
                             className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                             title={tr("Close application")}

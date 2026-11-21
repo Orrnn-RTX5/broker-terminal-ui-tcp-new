@@ -410,14 +410,15 @@ describe('MenuBar hamburger launcher', () => {
         });
     });
 
-    it('shows the reference-style action launcher and opens submenus only after a click', () => {
+    it('shows the reference-style action launcher with combined Theme section and opens menus and submenus on hover without clicking', () => {
         render(<MenuBar />);
 
         const launcher = screen.getByRole('button', { name: 'Open application menu' });
         expect(launcher).toHaveAttribute('aria-expanded', 'false');
         expect(screen.queryByRole('menu', { name: 'Application menu' })).not.toBeInTheDocument();
 
-        fireEvent.click(launcher);
+        // Hovering over the 3-equal (≡) launcher opens the application menu without clicking
+        fireEvent.mouseEnter(launcher.parentElement!);
 
         expect(launcher).toHaveAttribute('aria-expanded', 'true');
         const brandHeader = screen.getByTestId('application-menu-brand');
@@ -430,8 +431,7 @@ describe('MenuBar hamburger launcher', () => {
             'Trading accounts',
             'Chart settings',
             'One Click Trading',
-            'Light Theme',
-            'Color Templates',
+            'Theme',
             'Algo Trading',
             'Terminal',
             'Economic Calendar',
@@ -442,6 +442,11 @@ describe('MenuBar hamburger launcher', () => {
         ]) {
             expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
         }
+        // Light Theme, Color Templates, and Appearance are grouped inside Theme, not root items
+        expect(screen.queryByRole('menuitem', { name: 'Light Theme' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: 'Color Templates' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: 'Appearance' })).not.toBeInTheDocument();
+
         const calendarItem = screen.getByRole('menuitem', { name: 'Economic Calendar' });
         expect(calendarItem).toBeDisabled();
         expect(calendarItem.querySelector('.rtx-menu-row__lock')).toBeInTheDocument();
@@ -454,20 +459,32 @@ describe('MenuBar hamburger launcher', () => {
         expect(tradingAccountsItem.compareDocumentPosition(chartSettingsItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(screen.queryByRole('menu', { name: 'Chart settings menu' })).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Chart settings' }));
+        // Hovering a root section opens its submenu immediately without click on the same line
+        fireEvent.mouseEnter(chartSettingsItem.parentElement!);
         const chartSettingsMenu = screen.getByRole('menu', { name: 'Chart settings menu' });
         expect(chartSettingsMenu).toBeInTheDocument();
-        expect(chartSettingsMenu.style.top).toBe('-38px');
+        expect(chartSettingsMenu.style.top).toBe('0px');
+        expect(chartSettingsMenu).toHaveAttribute('data-submenu-side', 'right');
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Chart controls' }));
+        // Hovering a nested submenu opens it without click
+        fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'Chart controls' }).parentElement!);
         expect(screen.getByRole('menu', { name: 'Chart controls menu' })).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Color Templates' }));
+        // Hovering Theme opens the single Theme submenu containing Light Theme, Color Templates, and Appearance
+        fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'Theme' }).parentElement!);
         expect(screen.queryByRole('menu', { name: 'Chart settings menu' })).not.toBeInTheDocument();
+        const themeMenu = screen.getByRole('menu', { name: 'Theme menu' });
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Light Theme' })).toBeInTheDocument();
+        expect(within(themeMenu).queryByRole('menuitem', { name: 'Dark Theme' })).not.toBeInTheDocument();
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Color Templates' })).toBeInTheDocument();
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Appearance' })).toBeInTheDocument();
+
+        // Hovering Color Templates inside Theme opens its submenu
+        fireEvent.mouseEnter(within(themeMenu).getByRole('menuitem', { name: 'Color Templates' }).parentElement!);
         expect(screen.getByRole('menu', { name: 'Color Templates menu' })).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Language' }));
-        expect(screen.queryByRole('menu', { name: 'Color Templates menu' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menu', { name: 'Theme menu' })).not.toBeInTheDocument();
         expect(screen.getByRole('menu', { name: 'Language menu' })).toBeInTheDocument();
     });
 
@@ -639,6 +656,7 @@ describe('MenuBar hamburger launcher', () => {
 
         render(<MenuBar chartSymbol="XAUUSD" />);
         fireEvent.click(screen.getByRole('button', { name: 'Open application menu' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Color Templates' }));
 
         const colorTemplatesMenu = screen.getByRole('menu', { name: 'Color Templates menu' });
@@ -694,6 +712,7 @@ describe('MenuBar hamburger launcher', () => {
 
         render(<MenuBar advancedViewEnabled chartSymbol="XAUUSD" />);
         fireEvent.click(screen.getByRole('button', { name: 'Open application menu' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Color Templates' }));
 
         const colorTemplatesMenu = screen.getByRole('menu', { name: 'Color Templates menu' });
@@ -712,6 +731,48 @@ describe('MenuBar hamburger launcher', () => {
             colorScheme: 'Blue and White',
             colors: getPresetSchemeColors('Blue and White'),
         });
+    });
+
+    it('switches the Theme toggle label between Light Theme and Dark Theme based on the active mode', () => {
+        const onSetAdvancedViewEnabled = vi.fn();
+        const view = render(
+            <MenuBar advancedViewEnabled={false} onSetAdvancedViewEnabled={onSetAdvancedViewEnabled} />,
+        );
+
+        const launcher = screen.getByRole('button', { name: 'Open application menu' });
+
+        // Currently in Dark Theme -> menu offers "Light Theme"
+        fireEvent.click(launcher);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
+        let themeMenu = screen.getByRole('menu', { name: 'Theme menu' });
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Light Theme' })).toBeInTheDocument();
+        expect(within(themeMenu).queryByRole('menuitem', { name: 'Dark Theme' })).not.toBeInTheDocument();
+
+        fireEvent.click(within(themeMenu).getByRole('menuitem', { name: 'Light Theme' }));
+        expect(onSetAdvancedViewEnabled).toHaveBeenLastCalledWith(true);
+
+        // Now in Light Theme -> same row offers "Dark Theme"
+        view.rerender(
+            <MenuBar advancedViewEnabled={true} onSetAdvancedViewEnabled={onSetAdvancedViewEnabled} />,
+        );
+        fireEvent.click(launcher);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
+        themeMenu = screen.getByRole('menu', { name: 'Theme menu' });
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Dark Theme' })).toBeInTheDocument();
+        expect(within(themeMenu).queryByRole('menuitem', { name: 'Light Theme' })).not.toBeInTheDocument();
+
+        fireEvent.click(within(themeMenu).getByRole('menuitem', { name: 'Dark Theme' }));
+        expect(onSetAdvancedViewEnabled).toHaveBeenLastCalledWith(false);
+
+        // Back in Dark Theme -> same row offers "Light Theme" again
+        view.rerender(
+            <MenuBar advancedViewEnabled={false} onSetAdvancedViewEnabled={onSetAdvancedViewEnabled} />,
+        );
+        fireEvent.click(launcher);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
+        themeMenu = screen.getByRole('menu', { name: 'Theme menu' });
+        expect(within(themeMenu).getByRole('menuitem', { name: 'Light Theme' })).toBeInTheDocument();
+        expect(within(themeMenu).queryByRole('menuitem', { name: 'Dark Theme' })).not.toBeInTheDocument();
     });
 
     it('keeps the original actions reachable through the professional launcher', async () => {
@@ -759,6 +820,7 @@ describe('MenuBar hamburger launcher', () => {
         expect(onSetFocusChart).toHaveBeenCalledWith(true);
 
         fireEvent.click(launcher);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Theme' }));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Dark Theme' }));
         expect(onSetAdvancedViewEnabled).toHaveBeenCalledWith(false);
 
@@ -1222,5 +1284,221 @@ describe('MenuBar Electron desktop menubar', () => {
         fireEvent.click(trigger);
         const menu = screen.getByRole('menu', { name: 'Application menu' });
         expect(menu).toHaveStyle({ left: '42px', top: '42px' });
+        expect(menu).toHaveAttribute('data-placement', 'rail');
+    });
+
+    it('keeps the 3-equal actionsheet open while the cursor remains over the trigger, menu, or submenu and closes after leaving', () => {
+        vi.useFakeTimers();
+        try {
+            render(<MenuBar placement="rail" />);
+            const trigger = screen.getByRole('button', { name: 'Open application menu' });
+            const launcher = trigger.parentElement!;
+
+            fireEvent.mouseEnter(launcher);
+            const menu = screen.getByRole('menu', { name: 'Application menu' });
+            expect(menu).toBeInTheDocument();
+
+            // Moving directly from launcher into the actionsheet keeps it open.
+            fireEvent.mouseLeave(launcher, { relatedTarget: menu });
+            act(() => { vi.advanceTimersByTime(1000); });
+            expect(screen.getByRole('menu', { name: 'Application menu' })).toBeInTheDocument();
+
+            // While the cursor is still hovering over the actionsheet (:hover), it never closes.
+            const matchesSpy = vi.spyOn(menu, 'matches').mockImplementation((selector) => selector === ':hover');
+            fireEvent.mouseLeave(menu);
+            act(() => { vi.advanceTimersByTime(1000); });
+            expect(screen.getByRole('menu', { name: 'Application menu' })).toBeInTheDocument();
+
+            // Removing the cursor closes the actionsheet cleanly after the grace delay.
+            matchesSpy.mockReturnValue(false);
+            fireEvent.mouseLeave(menu);
+            act(() => { vi.advanceTimersByTime(300); });
+            expect(screen.queryByRole('menu', { name: 'Application menu' })).not.toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('pins the 3-equal actionsheet open on click after hover so moving the cursor away keeps it visible until clicking outside', () => {
+        vi.useFakeTimers();
+        try {
+            render(<MenuBar placement="rail" />);
+            const trigger = screen.getByRole('button', { name: 'Open application menu' });
+            const launcher = trigger.parentElement!;
+
+            // 1. Hover opens the action sheet.
+            fireEvent.mouseEnter(launcher);
+            const menu = screen.getByRole('menu', { name: 'Application menu' });
+            expect(menu).toBeInTheDocument();
+
+            // 2. Clicking the 3-equal button even after a long hover pins it open instead of hiding it.
+            act(() => { vi.advanceTimersByTime(1000); });
+            fireEvent.click(trigger);
+            expect(screen.getByRole('menu', { name: 'Application menu' })).toBeInTheDocument();
+
+            // 3. Moving the cursor away without clicking outside keeps it visible.
+            fireEvent.mouseLeave(launcher);
+            fireEvent.mouseLeave(menu);
+            act(() => { vi.advanceTimersByTime(1000); });
+            expect(screen.getByRole('menu', { name: 'Application menu' })).toBeInTheDocument();
+
+            // 4. Clicking outside closes the action sheet.
+            fireEvent.mouseDown(document.body);
+            expect(screen.queryByRole('menu', { name: 'Application menu' })).not.toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('opens every root and nested 3-equal option side by side on the same line for both hover and click', () => {
+        render(<MenuBar placement="rail" />);
+        const trigger = screen.getByRole('button', { name: 'Open application menu' });
+        const launcher = trigger.parentElement!;
+
+        const rootOptionsWithSubmenus = [
+            { label: 'Trading accounts', menuName: 'Trading accounts menu' },
+            { label: 'Chart settings', menuName: 'Chart settings menu' },
+            { label: 'Theme', menuName: 'Theme menu' },
+            { label: 'Algo Trading', menuName: 'RTX5 Algo Trading menu' },
+            { label: 'Terminal', menuName: 'RTX5 Terminal menu' },
+            { label: 'Language', menuName: 'Language menu' },
+            { label: 'Contact us', menuName: 'Contact us menu' },
+            { label: 'About program', menuName: 'About program menu' },
+        ];
+
+        // 1. Hovering every root option opens its action sheet inline on that exact option's row.
+        fireEvent.mouseEnter(launcher);
+        for (const { label, menuName } of rootOptionsWithSubmenus) {
+            const option = screen.getByRole('menuitem', { name: label });
+            fireEvent.mouseEnter(option.parentElement!);
+            const submenu = screen.getByRole('menu', { name: menuName });
+            expect(submenu).toBeInTheDocument();
+            expect(submenu.parentElement).toBe(option.parentElement);
+            expect(submenu.style.top).toBe('0px');
+            expect(submenu).toHaveAttribute('data-submenu-side', 'right');
+            expect(submenu.className).toContain('left-full');
+        }
+
+        // 2. Clicking every root option also opens its action sheet inline on that exact option's row.
+        fireEvent.mouseDown(document.body);
+        fireEvent.click(trigger);
+        for (const { label, menuName } of rootOptionsWithSubmenus) {
+            const option = screen.getByRole('menuitem', { name: label });
+            fireEvent.click(option);
+            const submenu = screen.getByRole('menu', { name: menuName });
+            expect(submenu).toBeInTheDocument();
+            expect(submenu.parentElement).toBe(option.parentElement);
+            expect(submenu.style.top).toBe('0px');
+            expect(submenu).toHaveAttribute('data-submenu-side', 'right');
+            expect(submenu.className).toContain('left-full');
+        }
+
+        // 3. Nested submenus (e.g. Theme -> Color Templates, Chart settings -> Chart controls -> Objects)
+        //    also open inline on the exact same line on both hover and click.
+        const themeItem = screen.getByRole('menuitem', { name: 'Theme' });
+        fireEvent.mouseEnter(themeItem.parentElement!);
+        const colorTemplatesItem = screen.getByRole('menuitem', { name: 'Color Templates' });
+        fireEvent.mouseEnter(colorTemplatesItem.parentElement!);
+        const colorTemplatesMenu = screen.getByRole('menu', { name: 'Color Templates menu' });
+        expect(colorTemplatesMenu.parentElement).toBe(colorTemplatesItem.parentElement);
+        expect(colorTemplatesMenu.style.top).toBe('0px');
+        expect(colorTemplatesMenu).toHaveAttribute('data-submenu-side', 'right');
+
+        const chartSettingsItem = screen.getByRole('menuitem', { name: 'Chart settings' });
+        fireEvent.click(chartSettingsItem);
+        const chartControlsItem = screen.getByRole('menuitem', { name: 'Chart controls' });
+        fireEvent.click(chartControlsItem);
+        const chartControlsMenu = screen.getByRole('menu', { name: 'Chart controls menu' });
+        expect(chartControlsMenu.parentElement).toBe(chartControlsItem.parentElement);
+        expect(chartControlsMenu.style.top).toBe('0px');
+        const objectsItem = within(chartControlsMenu).getByRole('menuitem', { name: 'menu.charts.objects' });
+        fireEvent.click(objectsItem);
+        const objectsMenu = screen.getByRole('menu', { name: 'menu.charts.objects menu' });
+        expect(objectsMenu.parentElement).toBe(objectsItem.parentElement);
+        expect(objectsMenu.style.top).toBe('0px');
+    });
+
+    it('keeps a hover-opened nested submenu open and pins the 3-equal menu when clicked', () => {
+        vi.useFakeTimers();
+        try {
+            render(<MenuBar placement="rail" />);
+            const trigger = screen.getByRole('button', { name: 'Open application menu' });
+            const launcher = trigger.parentElement!;
+
+            // Open via hover, then hover Theme -> Color Templates
+            fireEvent.mouseEnter(launcher);
+            const appMenu = screen.getByRole('menu', { name: 'Application menu' });
+            fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'Theme' }).parentElement!);
+            const colorTemplatesItem = screen.getByRole('menuitem', { name: 'Color Templates' });
+            fireEvent.mouseEnter(colorTemplatesItem.parentElement!);
+            expect(screen.getByRole('menu', { name: 'Color Templates menu' })).toBeInTheDocument();
+
+            // Clicking the already hover-opened nested submenu keeps it open and pins the menu.
+            fireEvent.click(colorTemplatesItem);
+            expect(screen.getByRole('menu', { name: 'Color Templates menu' })).toBeInTheDocument();
+
+            // Moving the cursor away keeps both the menu and nested submenu visible until an outside click.
+            fireEvent.mouseLeave(launcher);
+            fireEvent.mouseLeave(appMenu);
+            act(() => { vi.advanceTimersByTime(1000); });
+            expect(screen.getByRole('menu', { name: 'Application menu' })).toBeInTheDocument();
+            expect(screen.getByRole('menu', { name: 'Color Templates menu' })).toBeInTheDocument();
+
+            // A second intentional click on the already-pinned submenu toggles it closed.
+            fireEvent.click(colorTemplatesItem);
+            expect(screen.queryByRole('menu', { name: 'Color Templates menu' })).not.toBeInTheDocument();
+
+            fireEvent.mouseDown(document.body);
+            expect(screen.queryByRole('menu', { name: 'Application menu' })).not.toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('clamps tall lower-row submenus minimally to stay in viewport and flips left near the right edge', () => {
+        vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1000);
+        vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(700);
+        render(<MenuBar placement="rail" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Open application menu' }));
+
+        const aboutRow = screen.getByRole('menuitem', { name: 'About program' }).parentElement!;
+        vi.spyOn(aboutRow, 'getBoundingClientRect').mockReturnValue({
+            x: 42, y: 520, left: 42, top: 520, right: 298, bottom: 558, width: 256, height: 38,
+            toJSON: () => ({}),
+        } as DOMRect);
+
+        const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            if (this === aboutRow) {
+                return { x: 42, y: 520, left: 42, top: 520, right: 298, bottom: 558, width: 256, height: 38, toJSON: () => ({}) } as DOMRect;
+            }
+            if (this.getAttribute('aria-label') === 'About program menu') {
+                return { x: 298, y: 520, left: 298, top: 520, right: 558, bottom: 920, width: 260, height: 400, toJSON: () => ({}) } as DOMRect;
+            }
+            if (this.getAttribute('aria-label') === 'Theme menu') {
+                return { x: 860, y: 200, left: 860, top: 200, right: 1120, bottom: 320, width: 260, height: 120, toJSON: () => ({}) } as DOMRect;
+            }
+            return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) } as DOMRect;
+        });
+
+        try {
+            fireEvent.click(screen.getByRole('menuitem', { name: 'About program' }));
+            const aboutMenu = screen.getByRole('menu', { name: 'About program menu' });
+            // maxBottom = 692, submenuHeight = 400 -> screenTop = 292 -> topOffset = 292 - 520 = -228px
+            expect(aboutMenu.style.top).toBe('-228px');
+            expect(aboutMenu).toHaveAttribute('data-submenu-side', 'right');
+
+            const themeRow = screen.getByRole('menuitem', { name: 'Theme' }).parentElement!;
+            vi.spyOn(themeRow, 'getBoundingClientRect').mockReturnValue({
+                x: 604, y: 200, left: 604, top: 200, right: 860, bottom: 238, width: 256, height: 38,
+                toJSON: () => ({}),
+            } as DOMRect);
+            fireEvent.mouseEnter(themeRow);
+            const themeMenu = screen.getByRole('menu', { name: 'Theme menu' });
+            expect(themeMenu.style.top).toBe('0px');
+            expect(themeMenu).toHaveAttribute('data-submenu-side', 'left');
+            expect(themeMenu.className).toContain('right-full');
+        } finally {
+            rectSpy.mockRestore();
+        }
     });
 });

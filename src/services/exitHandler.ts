@@ -4,6 +4,7 @@
  */
 
 import { useAppStore } from '../store/useAppStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
 
 export interface UnsavedChanges {
   hasWorkspaceChanges: boolean;
@@ -290,6 +291,7 @@ class ExitHandler {
       // Clear sensitive items from sessionStorage
       sessionStorage.removeItem('tempAuthToken');
       sessionStorage.removeItem('apiKeys');
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
 
       // Note: We keep localStorage for workspace/settings persistence
     } catch (error) {

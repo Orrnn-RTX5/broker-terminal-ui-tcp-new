@@ -22,8 +22,8 @@ const makeTrade = (status?: string): Trade => ({
 });
 
 describe('historyTabModel', () => {
-  it('enables the status column by default and exposes it in HISTORY_COLUMN_DEFS', () => {
-    expect(DEFAULT_HISTORY_COLUMNS.status).toBe(true);
+  it('hides the redundant status column by default while still exposing it in HISTORY_COLUMN_DEFS', () => {
+    expect(DEFAULT_HISTORY_COLUMNS.status).toBe(false);
     expect(HISTORY_COLUMN_DEFS.some((col) => col.key === 'status' && col.label === 'Status')).toBe(true);
   });
 

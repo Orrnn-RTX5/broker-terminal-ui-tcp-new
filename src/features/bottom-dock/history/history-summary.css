@@ -1,6 +1,5 @@
-/* History and Withdrawal History summary bars match the Trade footer layout, colors, and fixed-bottom placement. */
-.rtx-history-summary-bar,
-.rtx-withdrawal-summary-bar {
+/* History summary bar matches the Trade footer layout, colors, and fixed-bottom placement. */
+.rtx-history-summary-bar {
   width: 100%;
   flex-shrink: 0;
   overflow: hidden;
@@ -92,8 +91,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-history-summary-bar,
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-withdrawal-summary-bar {
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-history-summary-bar {
   background: var(--rtx-toolbox-summary, var(--bg-tertiary, #191a1e)) !important;
   border-top-color: var(--border-primary, #444444) !important;
   box-shadow: none !important;
@@ -117,8 +115,7 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-history-table .rt
   box-shadow: none !important;
 }
 
-html:root.rtx-skin-untitled-light .rtx-history-summary-bar,
-html:root.rtx-skin-untitled-light .rtx-withdrawal-summary-bar {
+html:root.rtx-skin-untitled-light .rtx-history-summary-bar {
   background: var(--rtx-light-panel-header, var(--bg-quaternary, #f1f5f9)) !important;
   border-top-color: var(--rtx-light-line-border, #64748b) !important;
   box-shadow: none !important;

@@ -18,7 +18,7 @@ const formatMoney = (value: number | undefined | null): string => {
   }).format(num).replace(/,/g, ' ');
 };
 
-describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
+describe('HistoryTab inline Deposit & Withdrawal records and real-time updates', () => {
   const socketHandlers = new Set<(message: unknown) => void>();
 
   beforeEach(() => {
@@ -62,54 +62,61 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
     vi.restoreAllMocks();
   });
 
-  it('switches between History and Withdrawal History, filters by period, and renders withdrawal details', async () => {
+  it('shows deposits and withdrawals directly inside the History section with no separate section tabs and filters by period', async () => {
     const nowSec = Math.floor(Date.now() / 1000);
     const oldSec = Math.floor(Date.parse('2020-02-01T10:00:00Z') / 1000);
     vi.spyOn(tradeGatewayApi, 'getBalanceHistory').mockResolvedValue([
-      { id: 10, account_login: 200010, type: 'deposit', amount: 10_000, comment: 'Initial funding', time: oldSec },
+      { id: 10, account_login: 200010, type: 'deposit', amount: 10_000, method: 'Bank Wire', comment: 'Initial funding', status: 'completed', time: oldSec },
       { id: 11, account_login: 200010, type: 'withdrawal', amount: 250, method: 'Bank Wire', comment: 'Old payout', status: 'completed', balance_after: 9_750, time: oldSec + 60 },
       { id: 12, account_login: 200010, type: 'withdrawal', amount: 500, comment: 'USDT TRC20', status: 'pending', balance_after: 9_250, time: nowSec - 120 },
     ]);
 
     render(<HistoryTab formatMoney={formatMoney} accountBalance={9_500} />);
 
-    const historyBtn = screen.getByRole('button', { name: 'History' });
-    const withdrawalBtn = await screen.findByRole('button', { name: 'Withdrawal History (2)' });
-    expect(historyBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(withdrawalBtn).toHaveAttribute('aria-pressed', 'false');
+    // No separate Deposit History / Withdrawal History section tabs
+    expect(screen.queryByRole('button', { name: /Deposit History/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Withdrawal History/i })).toBeNull();
 
-    fireEvent.click(withdrawalBtn);
-    expect(withdrawalBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(historyBtn).toHaveAttribute('aria-pressed', 'false');
+    // Boxed History filter contains Today, Last Hour, Last 24 Hours, 14 Days, 6 Months
+    const filterBox = screen.getByRole('group', { name: 'History time filters' });
+    expect(filterBox).toHaveClass('rtx-history-filter-box');
+    expect(within(filterBox).getAllByRole('button').map((btn) => btn.textContent)).toEqual([
+      'Today',
+      'Last Hour',
+      'Last 24 Hours',
+      '14 Days',
+      '6 Months',
+    ]);
 
-    const tableRegion = screen.getByLabelText('Withdrawal history records');
-    const cols = tableRegion.querySelectorAll('colgroup col');
-    expect(cols).toHaveLength(7);
-    const firstColWidth = cols[0]?.getAttribute('style');
-    cols.forEach((col) => expect(col.getAttribute('style')).toBe(firstColWidth));
-    expect(within(tableRegion).getByText('USDT TRC20')).toBeInTheDocument();
-    expect(within(tableRegion).getByText('Bank Wire — Old payout')).toBeInTheDocument();
-    expect(within(tableRegion).queryByText('Initial funding')).toBeNull();
-    expect(within(tableRegion).getByText('Pending')).toBeInTheDocument();
-    expect(within(tableRegion).getByText('Completed')).toBeInTheDocument();
+    const tableRegion = screen.getByLabelText('History records');
+    await waitFor(() => expect(screen.getByText('3 records')).toBeInTheDocument());
+    expect(within(tableRegion).getByTitle('Ticket: 10')).toBeInTheDocument();
+    expect(within(tableRegion).getByTitle('Ticket: 11')).toBeInTheDocument();
+    expect(within(tableRegion).getByTitle('Ticket: 12')).toBeInTheDocument();
+    expect(within(tableRegion).getByText('Deposit')).toBeInTheDocument();
+    expect(within(tableRegion).getAllByText('Withdrawal')).toHaveLength(2);
+    expect(within(tableRegion).getByText('(Pending)')).toBeInTheDocument();
+    expect(within(tableRegion).getByText('10 000.00')).toBeInTheDocument();
+    expect(within(tableRegion).getByText('-500.00')).toBeInTheDocument();
 
-    const summary = screen.getByRole('group', { name: 'Withdrawal history summary' });
+    const summary = screen.getByRole('group', { name: 'History financial summary' });
     expect(tableRegion.contains(summary)).toBe(false);
-    expect(summary.closest('.rtx-withdrawal-summary-bar')).not.toBeNull();
-    expect(summary).toHaveTextContent('Withdrawals: 2');
+    expect(summary.closest('.rtx-history-summary-bar')).not.toBeNull();
+    expect(summary).toHaveTextContent('Deposit: 10 000.00');
     expect(summary).toHaveTextContent('Withdrawal: -750.00');
     expect(summary).toHaveTextContent('Balance: 9 500.00');
-    expect(summary).not.toHaveTextContent('Real-time');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 30 Days' }));
-    expect(within(tableRegion).getByText('USDT TRC20')).toBeInTheDocument();
-    expect(within(tableRegion).queryByText('Bank Wire — Old payout')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Withdrawal History (1)' })).toBeInTheDocument();
-    expect(summary).toHaveTextContent('Withdrawals: 1');
+    // Period filtering applies directly to inline deposits & withdrawals
+    fireEvent.click(within(filterBox).getByRole('button', { name: '14 Days' }));
+    expect(screen.getByText('1 records')).toBeInTheDocument();
+    expect(within(tableRegion).getByTitle('Ticket: 12')).toBeInTheDocument();
+    expect(within(tableRegion).queryByTitle('Ticket: 10')).toBeNull();
+    expect(within(tableRegion).queryByTitle('Ticket: 11')).toBeNull();
+    expect(summary).toHaveTextContent('Deposit: 0.00');
     expect(summary).toHaveTextContent('Withdrawal: -500.00');
   });
 
-  it('updates Withdrawal History in real time from WebSocket events and account balance changes', async () => {
+  it('updates inline Deposit and Withdrawal records in real time from WebSocket events and account balance changes', async () => {
     const nowSec = Math.floor(Date.now() / 1000);
     let ledgerRows: Record<string, unknown>[] = [
       { id: 101, account_login: 200010, type: 'withdrawal', amount: 100, comment: 'Initial payout', status: 'completed', time: nowSec - 600 },
@@ -118,27 +125,25 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
 
     render(<HistoryTab formatMoney={formatMoney} accountBalance={9_500} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Withdrawal History (1)' }));
-    const tableRegion = screen.getByLabelText('Withdrawal history records');
-    expect(within(tableRegion).getByText('Initial payout')).toBeInTheDocument();
+    const tableRegion = screen.getByLabelText('History records');
+    await waitFor(() => expect(within(tableRegion).getByTitle('Ticket: 101')).toBeInTheDocument());
 
-    // 1. Live WebSocket push immediately surfaces a new withdrawal before/alongside REST reconciliation
-    ledgerRows = [
-      ...ledgerRows,
-      { id: 102, account_login: 200010, type: 'withdrawal', amount: 300, comment: 'WS express payout', status: 'pending', time: nowSec },
-    ];
+    // 1. Live WebSocket deposit push immediately appears in History
+    const liveDeposit = { id: 102, account_login: 200010, type: 'deposit', amount: 500, comment: 'WS instant deposit', status: 'completed', time: nowSec };
+    ledgerRows = [...ledgerRows, liveDeposit];
     act(() => {
       socketHandlers.forEach((handler) => {
         handler({
           channel: 'deals.200010',
           account_login: 200010,
-          data: ledgerRows[1],
+          data: { deposit: liveDeposit },
         });
       });
     });
 
-    await waitFor(() => expect(within(tableRegion).getByText('WS express payout')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Withdrawal History (2)' })).toBeInTheDocument();
+    await waitFor(() => expect(within(tableRegion).getByTitle('Ticket: 102')).toBeInTheDocument());
+    expect(within(tableRegion).getByText('Deposit')).toBeInTheDocument();
+    expect(screen.getByText('2 records')).toBeInTheDocument();
 
     // 2. Account balance update in store triggers real-time ledger refresh automatically
     ledgerRows = [
@@ -151,19 +156,18 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
       }));
     });
 
-    await waitFor(() => expect(within(tableRegion).getByText('Balance sync payout')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Withdrawal History (3)' })).toBeInTheDocument();
+    await waitFor(() => expect(within(tableRegion).getByTitle('Ticket: 103')).toBeInTheDocument());
+    expect(screen.getByText('3 records')).toBeInTheDocument();
   });
 
-  it('refreshes Withdrawal History on rtx:state-changed withdrawal notifications', async () => {
+  it('refreshes History balance operations on rtx:state-changed notifications', async () => {
     const nowSec = Math.floor(Date.now() / 1000);
     let ledgerRows: Record<string, unknown>[] = [];
     vi.spyOn(tradeGatewayApi, 'getBalanceHistory').mockImplementation(async () => ledgerRows);
 
     render(<HistoryTab formatMoney={formatMoney} accountBalance={9_500} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Withdrawal History' }));
 
-    await waitFor(() => expect(screen.getByText('No withdrawal history for the selected period')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('No history records for the selected filters')).toBeInTheDocument());
 
     ledgerRows = [
       { id: 201, account_login: 200010, type: 'withdrawal', amount: 120, comment: 'Event payout', status: 'completed', time: nowSec },
@@ -172,16 +176,16 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
       window.dispatchEvent(new CustomEvent('rtx:state-changed', { detail: { entities: ['withdrawals'] } }));
     });
 
-    await waitFor(() => expect(screen.getByText('Event payout')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Withdrawal History (1)' })).toBeInTheDocument();
+    const tableRegion = screen.getByLabelText('History records');
+    await waitFor(() => expect(within(tableRegion).getByTitle('Ticket: 201')).toBeInTheDocument());
+    expect(screen.getByText('1 records')).toBeInTheDocument();
   });
 
-  it('opens the History action menu when right-clicking blank space on Withdrawal History and suppresses browser Inspect', async () => {
+  it('opens the History action menu when right-clicking blank space and suppresses browser Inspect', async () => {
     vi.spyOn(tradeGatewayApi, 'getBalanceHistory').mockResolvedValue([]);
     render(<HistoryTab formatMoney={formatMoney} accountBalance={9_500} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Withdrawal History' }));
-    const blankSurface = await screen.findByLabelText('Withdrawal history records');
+    const blankSurface = await screen.findByLabelText('History records');
 
     const contextEvent = new MouseEvent('contextmenu', {
       bubbles: true,
@@ -196,9 +200,6 @@ describe('HistoryTab Withdrawal History sub-tab & real-time updates', () => {
     expect(contextEvent.defaultPrevented).toBe(true);
     const menu = await screen.findByRole('menu', { name: 'Context menu' });
     expect(within(menu).getByRole('menuitem', { name: 'Positions' })).toBeInTheDocument();
-
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Positions' }));
-    expect(screen.getByRole('button', { name: 'History' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('keeps the History summary bar fixed outside the scroll container and syncs horizontal scroll', async () => {

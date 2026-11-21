@@ -199,24 +199,32 @@
   background: var(--border-primary);
 }
 
+.web-drawing-tools-rail[data-orientation='vertical'] {
+  --rtx-drawing-rail-gap: 8px;
+}
+
+.web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__menu-slot {
+  padding: var(--rtx-drawing-rail-gap) 0 0;
+}
+
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
   flex: 0 1 auto;
   justify-content: flex-start;
-  gap: 1px;
-  padding: 1px 0 2px;
+  gap: var(--rtx-drawing-rail-gap);
+  padding: var(--rtx-drawing-rail-gap) 0;
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools .web-drawing-tools-rail__separator {
-  margin: 2px 0;
+  margin: 0;
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-  padding: 0 0 4px;
-  gap: 1px;
+  padding: 0 0 var(--rtx-drawing-rail-gap);
+  gap: var(--rtx-drawing-rail-gap);
 }
 
 .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
-  margin: 1px 0 2px;
+  margin: 0;
 }
 
 .web-drawing-tools-rail__toggle {
@@ -284,6 +292,8 @@
   height: 100%;
   flex: 1 1 auto;
   flex-direction: row;
+  gap: 6px;
+  padding-inline: 6px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -292,6 +302,8 @@
   width: auto;
   height: 100%;
   flex-direction: row;
+  gap: 6px;
+  padding-inline: 6px;
   border-left: 1px solid var(--border-primary);
 }
 
@@ -310,7 +322,7 @@
   width: 1px;
   height: 20px;
   min-height: 20px;
-  margin: 0 5px;
+  margin: 0;
 }
 
 .web-drawing-tools-rail[data-orientation='horizontal'] .web-drawing-tools-rail__flyout-mark {
@@ -340,8 +352,9 @@
   font-weight: 400;
 }
 
-.rtx-desktop-inline-drawings .web-drawing-tools-rail__tools {
-  justify-content: space-between;
+.rtx-desktop-inline-drawings .web-drawing-tools-rail[data-orientation='horizontal'] .web-drawing-tools-rail__tools {
+  flex: 0 1 auto;
+  justify-content: flex-start;
   gap: var(--rtx-drawing-item-gap);
   padding-inline: 0;
 }
@@ -357,6 +370,7 @@
 }
 
 .rtx-desktop-inline-drawings .web-drawing-tools-rail[data-orientation='horizontal'] .web-drawing-tools-rail__footer {
+  gap: var(--rtx-drawing-item-gap);
   padding-inline: var(--rtx-drawing-item-gap) 0;
   border-left: 0;
 }
@@ -590,6 +604,7 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
 @media (max-height: 920px), (max-width: 1720px) {
   .web-drawing-tools-rail[data-orientation='vertical'] {
+    --rtx-drawing-rail-gap: 6px;
     width: var(--rtx-web-left-rail-width, 36px);
     min-width: var(--rtx-web-left-rail-width, 36px);
   }
@@ -597,16 +612,6 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
     width: 100%;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 1px 0;
-    gap: 1px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding: 0 0 3px;
-    gap: 1px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
@@ -638,17 +643,18 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
     width: 20px;
-    margin: 1px 0;
+    margin: 0;
     background: color-mix(in srgb, var(--text-secondary) 28%, var(--border-primary));
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
-    margin: 1px 0;
+    margin: 0;
   }
 }
 
 @media (max-height: 720px), (max-width: 1440px) {
   .web-drawing-tools-rail[data-orientation='vertical'] {
+    --rtx-drawing-rail-gap: 5px;
     width: var(--rtx-web-left-rail-width, 34px);
     min-width: var(--rtx-web-left-rail-width, 34px);
   }
@@ -656,16 +662,6 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools,
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
     width: 100%;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 1px 0;
-    gap: 1px;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding: 0 0 2px;
-    gap: 1px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
@@ -697,11 +693,11 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
     width: 18px;
-    margin: 1px 0;
+    margin: 0;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer .web-drawing-tools-rail__separator {
-    margin: 1px 0;
+    margin: 0;
   }
 
   .web-drawing-tools-menu__item {
@@ -714,14 +710,8 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 }
 
 @media (max-height: 620px) {
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__tools {
-    padding: 1px 0;
-    gap: 0;
-  }
-
-  .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__footer {
-    padding: 0 0 2px;
-    gap: 0;
+  .web-drawing-tools-rail[data-orientation='vertical'] {
+    --rtx-drawing-rail-gap: 3px;
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__button,
@@ -745,12 +735,13 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
   }
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
-    margin: 1px 0;
+    margin: 0;
   }
 }
 
 @media (max-height: 480px), (max-width: 768px) {
   .web-drawing-tools-rail[data-orientation='vertical'] {
+    --rtx-drawing-rail-gap: 2px;
     width: var(--rtx-web-left-rail-width, 32px);
     min-width: var(--rtx-web-left-rail-width, 32px);
   }
@@ -789,7 +780,7 @@ html:root .web-drawing-tools-menu[data-menu='emojis'] .drawing-emoji-picker__tab
 
   .web-drawing-tools-rail[data-orientation='vertical'] .web-drawing-tools-rail__separator {
     width: 16px;
-    margin: 1px 0;
+    margin: 0;
   }
 }
 

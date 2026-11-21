@@ -18,6 +18,7 @@ export interface OrderFeedbackOptions {
   metaLabel?: UiMessage;
   metaIcon?: ActionFeedbackNotice['metaIcon'];
   hint?: UiMessage;
+  placement?: ActionFeedbackNotice['placement'];
   report?: PositionCloseReport;
 }
 
@@ -45,6 +46,7 @@ export const publishOrderFeedback = (
         metaLabel: opts.metaLabel,
         metaIcon: opts.metaIcon,
         hint: opts.hint,
+        ...(opts.placement ? { placement: opts.placement } : {}),
       }
     : undefined;
 

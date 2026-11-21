@@ -705,13 +705,16 @@ function MiniTickChart({
             for (let i = 0; i < plotHistory.length; i += chunkSize) {
               const slice = plotHistory.slice(i, i + chunkSize);
               if (slice.length === 0) continue;
-              const open = slice[0].bid;
-              const close = slice[slice.length - 1].bid;
+              const open = slice[0].bid > 0 ? slice[0].bid : slice[0].ask;
+              const close = slice[slice.length - 1].bid > 0 ? slice[slice.length - 1].bid : slice[slice.length - 1].ask;
               let high = Math.max(open, close);
               let low = Math.min(open, close);
               for (const pt of slice) {
-                high = Math.max(high, pt.bid, pt.ask);
-                low = Math.min(low, pt.bid);
+                const ptPrice = pt.bid > 0 ? pt.bid : pt.ask;
+                if (ptPrice > 0) {
+                  high = Math.max(high, ptPrice);
+                  low = Math.min(low, ptPrice);
+                }
               }
               bars.push({
                 time: Math.floor(slice[0].time / 1000),
@@ -731,8 +734,11 @@ function MiniTickChart({
         if (Number.isFinite(bar.high) && bar.high > 0) maxPrice = Math.max(maxPrice, bar.high);
       }
       for (const tick of plotHistory) {
-        if (tick.bid > 0) minPrice = Math.min(minPrice, tick.bid);
-        if (tick.ask > 0) maxPrice = Math.max(maxPrice, tick.ask);
+        const tickPrice = tick.bid > 0 ? tick.bid : tick.ask;
+        if (tickPrice > 0) {
+          minPrice = Math.min(minPrice, tickPrice);
+          maxPrice = Math.max(maxPrice, tickPrice);
+        }
       }
       for (const extraPrice of [orderPrice, stopLossPrice, takeProfitPrice]) {
         if (typeof extraPrice === 'number' && Number.isFinite(extraPrice) && extraPrice > 0) {
@@ -799,35 +805,15 @@ function MiniTickChart({
       const occupiedTagYs: number[] = [];
       const clampTagY = (rawY: number) => Math.max(top + tagHeight / 2, Math.min(plotBottom - tagHeight / 2, rawY));
 
-      // Pre-compute Bid & Ask tag Y positions with collision separation when spread is tight
+      // Pre-compute single live price tag Y position (Bid, falling back to Ask)
       const lastTick = plotHistory[plotHistory.length - 1];
-      let resolvedBidTagY: number | null = null;
-      let resolvedAskTagY: number | null = null;
-      if (showPriceLines && lastTick) {
-        const hasBid = lastTick.bid > 0;
-        const hasAsk = lastTick.ask > 0;
-        if (hasBid && hasAsk) {
-          let askY = clampTagY(yOf(lastTick.ask));
-          let bidY = clampTagY(yOf(lastTick.bid));
-          const minGap = tagHeight + 2;
-          if (Math.abs(bidY - askY) < minGap) {
-            const midY = (askY + bidY) * 0.5;
-            askY = clampTagY(midY - minGap * 0.5);
-            bidY = clampTagY(askY + minGap);
-            if (bidY - askY < minGap) {
-              askY = clampTagY(bidY - minGap);
-            }
-          }
-          resolvedAskTagY = askY;
-          resolvedBidTagY = bidY;
-          occupiedTagYs.push(askY, bidY);
-        } else if (hasBid) {
-          resolvedBidTagY = clampTagY(yOf(lastTick.bid));
-          occupiedTagYs.push(resolvedBidTagY);
-        } else if (hasAsk) {
-          resolvedAskTagY = clampTagY(yOf(lastTick.ask));
-          occupiedTagYs.push(resolvedAskTagY);
-        }
+      const livePrice = lastTick
+        ? (lastTick.bid > 0 ? lastTick.bid : (lastTick.ask > 0 ? lastTick.ask : 0))
+        : 0;
+      let resolvedLivePriceTagY: number | null = null;
+      if (showPriceLines && livePrice > 0) {
+        resolvedLivePriceTagY = clampTagY(yOf(livePrice));
+        occupiedTagYs.push(resolvedLivePriceTagY);
       }
 
       const registerOccupiedLevel = (priceVal: number | undefined) => {
@@ -1034,7 +1020,7 @@ function MiniTickChart({
         }
       }
 
-      // When in tick-only mode (no historical M1 bars) on candlestick/bar/hlc, also overlay live tick lines
+      // When in tick-only mode (no historical M1 bars) on candlestick/bar/hlc, overlay a single live price trace
       if (liveM1Candles.length < 2 && (miniChartType === 'candlestick' || miniChartType === 'bar' || miniChartType === 'hlc')) {
         const bgNormForTrace = palette.background.trim().toLowerCase();
         const isInvisibleForTrace = (c: string) => {
@@ -1045,23 +1031,27 @@ function MiniTickChart({
           return n === '#000000' || n === '#000' || n === bgNormForTrace;
         };
         const traceUpColor = !isInvisibleForTrace(candleUpBody) ? candleUpBody : candleUpBorder;
-        const traceDownColor = !isInvisibleForTrace(candleDownBody) ? candleDownBody : candleDownBorder;
-        const traceLine = (key: 'bid' | 'ask', color: string) => {
-          ctx.beginPath();
-          plotHistory.forEach((tick, index) => {
-            const x = xOf(tick.time);
-            const y = yOf(tick[key]);
-            if (index === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          });
-          ctx.strokeStyle = color;
+        ctx.beginPath();
+        let hasTracePoint = false;
+        plotHistory.forEach((tick) => {
+          const tickPrice = tick.bid > 0 ? tick.bid : tick.ask;
+          if (!(tickPrice > 0)) return;
+          const x = xOf(tick.time);
+          const y = yOf(tickPrice);
+          if (!hasTracePoint) {
+            ctx.moveTo(x, y);
+            hasTracePoint = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        if (hasTracePoint) {
+          ctx.strokeStyle = traceUpColor;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           ctx.lineWidth = 1.15;
           ctx.stroke();
-        };
-        traceLine('bid', traceUpColor);
-        traceLine('ask', traceDownColor);
+        }
       }
 
       // Helper to draw a high-contrast right-side price scale tag
@@ -1190,8 +1180,8 @@ function MiniTickChart({
       drawTradeOrOrderLine(stopLossPrice, 'SL', palette.stopLevel, '#b91c1c', true);
       drawTradeOrOrderLine(takeProfitPrice, 'TP', '#2563eb', '#1d4ed8', true);
 
-      // Draw live Bid & Ask price lines and right-side price scale tags last so they stay on top
-      if (showPriceLines && lastTick) {
+      // Draw a single live price line and right-side price scale tag last so it stays on top
+      if (showPriceLines && livePrice > 0) {
         const bgNorm = palette.background.trim().toLowerCase();
         const isInvisibleOnPlot = (c: string) => {
           const n = c.trim().toLowerCase();
@@ -1202,38 +1192,35 @@ function MiniTickChart({
         };
         const visibleUpColor = !isInvisibleOnPlot(candleUpBody) ? candleUpBody : candleUpBorder;
         const visibleDownColor = !isInvisibleOnPlot(candleDownBody) ? candleDownBody : candleDownBorder;
+        const visibleLineColor = chartColors.lineChart && !isInvisibleOnPlot(chartColors.lineChart)
+          ? chartColors.lineChart
+          : visibleUpColor;
         const getReadableTagText = (bgHex: string): string => {
-          const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(bgHex.trim());
+          const trimmed = bgHex.trim();
+          const shortMatch = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(trimmed);
+          const hex = shortMatch
+            ? `${shortMatch[1]}${shortMatch[1]}${shortMatch[2]}${shortMatch[2]}${shortMatch[3]}${shortMatch[3]}`
+            : trimmed.replace(/^#/, '');
+          const m = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
           if (!m) return '#ffffff';
           const lum = (0.2126 * parseInt(m[1], 16) + 0.7152 * parseInt(m[2], 16) + 0.0722 * parseInt(m[3], 16)) / 255;
           return lum > 0.6 ? '#000000' : '#ffffff';
         };
-        const bidLineColor = visibleUpColor;
-        const bidTagBg = visibleUpColor;
-        const bidTagText = getReadableTagText(bidTagBg);
-        const askLineColor = visibleDownColor;
-        const askTagBg = visibleDownColor;
-        const askTagText = getReadableTagText(askTagBg);
+        const lastBar = candlesToDraw[candlesToDraw.length - 1];
+        const isLiveUp = !lastBar || lastBar.close >= lastBar.open;
+        const liveLineColor = miniChartType === 'line' || miniChartType === 'area' || miniChartType === 'dot'
+          ? visibleLineColor
+          : (isLiveUp ? visibleUpColor : visibleDownColor);
+        const liveTagText = getReadableTagText(liveLineColor);
 
         ctx.lineWidth = 1;
-        if (lastTick.bid > 0) {
-          const y = Math.round(Math.max(top, Math.min(plotBottom, yOf(lastTick.bid)))) + 0.5;
-          ctx.beginPath();
-          ctx.moveTo(left, y);
-          ctx.lineTo(plotRight, y);
-          ctx.strokeStyle = bidLineColor;
-          ctx.stroke();
-          drawPriceAxisTag(lastTick.bid, bidTagBg, bidTagText, resolvedBidTagY);
-        }
-        if (lastTick.ask > 0) {
-          const y = Math.round(Math.max(top, Math.min(plotBottom, yOf(lastTick.ask)))) + 0.5;
-          ctx.beginPath();
-          ctx.moveTo(left, y);
-          ctx.lineTo(plotRight, y);
-          ctx.strokeStyle = askLineColor;
-          ctx.stroke();
-          drawPriceAxisTag(lastTick.ask, askTagBg, askTagText, resolvedAskTagY);
-        }
+        const y = Math.round(Math.max(top, Math.min(plotBottom, yOf(livePrice)))) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(plotRight, y);
+        ctx.strokeStyle = liveLineColor;
+        ctx.stroke();
+        drawPriceAxisTag(livePrice, liveLineColor, liveTagText, resolvedLivePriceTagY);
       }
     };
 

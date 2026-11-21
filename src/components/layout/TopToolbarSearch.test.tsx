@@ -285,40 +285,40 @@ describe('TopToolbarSearch (Zero-Dropdown Direct In-Place UI Locator)', () => {
       toJSON: () => ({}),
     };
 
-    // Mock 1st Action Sheet (.rtx-application-menu) with Color Templates root item
+    // Mock 1st Action Sheet (.rtx-application-menu) with Theme root item
     const appMenu = document.createElement('div');
     appMenu.className = 'rtx-application-menu';
     appMenu.getBoundingClientRect = () => rect;
 
-    const colorTemplatesBtn = document.createElement('button');
-    colorTemplatesBtn.setAttribute('data-root-menu-item', 'true');
-    colorTemplatesBtn.setAttribute('data-menu-key', 'color-templates');
-    colorTemplatesBtn.setAttribute('aria-haspopup', 'menu');
-    colorTemplatesBtn.textContent = 'Color Templates';
-    colorTemplatesBtn.getBoundingClientRect = () => rect;
-    appMenu.appendChild(colorTemplatesBtn);
+    const themeBtn = document.createElement('button');
+    themeBtn.setAttribute('data-root-menu-item', 'true');
+    themeBtn.setAttribute('data-menu-key', 'theme');
+    themeBtn.setAttribute('aria-haspopup', 'menu');
+    themeBtn.textContent = 'Theme';
+    themeBtn.getBoundingClientRect = () => rect;
+    appMenu.appendChild(themeBtn);
     document.body.appendChild(appMenu);
 
     render(<TopToolbarSearch {...defaultProps} />);
     const input = screen.getByRole('searchbox', { name: /search anywhere in application/i });
 
-    // Step 1: Search "color templates" -> only 1st action sheet opens (openDepth: 0), highlighting Color Templates
+    // Step 1: Search "color templates" -> only 1st action sheet opens (openDepth: 0), highlighting Theme
     fireEvent.change(input, { target: { value: 'color templates' } });
     expect(revealSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         detail: {
-          webRootId: 'color-templates',
+          webRootId: 'theme',
           desktopMenuKey: 'Charts',
-          submenuPath: [],
+          submenuPath: ['Color Templates'],
           openDepth: 0,
         },
       }),
     );
-    expect(colorTemplatesBtn.classList.contains('rtx-search-located-target')).toBe(true);
+    expect(themeBtn.classList.contains('rtx-search-located-target')).toBe(true);
 
-    // Pressing Enter while on parent Color Templates (has child action sheet) should NOT trigger an action
+    // Pressing Enter while on parent Theme (has child action sheet) should NOT trigger an action
     const parentClickSpy = vi.fn();
-    colorTemplatesBtn.addEventListener('click', parentClickSpy);
+    themeBtn.addEventListener('click', parentClickSpy);
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(parentClickSpy).not.toHaveBeenCalled();
 
@@ -351,7 +351,7 @@ describe('TopToolbarSearch (Zero-Dropdown Direct In-Place UI Locator)', () => {
     expect(revealSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         detail: {
-          webRootId: 'color-templates',
+          webRootId: 'theme',
           desktopMenuKey: 'Charts',
           submenuPath: [],
           openDepth: 1,
@@ -403,13 +403,13 @@ describe('TopToolbarSearch (Zero-Dropdown Direct In-Place UI Locator)', () => {
     appMenu.className = 'rtx-application-menu';
     appMenu.getBoundingClientRect = () => rect;
 
-    const colorTemplatesBtn = document.createElement('button');
-    colorTemplatesBtn.setAttribute('data-root-menu-item', 'true');
-    colorTemplatesBtn.setAttribute('data-menu-key', 'color-templates');
-    colorTemplatesBtn.setAttribute('aria-haspopup', 'menu');
-    colorTemplatesBtn.textContent = 'Color Templates';
-    colorTemplatesBtn.getBoundingClientRect = () => rect;
-    appMenu.appendChild(colorTemplatesBtn);
+    const themeBtn = document.createElement('button');
+    themeBtn.setAttribute('data-root-menu-item', 'true');
+    themeBtn.setAttribute('data-menu-key', 'theme');
+    themeBtn.setAttribute('aria-haspopup', 'menu');
+    themeBtn.textContent = 'Theme';
+    themeBtn.getBoundingClientRect = () => rect;
+    appMenu.appendChild(themeBtn);
     document.body.appendChild(appMenu);
 
     const { rerender } = render(
@@ -427,7 +427,7 @@ describe('TopToolbarSearch (Zero-Dropdown Direct In-Place UI Locator)', () => {
     expect(revealSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({
-          webRootId: 'color-templates',
+          webRootId: 'theme',
           openDepth: 0,
         }),
       }),
@@ -448,7 +448,7 @@ describe('TopToolbarSearch (Zero-Dropdown Direct In-Place UI Locator)', () => {
     expect(revealSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         detail: expect.objectContaining({
-          webRootId: 'color-templates',
+          webRootId: 'theme',
           openDepth: 1,
         }),
       }),

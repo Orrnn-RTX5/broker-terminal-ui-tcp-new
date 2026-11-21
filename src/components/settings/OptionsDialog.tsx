@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { Icon, type IconName } from '../ui/Icon';
 import { useSettingsStore, type SettingsState } from '../../store/useSettingsStore';
+import { useOneClickDisclaimerStore } from '../../store/useOneClickDisclaimerStore';
+import { OneClickDisclaimerDialog } from '../ui/OneClickDisclaimerDialog';
 import { useThemeAppearanceStore } from '../../store/useThemeAppearanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { NotificationPreferences } from './NotificationPreferences';
@@ -61,6 +63,7 @@ function OpenOptionsDialog({ onClose, activeTab, setActiveTab }: {
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         dialogRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus();
         const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+            if (useOneClickDisclaimerStore.getState().isOpen) return;
             if (event.key === 'Escape') {
                 event.preventDefault(); event.stopPropagation(); cancelFromKeyboard();
             }
@@ -94,7 +97,7 @@ function OpenOptionsDialog({ onClose, activeTab, setActiveTab }: {
     const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
     return createPortal(
         <div className="rtx-options-dialog-backdrop">
-            <div className="rtx-options-dialog text-[14px] font-normal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="options-title" aria-describedby="options-description" style={dragStyle} onKeyDown={(event) => event.stopPropagation()}>
+            <div className="rtx-options-dialog text-[14px] font-normal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="options-title" aria-describedby="options-description" style={dragStyle} onKeyDown={(event) => { if (!useOneClickDisclaimerStore.getState().isOpen) event.stopPropagation(); }}>
                 <header className="options-header" {...dragHandleProps}>
                     <span className="options-header-icon"><Icon name="settings" size={22} /></span>
                     <div className="options-header-copy"><h2 className="rtx-dialog-title" id="options-title">{tr('Options')}</h2><p id="options-description">{tr('Personalize your terminal workspace')}</p></div>
@@ -223,9 +226,20 @@ function ChartsTab() {
 
 function TradeTab() {
     const tr = useUiTranslation();
+    const disclaimerOwnerId = useId();
     const trade = useSettingsStore((state) => state.trade);
     const update = useSettingsStore((state) => state.updateTradeSettings);
+    const acceptedInSession = useOneClickDisclaimerStore((state) => state.acceptedInSession);
     const selectedSymbol = useAppStore((state) => state.selectedSymbol);
+    const oneClickActive = trade.oneClickTrading && acceptedInSession;
+    const handleOneClickToggle = (nextEnabled: boolean) => {
+        if (!nextEnabled) {
+            useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+            update({ oneClickTrading: false });
+            return;
+        }
+        void useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
+    };
     return <div className="options-stack">
         <SettingsSection title="Order defaults" description="Choose the preferred starting values for an order.">
             <SettingsField label="Symbol" htmlFor="options-symbol"><div className="options-input-action"><select id="options-symbol" className="options-control" value={trade.defaultSymbolMode} onChange={(e) => update({ defaultSymbolMode: e.target.value as 'automatic' | 'last-used' })}><option value="automatic">{tr('Automatic')}</option><option value="last-used">{tr('Last Used')}</option></select><span className="options-symbol-badge">{selectedSymbol || 'EURUSD'}</span></div></SettingsField>
@@ -236,7 +250,8 @@ function TradeTab() {
                 <SettingsField label="Default deviation (points)" htmlFor="options-deviation"><input id="options-deviation" className="options-control" type="number" min="0" value={trade.defaultDeviation} onChange={(e) => update({ defaultDeviation: parseInt(e.target.value) || 0 })} /></SettingsField>
             </div>
         </SettingsSection>
-        <SettingsSection title="Trade confirmation"><SettingsToggle label="One Click Trading" description="Allows trade operations with a single click without an additional confirmation." checked={trade.oneClickTrading} onChange={(oneClickTrading) => update({ oneClickTrading })} /></SettingsSection>
+        <SettingsSection title="Trade confirmation"><SettingsToggle label="One Click Trading" description="Allows trade operations with a single click without an additional confirmation." checked={oneClickActive} onChange={handleOneClickToggle} /></SettingsSection>
+        <OneClickDisclaimerDialog ownerId={disclaimerOwnerId} />
     </div>;
 }
 

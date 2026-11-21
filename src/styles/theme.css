@@ -1695,6 +1695,27 @@ textarea {
   transform-origin: top left;
 }
 
+/* Seamless invisible hover bridge across the gap between the 3-bar launcher and action sheet. */
+.rtx-application-menu[data-placement='rail']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -10px;
+  width: 10px;
+  pointer-events: auto;
+}
+
+.rtx-application-menu[data-placement='toolbar']::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  pointer-events: auto;
+}
+
 .rtx-application-menu__brand {
   align-items: center;
   border-bottom: 1px solid var(--border-primary);
@@ -2207,8 +2228,8 @@ tr:hover {
 }
 
 .theme-light .rtx-oct .rtx-oct-trade-button {
-  padding: 0 !important;
-  gap: 0 !important;
+  padding: 0 10px !important;
+  gap: 8px !important;
   border: none !important;
   border-radius: 0 !important;
   height: 24px !important;
@@ -2242,13 +2263,13 @@ tr:hover {
 
 .theme-light .rtx-oct .rtx-oct-trade-button .rtx-oct-price {
   flex: 1 1 auto;
-  padding: 0 10px;
+  padding: 0;
   background: #3183ff;
 }
 
 .theme-light .rtx-oct .rtx-oct-trade-button .rtx-oct-side-label {
-  min-width: 44px;
-  padding: 0 10px;
+  min-width: 0;
+  padding: 0;
   letter-spacing: 0.2px !important;
   background: #2a6fd9;
 }
@@ -2259,6 +2280,14 @@ tr:hover {
 
 .theme-light .rtx-oct .rtx-oct-trade-button[data-dir='down'] .rtx-oct-side-label {
   background: #c74141;
+}
+
+.theme-light .rtx-oct .rtx-oct-trade-button[data-dir='flat'] .rtx-oct-price {
+  background: #8c95a3;
+}
+
+.theme-light .rtx-oct .rtx-oct-trade-button[data-dir='flat'] .rtx-oct-side-label {
+  background: #788292;
 }
 
 .theme-light .rtx-oct .rtx-oct-volume-control {

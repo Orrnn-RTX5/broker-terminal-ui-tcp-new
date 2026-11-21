@@ -108,9 +108,13 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
         expect(screen.getByText('No live price is available to place Stop Loss or Take Profit levels')).not.toBeNull();
     });
 
-    it('shows the position volume on the close button instead of a fake zero', () => {
+    it('shows the position volume in the header and omits Modify and Close buttons for positions', () => {
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition()} />);
-        expect(screen.getByRole('button', { name: /close #201 buy 0\.01 gbpusd/i })).not.toBeNull();
+        expect(screen.getByText('0.01')).not.toBeNull();
+        expect(screen.getByRole('button', { name: /sell by market/i })).not.toBeNull();
+        expect(screen.getByRole('button', { name: /buy by market/i })).not.toBeNull();
+        expect(screen.queryByRole('button', { name: /modify #201/i })).toBeNull();
+        expect(screen.queryByRole('button', { name: /close #201/i })).toBeNull();
     });
 
     it('hedge market order rounds free-typed SL/TP to the symbol grid', async () => {
@@ -129,7 +133,7 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
 
     it('a server refusal is named from the fresh quote only: with no fresh quote, the server text', async () => {
         markQuoteFeedActivity('GBPUSD', Date.now() - 120_000);
-        mocks.modifyPosition.mockRejectedValueOnce({
+        mocks.placeMarketOrder.mockRejectedValueOnce({
             status: 400,
             code: 'INVALID_STOPS',
             message: 'protection level violates the current closing price',
@@ -137,8 +141,8 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
         });
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition()} />);
         fireEvent.change(slInput(), { target: { value: '1.3397' } }); // valid locally, so the server decides
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
         await waitFor(() => expect(screen.getByText(/protection level violates the current closing price/)).not.toBeNull());
         expect(screen.queryByText(/must be below Bid/)).toBeNull();
     });
@@ -147,12 +151,12 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
         // The quote is 120 s old (no fresh feed activity): nothing is refused locally.
         mocks.tick = { symbol: 'GBPUSD', bid: 1.33981, ask: 1.33983, spread: 2, timestamp: Date.now() };
         markQuoteFeedActivity('GBPUSD', Date.now() - 120_000);
-        mocks.modifyPosition.mockResolvedValueOnce(undefined);
+        mocks.placeMarketOrder.mockResolvedValueOnce(undefined);
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition()} />);
         fireEvent.change(slInput(), { target: { value: '1.34' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
-        expect(mocks.modifyPosition.mock.calls[0][1]).toMatchObject({ price_sl: 1.34 });
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
+        expect(mocks.placeMarketOrder.mock.calls[0][0]).toMatchObject({ price_sl: 1.34 });
     });
 
     it('hedge market order refuses a wrong-side SL on a fresh quote before sending', async () => {
@@ -168,14 +172,14 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
         // BUY GBPUSD, live Bid 1.33981: SL above Bid is refused locally; nothing is sent.
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition()} />);
         fireEvent.change(slInput(), { target: { value: '1.34' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
         await waitFor(() => expect(screen.getByText(/SL 1\.34000 must be below Bid 1\.33981/)).not.toBeNull());
-        expect(mocks.modifyPosition).not.toHaveBeenCalled();
+        expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
     });
 
     it('T4b: a server refusal of a level that passes locally is surfaced in-dialog', async () => {
         // SL 1.3397 is below Bid 1.33981 (valid locally), so the server decides.
-        mocks.modifyPosition.mockRejectedValueOnce({
+        mocks.placeMarketOrder.mockRejectedValueOnce({
             status: 400,
             code: 'INVALID_STOPS',
             message: 'protection level violates the current closing price',
@@ -183,8 +187,8 @@ describe('ModifyPositionDialog SL/TP seeding (no fake 0.00)', () => {
         });
         render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={makePosition()} />);
         fireEvent.change(slInput(), { target: { value: '1.3397' } });
-        fireEvent.click(screen.getByRole('button', { name: /modify #201/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalled());
+        fireEvent.click(screen.getByRole('button', { name: /buy by market/i }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalled());
         await waitFor(() => expect(screen.getByText(/protection level violates the current closing price/)).not.toBeNull());
     });
 });

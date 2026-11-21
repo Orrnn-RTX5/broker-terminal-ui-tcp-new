@@ -177,8 +177,8 @@ describe('Authentic MetaTrader 5 trade and system audio playback', () => {
     vi.restoreAllMocks();
   });
 
-  it('maps open and every close case to distinct official MT5 WAV sound assets on disk', () => {
-    const soundTypes: SystemSoundType[] = ['open', 'close-single', 'close-all', 'close-profit', 'close-loss'];
+  it('maps buy, sell, open, and every close case to distinct WAV sound assets on disk', () => {
+    const soundTypes: SystemSoundType[] = ['buy', 'sell', 'open', 'close-single', 'close-all', 'close-profit', 'close-loss'];
     const assetPaths = soundTypes.map((type) => getSystemSoundAssetPath(type));
 
     for (const path of assetPaths) {
@@ -190,8 +190,8 @@ describe('Authentic MetaTrader 5 trade and system audio playback', () => {
       expect(header.slice(0, 4)).toBe('RIFF');
       expect(header.slice(8, 12)).toBe('WAVE');
     }
-    // All 5 trade cases (open + 4 close cases) have distinct MT5 WAV files.
-    expect(new Set(assetPaths).size).toBe(5);
+    // All 7 trade cases (buy, sell, open + 4 close cases) have distinct WAV files.
+    expect(new Set(assetPaths).size).toBe(7);
     expect(getSystemSoundAssetPath('close')).toBe(getSystemSoundAssetPath('close-single'));
     expect(getSystemSoundAssetPath('login')).toMatch(/sounds\/mt5-connect\.wav$/);
   });
@@ -238,6 +238,8 @@ describe('Authentic MetaTrader 5 trade and system audio playback', () => {
         },
       },
     });
+    playSystemSound('buy');
+    playSystemSound('sell');
     playSystemSound('open');
     playSystemSound('close-profit');
     playSystemSound('close-loss');

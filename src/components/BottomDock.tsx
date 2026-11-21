@@ -9,6 +9,12 @@ import { useToolboxTradeData } from '../hooks/useToolboxTradeData';
 import { useLiveBulkCloseCounts } from '../services/livePositionAggregates';
 import { loadTerminalHistory, resetTerminalHistorySession } from '../services/terminalHistory';
 import { acknowledgeBottomDockTab, getRequestedBottomDockTab } from '../services/bottomDockNavigation';
+import {
+  readSessionString,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionString,
+} from '../services/sessionViewState';
 import { onCommittedBrokerAccountSessionScopeChange } from '../services/brokerSession';
 import type {
   BulkCancelOrdersAction,
@@ -25,6 +31,7 @@ import { getCurrentBrokerAccountSessionScopeKey } from '../features/bottom-dock/
 import { ToolboxTab } from '../features/bottom-dock/toolbox/ToolboxTab';
 import { TradeTab } from '../features/bottom-dock/trade/TradeTab';
 import { useBottomDockStoreBridge } from '../features/bottom-dock/useBottomDockStoreBridge';
+import { useBulkCloseConfirmStore } from '../store/useBulkCloseConfirmStore';
 import { useDockLayoutStore } from '../store/useDockLayoutStore';
 import { resolveTradeAccountMetrics } from './BottomDock.trade';
 import { formatAccountAmount, resolveAccountCurrencyDigits } from '../utils/accountCurrency';
@@ -52,16 +59,7 @@ export const toggleFloatToolboxDockPanel = (): void => {
   if (dockedId) floatPanel(dockedId);
 };
 
-const historyDownloaderFeature = createPreloadableFeature(async () => {
-  const module = await import('./HistoryDownloader');
-  return { default: module.HistoryDownloader };
-});
-const LazyHistoryDownloader = historyDownloaderFeature.Component;
-
 const CalendarTab = lazy(() => import('./layout/CalendarTab').then(module => ({ default: module.CalendarTab })));
-const CodeBaseTab = lazy(() => import('./layout/ResearchTabs').then(module => ({ default: module.CodeBaseTab })));
-const ArticlesTab = lazy(() => import('./layout/ResearchTabs').then(module => ({ default: module.ArticlesTab })));
-const ExpertsTab = lazy(() => import('./layout/ResearchTabs').then(module => ({ default: module.ExpertsTab })));
 const journalTabFeature = createPreloadableFeature(() => import('./layout/JournalTab').then(module => ({ default: module.JournalTab })));
 const JournalTab = journalTabFeature.Component;
 const historyFeature = createPreloadableFeature(() => import('../features/bottom-dock/history/HistoryTab').then(module => ({ default: module.HistoryTab })));
@@ -70,9 +68,6 @@ const MemoToolboxTab = memo(ToolboxTab);
 const MemoExposureTab = memo(ExposureTab);
 const MemoHistoryTab = memo(historyFeature.Component);
 const MemoCalendarTab = memo(CalendarTab);
-const MemoCodeBaseTab = memo(CodeBaseTab);
-const MemoArticlesTab = memo(ArticlesTab);
-const MemoExpertsTab = memo(ExpertsTab);
 const MemoJournalTab = memo(JournalTab);
 
 const HIDDEN_TAB_ROWS: never[] = [];
@@ -91,39 +86,35 @@ interface BottomDockProps {
   historyInstrumentCatalog?: readonly unknown[];
 }
 
-type TabType = 'Toolbox' | 'Trade' | 'Exposure' | 'History' | 'News' | 'Mailbox' | 'Calendar' | 'Company' | 'Alerts' | 'Articles' | 'Code Base' | 'Experts' | 'Journal' | 'Historical Data';
+type TabType = 'Toolbox' | 'Trade' | 'Exposure' | 'History' | 'News' | 'Mailbox' | 'Calendar' | 'Company' | 'Alerts' | 'Journal';
 
 const TABS: { id: TabType; locked?: boolean }[] = [
   { id: 'Trade' },
   { id: 'History' },
   { id: 'Exposure' },
   { id: 'Toolbox' },
-  { id: 'Historical Data' },
   { id: 'News', locked: true },
   { id: 'Mailbox', locked: true },
   { id: 'Calendar', locked: true },
-  { id: 'Company', locked: true },
+  { id: 'Company' },
   { id: 'Alerts', locked: true },
-  { id: 'Articles', locked: true },
-  { id: 'Code Base', locked: true },
-  { id: 'Experts', locked: true },
   { id: 'Journal' },
 ];
+
+const isAvailableTab = (tab: string | null | undefined): tab is TabType => (
+  Boolean(tab) && TABS.some((candidate) => candidate.id === tab) && !isUnavailableDockSection(tab as TabType)
+);
 
 const TAB_HOVER_COMMENTS: Record<TabType, string> = {
   Trade: 'Open positions and live account summary',
   History: 'Closed orders and account history',
   Exposure: 'Asset exposure by currency and symbol',
   Toolbox: 'Terminal toolbox commands and utilities',
-  'Historical Data': 'Download historical candle data',
   News: 'Market news messages',
   Mailbox: 'Broker mailbox messages',
   Calendar: 'Economic calendar events',
   Company: 'Broker company information',
   Alerts: 'Price and terminal alerts',
-  Articles: 'Research articles',
-  'Code Base': 'Scripts, indicators, and code resources',
-  Experts: 'Expert advisor messages',
   Journal: 'Terminal logs and connection events',
 };
 
@@ -147,7 +138,16 @@ export function BottomDock({
     const toolboxTrade = useToolboxTradeData();
     const bulkCloseCounts = useLiveBulkCloseCounts(toolboxTrade.positions);
 
-    const [activeTab, setActiveTab] = useState<TabType>(() => getRequestedBottomDockTab() ?? 'Trade');
+    const [activeTab, setActiveTab] = useState<TabType>(() => {
+        const requested = getRequestedBottomDockTab();
+        if (isAvailableTab(requested)) return requested;
+        const stored = readSessionString(
+            SESSION_VIEW_KEYS.bottomDockTab,
+            TABS.map((candidate) => candidate.id),
+            'Trade',
+        );
+        return isAvailableTab(stored) ? stored : 'Trade';
+    });
     const [historyMounted, setHistoryMounted] = useState(activeTab === 'History');
     const historyAccountId = useAppStore(state => state.accountId);
     const isTradeSurfaceLive = activeTab === 'Trade';
@@ -171,10 +171,15 @@ export function BottomDock({
         formatAccountAmount(val ?? 0, accountCurrencyDigits)
     ), [accountCurrencyDigits]);
 
-    // Persist active tab selection
+    // Persist active tab selection across refreshes (cleared on fresh app launch / Reset Layout)
     useEffect(() => {
+        writeSessionString(SESSION_VIEW_KEYS.bottomDockTab, activeTab);
         localStorage.setItem('bottomdock-active-tab', activeTab);
     }, [activeTab]);
+
+    useEffect(() => subscribeWorkspaceViewReset(() => {
+        setActiveTab('Trade');
+    }), []);
 
     useEffect(() => {
         if (activeTab === 'History') {
@@ -186,7 +191,6 @@ export function BottomDock({
     useEffect(() => {
         return runAfterTerminalReady(() => {
             void historyFeature.preload().catch(() => undefined);
-            void historyDownloaderFeature.preload().catch(() => undefined);
             void journalTabFeature.preload().catch(() => undefined);
         });
     }, []);
@@ -226,13 +230,15 @@ export function BottomDock({
     useEffect(() => {
         const pendingTab = getRequestedBottomDockTab();
         if (pendingTab) {
-            // Navigation requests are external service state consumed on mount.
-            setActiveTab(pendingTab);
+            if (isAvailableTab(pendingTab)) {
+                // Navigation requests are external service state consumed on mount.
+                setActiveTab(pendingTab);
+            }
             acknowledgeBottomDockTab(pendingTab);
         }
         const handleOpenBottomDockTab = (event: Event) => {
             const requestedTab = (event as CustomEvent<{ tab?: TabType }>).detail?.tab;
-            if (!requestedTab || !TABS.some(tab => tab.id === requestedTab) || isUnavailableDockSection(requestedTab)) return;
+            if (!isAvailableTab(requestedTab)) return;
             setActiveTab(requestedTab);
             acknowledgeBottomDockTab(requestedTab);
         };
@@ -261,6 +267,10 @@ export function BottomDock({
     // Account scope/metadata is resolved inside the effect; these fields are its intended trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [account?.equity, account?.hasBackendEquity]);
+
+    const activeBulkCloseType = useBulkCloseConfirmStore((state) => (
+        state.isOpen && !state.symbol ? state.type : null
+    ));
 
     // Resize Handler
     useEffect(() => {
@@ -397,48 +407,22 @@ export function BottomDock({
                 </div>
                 <div
                     className="h-full min-h-0"
-                    hidden={activeTab !== 'Code Base'}
-                    aria-hidden={activeTab !== 'Code Base'}
-                >
-                    <RetainedLazyFeature active={activeTab === 'Code Base'}><MemoCodeBaseTab /></RetainedLazyFeature>
-                </div>
-                <div
-                    className="h-full min-h-0"
-                    hidden={activeTab !== 'Articles'}
-                    aria-hidden={activeTab !== 'Articles'}
-                >
-                    <RetainedLazyFeature active={activeTab === 'Articles'}><MemoArticlesTab /></RetainedLazyFeature>
-                </div>
-                <div
-                    className="h-full min-h-0"
-                    hidden={activeTab !== 'Experts'}
-                    aria-hidden={activeTab !== 'Experts'}
-                >
-                    <RetainedLazyFeature active={activeTab === 'Experts'}><MemoExpertsTab /></RetainedLazyFeature>
-                </div>
-                <div
-                    className="h-full min-h-0"
                     hidden={activeTab !== 'Journal'}
                     aria-hidden={activeTab !== 'Journal'}
                 >
                     <RetainedLazyFeature active={activeTab === 'Journal'}><MemoJournalTab /></RetainedLazyFeature>
                 </div>
-                {activeTab === 'Historical Data' && (
-                    <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-zinc-500">{tr("Opening historical data…")}</div>}>
-                        <LazyHistoryDownloader />
-                    </Suspense>
-                )}
 
                 {/* Placeholder Tabs */}
-                {['News', 'Company', 'Mailbox', 'Alerts'].includes(activeTab) && (
+                {['News', 'Mailbox', 'Alerts'].includes(activeTab) && (
                     <PlaceholderTab title={activeTab} />
                 )}
             </div>
 
             {/* Bottom Tabs */}
-            <div className="rtx-bottom-dock__tabs relative flex h-[30px] min-h-[30px] max-h-[30px] flex-nowrap items-stretch overflow-hidden bg-[#080c18] border-t border-zinc-700/80 select-none p-0">
-                <div className="rtx-bottom-dock__tab-content flex h-full min-w-0 items-stretch overflow-hidden">
-                <div className="rtx-dock-tab-scroller flex h-full min-w-0 flex-nowrap items-stretch overflow-x-auto overflow-y-hidden">
+            <div className="rtx-bottom-dock__tabs relative flex h-[30px] min-h-[30px] max-h-[30px] flex-nowrap items-stretch overflow-x-hidden overflow-y-visible bg-[#080c18] border-t border-zinc-700/80 select-none p-0">
+                <div className="rtx-bottom-dock__tab-content flex h-full min-w-0 items-stretch overflow-x-hidden overflow-y-visible">
+                <div className="rtx-dock-tab-scroller flex h-full min-w-0 flex-nowrap items-stretch overflow-x-auto overflow-y-visible">
                     {TABS.map((tab) => {
                         const unavailableReason = tab.locked && isUnavailableDockSection(tab.id)
                             ? unavailableDockSections[tab.id]
@@ -454,23 +438,25 @@ export function BottomDock({
                                 aria-description={tr(unavailableReason || TAB_HOVER_COMMENTS[tab.id])}
                                 onMouseEnter={() => {
                                     if (tab.id === 'History') void historyFeature.preload().catch(() => undefined);
-                                    else if (tab.id === 'Historical Data') void historyDownloaderFeature.preload().catch(() => undefined);
                                     else if (tab.id === 'Journal') void journalTabFeature.preload().catch(() => undefined);
                                 }}
                                 onFocus={() => {
                                     if (tab.id === 'History') void historyFeature.preload().catch(() => undefined);
-                                    else if (tab.id === 'Historical Data') void historyDownloaderFeature.preload().catch(() => undefined);
                                     else if (tab.id === 'Journal') void journalTabFeature.preload().catch(() => undefined);
                                 }}
                                 onClick={() => {
                                     if (unavailableReason) return;
+                                    if (tab.id === 'Company') {
+                                        window.open('https://orrnn.com', '_blank', 'noopener,noreferrer');
+                                        return;
+                                    }
                                     setActiveTab(tab.id);
                                 }}
-                                className={`rtx-dock-tab inline-flex h-full items-center justify-center gap-1 px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t transition-colors duration-75 relative
+                                className={`rtx-dock-tab inline-flex h-full items-center justify-center gap-1 px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative
                         ${unavailableReason ? 'rtx-dock-tab--locked cursor-not-allowed' : ''}
-                        ${activeTab === tab.id
+                        ${activeBulkCloseType === null && activeTab === tab.id
                                     ? 'active-tab'
-                                    : 'border-t-transparent'}`}
+                                    : ''}`}
                             >
                                 {tr(tab.id)}
                                 {unavailableReason ? (
@@ -485,9 +471,10 @@ export function BottomDock({
                         type="button"
                         title={tr("Close all in-profit positions")}
                         aria-label={tr("Close In-Profit")}
+                        aria-pressed={activeBulkCloseType === 'WINNERS'}
                         onClick={() => handleTradeCloseBulk('WINNERS')}
                         disabled={!onCloseBulk || bulkCloseCounts.profitable === 0}
-                        className="rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--winners inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t border-t-transparent transition-colors duration-75 relative disabled:cursor-not-allowed"
+                        className={`rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--winners inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative disabled:cursor-not-allowed ${activeBulkCloseType === 'WINNERS' ? 'active-tab' : ''}`}
                     >
                         <span className="rtx-bulk-close__label">{tr("Close In-Profit")}</span>
                     </button>
@@ -495,9 +482,10 @@ export function BottomDock({
                         type="button"
                         title={tr("Close all in-loss positions")}
                         aria-label={tr("Close In-Loss")}
+                        aria-pressed={activeBulkCloseType === 'LOSERS'}
                         onClick={() => handleTradeCloseBulk('LOSERS')}
                         disabled={!onCloseBulk || bulkCloseCounts.losing === 0}
-                        className="rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--losers inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t border-t-transparent transition-colors duration-75 relative disabled:cursor-not-allowed"
+                        className={`rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--losers inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative disabled:cursor-not-allowed ${activeBulkCloseType === 'LOSERS' ? 'active-tab' : ''}`}
                     >
                         <span className="rtx-bulk-close__label">{tr("Close In-Loss")}</span>
                     </button>
@@ -505,9 +493,10 @@ export function BottomDock({
                         type="button"
                         title={tr("Close all open positions")}
                         aria-label={tr("Close All")}
+                        aria-pressed={activeBulkCloseType === 'ALL'}
                         onClick={() => handleTradeCloseBulk('ALL')}
                         disabled={!onCloseBulk || bulkCloseCounts.all === 0}
-                        className="rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--all inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t border-t-transparent transition-colors duration-75 relative disabled:cursor-not-allowed"
+                        className={`rtx-dock-tab rtx-trade-bulk-close rtx-bulk-close rtx-bulk-close--all inline-flex h-full items-center justify-center px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative disabled:cursor-not-allowed ${activeBulkCloseType === 'ALL' ? 'active-tab' : ''}`}
                     >
                         <span className="rtx-bulk-close__label">{tr("Close All")}</span>
                     </button>

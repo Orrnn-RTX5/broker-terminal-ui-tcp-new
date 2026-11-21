@@ -50,9 +50,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel {
   --lst-text-muted: var(--rtx-light-text-muted, #5f6b7a);
   --lst-accent: var(--rtx-light-accent, #4338ca);
   --lst-accent-soft: var(--rtx-light-accent-soft, #eef2ff);
-  --lst-buy: var(--rtx-light-buy-hover, #1d4ed8);
+  --lst-buy: var(--rtx-light-buy, #2563eb);
   --lst-buy-soft: #eff6ff;
-  --lst-sell: #b91c1c;
+  --lst-sell: var(--rtx-light-sell, #dc2626);
   --lst-sell-soft: #fef2f2;
   --lst-profit: #047857;
   --lst-warning: #78350f;
@@ -542,20 +542,41 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel > .last-sy
 }
 
 .last-symbol-trade-button--sell {
-  background: #8f1d1d;
-  border-color: #8f1d1d;
+  background: var(--lst-sell, #ff5858);
+  border-color: var(--lst-sell, #ff5858);
   color: #ffffff;
 }
 
 .last-symbol-trade-button--buy {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--lst-buy, #4597ff);
+  border-color: var(--lst-buy, #4597ff);
   color: #ffffff;
 }
 
-.last-symbol-trade-button:hover:not(:disabled) {
-  filter: brightness(1.08);
+.last-symbol-trade-button--sell:hover:not(:disabled) {
+  background: #ef4444;
+  border-color: #ef4444;
+  filter: none;
   box-shadow: none;
+}
+
+.last-symbol-trade-button--buy:hover:not(:disabled) {
+  background: #3183ff;
+  border-color: #3183ff;
+  filter: none;
+  box-shadow: none;
+}
+
+html.theme-light .last-symbol-trade-button--sell:hover:not(:disabled),
+html.rtx-advanced-view.rtx-skin-untitled-light .last-symbol-trade-button--sell:hover:not(:disabled) {
+  background: var(--rtx-light-sell-hover, #b91c1c);
+  border-color: var(--rtx-light-sell-hover, #b91c1c);
+}
+
+html.theme-light .last-symbol-trade-button--buy:hover:not(:disabled),
+html.rtx-advanced-view.rtx-skin-untitled-light .last-symbol-trade-button--buy:hover:not(:disabled) {
+  background: var(--rtx-light-buy-hover, #1d4ed8);
+  border-color: var(--rtx-light-buy-hover, #1d4ed8);
 }
 
 .last-symbol-trade-button:disabled {

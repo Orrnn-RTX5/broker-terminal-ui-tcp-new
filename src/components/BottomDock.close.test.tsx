@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BottomDock } from './BottomDock';
 import { DockPanel } from './dock/DockPanel';
+import { useBulkCloseConfirmStore } from '../store/useBulkCloseConfirmStore';
 
 const toolboxMocks = vi.hoisted(() => ({
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -45,15 +46,11 @@ const TAB_LABELS = [
     'History',
     'Exposure',
     'Toolbox',
-    'Historical Data',
     'News',
     'Mailbox',
     'Calendar',
     'Company',
     'Alerts',
-    'Articles',
-    'Code Base',
-    'Experts',
     'Journal',
 ];
 
@@ -103,6 +100,7 @@ describe('Toolbox header close control', () => {
         expect(screen.getByRole('button', { name: 'Close In-Loss' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Close All' })).toBeInTheDocument();
 
+        const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
         const tabStrip = within(container.querySelector<HTMLElement>('.rtx-bottom-dock__tabs')!);
         let sectionsClosed = 0;
         for (const tabLabel of TAB_LABELS) {
@@ -123,13 +121,15 @@ describe('Toolbox header close control', () => {
         }
 
         expect(sectionsClosed).toBe(6);
+        expect(openSpy).toHaveBeenCalledWith('https://orrnn.com', '_blank', 'noopener,noreferrer');
         expect(onCloseBulk).not.toHaveBeenCalled();
         expect(onClosePosition).not.toHaveBeenCalled();
         expect(onModifyPosition).not.toHaveBeenCalled();
         expect(onCancelOrder).not.toHaveBeenCalled();
     });
 
-    it('keeps News through Experts visible and locked', () => {
+    it('removes Historical Data, Articles, Code Base, and Experts, opens orrnn.com on Company click, and keeps News/Mailbox/Calendar/Alerts locked', () => {
+        const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
         render(
             <BottomDock
                 height={300}
@@ -138,15 +138,15 @@ describe('Toolbox header close control', () => {
             />,
         );
 
+        for (const removed of ['Historical Data', 'Articles', 'Code Base', 'Experts']) {
+            expect(screen.queryByRole('button', { name: new RegExp(`^${removed}`) })).not.toBeInTheDocument();
+        }
+
         const lockedTabs = [
             'News',
             'Mailbox',
             'Calendar',
-            'Company',
             'Alerts',
-            'Articles',
-            'Code Base',
-            'Experts',
         ];
 
         for (const label of lockedTabs) {
@@ -158,6 +158,11 @@ describe('Toolbox header close control', () => {
             fireEvent.click(tab);
         }
 
+        const companyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
+        expect(companyTab).toBeEnabled();
+        fireEvent.click(companyTab);
+        expect(openSpy).toHaveBeenCalledWith('https://orrnn.com', '_blank', 'noopener,noreferrer');
+
         expect(screen.getByRole('button', { name: 'Trade — Open positions and live account summary' })).toHaveClass('active-tab');
         fireEvent.click(screen.getByRole('button', { name: 'Journal — Terminal logs and connection events' }));
         expect(screen.getByRole('button', { name: 'Journal — Terminal logs and connection events' })).toHaveClass('active-tab');
@@ -165,5 +170,59 @@ describe('Toolbox header close control', () => {
         window.dispatchEvent(new CustomEvent('rtx:open-bottom-dock-tab', { detail: { tab: 'Calendar' } }));
         expect(screen.getByRole('button', { name: 'Journal — Terminal logs and connection events' })).toHaveClass('active-tab');
         expect(screen.getByRole('button', { name: 'Calendar' })).toBeDisabled();
+    });
+
+    it('marks the active bulk-close tab with active-tab while its confirmation sheet is open and restores Trade on close', () => {
+        render(
+            <BottomDock
+                onClosePosition={vi.fn()}
+                onModifyPosition={vi.fn()}
+                onCloseBulk={vi.fn()}
+            />,
+        );
+
+        const tradeTab = screen.getByRole('button', { name: 'Trade — Open positions and live account summary' });
+        const winnersBtn = screen.getByRole('button', { name: 'Close In-Profit' });
+        const losersBtn = screen.getByRole('button', { name: 'Close In-Loss' });
+        const allBtn = screen.getByRole('button', { name: 'Close All' });
+
+        expect(tradeTab).toHaveClass('active-tab');
+        expect(winnersBtn).not.toHaveClass('active-tab');
+
+        act(() => {
+            void useBulkCloseConfirmStore.getState().showBulkCloseConfirm({
+                type: 'WINNERS',
+                positions: [],
+                combinedPnL: 10,
+            });
+        });
+        expect(winnersBtn).toHaveClass('active-tab');
+        expect(tradeTab).not.toHaveClass('active-tab');
+
+        act(() => {
+            void useBulkCloseConfirmStore.getState().showBulkCloseConfirm({
+                type: 'LOSERS',
+                positions: [],
+                combinedPnL: -5,
+            });
+        });
+        expect(losersBtn).toHaveClass('active-tab');
+        expect(winnersBtn).not.toHaveClass('active-tab');
+
+        act(() => {
+            void useBulkCloseConfirmStore.getState().showBulkCloseConfirm({
+                type: 'ALL',
+                positions: [],
+                combinedPnL: 5,
+            });
+        });
+        expect(allBtn).toHaveClass('active-tab');
+        expect(losersBtn).not.toHaveClass('active-tab');
+
+        act(() => {
+            useBulkCloseConfirmStore.getState().closeBulkCloseConfirm();
+        });
+        expect(allBtn).not.toHaveClass('active-tab');
+        expect(tradeTab).toHaveClass('active-tab');
     });
 });

@@ -1,6 +1,7 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useCurrentTick } from '../store/useMarketDataStore';
+import { useChartSettingsStore } from '../store/useChartSettingsStore';
 import { useLiveOrderBook } from '../hooks/useLiveMarketData';
 import { formatPrice } from '../utils/symbolUtils';
 import { getFallbackSymbolDescription } from '../utils/symbolDescription';
@@ -144,6 +145,10 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
   const MAX_TICKS = 500;
 
   const currentTick = useCurrentTick(symbol);
+  const showVolumes = useChartSettingsStore((state) => {
+    const props = state.symbolProperties[symbol] || state.globalProperties;
+    return Boolean(props.showTickVolumes || props.showRealVolumes);
+  });
 
   // Accumulate ticks
   useEffect(() => {
@@ -223,8 +228,10 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       ctx.fillStyle = isLight ? lightColor('--rtx-light-panel', '#fafbfc') : C.bgPrimary;
       ctx.fillRect(0, 0, width, height);
 
-      const chartH = Math.max(labelHeight, (height - labelHeight) * 0.78);
-      const volH = Math.max(0, height - chartH - labelHeight - 6);
+      const chartH = showVolumes
+        ? Math.max(labelHeight, (height - labelHeight) * 0.78)
+        : Math.max(labelHeight, height - labelHeight);
+      const volH = showVolumes ? Math.max(0, height - chartH - labelHeight - 6) : 0;
       const volTop = chartH + 4;
       let minP = Infinity, maxP = -Infinity;
       let minVol = Infinity, maxVol = 1;
@@ -392,29 +399,31 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
             }
           }
 
-          let bMaxVol = 1;
-          let bMinVol = Infinity;
-          for (const b of bars) {
-            bMaxVol = Math.max(bMaxVol, b.volume);
-            bMinVol = Math.min(bMinVol, b.volume);
-          }
-          const uniformBarVol = bMaxVol <= bMinVol;
+          if (showVolumes && volH > 4) {
+            let bMaxVol = 1;
+            let bMinVol = Infinity;
+            for (const b of bars) {
+              bMaxVol = Math.max(bMaxVol, b.volume);
+              bMinVol = Math.min(bMinVol, b.volume);
+            }
+            const uniformBarVol = bMaxVol <= bMinVol;
 
-          for (let i = 0; i < bars.length; i++) {
-            const bar = bars[i];
-            const x = plotLeft + (i + 0.5) * slotW;
-            const bh = uniformBarVol ? volH * 0.32 : (bar.volume / bMaxVol) * (volH * 0.72);
-            const isUp = bar.close >= bar.open;
-            ctx.fillStyle = isUp
-              ? (isLight ? 'rgba(37, 99, 235, 0.28)' : 'rgba(69, 151, 255, 0.30)')
-              : (isLight ? 'rgba(220, 38, 38, 0.28)' : 'rgba(255, 88, 88, 0.30)');
-            ctx.fillRect(x - bw / 2, volTop + volH - bh, bw, bh);
+            for (let i = 0; i < bars.length; i++) {
+              const bar = bars[i];
+              const x = plotLeft + (i + 0.5) * slotW;
+              const bh = uniformBarVol ? volH * 0.32 : (bar.volume / bMaxVol) * (volH * 0.72);
+              const isUp = bar.close >= bar.open;
+              ctx.fillStyle = isUp
+                ? (isLight ? 'rgba(37, 99, 235, 0.28)' : 'rgba(69, 151, 255, 0.30)')
+                : (isLight ? 'rgba(220, 38, 38, 0.28)' : 'rgba(255, 88, 88, 0.30)');
+              ctx.fillRect(x - bw / 2, volTop + volH - bh, bw, bh);
+            }
           }
         }
       }
 
       // Draw volume bars for tick/line modes (spread cleanly across plot area)
-      if ((chartMode === 'tick' || chartMode === 'line') && volH > 4) {
+      if (showVolumes && (chartMode === 'tick' || chartMode === 'line') && volH > 4) {
         const uniformVol = maxVol <= minVol;
         const slotW = plotInnerW / Math.max(history.length, 1);
         const barWidth = Math.max(1.5, Math.min(6, slotW * 0.65));
@@ -430,9 +439,11 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       }
 
       // Border between chart and volume
-      ctx.strokeStyle = isLight ? lightColor('--rtx-light-border', '#cbd5e1') : C.borderPrimary;
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, Math.round(chartH) + 0.5); ctx.lineTo(plotWidth, Math.round(chartH) + 0.5); ctx.stroke();
+      if (showVolumes) {
+        ctx.strokeStyle = isLight ? lightColor('--rtx-light-border', '#cbd5e1') : C.borderPrimary;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, Math.round(chartH) + 0.5); ctx.lineTo(plotWidth, Math.round(chartH) + 0.5); ctx.stroke();
+      }
 
       // === CROSSHAIR ===
       if (crosshair && mouseRef.current) {
@@ -481,7 +492,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
             const tooltipLines = [
               `Bid: ${formatPrice(t.bid, digits ?? undefined)}`,
               `Ask: ${formatPrice(t.ask, digits ?? undefined)}`,
-              `Vol: ${t.volume.toFixed(2)}`,
+              ...(showVolumes ? [`Vol: ${t.volume.toFixed(2)}`] : []),
             ];
             ctx.font = bodyFont;
             const tooltipX = clampedMx + 10;
@@ -531,7 +542,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
     const interval = setInterval(renderFrame, 100);
 
     return () => clearInterval(interval);
-  }, [fallbackWidth, height, symbol, chartMode, crosshair, zoomLevel, typography, digits, currentTick]);
+  }, [fallbackWidth, height, symbol, chartMode, crosshair, zoomLevel, typography, digits, currentTick, showVolumes]);
 
   return (
     <canvas

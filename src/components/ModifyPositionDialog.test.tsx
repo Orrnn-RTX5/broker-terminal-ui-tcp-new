@@ -153,8 +153,11 @@ describe('ModifyPositionDialog chart toolbar', () => {
         expect(screen.getByLabelText(/stop loss:$/i)).toHaveValue(1.3);
         expect(screen.getByLabelText(/take profit:$/i)).toHaveValue(1.37);
         expect(screen.getByLabelText(/comment/i)).toHaveValue('My draft');
-        fireEvent.click(screen.getByRole('button', { name: /modify #167/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalledWith(167, { price_sl: 1.3, comment: 'My draft' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Buy by Market' }));
+        await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalledWith(
+            expect.objectContaining({ symbol: 'GBPUSD', side: 'BUY', price_sl: 1.3, price_tp: 1.37, comment: 'My draft' }),
+            expect.anything(),
+        ));
     });
 
     it('does not close or move focus when Escape/Tab belongs to a newer local dialog', async () => {
@@ -241,7 +244,7 @@ describe('ModifyPositionDialog chart toolbar', () => {
         expect(screen.queryByRole('region', { name: /gbpusd market depth/i })).not.toBeInTheDocument();
     });
 
-    it('sends modified comments and returns them for the trade table override', async () => {
+    it('sends typed comments when placing a market order from the position dialog', async () => {
         const user = userEvent.setup();
         const onClose = vi.fn();
 
@@ -263,14 +266,16 @@ describe('ModifyPositionDialog chart toolbar', () => {
         );
 
         await user.type(screen.getByLabelText(/comment/i), 'hiiii');
-        await user.click(screen.getByRole('button', { name: /modify #165/i }));
+        await user.click(screen.getByRole('button', { name: 'Buy by Market' }));
 
         await waitFor(() => {
-            expect(mocks.modifyPosition).toHaveBeenCalledWith(165, {
+            expect(mocks.placeMarketOrder).toHaveBeenCalledWith(expect.objectContaining({
+                symbol: 'GBPUSD',
+                side: 'BUY',
                 comment: 'hiiii',
-            });
+            }), expect.anything());
         });
-        await waitFor(() => expect(onClose).toHaveBeenCalledWith(0, 0, 'hiiii'));
+        await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     });
 
     it('blocks submission after the dialog trading scope becomes stale', () => {
@@ -282,81 +287,57 @@ describe('ModifyPositionDialog chart toolbar', () => {
             brokerId: 'broker-a',
             serverUrl: 'https://broker.example',
         }));
-        fireEvent.click(screen.getByRole('button', { name: /modify #168/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Buy by Market' }));
 
-        expect(mocks.modifyPosition).not.toHaveBeenCalled();
+        expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
         expect(mocks.setPositions).not.toHaveBeenCalled();
         expect(screen.getByText('Trading session changed. Reopen the position and try again.')).toBeInTheDocument();
     });
 
-    it('sends a partial close with the entered volume and keeps the position', async () => {
-        mocks.positions = [{ ...makePosition(172), volume: 0.1 }];
-        const onClosePosition = vi.fn();
-        render(
+    it('omits Modify # and Close # buttons and broker stops notice for positions while keeping Sell/Buy by Market and plain BUY text in header', () => {
+        const { rerender } = render(
             <ModifyPositionDialog
                 isOpen
                 onClose={vi.fn()}
-                onClosePosition={onClosePosition}
-                position={{ ...makePosition(172), volume: 0.1 }}
-            />
-        );
-
-        fireEvent.change(screen.getByLabelText('Volume:'), { target: { value: '0.04' } });
-        await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /close #172 buy .* by market/i }));
-        });
-
-        expect(mocks.closePosition).toHaveBeenCalledWith('172', { volume: 0.04 });
-        expect(onClosePosition).not.toHaveBeenCalled();
-        expect(mocks.setPositions).toHaveBeenCalledOnce();
-        const patched = mocks.setPositions.mock.calls[0][0];
-        expect(patched).toHaveLength(1);
-        expect(patched[0].volume).toBeCloseTo(0.06, 8);
-        expect(screen.queryByText(/not supported by the backend/i)).not.toBeInTheDocument();
-    });
-
-    it('routes Close by Market through the shared fast-close coordinator and closes immediately', async () => {
-        let resolveClose: ((value: boolean) => void) | null = null;
-        const pendingClose = new Promise<boolean>(resolve => { resolveClose = resolve; });
-        const onClosePosition = vi.fn(() => pendingClose);
-        const onClose = vi.fn();
-
-        render(
-            <ModifyPositionDialog
-                isOpen
-                onClose={onClose}
-                onClosePosition={onClosePosition}
                 position={makePosition(171)}
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /close #171 buy .* by market/i }));
+        expect(screen.queryByRole('button', { name: /modify #171/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /close #171 buy .* by market/i })).not.toBeInTheDocument();
+        expect(screen.queryByText(/Stops processing is performed on the broker side\./i)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Sell by Market' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Buy by Market' })).toBeInTheDocument();
+        expect(screen.getByText('BUY')).toHaveClass('rtx-modify-badge-side');
+        expect(screen.queryByText(/GBPUSD @/i)).not.toBeInTheDocument();
 
-        expect(onClosePosition).toHaveBeenCalledWith(171);
-        expect(onClose).toHaveBeenCalledTimes(1);
-        expect(mocks.closePosition).not.toHaveBeenCalled();
-        expect(mocks.setPositions).not.toHaveBeenCalled();
-
-        await act(async () => {
-            resolveClose?.(true);
-            await pendingClose;
-        });
+        rerender(
+            <ModifyPositionDialog
+                isOpen
+                kind="pending-order"
+                onClose={vi.fn()}
+                position={makePosition(171)}
+            />
+        );
+        expect(screen.getByRole('button', { name: /modify #171/i })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Sell by Market' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Buy by Market' })).not.toBeInTheDocument();
     });
 
-    it('ignores a modify acknowledgement that resolves after the trading scope changes', async () => {
-        let resolveModify: (() => void) | null = null;
-        const pendingModify = new Promise<void>(resolve => { resolveModify = resolve; });
+    it('ignores a market order acknowledgement that resolves after the trading scope changes', async () => {
+        let resolveOrder: (() => void) | null = null;
+        const pendingOrder = new Promise<void>(resolve => { resolveOrder = resolve; });
         const position = makePosition(169);
         mocks.positions = [position];
-        mocks.modifyPosition.mockReturnValueOnce(pendingModify);
+        mocks.placeMarketOrder.mockReturnValueOnce(pendingOrder);
         const onClose = vi.fn();
         const forceRefresh = vi.fn();
         window.addEventListener('rtx:force-refresh-positions', forceRefresh);
 
         try {
             render(<ModifyPositionDialog isOpen onClose={onClose} position={position} />);
-            fireEvent.click(screen.getByRole('button', { name: /modify #169/i }));
-            expect(mocks.modifyPosition).toHaveBeenCalledOnce();
+            fireEvent.click(screen.getByRole('button', { name: 'Buy by Market' }));
+            expect(mocks.placeMarketOrder).toHaveBeenCalledOnce();
 
             act(() => commitBrokerAccountSessionScope({
                 authenticated: true,
@@ -365,8 +346,8 @@ describe('ModifyPositionDialog chart toolbar', () => {
                 serverUrl: 'https://broker.example',
             }));
             await act(async () => {
-                resolveModify?.();
-                await pendingModify;
+                resolveOrder?.();
+                await pendingOrder;
             });
 
             expect(mocks.setPositions).not.toHaveBeenCalled();
@@ -385,7 +366,7 @@ describe('ModifyPositionDialog chart toolbar', () => {
         render(<ModifyPositionDialog isOpen onClose={onClose} position={position} />);
         act(() => vi.runOnlyPendingTimers());
 
-        fireEvent.click(screen.getByRole('button', { name: /modify #170/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Buy by Market' }));
         await act(async () => {
             await Promise.resolve();
         });
@@ -407,11 +388,11 @@ describe('ModifyPositionDialog chart toolbar', () => {
     });
 
     it.each([
-        { label: /stop loss:$/i, value: '1.32', patch: { price_sl: 1.32 } },
-        { label: /take profit:$/i, value: '1.38', patch: { price_tp: 1.38 } },
-        { label: /stop loss:$/i, value: '0', patch: { price_sl: 0 } },
-        { label: /take profit:$/i, value: '0', patch: { price_tp: 0 } },
-    ])('sends only the edited level: $patch', async ({ label, value, patch }) => {
+        { label: /stop loss:$/i, value: '1.32', expected: { price_sl: 1.32 } },
+        { label: /take profit:$/i, value: '1.38', expected: { price_tp: 1.38 } },
+        { label: /stop loss:$/i, value: '0', expected: { price_sl: 0 } },
+        { label: /take profit:$/i, value: '0', expected: { price_tp: 0 } },
+    ])('sends the edited level for pending order modification: $expected', async ({ label, value, expected }) => {
         const user = userEvent.setup();
         const position = {
             id: 166, symbol: 'GBPUSD', side: 'BUY' as const, volume: 0.01,
@@ -420,18 +401,12 @@ describe('ModifyPositionDialog chart toolbar', () => {
             stopLoss: 1.31, stop_loss: 1.31, takeProfit: 1.37, take_profit: 1.37,
         };
         mocks.positions = [position];
-        render(<ModifyPositionDialog isOpen onClose={vi.fn()} position={position} />);
+        render(<ModifyPositionDialog isOpen kind="pending-order" onClose={vi.fn()} position={position} />);
         const input = screen.getByLabelText(label);
         await user.clear(input);
         await user.type(input, value);
         await user.click(screen.getByRole('button', { name: /modify #166/i }));
-        await waitFor(() => expect(mocks.modifyPosition).toHaveBeenCalledWith(166, { ...patch, comment: '' }));
-        const sl = patch.price_sl ?? position.sl;
-        const tp = patch.price_tp ?? position.tp;
-        expect(mocks.setPositions).toHaveBeenCalledWith([expect.objectContaining({
-            sl, price_sl: sl, stopLoss: sl, stop_loss: sl,
-            tp, price_tp: tp, takeProfit: tp, take_profit: tp,
-        })]);
+        await waitFor(() => expect(mocks.modifyPendingOrder).toHaveBeenCalledWith(166, expect.objectContaining(expected)));
     });
 
     it('does not render a minimum points distance notice and renders enhanced left chart elements', () => {
@@ -456,10 +431,14 @@ describe('ModifyPositionDialog chart toolbar', () => {
         // checks side + grid only, so no "at least N points" notice is shown.
         expect(screen.queryByText(/must differ from market price by at least/i)).not.toBeInTheDocument();
         expect(screen.queryByText(/at least \d+ points/i)).not.toBeInTheDocument();
-        expect(screen.getByText(/Stops processing is performed on the broker side\./i)).toBeInTheDocument();
+        expect(screen.queryByText(/Stops processing is performed on the broker side\./i)).not.toBeInTheDocument();
 
-        // Requirement 2: Left side chart elements
-        expect(screen.getByText('TICK')).toBeInTheDocument();
+        // Requirement 2: Left side chart elements (redundant header strip & zoom controls omitted)
+        expect(screen.queryByText('TICK')).not.toBeInTheDocument();
         expect(screen.getByRole('img', { name: /btcusd bid and ask tick chart/i })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zoom in' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zoom out' })).not.toBeInTheDocument();
+        expect(screen.queryByText('1.00x')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Fit chart' })).toBeInTheDocument();
     });
 });

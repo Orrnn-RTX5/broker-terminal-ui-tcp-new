@@ -40,6 +40,15 @@
 }
 
 .rtx-modify-dialog {
+  --modify-chart-background: var(--bg-primary, #0f1115);
+  --modify-chart-plot: var(--bg-primary, #0f1115);
+  --modify-chart-grid: rgba(255, 255, 255, 0.055);
+  --modify-chart-text: #848d9b;
+  --modify-chart-axis: var(--bg-secondary, #14171d);
+  --modify-chart-border: var(--border-primary, #252932);
+  --modify-chart-tick: #2e333f;
+  --modify-chart-ask: #ff5858;
+  --modify-chart-bid: #4597ff;
   background: #16181d;
   border: 1px solid #30343e;
   border-top: 1px solid #414653;
@@ -104,26 +113,24 @@
 }
 
 .rtx-modify-badge-side {
-  border-radius: 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   line-height: 1;
-  padding: 3px 7px;
+  padding: 0;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-.rtx-modify-badge-side--sell {
-  background: rgba(240, 68, 56, 0.16);
-  border: 1px solid rgba(240, 68, 56, 0.42);
-  color: #ff6b6b;
-}
-
+.rtx-modify-badge-side--sell,
 .rtx-modify-badge-side--buy {
-  background: rgba(16, 197, 152, 0.16);
-  border: 1px solid rgba(16, 197, 152, 0.42);
-  color: #2fd3a8;
+  background: transparent;
+  border: 0;
+  color: #ffffff;
 }
 
 .rtx-modify-meta-detail {
@@ -177,8 +184,8 @@
 /* ── Chart Panel (Left) ─────────────────────────────────────────────────── */
 
 .rtx-modify-chart-panel {
-  background: #141518;
-  border-right: 1px solid #2e3136;
+  background: #111317;
+  border-right: 1px solid #262a33;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -187,7 +194,7 @@
 
 @media (max-width: 640px) {
   .rtx-modify-chart-panel {
-    border-bottom: 1px solid #2e3136;
+    border-bottom: 1px solid #262a33;
     border-right: 0;
     height: 220px;
     width: 100% !important;
@@ -196,126 +203,134 @@
 
 .rtx-modify-chart-header {
   align-items: center;
-  background: #17191e;
-  border-bottom: 1px solid #262930;
+  background: #16181e;
+  border-bottom: 1px solid #232730;
   display: flex;
-  height: 32px;
+  gap: 8px;
+  height: 34px;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 12px;
+}
+
+.rtx-modify-chart-header__left {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
 }
 
 .rtx-modify-chart-symbol {
   color: #f3f5f8;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rtx-modify-chart-badge {
-  background: rgba(83, 177, 253, 0.12);
-  border: 1px solid rgba(83, 177, 253, 0.28);
+  background: transparent;
+  border: 1px solid #2e333f;
   border-radius: 3px;
-  color: #53b1fd;
+  color: #94a3b8;
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 9.5px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1;
   padding: 2px 5px;
   text-transform: uppercase;
 }
 
-.rtx-modify-chart-spread-pill {
-  background: #1e2127;
-  border: 1px solid #2f333d;
-  border-radius: 4px;
-  color: #b8c0cc;
+.rtx-modify-chart-quote-pills {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  display: inline-flex;
+  flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 1.5px 6px;
+  font-variant-numeric: tabular-nums;
+  gap: 5px;
+  padding: 0;
   white-space: nowrap;
 }
 
-.rtx-modify-chart-quote-pills {
-  align-items: center;
-  background: #121418;
-  border: 1px solid #262930;
-  border-radius: 4px;
-  display: flex;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  gap: 5px;
-  padding: 2px 7px;
+.rtx-modify-chart-quote-separator {
+  color: #555c6a;
+  font-weight: 400;
 }
 
 .rtx-modify-chart-quote--bid {
-  color: #00d2ff;
-  font-weight: 700;
+  color: #4597ff;
+  font-weight: 600;
 }
 
 .rtx-modify-chart-quote--ask {
-  color: #ff5b6b;
-  font-weight: 700;
+  color: #ff5858;
+  font-weight: 600;
 }
 
 .rtx-modify-chart-toolbar {
   align-items: center;
-  background: #17191e;
-  border-bottom: 1px solid #2a2d35;
+  background: #14171d;
+  border-bottom: 1px solid #242832;
   display: flex;
-  gap: 3px;
-  height: 28px;
-  padding: 0 8px;
+  gap: 8px;
+  height: 34px;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.rtx-modify-chart-toolbar__left {
+  align-items: center;
+  display: inline-flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rtx-modify-chart-toolbar__right {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
 }
 
 .rtx-modify-tool-btn {
   align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: #a6acb7;
+  background: #0f1116;
+  border: 1px solid #252a35;
+  border-radius: 5px;
+  color: #7c8594;
   cursor: pointer;
-  display: flex;
-  height: 22px;
+  display: inline-flex;
+  height: 24px;
   justify-content: center;
-  transition: all 120ms ease;
-  width: 22px;
+  position: relative;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: 24px;
 }
 
 .rtx-modify-tool-btn:hover:not(:disabled) {
-  background: #262932;
-  border-color: #3e434f;
-  color: #ffffff;
+  background: #1b202a;
+  border-color: #343b4a;
+  color: #f3f6fa;
 }
 
 .rtx-modify-tool-btn[aria-pressed='true'] {
-  background: #262932;
-  border-color: #464c5a;
-  color: #53b1fd;
+  background: #262b36;
+  border-color: #3a4150;
+  box-shadow: none;
+  color: #f3f6fa;
 }
 
 .rtx-modify-tool-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
-}
-
-.rtx-modify-tool-divider {
-  background: #30343e;
-  height: 15px;
-  margin: 0 3px;
-  width: 1px;
-}
-
-.rtx-modify-tool-zoom {
-  color: #c2c8d2;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  margin-left: auto;
+  opacity: 0.32;
 }
 
 /* ── Form Panel (Right) ─────────────────────────────────────────────────── */
@@ -686,25 +701,35 @@
 }
 
 .rtx-modify-btn--sell {
-  background: linear-gradient(180deg, #e03137 0%, #c9252b 100%);
-  border: 1px solid #f2555a;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  background: #ff5858;
+  border: 1px solid #ef4444;
+  text-shadow: none;
 }
 
 .rtx-modify-btn--sell:hover:not(:disabled) {
-  background: linear-gradient(180deg, #ed3b41 0%, #d82b31 100%);
-  border-color: #ff7579;
+  background: #ef4444;
+  border-color: #dc2626;
+}
+
+.rtx-modify-btn--sell:active:not(:disabled) {
+  background: #dc2626;
+  border-color: #b91c1c;
 }
 
 .rtx-modify-btn--buy {
-  background: linear-gradient(180deg, #1570ef 0%, #0e5fc5 100%);
-  border: 1px solid #3b8cf8;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  background: #4597ff;
+  border: 1px solid #3183ff;
+  text-shadow: none;
 }
 
 .rtx-modify-btn--buy:hover:not(:disabled) {
-  background: linear-gradient(180deg, #1f7dfb 0%, #1168d6 100%);
-  border-color: #599ff9;
+  background: #3183ff;
+  border-color: #2563eb;
+}
+
+.rtx-modify-btn--buy:active:not(:disabled) {
+  background: #2563eb;
+  border-color: #1d4ed8;
 }
 
 /* Close by Market (Warm Amber / Gold Outline) */
@@ -811,11 +836,11 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog {
   --modify-chart-plot: var(--rtx-light-chart);
   --modify-chart-grid: var(--rtx-light-border);
   --modify-chart-text: var(--rtx-light-text-muted);
-  --modify-chart-axis: var(--rtx-light-panel-header);
+  --modify-chart-axis: var(--rtx-light-chart);
   --modify-chart-border: var(--rtx-light-border-strong);
   --modify-chart-tick: var(--rtx-light-text-muted);
-  --modify-chart-ask: var(--color-loss);
-  --modify-chart-bid: var(--color-profit);
+  --modify-chart-ask: var(--rtx-light-sell, #dc2626);
+  --modify-chart-bid: var(--rtx-light-buy, #2563eb);
   background: var(--rtx-light-elevated) !important;
   border-color: var(--rtx-light-border-strong) !important;
   box-shadow: var(--shadow-xl);
@@ -854,29 +879,35 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-
   color: var(--rtx-light-text-secondary);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-chart-badge, .rtx-modify-badge-side--buy) {
-  background: var(--color-profit-dimmer);
-  border-color: var(--color-profit);
-  color: var(--color-profit);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-chart-badge {
+  background: transparent;
+  border-color: var(--rtx-light-border-strong);
+  color: var(--rtx-light-text-secondary);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-badge-side--sell {
-  background: var(--color-loss-dimmer);
-  border-color: var(--color-loss);
-  color: var(--color-loss);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-badge-side, .rtx-modify-badge-side--buy, .rtx-modify-badge-side--sell) {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--rtx-light-text);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-chart-quote-pills, .rtx-modify-quote-strip) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-quote-strip {
   background: var(--rtx-light-field);
   border-color: var(--rtx-light-border-strong);
 }
 
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-chart-quote-pills {
+  background: transparent;
+  border: 0;
+}
+
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-chart-quote--bid, .rtx-modify-quote-tag--ask, .rtx-modify-quote-price--ask strong) {
-  color: var(--color-profit);
+  color: var(--rtx-light-buy, #2563eb);
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-chart-quote--ask, .rtx-modify-quote-tag--bid, .rtx-modify-quote-price--bid strong) {
-  color: var(--color-loss);
+  color: var(--rtx-light-sell, #dc2626);
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-input, .rtx-modify-volume-compound) {
@@ -922,14 +953,16 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-
   background: var(--rtx-light-pressed);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-tool-btn[aria-pressed='true'] {
-  background: var(--rtx-light-selected);
-  border-color: var(--rtx-light-accent);
-  color: var(--rtx-light-accent-strong);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-tool-btn {
+  background: var(--rtx-light-panel);
+  border-color: var(--rtx-light-border-strong);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-tool-divider {
-  background: var(--rtx-light-border-strong);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-tool-btn[aria-pressed='true'] {
+  background: var(--rtx-light-elevated);
+  border-color: var(--rtx-light-control-border-hover);
+  box-shadow: none;
+  color: var(--rtx-light-text);
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-btn--submit, .rtx-modify-btn--market) {
@@ -1118,9 +1151,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modi
   }
 
   .rtx-modify-badge-side {
-    --rtx-type-size: 9.5px;
-    font-size: 9.5px !important;
-    padding: 2.5px 6px;
+    --rtx-type-size: 10.5px;
+    font-size: 10.5px !important;
+    padding: 0;
   }
 
   .rtx-modify-meta-detail {
@@ -1135,8 +1168,8 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modi
   }
 
   .rtx-modify-chart-header {
-    height: 28px;
-    padding: 0 8px;
+    height: 30px;
+    padding: 0 10px;
   }
 
   .rtx-modify-chart-symbol {
@@ -1147,17 +1180,21 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modi
   .rtx-modify-chart-quote-pills {
     --rtx-type-size: 10.5px;
     font-size: 10.5px !important;
-    padding: 1.5px 5px;
+    padding: 0;
   }
 
   .rtx-modify-chart-toolbar {
-    height: 24px;
-    padding: 0 7px;
+    height: 31px;
+    padding: 0 8px;
+  }
+
+  .rtx-modify-chart-toolbar__left {
+    gap: 10px;
   }
 
   .rtx-modify-tool-btn {
-    height: 19px;
-    width: 19px;
+    height: 22px;
+    width: 22px;
   }
 
   .rtx-modify-form-panel {

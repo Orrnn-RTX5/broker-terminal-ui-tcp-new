@@ -19,6 +19,7 @@ import {
   normalizeColorSchemeName,
   resolveChartQuoteColors,
   useChartSettingsStore,
+  VOLUME_BARS_DEFAULT_MIGRATION_VERSION,
 } from './useChartSettingsStore';
 
 describe('chart settings trade history overlay defaults', () => {
@@ -422,16 +423,21 @@ describe('chart settings trade history overlay defaults', () => {
       showRealVolumes: true,
     });
 
-    const migrated = applyVolumeBarsDefaultMigration(
-      oldPersistedProperties,
-      { XAUUSD: oldPersistedProperties },
-      undefined,
-    );
+    for (const previousVersion of [undefined, 0, 1] as const) {
+      const migrated = applyVolumeBarsDefaultMigration(
+        oldPersistedProperties,
+        { XAUUSD: oldPersistedProperties, EURUSD: oldPersistedProperties },
+        previousVersion,
+      );
 
-    expect(migrated.globalProperties.showTickVolumes).toBe(false);
-    expect(migrated.globalProperties.showRealVolumes).toBe(false);
-    expect(migrated.symbolProperties.XAUUSD.showTickVolumes).toBe(false);
-    expect(migrated.symbolProperties.XAUUSD.showRealVolumes).toBe(false);
+      expect(migrated.volumeBarsDefaultMigrationVersion).toBe(VOLUME_BARS_DEFAULT_MIGRATION_VERSION);
+      expect(migrated.globalProperties.showTickVolumes).toBe(false);
+      expect(migrated.globalProperties.showRealVolumes).toBe(false);
+      expect(migrated.symbolProperties.XAUUSD.showTickVolumes).toBe(false);
+      expect(migrated.symbolProperties.XAUUSD.showRealVolumes).toBe(false);
+      expect(migrated.symbolProperties.EURUSD.showTickVolumes).toBe(false);
+      expect(migrated.symbolProperties.EURUSD.showRealVolumes).toBe(false);
+    }
   });
 
   it('preserves visible volume preference after volume default migration has run', () => {
@@ -442,12 +448,15 @@ describe('chart settings trade history overlay defaults', () => {
 
     const migrated = applyVolumeBarsDefaultMigration(
       migratedProperties,
-      {},
-      1,
+      { XAUUSD: migratedProperties },
+      VOLUME_BARS_DEFAULT_MIGRATION_VERSION,
     );
 
+    expect(migrated.volumeBarsDefaultMigrationVersion).toBe(VOLUME_BARS_DEFAULT_MIGRATION_VERSION);
     expect(migrated.globalProperties.showTickVolumes).toBe(true);
     expect(migrated.globalProperties.showRealVolumes).toBe(false);
+    expect(migrated.symbolProperties.XAUUSD.showTickVolumes).toBe(true);
+    expect(migrated.symbolProperties.XAUUSD.showRealVolumes).toBe(false);
   });
 
   it('migrates old persisted chart shift to disabled once', () => {

@@ -136,11 +136,17 @@ const getColorContrastRatio = (first: string, second: string): number | null => 
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 };
 
-// Derive crisp solid volume colors directly from the active candle colors
-// without hardcoding any scheme hues. When a hollow candle body matches the
-// chart background (e.g. black bull body on a black canvas), fall back to its
-// visible candle outline/bar color so every volume line remains readable.
-const resolveCandleVolumeColor = (
+// TradingView's built-in Volume overlay renders columns at 50% opacity so wide
+// volume bars remain legible without obscuring candlesticks drawn above them.
+export const TRADINGVIEW_VOLUME_OPACITY = 0.5;
+
+// Derive crisp directional base volume colors directly from the active candle
+// colors without hardcoding any scheme hues. When a hollow candle body matches
+// the chart background (e.g. black bull body on a black canvas, or white bull
+// body on a light canvas), fall back to its visible candle outline/bar color.
+// Bar & Line charts use these solid colors for thin 1px vertical volume lines,
+// while Candlestick charts apply TradingView's 50% opacity to wide columns.
+const resolveCandleVolumeBaseColor = (
   candleColor: string,
   barColor: string,
   background: string,
@@ -205,8 +211,10 @@ export const buildChartTheme = (
 
   const background = colors.background || '#0e0e12';
   const foreground = colors.foreground || '#ffffff';
-  const volumeUp = resolveCandleVolumeColor(candleUp, barUp, background, foreground);
-  const volumeDown = resolveCandleVolumeColor(candleDown, barDown, background, foreground);
+  const volumeLineUp = resolveCandleVolumeBaseColor(candleUp, barUp, background, foreground);
+  const volumeLineDown = resolveCandleVolumeBaseColor(candleDown, barDown, background, foreground);
+  const volumeUp = colorWithAlpha(volumeLineUp, TRADINGVIEW_VOLUME_OPACITY, volumeLineUp);
+  const volumeDown = colorWithAlpha(volumeLineDown, TRADINGVIEW_VOLUME_OPACITY, volumeLineDown);
 
   return {
     background,
@@ -239,5 +247,7 @@ export const buildChartTheme = (
     areaDownBottom: colorWithAlpha(areaDown, 0, 'rgba(242, 54, 69, 0)'),
     volumeUp,
     volumeDown,
+    volumeLineUp,
+    volumeLineDown,
   };
 };

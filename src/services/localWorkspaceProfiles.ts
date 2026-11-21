@@ -1,6 +1,7 @@
 import { dockManager, type DockContainer, type DockLayout, type DockPanelConfig } from './dockManager';
 import { useDockLayoutStore } from '../store/useDockLayoutStore';
 import {
+  applyVolumeBarsDefaultMigration,
   normalizeChartProperties,
   type ChartProperties,
   useChartSettingsStore,
@@ -622,10 +623,18 @@ export class LocalWorkspaceProfileService {
     const storage = this.getStorage();
 
     useDockLayoutStore.getState().setLayout(cloneJson(normalized.state.dockLayout));
+    const volumeMigrated = applyVolumeBarsDefaultMigration(
+      cloneJson(normalized.state.chartSettings.globalProperties),
+      cloneJson(normalized.state.chartSettings.symbolProperties),
+      normalized.state.chartSettings.volumeBarsDefaultMigrationVersion,
+    );
     useChartSettingsStore.setState({
-      globalProperties: cloneJson(normalized.state.chartSettings.globalProperties),
-      symbolProperties: cloneJson(normalized.state.chartSettings.symbolProperties),
-      volumeBarsDefaultMigrationVersion: normalized.state.chartSettings.volumeBarsDefaultMigrationVersion,
+      globalProperties: volumeMigrated.globalProperties,
+      symbolProperties: volumeMigrated.symbolProperties,
+      volumeBarsDefaultMigrationVersion: Math.max(
+        normalized.state.chartSettings.volumeBarsDefaultMigrationVersion,
+        volumeMigrated.volumeBarsDefaultMigrationVersion,
+      ),
       periodSeparatorsDefaultMigrationVersion: normalized.state.chartSettings.periodSeparatorsDefaultMigrationVersion,
       chartShiftDefaultMigrationVersion: normalized.state.chartSettings.chartShiftDefaultMigrationVersion,
       ohlcDefaultMigrationVersion: normalized.state.chartSettings.ohlcDefaultMigrationVersion,

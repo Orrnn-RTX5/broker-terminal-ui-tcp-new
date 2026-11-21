@@ -206,6 +206,7 @@ const openHistorySurfaceMenu = async (): Promise<HTMLElement> => {
 describe('BottomDock History live-deal integration', () => {
     beforeEach(() => {
         localStorage.clear();
+        sessionStorage.clear();
         resetTerminalHistorySession();
         clearTradeHistoryRequestCache();
         useAppStore.getState().reset();
@@ -226,6 +227,7 @@ describe('BottomDock History live-deal integration', () => {
         cleanup();
         useAppStore.getState().reset();
         localStorage.clear();
+        sessionStorage.clear();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
@@ -277,7 +279,7 @@ describe('BottomDock History live-deal integration', () => {
         fireEvent.click(screen.getByRole('button', { name: 'History — Closed orders and account history' }));
         const summary = await screen.findByRole('group', { name: 'History financial summary' });
         await waitFor(() => expect(summary).toHaveTextContent('Profit: 104.00 Credit: 0.00 Deposit: 1 000.00 Withdrawal: -20.00 Balance: —'));
-        fireEvent.click(screen.getByRole('button', { name: 'Last 30 Days' }));
+        fireEvent.click(screen.getByRole('button', { name: '14 Days' }));
         expect(summary).toHaveTextContent('Profit: 4.00 Credit: 0.00 Deposit: 0.00 Withdrawal: -20.00 Balance: —');
     });
 
@@ -444,19 +446,12 @@ describe('BottomDock History live-deal integration', () => {
         expect(container.querySelector('[title="Ticket: 630001"]')).not.toBeNull();
         expect(container.querySelector('[title="Ticket: 630002"]')).toBeNull();
         expect(screen.getByRole('group', { name: 'History financial summary' })).toHaveTextContent('Profit: 10.00');
-        fireEvent.click(screen.getByRole('button', { name: 'Last 12 Hours' }));
-        expect(screen.getByText('2 records')).toBeInTheDocument();
-        expect(screen.getByRole('group', { name: 'History financial summary' })).toHaveTextContent('Profit: 30.00');
         fireEvent.click(screen.getByRole('button', { name: 'Last 24 Hours' }));
         expect(screen.getByText('2 records')).toBeInTheDocument();
         expect(screen.getByRole('group', { name: 'History financial summary' })).toHaveTextContent('Profit: 30.00');
-        fireEvent.click(screen.getByRole('button', { name: 'Last 7 Days' }));
-        expect(screen.getByText('2 records')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Last 30 Days' }));
+        fireEvent.click(screen.getByRole('button', { name: '14 Days' }));
         expect(screen.getByText('3 records')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Last 3 Months' }));
-        expect(screen.getByText('3 records')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Last 6 Months' }));
+        fireEvent.click(screen.getByRole('button', { name: '6 Months' }));
         expect(screen.getByText('4 records')).toBeInTheDocument();
         expect(container.querySelector('[title="Ticket: 630004"]')).not.toBeNull();
         expect(container.querySelector('[title="Ticket: 630005"]')).toBeNull();
@@ -505,7 +500,7 @@ describe('BottomDock History live-deal integration', () => {
         renderHistoryDock();
         fireEvent.click(screen.getByRole('button', { name: 'History — Closed orders and account history' }));
         const summary = await screen.findByRole('group', { name: 'History financial summary' });
-        await screen.findByText('501 records');
+        await screen.findByText('503 records');
         expect(apiClient.get).toHaveBeenCalledWith('/account/deals', expect.objectContaining({
             params: { limit: 500, offset: 500, to: expect.any(Number) },
         }));
@@ -538,14 +533,9 @@ describe('BottomDock History live-deal integration', () => {
             'Volumes',
             'Today',
             'Last Hour',
-            'Last 12 Hours',
             'Last 24 Hours',
-            'Last 3 Days',
-            'Last 7 Days',
-            'Last 14 Days',
-            'Last 30 Days',
-            'Last 3 Months',
-            'Last 6 Months',
+            '14 Days',
+            '6 Months',
             'All History',
             'Custom Period',
             'Report',
@@ -685,7 +675,7 @@ describe('BottomDock History live-deal integration', () => {
         expect(within(columnsMenu).queryByText('Show All Columns')).not.toBeInTheDocument();
         expect(within(columnsMenu).queryByText('Reset Columns')).not.toBeInTheDocument();
         expect(within(columnsMenu).getByText('Ticket').closest('[role="menuitem"]')?.querySelector('[aria-hidden="true"] svg')).toBeInTheDocument();
-        expect(within(columnsMenu).getByText('Status').closest('[role="menuitem"]')?.querySelector('[aria-hidden="true"] svg')).toBeInTheDocument();
+        expect(within(columnsMenu).getByText('Status').closest('[role="menuitem"]')?.querySelector('[aria-hidden="true"] svg')).toBeNull();
         expect(within(columnsMenu).getByText('Change %').closest('[role="menuitem"]')?.querySelector('[aria-hidden="true"] svg')).toBeInTheDocument();
         expect(within(columnsMenu).getByText('Market Value').closest('[role="menuitem"]')?.querySelector('[aria-hidden="true"] svg')).toBeNull();
 
@@ -695,9 +685,9 @@ describe('BottomDock History live-deal integration', () => {
         columnsMenu = await findSubmenuContaining('Market Value');
         fireEvent.click(within(columnsMenu).getByText('Ticket'));
         await waitFor(() => expect(screen.queryByRole('columnheader', { name: 'Ticket' })).not.toBeInTheDocument());
-        expect(JSON.parse(localStorage.getItem('rtx5_history_columns_v2') ?? '{}')).toEqual({
+        expect(JSON.parse(localStorage.getItem('rtx5_history_columns_v3') ?? '{}')).toEqual({
             ticket: false,
-            status: true,
+            status: false,
             marketValue: true,
             commission: false,
             swap: false,
@@ -708,7 +698,7 @@ describe('BottomDock History live-deal integration', () => {
         });
     });
 
-    it('renders FILLED, CANCELLED, and EXPIRED status badges in Orders history view while hiding REJECTED rows', async () => {
+    it('omits FILLED status text while rendering CANCELLED and EXPIRED status badges when Status column is enabled and hiding REJECTED rows', async () => {
         useAppStore.setState({ accountId: '300007', positions: [] });
         vi.spyOn(tradeGatewayApi, 'getHistoryDataSet').mockResolvedValue(historyDataSet({
             orders: [
@@ -727,7 +717,17 @@ describe('BottomDock History live-deal integration', () => {
         fireEvent.click(within(menu).getByText('Orders'));
         await screen.findByTitle('Ticket: 810101');
 
-        expect(screen.getByTestId('history-row-status-810101')).toHaveTextContent('FILLED');
+        // Status column is hidden by default so FILLED status is not shown on trades.
+        expect(screen.queryByTestId('history-row-status-810101')).not.toBeInTheDocument();
+
+        const columnsTrigger = await openHistorySurfaceMenu();
+        fireEvent.click(within(columnsTrigger).getByText('Columns'));
+        const columnsMenu = await findSubmenuContaining('Status');
+        fireEvent.click(within(columnsMenu).getByText('Status'));
+
+        await waitFor(() => expect(screen.getByTestId('history-row-status-810101')).toBeInTheDocument());
+        expect(screen.getByTestId('history-row-status-810101')).not.toHaveTextContent('FILLED');
+        expect(screen.getByTestId('history-row-status-810101')).toHaveTextContent('—');
         expect(screen.getByTestId('history-row-status-810102')).toHaveTextContent('CANCELLED');
         expect(screen.getByTestId('history-row-status-810103')).toHaveTextContent('EXPIRED');
         expect(screen.queryByTestId('history-row-status-810104')).not.toBeInTheDocument();

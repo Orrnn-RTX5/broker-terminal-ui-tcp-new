@@ -6,6 +6,7 @@ import { Bug, Menu as MenuIcon } from 'lucide-react';
 import { Icon, type IconName } from '../ui/Icon';
 import { RetainedLazyFeature } from '../../startup/RetainedLazyFeature';
 import { FileMenu } from './FileMenu';
+import { useInlineSubmenuPlacement } from './inlineSubmenuPosition';
 import { useTranslation } from 'react-i18next';
 import { commandBus } from '../../services/commandBus';
 import { getColorSchemeDisplayLabel, normalizeColorSchemeName, useChartSettingsStore, type ChartProperties, type ColorScheme } from '../../store/useChartSettingsStore';
@@ -164,11 +165,72 @@ export const MenuBar = ({
     const desktopMenuButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
     const [menuPosition, setMenuPosition] = useState({ top: 40, left: 4 });
     const [revealedSubmenuPath, setRevealedSubmenuPath] = useState<string[] | undefined>(undefined);
+    const hoverCloseTimerRef = useRef<number | null>(null);
+    const isClickPinnedRef = useRef(false);
+    const hoverOpenedSubmenuRef = useRef<string | null>(null);
+
+    const cancelHoverClose = useCallback(() => {
+        if (hoverCloseTimerRef.current !== null) {
+            window.clearTimeout(hoverCloseTimerRef.current);
+            hoverCloseTimerRef.current = null;
+        }
+    }, []);
+
+    const pinMenu = useCallback(() => {
+        cancelHoverClose();
+        isClickPinnedRef.current = true;
+    }, [cancelHoverClose]);
+
+    const isPointerInsideMenu = useCallback(() => {
+        try {
+            const hoveredLauncher = Boolean(menuRef.current?.matches?.(':hover'));
+            const hoveredPopup = Boolean(menuPopupRef.current?.matches?.(':hover'));
+            return hoveredLauncher || hoveredPopup;
+        } catch {
+            return false;
+        }
+    }, []);
 
     const closeMenu = useCallback(() => {
+        cancelHoverClose();
+        isClickPinnedRef.current = false;
+        hoverOpenedSubmenuRef.current = null;
         setIsMenuOpen(false);
         setActiveMenu(null);
         setRevealedSubmenuPath(undefined);
+    }, [cancelHoverClose]);
+
+    const scheduleHoverClose = useCallback(() => {
+        if (isFileDialogOpen || isClickPinnedRef.current) return;
+        cancelHoverClose();
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+            hoverCloseTimerRef.current = null;
+            if (isClickPinnedRef.current || isPointerInsideMenu()) return;
+            closeMenu();
+        }, 220);
+    }, [cancelHoverClose, closeMenu, isFileDialogOpen, isPointerInsideMenu]);
+
+    const handleHoverLeave = useCallback((event: React.MouseEvent) => {
+        if (isClickPinnedRef.current) {
+            cancelHoverClose();
+            return;
+        }
+        const nextTarget = event.relatedTarget;
+        if (
+            nextTarget instanceof Node
+            && (menuRef.current?.contains(nextTarget) || menuPopupRef.current?.contains(nextTarget))
+        ) {
+            cancelHoverClose();
+            return;
+        }
+        scheduleHoverClose();
+    }, [cancelHoverClose, scheduleHoverClose]);
+
+    useEffect(() => () => {
+        if (hoverCloseTimerRef.current !== null) {
+            window.clearTimeout(hoverCloseTimerRef.current);
+            hoverCloseTimerRef.current = null;
+        }
     }, []);
 
     const terminalResolution = useTerminalResolutionStore(state => state.resolution);
@@ -238,6 +300,7 @@ export const MenuBar = ({
             }
             setIsFileDialogOpen(false);
             const depth = detail.openDepth ?? 0;
+            isClickPinnedRef.current = true;
             setIsMenuOpen(true);
             if (isElectronDesktop) {
                 setActiveMenu(detail.desktopMenuKey ?? 'View');
@@ -256,23 +319,28 @@ export const MenuBar = ({
         return () => window.removeEventListener('rtx:reveal-menu-path', handleRevealMenuPath);
     }, [closeMenu, isElectronDesktop]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!isMenuOpen) return;
 
-        const updateMenuPosition = () => {
+        const updateMenuPosition = (event?: Event) => {
+            if (event?.type === 'scroll' && event.target instanceof Node && menuPopupRef.current?.contains(event.target)) return;
             const rect = menuButtonRef.current?.getBoundingClientRect();
             if (!rect) return;
+            const menuHeight = menuPopupRef.current?.offsetHeight || 0;
+            const maxTop = menuHeight > 0
+                ? Math.max(4, window.innerHeight - menuHeight - 8)
+                : Math.max(4, window.innerHeight - 250);
             const isRailPlacement = placement === 'rail'
                 || Boolean(menuButtonRef.current?.closest('.web-drawing-tools-rail'));
             if (isRailPlacement) {
                 setMenuPosition({
-                    top: Math.max(4, Math.min(rect.top, window.innerHeight - 250)),
+                    top: Math.max(4, Math.min(rect.top, maxTop)),
                     left: Math.max(4, Math.min(rect.right + 4, window.innerWidth - 264)),
                 });
                 return;
             }
             setMenuPosition({
-                top: Math.min(rect.bottom + 2, Math.max(4, window.innerHeight - 250)),
+                top: Math.min(rect.bottom + 2, maxTop),
                 left: Math.max(4, Math.min(rect.left, window.innerWidth - 264)),
             });
         };
@@ -569,11 +637,6 @@ export const MenuBar = ({
                 ]
             },
             { divider: true, label: '' },
-            // SUI-T15-guard: Experts/Scripts open locked bottom-dock tabs, so
-            // the menu shows the existing availability lock as disabled state
-            // with reason (same pattern as Economic Calendar) instead of a
-            // click BottomDock would refuse silently.
-            { label: t('menu.insert.experts'), icon: <Icon name="cpu" size="sm" />, disabled: isUnavailableDockSection('Experts'), unavailableReason: isUnavailableDockSection('Experts') ? unavailableDockSections.Experts : undefined, action: () => { window.dispatchEvent(new CustomEvent('togglePanel', { detail: 'Experts' })); setActiveMenu(null); } },
             { label: t('menu.insert.scripts'), icon: <Icon name="code" size="sm" />, disabled: isUnavailableDockSection('Code Base'), unavailableReason: isUnavailableDockSection('Code Base') ? unavailableDockSections['Code Base'] : undefined, action: () => { window.dispatchEvent(new CustomEvent('togglePanel', { detail: 'Scripts' })); setActiveMenu(null); } },
         ],
         Charts: [
@@ -723,8 +786,6 @@ export const MenuBar = ({
             { label: t('menu.help.documentation'), icon: <Icon name="book-open" size="sm" />, disabled: true, unavailableReason: 'Documentation is not configured for this deployment' },
             { label: t('menu.help.algoBook'), icon: <Icon name="book-open" size="sm" className="text-amber-400" />, ...lockedHelpResource },
             { label: t('menu.help.neuroBook'), icon: <Icon name="cpu" size="sm" className="text-purple-400" />, ...lockedHelpResource },
-            { label: t('menu.help.articles'), icon: <Icon name="file-text" size="sm" />, ...lockedHelpResource },
-            { label: t('menu.help.codeBase'), icon: <Icon name="code" size="sm" />, ...lockedHelpResource },
             { label: t('menu.help.marketplace'), icon: <Icon name="box" size="sm" />, ...lockedTerminalTool('marketplace') },
             { label: t('menu.help.signals'), icon: <Icon name="signal" size="sm" />, ...lockedTerminalTool('signalsHub') },
             { label: t('menu.help.quotes'), icon: <Icon name="trending-up" size="sm" />, ...lockedHelpResource },
@@ -868,6 +929,7 @@ export const MenuBar = ({
             profileSymbols={profileSymbols}
             profileShortcutsEnabled={false}
             onDialogOpenChange={setIsFileDialogOpen}
+            onInteractPin={pinMenu}
             onLogout={onLogout ? () => {
                 onLogout();
                 closeMenu();
@@ -989,34 +1051,38 @@ export const MenuBar = ({
         },
         {
             id: 'theme',
-            label: advancedViewEnabled ? 'Dark Theme' : 'Light Theme',
-            icon: 'eye',
+            label: 'Theme',
+            icon: 'palette',
             dividerBefore: true,
-            action: () => {
-                const nextLight = !advancedViewEnabled;
-                if (nextLight) {
-                    useThemeAppearanceStore.getState().setLightPreset('default-light', true);
-                } else {
-                    useThemeAppearanceStore.getState().setDarkPreset('default-dark', true);
-                }
-                onSetAdvancedViewEnabled?.(nextLight);
-                closeMenu();
-            },
-        },
-        {
-            id: 'color-templates',
-            label: 'Color Templates',
-            icon: 'palette',
-            children: colorTemplateItems,
-        },
-        {
-            id: 'appearance-themes',
-            label: 'Appearance & Themes...',
-            icon: 'palette',
-            action: () => {
-                closeMenu();
-                setIsThemeSettingsOpen(true);
-            },
+            children: [
+                {
+                    label: advancedViewEnabled ? 'Dark Theme' : 'Light Theme',
+                    icon: <Icon name="eye" size="sm" />,
+                    action: () => {
+                        const nextLight = !advancedViewEnabled;
+                        if (nextLight) {
+                            useThemeAppearanceStore.getState().setLightPreset('default-light', true);
+                        } else {
+                            useThemeAppearanceStore.getState().setDarkPreset('default-dark', true);
+                        }
+                        onSetAdvancedViewEnabled?.(nextLight);
+                        closeMenu();
+                    },
+                },
+                {
+                    label: 'Color Templates',
+                    icon: <Icon name="palette" size="sm" />,
+                    children: colorTemplateItems,
+                },
+                {
+                    label: 'Appearance',
+                    icon: <Icon name="settings" size="sm" />,
+                    action: () => {
+                        closeMenu();
+                        setIsThemeSettingsOpen(true);
+                    },
+                },
+            ],
         },
         {
             id: 'algo-trading',
@@ -1199,6 +1265,17 @@ export const MenuBar = ({
                 data-placement={placement}
                 className="rtx-menu-launcher flex h-[40px] shrink-0 items-center"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                onMouseEnter={() => {
+                    cancelHoverClose();
+                    if (!isMenuOpen) {
+                        isClickPinnedRef.current = false;
+                        hoverOpenedSubmenuRef.current = null;
+                        setActiveMenu(null);
+                        setIsMenuOpen(true);
+                    }
+                }}
+                onMouseMove={cancelHoverClose}
+                onMouseLeave={handleHoverLeave}
             >
                 <button
                     ref={menuButtonRef}
@@ -1208,12 +1285,19 @@ export const MenuBar = ({
                     aria-expanded={isMenuOpen}
                     title={tr("Application menu")}
                     onClick={() => {
-                        if (isMenuOpen) {
-                            closeMenu();
-                        } else {
+                        cancelHoverClose();
+                        if (!isMenuOpen) {
+                            isClickPinnedRef.current = true;
+                            hoverOpenedSubmenuRef.current = null;
                             setActiveMenu(null);
                             setIsMenuOpen(true);
+                            return;
                         }
+                        if (!isClickPinnedRef.current) {
+                            isClickPinnedRef.current = true;
+                            return;
+                        }
+                        closeMenu();
                     }}
                     className={`rtx-application-menu-trigger flex h-[36px] w-[56px] items-center justify-center border border-transparent transition-colors outline-none ${isMenuOpen ? 'is-open' : ''}`}
                 >
@@ -1224,10 +1308,14 @@ export const MenuBar = ({
             {!isElectronDesktop && isMenuOpen && ReactDOM.createPortal(
                 <div
                     ref={menuPopupRef}
+                    data-placement={placement === 'rail' || Boolean(menuButtonRef.current?.closest('.web-drawing-tools-rail')) ? 'rail' : 'toolbar'}
                     className="rtx-application-menu fixed z-[9999] w-[256px] text-[14px] font-normal"
                     style={{ top: menuPosition.top, left: menuPosition.left }}
                     role="menu"
                     aria-label={tr("Application menu")}
+                    onMouseEnter={cancelHoverClose}
+                    onMouseMove={cancelHoverClose}
+                    onMouseLeave={handleHoverLeave}
                     onKeyDown={(event) => {
                         const target = event.target as HTMLElement;
                         if (target.dataset.rootMenuItem !== 'true') return;
@@ -1289,76 +1377,47 @@ export const MenuBar = ({
                         </span>
                     </div>
                     <div className="rtx-application-menu__items">
-                        {applicationLauncherItems.map((item, rootIndex) => {
+                        {applicationLauncherItems.map((item) => {
                             const hasSubmenu = Boolean(item.opensFileMenu || item.children);
-                            const dividerCount = applicationLauncherItems
-                                .slice(0, rootIndex + 1)
-                                .filter(candidate => candidate.dividerBefore)
-                                .length;
 
                             return (
-                                <React.Fragment key={item.id}>
-                                    {item.dividerBefore && (
-                                        <div className="rtx-application-menu__divider" role="separator" />
-                                    )}
-                                    <div className="relative px-1.5">
-                                        <button
-                                            type="button"
-                                            role="menuitem"
-                                            disabled={item.disabled}
-                                            aria-disabled={item.disabled || undefined}
-                                            aria-description={item.unavailableReason ? tr(item.unavailableReason) : undefined}
-                                            title={item.unavailableReason ? tr(item.unavailableReason) : undefined}
-                                            data-root-menu-item="true"
-                                            data-menu-key={item.id}
-                                            aria-haspopup={hasSubmenu ? 'menu' : undefined}
-                                            aria-expanded={hasSubmenu ? activeMenu === item.id : undefined}
-                                            onClick={() => {
-                                                if (item.disabled) return;
-                                                if (hasSubmenu) {
-                                                    setActiveMenu(activeMenu === item.id ? null : item.id);
-                                                    return;
-                                                }
-                                                item.action?.();
-                                            }}
-                                            className={`rtx-application-menu__root-item ${item.disabled ? 'is-disabled cursor-not-allowed' : ''} ${activeMenu === item.id ? 'is-active' : ''}`}
-                                        >
-                                            <span className="rtx-application-menu__root-icon" aria-hidden="true">
-                                                <Icon name={item.icon} size={18} />
-                                            </span>
-                                            <span dir="auto" className="min-w-0 flex-1 truncate">{item.translateLabel === false ? item.label : tr(item.label)}</span>
-                                            {item.unavailableReason ? (
-                                                <span className="rtx-menu-row__lock" aria-hidden="true">
-                                                    <Icon name="lock" size="xs" />
-                                                </span>
-                                            ) : hasSubmenu ? (
-                                                <Icon name="chevron-right" size="xs" className="rtx-application-menu__chevron" />
-                                            ) : null}
-                                        </button>
-
-                                        {activeMenu === item.id && hasSubmenu && (
-                                            <div
-                                                className="absolute left-full ml-px z-[10000] w-max"
-                                                style={{
-                                                    top: -(
-                                                        rootIndex * 38
-                                                        + dividerCount * 5
-                                                    ),
-                                                }}
-                                                role="menu"
-                                                aria-label={tr("{{value0}} menu", { value0: item.label })}
-                                            >
-                                                {item.opensFileMenu ? (
-                                                    fileMenu
-                                                ) : (
-                                                    <div className={`rtx-menu-surface min-w-[260px] w-max py-1 ${item.id === 'language' ? 'max-h-[400px] overflow-y-auto no-scrollbar' : ''}`}>
-                                                        <MenuList items={item.children || []} onClose={closeMenu} openPath={revealedSubmenuPath} />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </React.Fragment>
+                                <ApplicationRootMenuItem
+                                    key={item.id}
+                                    item={item}
+                                    hasSubmenu={hasSubmenu}
+                                    isActive={activeMenu === item.id}
+                                    fileMenu={fileMenu}
+                                    revealedSubmenuPath={revealedSubmenuPath}
+                                    onHover={() => {
+                                        cancelHoverClose();
+                                        if (item.disabled) return;
+                                        if (hasSubmenu) {
+                                            if (activeMenu !== item.id) hoverOpenedSubmenuRef.current = item.id;
+                                            setActiveMenu(item.id);
+                                        } else {
+                                            hoverOpenedSubmenuRef.current = null;
+                                            setActiveMenu(null);
+                                        }
+                                    }}
+                                    onClick={() => {
+                                        if (item.disabled) return;
+                                        cancelHoverClose();
+                                        if (hasSubmenu) {
+                                            isClickPinnedRef.current = true;
+                                            if (activeMenu === item.id && hoverOpenedSubmenuRef.current !== item.id) {
+                                                setActiveMenu(null);
+                                            } else {
+                                                hoverOpenedSubmenuRef.current = null;
+                                                setActiveMenu(item.id);
+                                            }
+                                            return;
+                                        }
+                                        item.action?.();
+                                    }}
+                                    onSubmenuHover={cancelHoverClose}
+                                    onPinMenu={pinMenu}
+                                    onClose={closeMenu}
+                                />
                             );
                         })}
                     </div>
@@ -1402,17 +1461,123 @@ export const MenuBar = ({
     );
 };
 
-const MenuList = ({ items, onClose, openPath }: { items: MenuItem[]; onClose?: () => void; openPath?: string[] }) => {
+const ApplicationRootMenuItem = ({
+    item,
+    hasSubmenu,
+    isActive,
+    fileMenu,
+    revealedSubmenuPath,
+    onHover,
+    onClick,
+    onSubmenuHover,
+    onPinMenu,
+    onClose,
+}: {
+    item: ApplicationLauncherItem;
+    hasSubmenu: boolean;
+    isActive: boolean;
+    fileMenu: React.ReactElement;
+    revealedSubmenuPath?: string[];
+    onHover: () => void;
+    onClick: () => void;
+    onSubmenuHover: () => void;
+    onPinMenu: () => void;
+    onClose: () => void;
+}) => {
+    const tr = useUiTranslation();
+    const rowRef = useRef<HTMLDivElement>(null);
+    const submenuRef = useRef<HTMLDivElement>(null);
+    const isSubmenuOpen = isActive && hasSubmenu;
+    const submenuPlacement = useInlineSubmenuPlacement(isSubmenuOpen, rowRef, submenuRef, item.id);
+
+    return (
+        <>
+            {item.dividerBefore && (
+                <div className="rtx-application-menu__divider" role="separator" />
+            )}
+            <div
+                ref={rowRef}
+                className="relative px-1.5"
+                onMouseEnter={onHover}
+            >
+                <button
+                    type="button"
+                    role="menuitem"
+                    disabled={item.disabled}
+                    aria-disabled={item.disabled || undefined}
+                    aria-description={item.unavailableReason ? tr(item.unavailableReason) : undefined}
+                    title={item.unavailableReason ? tr(item.unavailableReason) : undefined}
+                    data-root-menu-item="true"
+                    data-menu-key={item.id}
+                    aria-haspopup={hasSubmenu ? 'menu' : undefined}
+                    aria-expanded={hasSubmenu ? isActive : undefined}
+                    onClick={onClick}
+                    className={`rtx-application-menu__root-item ${item.disabled ? 'is-disabled cursor-not-allowed' : ''} ${isActive ? 'is-active' : ''}`}
+                >
+                    <span className="rtx-application-menu__root-icon" aria-hidden="true">
+                        <Icon name={item.icon} size={18} />
+                    </span>
+                    <span dir="auto" className="min-w-0 flex-1 truncate">{item.translateLabel === false ? item.label : tr(item.label)}</span>
+                    {item.unavailableReason ? (
+                        <span className="rtx-menu-row__lock" aria-hidden="true">
+                            <Icon name="lock" size="xs" />
+                        </span>
+                    ) : hasSubmenu ? (
+                        <Icon name="chevron-right" size="xs" className="rtx-application-menu__chevron" />
+                    ) : null}
+                </button>
+
+                {isSubmenuOpen && (
+                    <div
+                        ref={submenuRef}
+                        data-submenu-side={submenuPlacement.alignLeft ? 'left' : 'right'}
+                        className={`absolute z-[10000] w-max ${submenuPlacement.alignLeft ? 'right-full pr-[2px]' : 'left-full pl-[2px]'}`}
+                        style={{ top: submenuPlacement.topOffset }}
+                        role="menu"
+                        aria-label={tr("{{value0}} menu", { value0: item.label })}
+                        onMouseEnter={onSubmenuHover}
+                        onMouseMove={onSubmenuHover}
+                    >
+                        {item.opensFileMenu ? (
+                            fileMenu
+                        ) : (
+                            <div className={`rtx-menu-surface min-w-[260px] w-max py-1 ${item.id === 'language' ? 'max-h-[min(400px,calc(100vh-16px))] overflow-y-auto no-scrollbar' : ''}`}>
+                                <MenuList items={item.children || []} onClose={onClose} onPinMenu={onPinMenu} openPath={revealedSubmenuPath} />
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </>
+    );
+};
+
+const MenuList = ({
+    items,
+    onClose,
+    onPinMenu,
+    openPath,
+}: {
+    items: MenuItem[];
+    onClose?: () => void;
+    onPinMenu?: () => void;
+    openPath?: string[];
+}) => {
     const [openIndex, setOpenIndex] = useState<number | null>(null);
+    const hoverOpenedIndexRef = useRef<number | null>(null);
     const pathTarget = openPath?.[0]?.trim().toLowerCase() || '';
     const hasOpenPath = openPath !== undefined;
 
     useEffect(() => {
         if (!pathTarget) {
-            if (hasOpenPath) setOpenIndex(null);
+            if (hasOpenPath) {
+                hoverOpenedIndexRef.current = null;
+                setOpenIndex(null);
+            }
             return;
         }
         const foundIndex = items.findIndex((candidate) => !candidate.divider && candidate.label.trim().toLowerCase() === pathTarget);
+        hoverOpenedIndexRef.current = null;
         if (foundIndex >= 0 && items[foundIndex]?.children) {
             setOpenIndex(foundIndex);
         } else {
@@ -1429,8 +1594,27 @@ const MenuList = ({ items, onClose, openPath }: { items: MenuItem[]; onClose?: (
                     key={index}
                     item={item}
                     isSubmenuOpen={openIndex === index}
-                    onToggleSubmenu={(open) => setOpenIndex(open ? index : null)}
+                    onClickSubmenu={() => {
+                        onPinMenu?.();
+                        if (openIndex === index && hoverOpenedIndexRef.current !== index) {
+                            setOpenIndex(null);
+                        } else {
+                            hoverOpenedIndexRef.current = null;
+                            setOpenIndex(index);
+                        }
+                    }}
+                    onHoverActivate={() => {
+                        if (item.disabled) return;
+                        if (item.children) {
+                            if (openIndex !== index) hoverOpenedIndexRef.current = index;
+                            setOpenIndex(index);
+                        } else {
+                            hoverOpenedIndexRef.current = null;
+                            setOpenIndex(null);
+                        }
+                    }}
                     onClose={onClose}
+                    onPinMenu={onPinMenu}
                     openPath={openIndex === index && openPath?.length ? openPath.slice(1) : undefined}
                 />
             ))}
@@ -1441,14 +1625,18 @@ const MenuList = ({ items, onClose, openPath }: { items: MenuItem[]; onClose?: (
 const MenuItem = ({
     item,
     isSubmenuOpen,
-    onToggleSubmenu,
+    onClickSubmenu,
+    onHoverActivate,
     onClose,
+    onPinMenu,
     openPath,
 }: {
     item: MenuItem;
     isSubmenuOpen: boolean;
-    onToggleSubmenu: (open: boolean) => void;
+    onClickSubmenu: () => void;
+    onHoverActivate?: () => void;
     onClose?: () => void;
+    onPinMenu?: () => void;
     openPath?: string[];
 }) => {
     const tr = useUiTranslation();
@@ -1456,6 +1644,7 @@ const MenuItem = ({
     const anchorRef = useRef<HTMLDivElement>(null);
     const desktop = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const [position, setPosition] = useState({ left: 0, top: 0 });
+    const inlinePlacement = useInlineSubmenuPlacement(!desktop && isSubmenuOpen, anchorRef, submenuRef, item.label);
     useLayoutEffect(() => {
         if (!desktop || !isSubmenuOpen) return;
         const place = () => {
@@ -1478,9 +1667,16 @@ const MenuItem = ({
     const submenu = item.children && isSubmenuOpen ? (
         <div ref={submenuRef} role="menu" aria-label={tr("{{value0}} menu", { value0: item.label })}
             data-rtx-desktop-submenu={desktop ? 'true' : undefined}
-            className={`rtx-menu-surface min-w-[240px] w-max py-1 ${desktop ? 'fixed z-[10010]' : 'absolute left-full top-0 ml-[-2px] z-[101]'} ${item.scrollableChildren ? 'max-h-[400px] overflow-y-auto no-scrollbar' : ''}`}
-            style={desktop ? { ...position, maxHeight: Math.min(400, window.innerHeight - 16), maxWidth: 'calc(100vw - 16px)', overflowY: 'auto' } : undefined}>
-            <MenuList items={item.children} onClose={onClose} openPath={openPath} />
+            data-submenu-side={!desktop ? (inlinePlacement.alignLeft ? 'left' : 'right') : undefined}
+            className={`rtx-menu-surface min-w-[240px] w-max py-1 ${
+                desktop
+                    ? 'fixed z-[10010]'
+                    : `absolute z-[101] ${inlinePlacement.alignLeft ? 'right-full mr-[-1px]' : 'left-full ml-[-1px]'}`
+            } ${item.scrollableChildren ? 'max-h-[min(400px,calc(100vh-16px))] overflow-y-auto no-scrollbar' : ''}`}
+            style={desktop
+                ? { ...position, maxHeight: Math.min(400, window.innerHeight - 16), maxWidth: 'calc(100vw - 16px)', overflowY: 'auto' }
+                : { top: inlinePlacement.topOffset }}>
+            <MenuList items={item.children} onClose={onClose} onPinMenu={onPinMenu} openPath={openPath} />
         </div>
     ) : null;
 
@@ -1490,7 +1686,13 @@ const MenuItem = ({
     }
 
     return (
-        <div ref={anchorRef} className="relative px-1">
+        <div
+            ref={anchorRef}
+            className="relative px-1"
+            onMouseEnter={() => {
+                onHoverActivate?.();
+            }}
+        >
             <button
                 type="button"
                 disabled={item.disabled}
@@ -1506,7 +1708,7 @@ const MenuItem = ({
                 onClick={() => {
                     if (item.disabled) return;
                     if (item.children) {
-                        onToggleSubmenu(!isSubmenuOpen);
+                        onClickSubmenu();
                         return;
                     }
                     if (item.action) {

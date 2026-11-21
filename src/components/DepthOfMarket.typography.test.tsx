@@ -3,6 +3,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DepthOfMarket } from './DepthOfMarket';
 import { readDepthTypography } from './depthOfMarketModel';
+import { defaultChartProperties, useChartSettingsStore } from '../store/useChartSettingsStore';
 
 const market = vi.hoisted(() => ({
   tick: { bid: 100, ask: 100.1, timestamp: 1, volume: 2 },
@@ -92,5 +93,45 @@ describe('Depth of Market typography', () => {
       root.classList.remove('rtx-skin-untitled-light');
     }
     expect(readDepthTypography().fontFamily).toBe('Consolas, monospace');
+  });
+
+  it('hides Depth of Market chart volume bars by default and renders them when chart volumes are enabled', () => {
+    const initialSettings = useChartSettingsStore.getState();
+    const fillRectCalls: Array<{ args: number[]; fillStyle: string }> = [];
+    const context = {
+      font: '',
+      fillStyle: '',
+      scale: vi.fn(),
+      fillRect: vi.fn(function (this: { fillStyle: string }, ...args: number[]) {
+        fillRectCalls.push({ args, fillStyle: this.fillStyle });
+      }),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(), closePath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(), fill: vi.fn(), arc: vi.fn(), setLineDash: vi.fn(), roundRect: vi.fn(),
+      measureText: (text: string) => ({ width: text.length * 8 }),
+      fillText: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+
+    try {
+      useChartSettingsStore.setState({
+        globalProperties: { ...defaultChartProperties, showTickVolumes: false, showRealVolumes: false },
+        symbolProperties: {},
+      });
+
+      const view = render(<DepthOfMarket symbol="BTCUSD" />);
+      const defaultVolumeBarFills = fillRectCalls.filter((call) => call.fillStyle.includes('0.26') || call.fillStyle.includes('0.24'));
+      expect(defaultVolumeBarFills).toHaveLength(0);
+
+      fillRectCalls.length = 0;
+      act(() => {
+        useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'showTickVolumes', true);
+      });
+      view.rerender(<DepthOfMarket symbol="BTCUSD" />);
+      const enabledVolumeBarFills = fillRectCalls.filter((call) => call.fillStyle.includes('0.26') || call.fillStyle.includes('0.24'));
+      expect(enabledVolumeBarFills.length).toBeGreaterThan(0);
+    } finally {
+      useChartSettingsStore.setState(initialSettings);
+    }
   });
 });

@@ -129,32 +129,39 @@ describe('useOrderExecution', () => {
     );
   });
 
-  it('routes Limit and Stop OrderPanelDialog submissions to placePendingOrder', async () => {
+  it('routes Limit and Stop OrderPanelDialog submissions to placePendingOrder without showing a submission popup', async () => {
     const context = createTradeOperationContext('broker:123', 123, 4);
     const controller = createController(() => context);
+    const feedbackSpy = vi.fn();
+    window.addEventListener('rtx:order-feedback', feedbackSpy);
 
-    await act(() => controller.result.current.handleOrderPanelSubmit({
-      type: 'sell',
-      symbol: 'EURUSD',
-      volume: 0.5,
-      orderType: 'Limit Order',
-      price: 1.095,
-      priceSl: 1.10,
-      priceTp: 1.085,
-      comment: 'mt5-limit',
-    }));
+    try {
+      await act(() => controller.result.current.handleOrderPanelSubmit({
+        type: 'sell',
+        symbol: 'EURUSD',
+        volume: 0.5,
+        orderType: 'Limit Order',
+        price: 1.095,
+        priceSl: 1.10,
+        priceTp: 1.085,
+        comment: 'mt5-limit',
+      }));
 
-    expect(api.orders.placePendingOrder).toHaveBeenCalledWith({
-      login: 123,
-      symbol: 'EURUSD',
-      side: 'sell',
-      volume: 0.5,
-      type: 'sell_limit',
-      price: 1.095,
-      price_sl: 1.10,
-      price_tp: 1.085,
-      comment: 'mt5-limit',
-    });
-    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123);
+      expect(api.orders.placePendingOrder).toHaveBeenCalledWith({
+        login: 123,
+        symbol: 'EURUSD',
+        side: 'sell',
+        volume: 0.5,
+        type: 'sell_limit',
+        price: 1.095,
+        price_sl: 1.10,
+        price_tp: 1.085,
+        comment: 'mt5-limit',
+      }, expect.objectContaining({ intentAtMs: expect.any(Number) }));
+      expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123, { skipHistory: true });
+      expect(feedbackSpy).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('rtx:order-feedback', feedbackSpy);
+    }
   });
 });

@@ -31,6 +31,12 @@ import { BROKER_CHROME_EVENT, getBrokerChrome, type BrokerChromeState } from '..
 import { getCachedBrokerDirectory, loadAppBrokerDirectory } from '../../services/brokerDirectory';
 import { runAfterTerminalReady } from '../../startup/runAfterTerminalReady';
 import { openWebTrader } from '../../services/webTrader';
+import {
+    readSessionJson,
+    SESSION_VIEW_KEYS,
+    subscribeWorkspaceViewReset,
+    writeSessionJson,
+} from '../../services/sessionViewState';
 import type { Broker, BrokerServer } from '../../types/api';
 import type { BrokerDiscoveryItem } from '../../services/brokerDiscovery';
 import { getSavedAccountServerIdentities, isSavedAccountInBrokerSession, normalizeSavedAccountServer } from '../../services/savedAccountScope';
@@ -1051,7 +1057,6 @@ function TreeItem({
     onContextMenu,
     isFavorite = false,
     accountActive,
-    accountType,
     tooltip,
     disabled = false,
 }: {
@@ -1070,17 +1075,24 @@ function TreeItem({
     disabled?: boolean;
 }) {
     const tr = useUiTranslation();
-    const [isOpen, setIsOpen] = useState(defaultOpen);
     const hasChildren = React.Children.count(children) > 0;
+    const sectionKey = hasChildren ? label : null;
+    const [isOpen, setIsOpen] = useState(() => {
+        if (!sectionKey) return defaultOpen;
+        const stored = readSessionJson<Record<string, boolean>>(SESSION_VIEW_KEYS.navigatorSections, {});
+        return typeof stored[sectionKey] === 'boolean' ? stored[sectionKey] : defaultOpen;
+    });
+    const setSectionOpen = useCallback((next: boolean) => {
+        setIsOpen(next);
+        if (!sectionKey) return;
+        const stored = readSessionJson<Record<string, boolean>>(SESSION_VIEW_KEYS.navigatorSections, {});
+        writeSessionJson(SESSION_VIEW_KEYS.navigatorSections, { ...stored, [sectionKey]: next });
+    }, [sectionKey]);
+    useEffect(() => subscribeWorkspaceViewReset(() => {
+        setIsOpen(defaultOpen);
+    }), [defaultOpen]);
     const isExpandable = hasChildren && !disabled;
     const isInactiveAccount = accountActive === false;
-    const accountTypeBadgeLabel = accountType === 'demo'
-        ? tr('Demo')
-        : accountType === 'real'
-            ? tr('Live')
-            : accountType === 'contest'
-                ? tr('Contest')
-                : null;
 
     return (
         <div className="navigator-tree-item relative" style={{ paddingLeft: 12 }}>
@@ -1129,7 +1141,7 @@ function TreeItem({
                 title={disabled ? tr("{{value0}} is currently unavailable", { value0: label }) : tooltip}
                 onClick={disabled ? undefined : () => {
                     if (hasChildren) {
-                        setIsOpen(!isOpen);
+                        setSectionOpen(!isOpen);
                     } else if (onItemClick) {
                         onItemClick();
                     }
@@ -1137,11 +1149,11 @@ function TreeItem({
                 onDoubleClick={disabled ? undefined : (event) => {
                     if (onItemDoubleClick) {
                         if (hasChildren) {
-                            setIsOpen(true);
+                            setSectionOpen(true);
                         }
                         onItemDoubleClick(event);
                     } else if (hasChildren) {
-                        setIsOpen(!isOpen);
+                        setSectionOpen(!isOpen);
                     } else if (onItemClick) {
                         onItemClick();
                     }
@@ -1165,22 +1177,11 @@ function TreeItem({
                 >
                     {label}
                 </span>
-                {(accountTypeBadgeLabel || isFavorite) && (
+                {isFavorite && (
                     <span className="ml-auto mr-1 flex items-center gap-1 flex-shrink-0">
-                        {accountTypeBadgeLabel && (
-                            <span
-                                className="navigator-account-type-badge"
-                                data-account-type={accountType}
-                                data-active={accountActive === undefined ? undefined : String(accountActive)}
-                            >
-                                {accountTypeBadgeLabel}
-                            </span>
-                        )}
-                        {isFavorite && (
-                            <span title={tr('Favorite account')} aria-label={tr('Favorite account')}>
-                                <Icon name="star" size="xs" className="text-amber-400" />
-                            </span>
-                        )}
+                        <span title={tr('Favorite account')} aria-label={tr('Favorite account')}>
+                            <Icon name="star" size="xs" className="text-amber-400" />
+                        </span>
                     </span>
                 )}
                 {disabled && (

@@ -37,6 +37,12 @@ import { isLikelyAlwaysOpenCryptoSymbol } from '../utils/marketStatus';
 import { setLiveMarketDataFrozen } from '../services/liveTickDispatcher';
 import { drawingManager } from '../services/drawingManager';
 import { requestChartTradeOverlayRefresh } from '../services/tradeOverlayRefreshEvents';
+import {
+  readSessionBoolean,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionBoolean,
+} from '../services/sessionViewState';
 import { projectDrawingTimeAtLogical } from '../drawing-tools/geometry/drawingTimeProjection';
 import { candleAggregationService, getTimeframeSeconds, type OHLCV, type Timeframe as AggTimeframe } from '../services/candleAggregationService';
 import { useAppStore } from '../store/useAppStore';
@@ -53,7 +59,7 @@ import {
 import { resolveSpecDigits } from '../utils/symbolUtils';
 import { readRegisteredSymbolPriceSpec } from '../services/dailyChangePriceModeRegistry';
 import { SquareChartGridPrimitive } from '../utils/squareChartGridPrimitive';
-import { createChartVolumeSeries, isCurrentChartVolumeSeries } from '../utils/chartVolumeSeries';
+import { createChartVolumeSeries, isCurrentChartVolumeSeries, resolveChartVolumeSeriesStyle } from '../utils/chartVolumeSeries';
 import { getChartGridRenderingOptions } from '../utils/chartGridOptions';
 import { createChartGridTimeProjection, type ChartGridTimeProjection } from '../utils/chartGridTimeProjection';
 import { getChartCandleCountdownText } from '../utils/chartCandleCountdown';
@@ -73,7 +79,7 @@ import { isShortcutInput, isShortcutLocalScope, isShortcutOverlay, shouldIgnoreS
 import { isChartLegendPainted, paintChartLegend } from '../utils/chartLegend';
 import { activateActiveChartSource, bindActiveChartSourceInteractions, findLargestChartCanvas, getActiveChartSource, getActiveChartSourceId, registerActiveChartSource, subscribeActiveChartSource } from '../services/activeChartSource';
 import { formatHistoryForOhlcv, getVisibleLogicalRangeForDataRender, upsertCandleIntoHistory, type LogicalRangeLike } from '../utils/candleHistory';
-import { formatChartSeriesData, getAreaTrendDirection, getAreaTrendSeriesOptions, getDisplayVolume, getLeftVisibleTimeFromLogicalRange, getLivePriceOverlayColors, getLivePriceSeriesColor, getRenderedPrependedBarCount, getSeparatorPriority, getVisibleLogicalRangeAnchoredToTime, isDenseMinuteSeparatorTimeframe, isPotentialMarketClosedPlaceholderCandle, shouldRestoreProtectedHistoryForFullRender, shouldApplyVisibleRangeResetForRender, TRADING_CHART_TIME_SCALE_LIVE_SHIFT_OPTIONS } from './TradingChart.helpers';
+import { formatChartSeriesData, getAreaTrendDirection, getAreaTrendSeriesOptions, getDisplayVolume, getLeftVisibleTimeFromLogicalRange, getLivePriceOverlayColors, getLivePriceSeriesColor, getRenderedPrependedBarCount, getSeparatorPriority, getVisibleLogicalRangeAnchoredToTime, getVolumeBarColor, getVolumeSeriesColor, isDenseMinuteSeparatorTimeframe, isPotentialMarketClosedPlaceholderCandle, shouldRestoreProtectedHistoryForFullRender, shouldApplyVisibleRangeResetForRender, shouldShowVolumeForChartType, TRADING_CHART_TIME_SCALE_LIVE_SHIFT_OPTIONS } from './TradingChart.helpers';
 import type { Candle, ChartType, Timeframe } from '../types/chart';
 import { resolveChartIndicatorType, type AddChartIndicatorRequest } from '../features/trading-chart/model/indicatorRequest';
 import { cancelBrowserIdleCallback, HISTORY_RENDER_IDLE_TIMEOUT_MS, HISTORY_VISIBLE_RANGE_SUPPRESSION_MS, mergeCandleCollections, requestBrowserIdleCallback, shouldBuildVolumeData, shouldScrollToRealtime } from '../features/trading-chart/runtime/chartRuntime';
@@ -627,10 +633,12 @@ export const TradingChart = React.memo(function TradingChart({
   } = useTradingChartLoadingPresentation({
     activeTimeframe, intervalEnabled: visibleRuntime.interval, isActive, symbol,
   });
-  const userHiddenOneClickRef = useRef(false);
+  const userHiddenOneClickRef = useRef(readSessionBoolean(SESSION_VIEW_KEYS.oneClickHidden, false));
   const [showOneClick, setShowOneClick] = useState(
-    () => initialChartSettingsSnapshot.symbolProperties[symbol]?.showQuickTradingButtons
-      ?? initialChartSettingsSnapshot.globalProperties.showQuickTradingButtons,
+    () => !userHiddenOneClickRef.current && (
+      initialChartSettingsSnapshot.symbolProperties[symbol]?.showQuickTradingButtons
+      ?? initialChartSettingsSnapshot.globalProperties.showQuickTradingButtons
+    ),
   );
   // Inline text-input overlay for the text drawing tool (replaces browser prompt)
   const [textInputOverlay, setTextInputOverlay] = useState<{ x: number; y: number; time: number; price: number } | null>(null);
@@ -664,12 +672,18 @@ export const TradingChart = React.memo(function TradingChart({
     setShowOneClick((current) => {
       const visible = !current;
       userHiddenOneClickRef.current = !visible;
+      writeSessionBoolean(SESSION_VIEW_KEYS.oneClickHidden, !visible);
       if (visible && !chartSettingsRef.current.showQuickTradingButtons) {
         useChartSettingsStore.getState().updateSymbolProperty(symbol, 'showQuickTradingButtons', true);
       }
       return visible;
     });
   }, [symbol]);
+
+  useEffect(() => subscribeWorkspaceViewReset(() => {
+    userHiddenOneClickRef.current = false;
+    setShowOneClick(chartSettingsRef.current.showQuickTradingButtons);
+  }), []);
 
   const [candlesLoadedRev, setCandlesLoadedRev] = useState(0);
   const candlesRef = useRef<Candle[]>([]);
@@ -1641,7 +1655,7 @@ export const TradingChart = React.memo(function TradingChart({
     const activeTimeframe = prevTimeframeRef.current || timeframe;
     const activeSymbol = prevSymbolRef.current || symbol;
     const settings = chartSettingsRef.current;
-    const includeVolumeData = shouldBuildVolumeData(settings);
+    const includeVolumeData = shouldBuildVolumeData(settings) && shouldShowVolumeForChartType(activeType);
     let candlesForRender = getCandlesForFullRender();
     const timeScale = chart.timeScale();
     const shouldPreserveVisibleRange = !pending.resetVisibleRange;
@@ -2440,11 +2454,14 @@ useTradingChartInitialization({
       volumeRef.current = null;
     }
 
-    // Add volume series before price series so thin vertical volume lines stay
-    // cleanly behind candlesticks and wicks.
+    // Add volume series before price series so TradingView columns (candlesticks)
+    // and MT5 vertical volume lines (bar/line charts) stay behind price; area hides volume.
+    const volumeStyle = resolveChartVolumeSeriesStyle(type);
+    const volumeVisible = shouldBuildVolumeData(chartSettingsRef.current) && shouldShowVolumeForChartType(type);
     const volSeries = createChartVolumeSeries(chart, {
-      color: chartThemeRef.current.volumeUp,
-      visible: shouldBuildVolumeData(chartSettingsRef.current),
+      color: getVolumeSeriesColor(type, chartThemeRef.current),
+      visible: volumeVisible,
+      style: volumeStyle,
     });
     volumeRef.current = volSeries;
 
@@ -2829,23 +2846,34 @@ useTradingChartInitialization({
     }
 
     // Toggle volumes and apply colors if it exists (also hot-swapping any legacy
-    // HistogramSeries surviving Vite HMR into the custom MT5 thin-line renderer).
+    // series or mismatched style across candlestick columns, bar/line spikes, and hidden area).
     if (volumeRef.current) {
-      const volumeVisible = shouldBuildVolumeData(currentSettings);
-      if (!isCurrentChartVolumeSeries(volumeRef.current)) {
+      const volumeVisible = shouldBuildVolumeData(currentSettings) && shouldShowVolumeForChartType(renderedChartType);
+      const volumeStyle = resolveChartVolumeSeriesStyle(renderedChartType);
+      const volumeSeriesColor = getVolumeSeriesColor(renderedChartType, chartTheme);
+      if (!isCurrentChartVolumeSeries(volumeRef.current, volumeStyle)) {
         try {
           chart.removeSeries(volumeRef.current);
-          volumeRef.current = createChartVolumeSeries(chart, {
-            color: chartTheme.volumeUp,
+          const nextVolSeries = createChartVolumeSeries(chart, {
+            color: volumeSeriesColor,
             visible: volumeVisible,
+            style: volumeStyle,
           });
+          if (
+            seriesRef.current
+            && typeof nextVolSeries.setSeriesOrder === 'function'
+            && typeof seriesRef.current.seriesOrder === 'function'
+          ) {
+            nextVolSeries.setSeriesOrder(seriesRef.current.seriesOrder());
+          }
+          volumeRef.current = nextVolSeries;
         } catch {
           // Ignore if chart is mid-teardown or mocked in unit tests.
         }
       }
       volumeRef.current.applyOptions({
         visible: volumeVisible,
-        color: chartTheme.volumeUp
+        color: volumeSeriesColor,
       });
       if (volumeVisible) {
         // Volume menu changes need only the histogram, not an idle repaint of
@@ -2853,7 +2881,7 @@ useTradingChartInitialization({
         volumeRef.current.setData(lastRenderedCandlesRef.current.map(candle => ({
           time: candle.time as Time,
           value: getDisplayVolume(candle, currentSettings),
-          color: candle.close >= candle.open ? chartTheme.volumeUp : chartTheme.volumeDown,
+          color: getVolumeBarColor(candle, renderedChartType, chartTheme),
         })));
       } else {
         volumeRef.current.setData([]);
@@ -3167,22 +3195,30 @@ useTradingChartLiveCandleRuntime({
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
 
-    let frameId: number | null = null;
+    let isFlushingResize = false;
     let lastWidth = Math.round(el.offsetWidth);
     let lastHeight = Math.round(el.offsetHeight);
 
     const flushResize = () => {
-      frameId = null;
-      if (isDisposedRef.current || !chartRef.current) return;
+      if (isFlushingResize || isDisposedRef.current || !chartRef.current) return;
       const width = Math.round(el.offsetWidth);
       const height = Math.round(el.offsetHeight);
       if (width <= 0 || height <= 0) return;
       if (width === lastWidth && height === lastHeight) return;
+      isFlushingResize = true;
       lastWidth = width;
       lastHeight = height;
-      refreshVisibleChartLayout(false);
-      schedulePeriodSeparatorRender();
-      postInteractionCallbacksRef.current.layoutOverlay();
+      try {
+        refreshVisibleChartLayout(false);
+        const latestCandle = currentCandleRef.current ?? lastRenderedCandlesRef.current[lastRenderedCandlesRef.current.length - 1];
+        if (latestCandle) {
+          repaintLivePriceOverlayFromCurrentPrice(latestCandle);
+        }
+        schedulePeriodSeparatorRender();
+        postInteractionCallbacksRef.current.layoutOverlay();
+      } finally {
+        isFlushingResize = false;
+      }
     };
 
     const observer = new ResizeObserver((entries) => {
@@ -3191,16 +3227,17 @@ useTradingChartLiveCandleRuntime({
       const measuredHeight = Math.round(entry?.contentRect?.height ?? el.offsetHeight);
       if (measuredWidth <= 0 || measuredHeight <= 0) return;
       if (measuredWidth === lastWidth && measuredHeight === lastHeight) return;
-      if (frameId !== null) window.cancelAnimationFrame(frameId);
-      frameId = window.requestAnimationFrame(flushResize);
+      // Flush synchronously inside the ResizeObserver callback (which runs
+      // before browser paint) so closing Market Watch or sibling chart windows
+      // never leaves a 1-frame empty strip or brief canvas shrink.
+      flushResize();
     });
 
     observer.observe(el);
     return () => {
       observer.disconnect();
-      if (frameId !== null) window.cancelAnimationFrame(frameId);
     };
-  }, [refreshVisibleChartLayout, schedulePeriodSeparatorRender]);
+  }, [refreshVisibleChartLayout, repaintLivePriceOverlayFromCurrentPrice, schedulePeriodSeparatorRender]);
 
   // Keyboard navigation retains the user's viewport while live prices update.
   useEffect(() => bindChartKeyboardScroll({

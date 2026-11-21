@@ -317,6 +317,36 @@ describe('ActionFeedbackToast', () => {
     expect(document.querySelector('.rtx-action-feedback-backdrop')).not.toBeInTheDocument();
   });
 
+  it('keeps chart-bottom-left structured notices mounted inside the chart stack instead of centering in document.body', () => {
+    const { container } = render(
+      <div className="rtx-chart-panel">
+        <div className="rtx-action-feedback-stack">
+          <ActionFeedbackToast
+            durationMs={4000}
+            message="Buy Limit #777 filled: BUY 0.10 EURUSD @ 1.1000"
+            notice={{
+              title: 'Pending Order Filled',
+              description: 'Buy Limit #777 filled: BUY 0.10 EURUSD @ 1.1000',
+              meta: '#777',
+              metaIcon: 'check-circle',
+              placement: 'chart-bottom-left',
+            }}
+            onDismiss={() => {}}
+            tone="success"
+          />
+        </div>
+      </div>,
+    );
+
+    const toast = screen.getByRole('status');
+    const region = toast.closest('.rtx-action-feedback-region');
+    expect(region).toHaveClass('rtx-action-feedback-region--chart-notice');
+    expect(region).not.toHaveClass('rtx-action-feedback-region--notice-center');
+    expect(container.querySelector('.rtx-chart-panel .rtx-action-feedback-stack')).toContainElement(toast);
+    expect(screen.getByRole('heading', { name: 'Pending Order Filled' })).toBeInTheDocument();
+    expect(toast).toHaveTextContent('#777');
+  });
+
   it('routes a captured Market Watch export to the persistent native sheet', () => {
     const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
     const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');

@@ -154,6 +154,7 @@ import { StatusBar } from './components/layout/StatusBar';
 import { UpdateBanner } from './components/layout/UpdateBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { BulkCloseConfirmDialog } from './components/ui/BulkCloseConfirmDialog';
+import { OneClickDisclaimerDialog } from './components/ui/OneClickDisclaimerDialog';
 import { confirmBulkCloseForSession } from './features/trading/mutations/confirmBulkCloseForSession';
 import { useBulkCloseConfirmStore } from './store/useBulkCloseConfirmStore';
 import { useConfirmStore } from './store/useConfirmStore';
@@ -171,6 +172,13 @@ import {
   readPersistedTimeframe,
   writePersistedTimeframe,
 } from './utils/chartTimeframePersistence';
+import {
+  readSessionBoolean,
+  readSessionRaw,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionBoolean,
+} from './services/sessionViewState';
 
 // Services
 import { windowManager, type LayoutMode } from './services/windowManager';
@@ -480,11 +488,41 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   // Last Symbol Panel visibility (reactive)
   const lastSymbolPanelVisible = useLastSymbolStore((s) => s.panelVisible);
 
-  // On startup, always hide the LastSymbolPanel â€” panelVisible is no longer persisted.
-  // This clears any stale value left in localStorage from a previous session.
+  // Restore LastSymbolPanel visibility across page refreshes (via sessionStorage),
+  // while starting hidden on a fresh launch or after Reset Layout.
   useEffect(() => {
-    useLastSymbolStore.getState().setPanelVisible(false);
+    const savedVisible = readSessionBoolean(SESSION_VIEW_KEYS.lastSymbolPanelVisible, false);
+    useLastSymbolStore.getState().setPanelVisible(savedVisible);
+    return useLastSymbolStore.subscribe((state) => {
+      writeSessionBoolean(SESSION_VIEW_KEYS.lastSymbolPanelVisible, state.panelVisible);
+    });
   }, []);
+
+  // Restore a maximized chart panel across page refreshes after the boot layout settles.
+  useEffect(() => {
+    const savedMaximized = readSessionRaw(SESSION_VIEW_KEYS.maximizedPanelId);
+    if (savedMaximized) {
+      useDockLayoutStore.getState().setPanelMaximized(savedMaximized, true);
+    }
+  }, [isAuthenticated, accountId]);
+
+  // Reset Layout returns chart timeframe, chart type, and dock height to defaults.
+  useEffect(() => subscribeWorkspaceViewReset(() => {
+    setTimeframe(DEFAULT_CHART_TIMEFRAME);
+    setChartType('candlestick');
+    setDockHeight(250);
+    const store = useDockLayoutStore.getState();
+    const resetTarget = findChartPanelById(store.layout, 'chart-default-container');
+    if (resetTarget) {
+      const panelSymbol = normalizeSymbolName(resetTarget.props?.symbol) || selectedSymbol || DEFAULT_CHART_SYMBOL;
+      store.updatePanelProps(resetTarget.id, {
+        title: `${panelSymbol || 'Chart'},${DEFAULT_CHART_TIMEFRAME}`,
+        props: { timeframe: DEFAULT_CHART_TIMEFRAME, chartType: 'candlestick' },
+      });
+    }
+    commandBus.dispatch({ type: 'SET_TIMEFRAME', payload: { timeframe: DEFAULT_CHART_TIMEFRAME } });
+    commandBus.dispatch({ type: 'SET_CHART_TYPE', payload: { chartType: 'candlestick' } });
+  }), [selectedSymbol]);
 
   // UI State
   const floatingPanels = useFloatingTerminalPanels(selectedSymbol);
@@ -1071,7 +1109,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         volume: positionVolume,
         login,
       }, { intentAtMs });
-      import('./utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
+      import('./utils/audio').then((m) => m.playSystemSound(reverseSide === 'sell' ? 'sell' : 'buy')).catch(() => undefined);
       refreshHistoryAfterFill(login);
       if (!isTradeOperationContextCurrent(operationContext)) return;
       publishOrderFeedback(
@@ -1108,13 +1146,14 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     const intentAtMs = captureTradeOrderIntent();
     chartPositionActionBusyRef.current.add(actionKey);
     try {
+      const doubleSide = String(position.side ?? '').trim().toUpperCase() === 'SELL' ? 'sell' : 'buy';
       await api.orders.placeMarketOrder({
-        side: String(position.side ?? '').trim().toUpperCase() === 'SELL' ? 'sell' : 'buy',
+        side: doubleSide,
         symbol: position.symbol,
         volume: position.volume,
         login,
       }, { intentAtMs });
-      import('./utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
+      import('./utils/audio').then((m) => m.playSystemSound(doubleSide)).catch(() => undefined);
       // Adding volume only opens: closed history is unchanged.
       refreshHistoryAfterFill(login, undefined, { skipHistory: true });
       if (!isTradeOperationContextCurrent(operationContext)) return;
@@ -2204,6 +2243,8 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     chartEligibleSymbolNames,
     displayToast,
     placeOrder,
+    volume,
+    handleOrderPanelSubmit,
     handleOpenDOM,
     handleSaveWorkspace,
     handleOpenDataFolder,
@@ -2502,6 +2543,9 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
           {/* Bulk close confirmation sheet: handleCloseBulk awaits this
               store-backed dialog via confirmBulkCloseForSession. */}
           <BulkCloseConfirmDialog />
+
+          {/* One Click Trading Disclaimer / Terms & Conditions sheet */}
+          <OneClickDisclaimerDialog globalHost />
 
           {/* Indicator Navigator (Insert > Indicators, toolbar button) */}
           <IndicatorNavigatorHost selectedSymbol={selectedSymbol} timeframe={timeframe} />

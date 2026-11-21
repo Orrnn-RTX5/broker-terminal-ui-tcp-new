@@ -190,8 +190,8 @@ describe('Navigator broker double-click add another account flow', () => {
     expect(screen.getAllByText(BROKER_NAME, { selector: '.navigator-tree-item__label' })).toHaveLength(1);
     const liveRow = screen.getByText('200001: Primary Live').closest('.navigator-tree-item__row') as HTMLElement;
     const demoRow = screen.getByText('200002: Practice Demo').closest('.navigator-tree-item__row') as HTMLElement;
-    expect(within(liveRow).getByText('Live')).toBeInTheDocument();
-    expect(within(demoRow).getByText('Demo')).toBeInTheDocument();
+    expect(within(liveRow).queryByText('Live')).not.toBeInTheDocument();
+    expect(within(demoRow).queryByText('Demo')).not.toBeInTheDocument();
     expect(liveRow).toHaveAttribute('data-account-active', 'false');
     expect(demoRow).toHaveAttribute('data-account-active', 'true');
 

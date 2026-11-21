@@ -23,12 +23,18 @@ vi.mock('../../hooks/useSymbolMarketStatus', async () => {
 });
 
 import { useAppStore } from '../../store/useAppStore';
+import { useOneClickDisclaimerStore } from '../../store/useOneClickDisclaimerStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { formatMarketWatchTime } from '../../utils/marketWatchView';
 import { MarketWatchTradingView } from './MarketWatchTradingView';
 
 describe('MarketWatchTradingView', () => {
   beforeEach(() => {
     useAppStore.getState().reset();
+    useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateTradeSettings({ oneClickTrading: true });
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useOneClickDisclaimerStore.getState().setAcceptedInSession(true);
     useAppStore.setState({
       isAuthenticated: true,
       accountId: '10001',
@@ -52,6 +58,8 @@ describe('MarketWatchTradingView', () => {
 
   afterEach(() => {
     cleanup();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useSettingsStore.getState().resetToDefaults();
     vi.restoreAllMocks();
   });
 
@@ -123,5 +131,22 @@ describe('MarketWatchTradingView', () => {
     expect(unavailable.querySelector('time')?.textContent).toBe('\u2014');
     expect(unavailable.querySelectorAll('dd')[1].textContent).toBe('\u2014');
     expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
+  });
+
+  it('shows the One Click Trading disclaimer popup on BUY/SELL before session acceptance', () => {
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    render(<MarketWatchTradingView symbols={['EURUSD.RAW']} tradeSymbols={['EURUSD.RAW']} />);
+
+    fireEvent.click(screen.getByText('BUY').closest('button')!);
+    expect(screen.getByRole('dialog', { name: 'One Click Trading' })).toBeInTheDocument();
+    expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'I Accept these Terms and Conditions' }));
+    expect(screen.queryByRole('dialog', { name: 'One Click Trading' })).not.toBeInTheDocument();
+    expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(true);
+    expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('SELL').closest('button')!);
+    expect(mocks.placeMarketOrder).toHaveBeenCalledTimes(1);
   });
 });

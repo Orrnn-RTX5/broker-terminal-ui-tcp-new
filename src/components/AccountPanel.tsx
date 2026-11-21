@@ -5,11 +5,13 @@ import { useUiTranslation } from '../hooks/useUiTranslation';
  */
 
 import { Icon } from './ui/Icon';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { accountMetricProvided } from '../services/accountMetrics';
 import { METRIC_UNAVAILABLE } from '../features/bottom-dock/trade/tradeTabModel';
 import { useOneClickTrading, useSettingsStore } from '../store/useSettingsStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
 import { getStoredAccountLogin, tradeGatewayApi } from '../api/tradeGateway';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { openBottomDockTab } from '../services/bottomDockNavigation';
@@ -31,8 +33,11 @@ interface Transaction {
 
 export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
   const tr = useUiTranslation();
+  const disclaimerOwnerId = useId();
   const { account, accountId, savedAccounts } = useAppStore();
-  const oneClickTrading = useOneClickTrading();
+  const oneClickTradingSetting = useOneClickTrading();
+  const acceptedInSession = useOneClickDisclaimerStore((state) => state.acceptedInSession);
+  const oneClickTrading = oneClickTradingSetting && acceptedInSession;
   const updateTradeSettings = useSettingsStore((state) => state.updateTradeSettings);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -164,16 +169,6 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
               >
                 {tr("Account Summary")}
               </h3>
-              <span
-                className="text-[11px] font-medium px-2 py-0.5 rounded"
-                style={{
-                  background: 'var(--color-info-dim, rgba(59, 130, 246, 0.14))',
-                  color: 'var(--color-info, #60a5fa)',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
-                }}
-              >
-                {tr(accountInfo.accountType)}
-              </span>
             </div>
 
             {/* Account Identity Card */}
@@ -354,7 +349,14 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
                   role="switch"
                   aria-checked={oneClickTrading}
                   aria-label={tr("One-Click Trading")}
-                  onClick={() => updateTradeSettings({ oneClickTrading: !oneClickTrading })}
+                  onClick={() => {
+                    if (oneClickTrading) {
+                      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+                      updateTradeSettings({ oneClickTrading: false });
+                      return;
+                    }
+                    void useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
+                  }}
                   className={`relative w-10 h-5 shrink-0 rounded-full transition-colors cursor-pointer ${
                     oneClickTrading ? 'bg-blue-600' : 'bg-zinc-600/60'
                   }`}
@@ -408,6 +410,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
         onClose={() => setIsChangePasswordOpen(false)}
         accountLogin={activeLogin ? String(activeLogin) : undefined}
       />
+
+      <OneClickDisclaimerDialog ownerId={disclaimerOwnerId} />
     </>
   );
 };

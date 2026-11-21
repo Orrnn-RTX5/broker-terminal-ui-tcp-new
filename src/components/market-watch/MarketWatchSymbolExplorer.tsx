@@ -310,25 +310,39 @@ export const MarketWatchSymbolExplorer = ({
                   style={{
                     width: '100%',
                     height: SYMBOL_GROUP_ROW_HEIGHT,
-                    padding: '0 13px',
+                    padding: '0 12px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    gap: 8,
                     border: 0,
+                    borderBottom: '1px solid var(--border-primary)',
                     background: index === highlightIndex ? 'var(--bg-quaternary)' : 'transparent',
                     color: 'var(--text-primary)',
                     cursor: 'pointer',
                     fontFamily: 'inherit',
-                    fontSize: 14,
-                    fontWeight: 600,
+                    fontSize: 12.5,
+                    fontWeight: 500,
                     textAlign: 'left',
+                    transition: 'background-color 110ms ease',
                   }}
                 >
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {translate(group.label)}
                   </span>
-                  <span style={{ flexShrink: 0, color: 'var(--text-secondary)', fontWeight: 400, fontVariantNumeric: 'tabular-nums' }}>
-                    {group.visibleCount}/{group.symbols.length}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <span
+                      className="rtx-market-watch__group-count"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {group.visibleCount}/{group.symbols.length}
+                    </span>
+                    <Icon name="chevron-right" size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.75 }} />
                   </span>
                 </button>
               ))}
@@ -339,6 +353,7 @@ export const MarketWatchSymbolExplorer = ({
                 <button
                   type="button"
                   aria-label={translate('Back to symbol groups')}
+                  className="rtx-market-watch__group-header"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setSelectedSymbolGroupKey(null);
@@ -346,10 +361,10 @@ export const MarketWatchSymbolExplorer = ({
                   }}
                   style={{
                     height: SYMBOL_GROUP_ROW_HEIGHT,
-                    padding: '0 12px',
+                    padding: '0 10px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 7,
+                    gap: 8,
                     flexShrink: 0,
                     border: 0,
                     borderBottom: '1px solid var(--border-primary)',
@@ -357,17 +372,48 @@ export const MarketWatchSymbolExplorer = ({
                     color: 'var(--text-primary)',
                     cursor: 'pointer',
                     fontFamily: 'inherit',
-                    fontSize: 13,
+                    fontSize: 12.5,
                     fontWeight: 600,
                     textAlign: 'left',
+                    transition: 'background-color 110ms ease',
                   }}
                 >
-                  <Icon name="chevron-left" size="sm" />
+                  <span
+                    aria-hidden="true"
+                    className="rtx-market-watch__group-back-icon"
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'var(--bg-quaternary)',
+                      color: 'var(--text-secondary)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon name="chevron-left" size={12} />
+                  </span>
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedSymbolGroup.label}
                   </span>
-                  <span style={{ flexShrink: 0, color: 'var(--text-secondary)', fontWeight: 400 }}>
-                    {selectedSymbolGroup.symbols.length}
+                  <span
+                    className="rtx-market-watch__group-count-pill"
+                    style={{
+                      flexShrink: 0,
+                      padding: '2px 7px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border-primary)',
+                      background: 'var(--bg-secondary)',
+                      color: 'var(--text-secondary)',
+                      fontSize: 10.5,
+                      fontWeight: 500,
+                      lineHeight: '14px',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {selectedSymbolGroup.visibleCount}/{selectedSymbolGroup.symbols.length}
                   </span>
                 </button>
               )}
@@ -398,13 +444,14 @@ export const MarketWatchSymbolExplorer = ({
                       const description = symbolDescriptionByName.get(normalizeSymbol(symbol))
                         ?? getFallbackSymbolDescription(symbol);
                       const isSubscribed = marketWatchSymbolSet.has(symbol);
+                      const isHighlighted = absoluteIndex === highlightIndex;
                       return (
                         <button
                           key={symbol}
                           id={`${searchListboxId}-option-${absoluteIndex}`}
                           type="button"
                           role="option"
-                          aria-selected={absoluteIndex === highlightIndex}
+                          aria-selected={isHighlighted}
                           aria-disabled={false}
                           aria-label={description ? `${label}, ${description}` : label}
                           aria-posinset={absoluteIndex + 1}
@@ -418,33 +465,42 @@ export const MarketWatchSymbolExplorer = ({
                           style={{
                             width: '100%',
                             height: SYMBOL_EXPLORER_ROW_HEIGHT,
-                            padding: isSubscribed ? '0 11px 0 10px' : '0 13px',
+                            padding: '0 12px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            gap: 8,
+                            gap: 10,
                             borderTop: 0,
                             borderRight: 0,
-                            borderBottom: '1px solid var(--bg-tertiary)',
-                            borderLeft: isSubscribed ? '3px solid var(--status-connected)' : 0,
-                            background: absoluteIndex === highlightIndex
+                            borderLeft: 0,
+                            borderBottom: '1px solid var(--border-primary)',
+                            background: isHighlighted
                               ? 'var(--bg-quaternary)'
-                              : isSubscribed ? 'var(--color-profit-dimmer)' : 'transparent',
+                              : 'transparent',
                             color: 'var(--text-primary)',
                             cursor: 'pointer',
                             fontFamily: 'inherit',
-                            fontSize: 14,
+                            fontSize: 12.5,
                             fontWeight: 500,
                             textAlign: 'left',
+                            transition: 'background-color 110ms ease',
                           }}
                         >
                           <span
                             className="rtx-market-watch__symbol-copy"
-                            style={{ minWidth: 0, display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}
+                            style={{ minWidth: 0, display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 1, overflow: 'hidden' }}
                           >
                             <span
                               className="rtx-market-watch__symbol"
-                              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '17px' }}
+                              style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                fontSize: 12.5,
+                                fontWeight: 600,
+                                letterSpacing: '0.01em',
+                                lineHeight: '16px',
+                              }}
                             >
                               {label}
                             </span>
@@ -466,23 +522,46 @@ export const MarketWatchSymbolExplorer = ({
                               </span>
                             )}
                           </span>
-                          {isSubscribed && (
+                          {isSubscribed ? (
                             <span
                               aria-hidden="true"
                               className="rtx-market-watch__subscribed-badge"
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: 5,
                                 flexShrink: 0,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                border: '1px solid color-mix(in srgb, var(--status-connected) 34%, transparent)',
+                                background: 'color-mix(in srgb, var(--status-connected) 12%, transparent)',
                                 color: 'var(--status-connected)',
                                 fontSize: 10,
                                 fontWeight: 600,
+                                lineHeight: '14px',
                                 letterSpacing: '0.02em',
                               }}
                             >
-                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor' }} />
                               {translate('Subscribed')}
+                            </span>
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="rtx-market-watch__add-badge"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                width: 20,
+                                height: 20,
+                                borderRadius: 4,
+                                border: '1px solid var(--border-primary)',
+                                background: isHighlighted ? 'var(--bg-tertiary)' : 'transparent',
+                                color: isHighlighted ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                                transition: 'background-color 110ms ease, color 110ms ease, border-color 110ms ease',
+                              }}
+                            >
+                              <Icon name="plus" size={11} />
                             </span>
                           )}
                         </button>

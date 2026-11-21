@@ -57,8 +57,8 @@ export function ConfirmDialog() {
                         type="button"
                         onClick={onConfirm}
                         className={`rtx-confirm-dialog__confirm${danger ? ' rtx-confirm-dialog__confirm--danger' : ''} px-6 py-1.5 rounded text-[12px] font-bold text-white border shadow-lg transition-colors ${danger
-                            ? 'bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 border-red-400/30'
-                            : 'bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 border-blue-400/30'
+                            ? 'bg-[#ff5858] hover:bg-[#ef4444] active:bg-[#dc2626] border-[#ef4444]'
+                            : 'bg-[#4597ff] hover:bg-[#3183ff] active:bg-[#2563eb] border-[#3183ff]'
                             }`}
                     >
                         {tr(confirmLabel || "OK")}</button>

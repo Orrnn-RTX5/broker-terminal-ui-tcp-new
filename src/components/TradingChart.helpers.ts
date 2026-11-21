@@ -329,6 +329,30 @@ export const getDisplayVolume = (candle: Candle, settings: VolumeDisplaySettings
     ?? 0;
 };
 
+export const shouldShowVolumeForChartType = (chartType: ChartType | undefined): boolean => (
+  chartType !== 'area'
+);
+
+export const getVolumeSeriesColor = (
+  chartType: ChartType,
+  theme: Pick<TradingViewChartTheme, 'volumeUp' | 'volumeLineUp'>,
+): string => (
+  chartType === 'bar' || chartType === 'line'
+    ? theme.volumeLineUp
+    : theme.volumeUp
+);
+
+export const getVolumeBarColor = (
+  candle: Pick<Candle, 'open' | 'close'>,
+  chartType: ChartType,
+  theme: Pick<TradingViewChartTheme, 'volumeUp' | 'volumeDown' | 'volumeLineUp' | 'volumeLineDown'>,
+): string => {
+  if (chartType === 'bar' || chartType === 'line') {
+    return candle.close >= candle.open ? theme.volumeLineUp : theme.volumeLineDown;
+  }
+  return candle.close >= candle.open ? theme.volumeUp : theme.volumeDown;
+};
+
 export const getValidSortedCandles = (candles: Candle[]): Candle[] => (
   normalizeCandlePageAscending(candles)
 );
@@ -513,12 +537,12 @@ export const formatChartSeriesData = (
       close: candle.close,
     }));
 
-  const includeVolumeData = options.includeVolumeData ?? true;
+  const includeVolumeData = (options.includeVolumeData ?? true) && shouldShowVolumeForChartType(chartType);
   const volumeData: FormattedVolumeDatum[] = includeVolumeData
     ? renderedCandles.map(candle => ({
       time: candle.time as Time,
       value: getDisplayVolume(candle, volumeSettings),
-      color: candle.close >= candle.open ? theme.volumeUp : theme.volumeDown,
+      color: getVolumeBarColor(candle, chartType, theme),
     }))
     : [];
 

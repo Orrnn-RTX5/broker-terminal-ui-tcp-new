@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const orders = vi.hoisted(() => ({ placeMarketOrder: vi.fn() }));
 vi.mock('../services/api', () => ({ default: { orders } }));
-import { OneClickTrading } from './OneClickTrading';
+import { MT5_ONE_CLICK_STALE_MS, OneClickTrading } from './OneClickTrading';
 import { useAppStore } from '../store/useAppStore';
 import { useLastSymbolStore } from '../store/useLastSymbolStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { normalizeMarketStatus } from '../utils/marketStatus';
 import { commitBrokerAccountSessionScope } from '../services/brokerSession';
 
@@ -18,6 +22,10 @@ const chart = (symbol: string, index: number) => <section key={index} data-testi
 /></section>;
 beforeEach(() => {
   useAppStore.getState().reset();
+  useSettingsStore.getState().resetToDefaults();
+  useSettingsStore.getState().updateTradeSettings({ oneClickTrading: true });
+  useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+  useOneClickDisclaimerStore.getState().setAcceptedInSession(true);
   useAppStore.setState({ isAuthenticated: true, accountId: '900001', authToken: 'test-token' });
   useAppStore.getState().setTicks(Object.fromEntries(symbols.map((symbol, index) => [symbol, quote(symbol, 1200 + index)])));
   commitBrokerAccountSessionScope({ authenticated: true, accountId: '900001', brokerId: 'test', serverUrl: 'https://test.invalid' });
@@ -25,6 +33,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+  useSettingsStore.getState().resetToDefaults();
   commitBrokerAccountSessionScope({ authenticated: false, brokerId: '', serverUrl: '' });
 });
 
@@ -81,7 +91,7 @@ describe('independent one-click chart trading', { timeout: 30000 }, () => {
     window.removeEventListener('rtx:force-refresh-positions', refresh);
   });
 
-  it('switches to the compact two-row control layout as its chart narrows and restores on resize', () => {
+  it('stays in the normal horizontal row for 5+ chart panes (~340px) and uses compact single-row sizing only when very narrow', () => {
     let notify: ResizeObserverCallback = () => {};
     let observed: Element | undefined;
     const disconnect = vi.fn();
@@ -94,12 +104,14 @@ describe('independent one-click chart trading', { timeout: 30000 }, () => {
     const view = render(chart(symbols[0], 0));
     const outer = screen.getByTestId('one-click-trading-row').parentElement!;
     const resize = (width: number) => act(() => notify([{ target: observed, contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver));
+    resize(340);
+    expect(outer).toHaveAttribute('data-compact', 'false');
+    expect(outer).toHaveStyle({ width: 'fit-content', maxWidth: 'calc(100% - 20px)' });
     resize(260);
     expect(outer).toHaveAttribute('data-compact', 'true');
-    expect(outer).toHaveStyle({ width: 'calc(100% - 20px)', maxWidth: 'calc(100% - 20px)' });
+    expect(outer).toHaveStyle({ width: 'fit-content', maxWidth: 'calc(100% - 20px)' });
     expect(screen.getByRole('button', { name: /^BUY / })).toBeEnabled();
     expect(screen.getByRole('button', { name: /^SELL / })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Increase lot size' })).toHaveStyle({ minWidth: '24px', height: '28px' });
     resize(600);
     expect(outer).toHaveAttribute('data-compact', 'false');
     view.unmount(); expect(disconnect).toHaveBeenCalledOnce();
@@ -180,5 +192,95 @@ describe('independent one-click chart trading', { timeout: 30000 }, () => {
     const alertBanner = screen.getByRole('alert');
     expect(alertBanner).toHaveTextContent('Order failed: not enough free margin to open this order.');
     expect(alertBanner).toHaveStyle({ width: '0px', minWidth: '100%', maxWidth: '100%' });
+  });
+
+  it('follows official MT5 tick-direction coloring (blue up, red down, gray after 15s unchanged) independently for Bid and Ask', () => {
+    vi.useFakeTimers();
+    try {
+      render(chart(symbols[0], 0));
+      const sellBtn = screen.getByRole('button', { name: /^SELL / });
+      const buyBtn = screen.getByRole('button', { name: /^BUY / });
+
+      // Initial state before any price change: gray (flat)
+      expect(sellBtn).toHaveAttribute('data-dir', 'flat');
+      expect(sellBtn).toHaveStyle({ background: '#6b7280' });
+      expect(buyBtn).toHaveAttribute('data-dir', 'flat');
+      expect(buyBtn).toHaveStyle({ background: '#6b7280' });
+
+      // Both Bid and Ask rise -> both SELL and BUY turn blue (up)
+      act(() => {
+        useAppStore.getState().setTicks({
+          ...useAppStore.getState().ticks,
+          [symbols[0]]: quote(symbols[0], 1205),
+        });
+      });
+      expect(sellBtn).toHaveAttribute('data-dir', 'up');
+      expect(sellBtn).toHaveStyle({ background: '#4597ff' });
+      expect(buyBtn).toHaveAttribute('data-dir', 'up');
+      expect(buyBtn).toHaveStyle({ background: '#4597ff' });
+
+      // Both Bid and Ask fall -> both SELL and BUY turn red (down)
+      act(() => {
+        useAppStore.getState().setTicks({
+          ...useAppStore.getState().ticks,
+          [symbols[0]]: quote(symbols[0], 1195),
+        });
+      });
+      expect(sellBtn).toHaveAttribute('data-dir', 'down');
+      expect(sellBtn).toHaveStyle({ background: '#ff5858' });
+      expect(buyBtn).toHaveAttribute('data-dir', 'down');
+      expect(buyBtn).toHaveStyle({ background: '#ff5858' });
+
+      // Spread widens (Bid down, Ask up) -> SELL stays red, BUY turns blue independently
+      act(() => {
+        useAppStore.getState().setTicks({
+          ...useAppStore.getState().ticks,
+          [symbols[0]]: { symbol: symbols[0], bid: 1194, ask: 1196, spread: 2, digits: 2, timestamp: Date.now() },
+        });
+      });
+      expect(sellBtn).toHaveAttribute('data-dir', 'down');
+      expect(buyBtn).toHaveAttribute('data-dir', 'up');
+
+      // After 15 seconds with no quote change -> both return to MT5 neutral gray
+      act(() => {
+        vi.advanceTimersByTime(MT5_ONE_CLICK_STALE_MS);
+      });
+      expect(sellBtn).toHaveAttribute('data-dir', 'flat');
+      expect(sellBtn).toHaveStyle({ background: '#6b7280' });
+      expect(buyBtn).toHaveAttribute('data-dir', 'flat');
+      expect(buyBtn).toHaveStyle({ background: '#6b7280' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('prevents price digit clipping in light and laptop themes by letting trade buttons expand and avoiding conflicting inner padding', () => {
+    const octCss = readFileSync(resolve(process.cwd(), 'src/components/OneClickTrading.css'), 'utf8');
+    const legacyLightCss = readFileSync(resolve(process.cwd(), 'src/styles/legacy-light-overrides.css'), 'utf8');
+    const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8');
+
+    expect(octCss).toMatch(
+      /\.rtx-oct\[data-compact='false'\] \.rtx-oct-trade-button\s*\{[^}]*width: auto !important;[^}]*min-width: 98px !important;[^}]*max-width: none !important;[^}]*flex: 0 0 auto !important;/,
+    );
+    expect(octCss).not.toMatch(/\.rtx-oct\[data-compact='false'\] \.rtx-oct-trade-button\s*\{[^}]*max-width: 98px !important;/);
+    expect(octCss).toMatch(
+      /\.rtx-oct\[data-compact='true'\] \.rtx-oct-trade-button\s*\{[^}]*max-width: none !important;/,
+    );
+    expect(octCss).toMatch(
+      /html:root body \.rtx-oct \.rtx-oct-price\s*\{[^}]*flex: 1 0 auto;[^}]*min-width: max-content;[^}]*overflow: visible;/,
+    );
+
+    expect(legacyLightCss).toMatch(
+      /html\.rtx-advanced-view\.rtx-skin-untitled-light \.rtx-oct \.rtx-oct-trade-button \.rtx-oct-price\s*\{[^}]*padding: 0;/,
+    );
+    expect(legacyLightCss).toMatch(
+      /html\.rtx-advanced-view\.rtx-skin-untitled-light \.rtx-oct \.rtx-oct-trade-button \.rtx-oct-side-label\s*\{[^}]*min-width: 0;[^}]*padding: 0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.theme-light \.rtx-oct \.rtx-oct-trade-button \.rtx-oct-price\s*\{[^}]*padding: 0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.theme-light \.rtx-oct \.rtx-oct-trade-button \.rtx-oct-side-label\s*\{[^}]*min-width: 0;[^}]*padding: 0;/,
+    );
   });
 });

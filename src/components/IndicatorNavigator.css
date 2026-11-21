@@ -13,9 +13,9 @@ html:root .rtx-indicator-dialog {
   --indicator-muted: color-mix(in srgb, var(--text-primary) 66%, var(--bg-secondary));
   --indicator-divider: color-mix(in srgb, var(--border-primary) 62%, var(--bg-secondary));
   --rtx-type-size: var(--rtx-ui-font-size);
-  width: 640px;
+  width: 480px;
   max-width: 100%;
-  height: min(560px, calc(100dvh - 48px));
+  height: min(390px, calc(100dvh - 48px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -31,11 +31,11 @@ html:root .rtx-indicator-dialog {
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  padding: 18px 24px 12px;
+  padding: 10px 16px 8px;
 }
 
 html:root .rtx-indicator-header h2 {
-  --rtx-type-size: calc(var(--rtx-ui-font-size) + 4px);
+  --rtx-type-size: calc(var(--rtx-ui-font-size) + 2px);
   --rtx-type-weight: 600;
   margin: 0;
 }
@@ -43,8 +43,8 @@ html:root .rtx-indicator-header h2 {
 .rtx-indicator-close {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   border-radius: 5px;
@@ -54,11 +54,11 @@ html:root .rtx-indicator-header h2 {
 }
 
 .rtx-indicator-close:hover { background: var(--bg-quaternary); color: var(--text-primary); }
-.rtx-indicator-search-wrap { padding: 0 24px 12px; flex-shrink: 0; }
+.rtx-indicator-search-wrap { padding: 0 16px 8px; flex-shrink: 0; }
 .rtx-indicator-search-field { position: relative; }
 .rtx-indicator-search-icon {
   position: absolute;
-  inset-inline-start: 12px;
+  inset-inline-start: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--indicator-muted);
@@ -68,9 +68,9 @@ html:root .rtx-indicator-header h2 {
 /* Protect this field from the shared legacy input skin. */
 html:root .rtx-indicator-dialog input.rtx-indicator-search {
   width: 100%;
-  height: 40px;
+  height: 32px;
   padding: 0;
-  padding-inline: 38px 12px;
+  padding-inline: 32px 10px;
   border: 1px solid var(--border-secondary) !important;
   border-radius: 6px;
   background: var(--bg-quaternary) !important;
@@ -86,15 +86,15 @@ html:root .rtx-indicator-dialog input.rtx-indicator-search:focus { border-color:
 .rtx-indicator-categories {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 18px;
-  padding: 0 24px;
+  gap: 0 14px;
+  padding: 0 16px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--indicator-divider);
 }
 
 .rtx-indicator-category {
-  min-height: 40px;
-  padding: 8px 0;
+  min-height: 32px;
+  padding: 5px 0;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
@@ -112,15 +112,15 @@ html:root .rtx-indicator-dialog input.rtx-indicator-search:focus { border-color:
 .rtx-indicator-list {
   flex: 1;
   min-height: 0;
-  padding: 18px 24px 24px;
+  padding: 10px 16px 14px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
-.rtx-indicator-section + .rtx-indicator-section { margin-top: 20px; }
+.rtx-indicator-section + .rtx-indicator-section { margin-top: 12px; }
 .rtx-indicator-section-heading {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 html:root .rtx-indicator-section-heading h3 {
@@ -133,9 +133,9 @@ html:root .rtx-indicator-section-heading h3 {
 .rtx-indicator-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-height: 52px;
-  padding: 10px 0;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--indicator-divider);
 }
 
@@ -153,8 +153,8 @@ html:root .rtx-indicator-details h4 {
 
 .rtx-indicator-description {
   --rtx-type-size: calc(var(--rtx-ui-font-size) - 1px);
-  margin: 2px 0 0;
-  line-height: 1.5;
+  margin: 1px 0 0;
+  line-height: 1.4;
   color: var(--indicator-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -166,11 +166,11 @@ html:root .rtx-indicator-details h4 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
-  min-width: 76px;
-  min-height: 32px;
-  padding: 6px 10px;
+  min-width: 66px;
+  min-height: 26px;
+  padding: 4px 8px;
   border: 1px solid var(--border-secondary);
   border-radius: 5px;
   background: var(--bg-quaternary);
@@ -193,8 +193,8 @@ html:root .rtx-indicator-details h4 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  min-height: 180px;
+  gap: 10px;
+  min-height: 120px;
   text-align: center;
   color: var(--indicator-muted);
 }
@@ -227,11 +227,11 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-indicator-dialog > .rtx-indi
 
 @media (max-width: 540px) {
   .rtx-indicator-backdrop { padding: 12px; }
-  html:root .rtx-indicator-dialog { height: min(560px, calc(100dvh - 24px)); }
-  .rtx-indicator-header { padding: 14px 16px 10px; }
-  .rtx-indicator-search-wrap { padding: 0 16px 8px; }
-  .rtx-indicator-categories { gap: 0 14px; padding: 0 16px; }
-  .rtx-indicator-list { padding: 14px 16px 20px; }
+  html:root .rtx-indicator-dialog { height: min(390px, calc(100dvh - 24px)); }
+  .rtx-indicator-header { padding: 10px 14px 6px; }
+  .rtx-indicator-search-wrap { padding: 0 14px 6px; }
+  .rtx-indicator-categories { gap: 0 12px; padding: 0 14px; }
+  .rtx-indicator-list { padding: 10px 14px 12px; }
   .rtx-indicator-row { gap: 10px; }
-  .rtx-indicator-add { min-width: 66px; padding: 6px 8px; }
+  .rtx-indicator-add { min-width: 60px; padding: 4px 7px; }
 }

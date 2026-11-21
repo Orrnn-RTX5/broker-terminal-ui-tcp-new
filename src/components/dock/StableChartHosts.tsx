@@ -74,19 +74,47 @@ export const StableChartHosts: React.FC<{
       const host = hosts.current.get(id);
       // A replacement shell may have attached before the old shell cleans up.
       if (!host || host.slot !== slot) return;
-      host.slot = null; host.active = false;
-      if (parking.current) parking.current.appendChild(host.element);
-      else host.element.remove();
-      refresh();
+      // Do not immediately park into the hidden 0x0 container: when closing a
+      // sibling chart unwraps a split, a replacement StableChartSlot mounts in
+      // the same React commit and attaches synchronously. Parking immediately
+      // briefly hides/shrinks the surviving chart canvas.
+      host.slot = null;
+      queueMicrotask(() => {
+        const current = hosts.current.get(id);
+        if (!current || current !== host || current.slot !== null) return;
+        const wasActive = current.active;
+        current.active = false;
+        if (parking.current && current.element.parentElement !== parking.current) {
+          parking.current.appendChild(current.element);
+        } else if (!parking.current && current.element.isConnected) {
+          current.element.remove();
+        }
+        if (wasActive) refresh();
+      });
     },
   }), []);
 
   useLayoutEffect(() => {
+    let parkedChanged = false;
     for (const [id, host] of hosts.current) {
-      if (panels.has(id)) continue;
-      host.element.remove();
-      hosts.current.delete(id);
+      if (!panels.has(id)) {
+        host.element.remove();
+        hosts.current.delete(id);
+        continue;
+      }
+      if (host.slot === null) {
+        if (parking.current && host.element.parentElement !== parking.current) {
+          parking.current.appendChild(host.element);
+        } else if (!parking.current && host.element.isConnected) {
+          host.element.remove();
+        }
+        if (host.active) {
+          host.active = false;
+          parkedChanged = true;
+        }
+      }
     }
+    if (parkedChanged) refresh();
   }, [layout, rootContainer]);
 
   const multipleVisibleCharts = [...hosts.current.values()]

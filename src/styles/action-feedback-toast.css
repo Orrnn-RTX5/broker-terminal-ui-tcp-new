@@ -102,6 +102,35 @@ html.rtx-skin-untitled-light .rtx-action-feedback-backdrop {
   width: min(448px, 100%);
 }
 
+.rtx-action-feedback-region--chart-notice .rtx-action-feedback:not(.rtx-action-feedback--report) {
+  grid-template-columns: 24px minmax(0, 1fr) 22px;
+  column-gap: 10px;
+  align-items: start;
+  width: min(380px, 100%);
+  padding: 10px 10px 11px 13px;
+  border-radius: 6px;
+}
+
+.rtx-action-feedback-region--chart-notice .rtx-action-feedback__icon {
+  width: 24px;
+  height: 24px;
+}
+
+.rtx-action-feedback-region--chart-notice .rtx-action-feedback__meta {
+  display: flex;
+}
+
+.rtx-action-feedback-region--chart-notice .rtx-action-feedback__title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.rtx-action-feedback-region--chart-notice .rtx-action-feedback__lifetime {
+  display: block;
+}
+
 /* ── Shared surface ─────────────────────────────────────────────────────── */
 
 .rtx-action-feedback {

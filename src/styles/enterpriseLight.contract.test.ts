@@ -316,7 +316,7 @@ describe('enterprise light visual-system contract', () => {
       /\.rtx-market-watch__grid th\s*\{[\s\S]*?backdrop-filter: none !important;[\s\S]*?-webkit-backdrop-filter: none !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
-      /\.rtx-market-watch__grid th:is\(\.rtx-market-watch__column-heading--bid, \.rtx-market-watch__column-heading--ask\)\s*\{[\s\S]*?text-align: center !important;/,
+      /\.rtx-market-watch__grid th:is\(\.rtx-market-watch__column-heading--bid, \.rtx-market-watch__column-heading--ask\)\s*\{[\s\S]*?text-align: right !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
       /\.rtx-market-watch__grid\.rtx-market-watch__grid--lines\.rtx-market-watch__grid--lines thead th\s*\{[\s\S]*?border-top: 0 !important;[\s\S]*?border-bottom: 1px solid var\(--mw-desktop-border-strong, var\(--mw-desktop-grid\)\) !important;[\s\S]*?border-left: 1px solid var\(--mw-desktop-grid-vertical, var\(--mw-desktop-grid\)\) !important;[\s\S]*?border-right: 1px solid var\(--mw-desktop-grid-vertical, var\(--mw-desktop-grid\)\) !important;/,

@@ -1,0 +1,47 @@
+/* Per-chart Fullscreen / Maximize expansion (keeps TradingChart mounted via StableChartHosts). */
+
+html [data-dock-panel][data-dock-maximized="true"],
+html.rtx-advanced-focus-chart [data-dock-container] [data-dock-panel][data-dock-maximized="true"] {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  z-index: 400 !important;
+  background: var(--bg-primary, #131316);
+}
+
+html [data-dock-panel][data-dock-maximized="true"] > div {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Ensure Lightweight Charts' outer autoSize host fills the maximized viewport cleanly */
+html [data-dock-panel][data-dock-maximized="true"] .tv-lightweight-charts {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Prevent a tabbed dock container's z-index: 1 layer from trapping the maximized chart beneath TopToolbar (z-50). */
+html [data-dock-tab-content][data-dock-tab-content-maximized="true"],
+html.rtx-advanced-focus-chart [data-dock-container-kind="tabs"] [data-dock-tab-content][data-dock-tab-content-maximized="true"] {
+  display: block !important;
+  z-index: 400 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Light-theme maximized active button tint matching existing dock-panel__action styling */
+html.rtx-advanced-view.rtx-skin-untitled-light .dock-panel__action--maximized {
+  color: var(--rtx-light-text) !important;
+  background: var(--rtx-light-hover) !important;
+}

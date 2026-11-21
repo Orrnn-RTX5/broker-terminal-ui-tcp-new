@@ -502,6 +502,73 @@ describe('FileMenu Component', () => {
             expect(onChartRestored).toHaveBeenCalledTimes(1);
         });
 
+        it('opens Open Deleted, Profiles, and Delete submenus inline side by side on both hover and click', () => {
+            useDockLayoutStore.setState({
+                recentlyClosedCharts: [{
+                    id: 'closed-eurusd',
+                    title: 'EURUSD,M5',
+                    component: 'Chart',
+                    props: { symbol: 'EURUSD', timeframe: 'M5' },
+                }],
+            });
+            workspaceProfilesMock.listWorkspaceProfiles.mockReturnValue([{
+                id: 'profile-custom-1',
+                accountId: '200002',
+                name: 'Scalping',
+                createdAt: '2026-09-02T10:00:00.000Z',
+                updatedAt: '2026-09-02T10:00:00.000Z',
+            }]);
+            const onInteractPin = vi.fn();
+            render(<FileMenu {...mockHandlers} accountId="200002" onInteractPin={onInteractPin} />);
+
+            // Open Deleted: hover opens inline, click after hover pins open instead of closing
+            const openDeletedBtn = screen.getByText('Open Deleted').closest('button')!;
+            const openDeletedMenu = screen.getByRole('menu', { name: 'Open Deleted menu' });
+            expect(openDeletedBtn).toHaveAttribute('aria-expanded', 'false');
+            expect(openDeletedMenu.className).toContain('hidden');
+
+            fireEvent.mouseEnter(openDeletedBtn.parentElement!);
+            expect(openDeletedBtn).toHaveAttribute('aria-expanded', 'true');
+            expect(openDeletedMenu.className).toContain('block');
+            expect(openDeletedMenu.style.top).toBe('0px');
+            expect(openDeletedMenu).toHaveAttribute('data-submenu-side', 'right');
+
+            fireEvent.click(openDeletedBtn);
+            expect(onInteractPin).toHaveBeenCalledTimes(1);
+            expect(openDeletedBtn).toHaveAttribute('aria-expanded', 'true');
+
+            // Profiles: hover switches cleanly from Open Deleted -> Profiles inline
+            const profilesBtn = screen.getByText('Profiles').closest('button')!;
+            const profilesMenu = screen.getByRole('menu', { name: 'Profiles menu' });
+            fireEvent.mouseEnter(profilesBtn.parentElement!);
+            expect(openDeletedBtn).toHaveAttribute('aria-expanded', 'false');
+            expect(profilesBtn).toHaveAttribute('aria-expanded', 'true');
+            expect(profilesMenu.className).toContain('block');
+            expect(profilesMenu.style.top).toBe('0px');
+
+            // Clicking Profiles after hover keeps it open and pins
+            fireEvent.click(profilesBtn);
+            expect(onInteractPin).toHaveBeenCalledTimes(2);
+            expect(profilesBtn).toHaveAttribute('aria-expanded', 'true');
+
+            // Delete submenu inside Profiles: hover opens inline, click pins open
+            const deleteBtn = screen.getByText('Delete').closest('button')!;
+            const deleteMenu = screen.getByRole('menu', { name: 'Delete menu' });
+            fireEvent.mouseEnter(deleteBtn.parentElement!);
+            expect(deleteBtn).toHaveAttribute('aria-expanded', 'true');
+            expect(deleteMenu.className).toContain('block');
+            expect(deleteMenu.style.top).toBe('0px');
+
+            fireEvent.click(deleteBtn);
+            expect(onInteractPin).toHaveBeenCalledTimes(3);
+            expect(deleteBtn).toHaveAttribute('aria-expanded', 'true');
+
+            // Hovering a sibling leaf item closes open submenus
+            fireEvent.mouseEnter(screen.getByText('Save').closest('button')!);
+            expect(profilesBtn).toHaveAttribute('aria-expanded', 'false');
+            expect(deleteBtn).toHaveAttribute('aria-expanded', 'false');
+        });
+
         it('lists and restores real account-scoped workspace profiles', async () => {
             workspaceProfilesMock.listWorkspaceProfiles.mockReturnValue([{
                 id: 'profile-market',

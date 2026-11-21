@@ -1,1 +1,0 @@
-import{ft as e,mt as t}from"./index-ggwa6nMn.js";import n from"./MarketDataHub-BuEjF0Qg.js";t();var r=e();function i(){return(0,r.jsx)(n,{connectivityMode:!0})}export{i as default};

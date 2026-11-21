@@ -19,7 +19,8 @@ import {
 import { createRenderedPriceReference, type RenderedPriceReference } from '../../../services/chartPriceGuards';
 import { drawingManager } from '../../../services/drawingManager';
 import { buildChartSeriesPriceFormat } from '../../../utils/chartPriceScale';
-import { createChartVolumeSeries } from '../../../utils/chartVolumeSeries';
+import { createChartVolumeSeries, resolveChartVolumeSeriesStyle } from '../../../utils/chartVolumeSeries';
+import { getVolumeSeriesColor, shouldShowVolumeForChartType } from '../../../components/TradingChart.helpers';
 import type { ChartProperties } from '../../../store/useChartSettingsStore';
 import { shouldBuildVolumeData } from './chartRuntime';
 import type { ChartInteractionOwnership } from '../../../utils/chartInteractionOwnership';
@@ -296,13 +297,17 @@ export const useTradingChartReconfiguration = (options: UseTradingChartReconfigu
       volumeRef.current = null;
     }
 
-    // Create volume series before price series so thin vertical volume lines
-    // render cleanly behind candlesticks and wicks.
+    // Create volume series before price series so TradingView columns (candlesticks)
+    // and MT5 vertical volume lines (bar/line charts) stay behind price; area hides volume.
     const chart = chartRef.current;
     const theme = chartThemeRef.current;
+    const volumeStyle = resolveChartVolumeSeriesStyle(chartType);
+    const volumeVisible = (chartSettingsRef ? shouldBuildVolumeData(chartSettingsRef.current) : false)
+      && shouldShowVolumeForChartType(chartType);
     const volSeries = createChartVolumeSeries(chart, {
-      color: theme.volumeUp,
-      visible: chartSettingsRef ? shouldBuildVolumeData(chartSettingsRef.current) : true,
+      color: getVolumeSeriesColor(chartType, theme),
+      visible: volumeVisible,
+      style: volumeStyle,
     });
     volumeRef.current = volSeries;
 

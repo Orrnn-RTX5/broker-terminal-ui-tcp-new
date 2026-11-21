@@ -52,6 +52,14 @@ import {
 } from '../../services/marketWatchActions';
 import { MARKET_WATCH_PROFILE_RESTORED_EVENT } from '../../services/localWorkspaceProfiles';
 import {
+  readSessionRaw,
+  readSessionString,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionString,
+} from '../../services/sessionViewState';
+import { MARKET_WATCH_VIEWS } from './marketWatchPanelModel';
+import {
   loadMarketWatchColumns,
   MARKET_WATCH_COLUMN_IDS,
   loadMarketWatchOptions,
@@ -161,11 +169,29 @@ const MarketWatchPanelContent: React.FC<MarketWatchPanelBaseProps & {
     const [highlightIndex, setHighlightIndex] = useState(-1);
     const [marketWatchOptions, setMarketWatchOptions] = useState<MarketWatchOptions>(() => loadMarketWatchOptions());
     const [columns, setColumns] = useState<MarketWatchColumnId[]>(() => loadMarketWatchColumns());
-    const [sortMode, setSortMode] = useState<MarketWatchSortMode>(null);
+    const [sortMode, setSortMode] = useState<MarketWatchSortMode>(() => {
+      const raw = readSessionRaw(SESSION_VIEW_KEYS.marketWatchSort);
+      const allowed: readonly Exclude<MarketWatchSortMode, null>[] = [
+        'symbol', 'industry', 'sector', 'gainers', 'losers', 'change-asc', 'change-desc', 'volume',
+      ];
+      return raw && (allowed as readonly string[]).includes(raw) ? (raw as MarketWatchSortMode) : null;
+    });
     const [savedSets, setSavedSets] = useState<Record<string, MarketWatchSavedSet>>(() => loadMarketWatchSavedSets());
     const [isSaveSetOpen, setIsSaveSetOpen] = useState(false);
     const [saveSetName, setSaveSetName] = useState('');
-    const [marketWatchView, setMarketWatchView] = useState<MarketWatchViewId>('symbols');
+    const [marketWatchView, setMarketWatchView] = useState<MarketWatchViewId>(() => (
+      readSessionString(SESSION_VIEW_KEYS.marketWatchView, MARKET_WATCH_VIEWS, 'symbols')
+    ));
+    useEffect(() => {
+      writeSessionString(SESSION_VIEW_KEYS.marketWatchView, marketWatchView);
+    }, [marketWatchView]);
+    useEffect(() => {
+      writeSessionString(SESSION_VIEW_KEYS.marketWatchSort, sortMode);
+    }, [sortMode]);
+    useEffect(() => subscribeWorkspaceViewReset(() => {
+      setMarketWatchView('symbols');
+      setSortMode(null);
+    }), []);
     const normalizedSelectedSymbol = normalizeSymbol(selectedSymbol);
     const [tickChartSelection, setTickChartSelection] = useState(() => ({
       ownerSymbol: normalizedSelectedSymbol,

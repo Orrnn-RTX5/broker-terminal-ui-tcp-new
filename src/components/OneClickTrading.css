@@ -1,39 +1,55 @@
-/* Match the Blue and Red chart palette across themes. */
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='buy'] {
+/* Official MT5 tick direction colors: blue on up ticks, red on down ticks, gray when unchanged for 15s. */
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='up'] {
   background: #4597ff !important;
 }
 
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='buy']:hover:not(:disabled) {
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='up']:hover:not(:disabled) {
   background: #3183ff !important;
 }
 
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='buy'][data-active='true']:not(:disabled) {
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='up']:is(:active, [data-active='true']):not(:disabled) {
   background: #2563eb !important;
 }
 
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='sell'] {
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='down'] {
   background: #ff5858 !important;
 }
 
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='sell']:hover:not(:disabled) {
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='down']:hover:not(:disabled) {
   background: #ef4444 !important;
 }
 
-html:root body .rtx-oct .rtx-oct-trade-button[data-side='sell'][data-active='true']:not(:disabled) {
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='down']:is(:active, [data-active='true']):not(:disabled) {
   background: #dc2626 !important;
+}
+
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='flat'] {
+  background: #6b7280 !important;
+}
+
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='flat']:hover:not(:disabled) {
+  background: #5b6270 !important;
+}
+
+html:root body .rtx-oct .rtx-oct-trade-button[data-dir='flat']:is(:active, [data-active='true']):not(:disabled) {
+  background: #4b5563 !important;
 }
 
 .rtx-oct .rtx-oct-trade-button :is(.rtx-oct-price, .rtx-oct-side-label) {
   background: inherit !important;
 }
 
-/* Light execution controls keep their side identity across quote directions. */
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='buy'] {
+/* Official MT5 tick direction colors in light mode: up = blue, down = red, 15s unchanged = gray. */
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='up'] {
   background: var(--rtx-light-buy) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='sell'] {
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='down'] {
   background: var(--rtx-light-sell) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='flat'] {
+  background: #8c95a3 !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button,
@@ -48,20 +64,28 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade
   color: inherit !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='buy']:hover:not(:disabled) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='up']:hover:not(:disabled) {
   background: var(--rtx-light-buy-hover) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='sell']:hover:not(:disabled) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='down']:hover:not(:disabled) {
   background: var(--rtx-light-sell-hover) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='buy']:is(:active, [data-active='true']):not(:disabled) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='flat']:hover:not(:disabled) {
+  background: #788292 !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='up']:is(:active, [data-active='true']):not(:disabled) {
   background: var(--rtx-light-buy-pressed) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-side='sell']:is(:active, [data-active='true']):not(:disabled) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='down']:is(:active, [data-active='true']):not(:disabled) {
   background: var(--rtx-light-sell-pressed) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-trade-button[data-dir='flat']:is(:active, [data-active='true']):not(:disabled) {
+  background: #646f80 !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-oct .rtx-oct-volume-control {
@@ -116,13 +140,13 @@ html:root body .rtx-oct[data-compact='false'] .rtx-oct-volume-control :is(input,
   }
 
   html:root body .rtx-oct[data-compact='false'] .rtx-oct-trade-button {
-    width: 98px !important;
+    width: auto !important;
     min-width: 98px !important;
-    max-width: 98px !important;
-    flex: 0 0 98px !important;
+    max-width: none !important;
+    flex: 0 0 auto !important;
     justify-content: space-between !important;
-    padding: 1px 5px !important;
-    gap: 3px !important;
+    padding: 1px 7px !important;
+    gap: 6px !important;
     overflow: hidden !important;
   }
 
@@ -152,6 +176,7 @@ html:root body .rtx-oct[data-compact='false'] .rtx-oct-volume-control :is(input,
     font-weight: 700 !important;
     line-height: 1 !important;
     flex-shrink: 0 !important;
+    white-space: nowrap !important;
   }
 
   html:root body .rtx-oct .rtx-oct-price {
@@ -160,11 +185,11 @@ html:root body .rtx-oct[data-compact='false'] .rtx-oct-volume-control :is(input,
     font-size: 10.5px !important;
     font-weight: 600 !important;
     line-height: 1 !important;
-    flex: 1 1 auto !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
+    flex: 1 0 auto;
+    min-width: max-content;
+    overflow: visible;
     white-space: nowrap !important;
-    text-overflow: clip !important;
+    text-overflow: clip;
   }
 
   html:root body .rtx-oct .rtx-oct-trade-button[data-side='buy'] .rtx-oct-price {
@@ -185,58 +210,91 @@ html:root body .rtx-oct[data-compact='false'] .rtx-oct-volume-control :is(input,
   }
 }
 
-/* Keep all three controls available when several chart columns share a screen. */
+/* Keep the same sleek single-row horizontal layout when many chart panes narrow a column. */
 html:root body .rtx-oct[data-compact='true'] > [data-testid='one-click-trading-row'] {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas: 'sell buy' 'volume volume';
-  width: 100%;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  width: fit-content;
+  max-width: 100%;
+}
+
+html:root body .rtx-oct[data-compact='true'] :is(.rtx-oct-trade-button, .rtx-oct-volume-control) {
+  height: 26px !important;
+  min-height: 26px !important;
+  max-height: 26px !important;
 }
 
 html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button {
-  width: 100% !important;
+  width: auto !important;
   min-width: 0 !important;
   max-width: none !important;
   flex: 1 1 auto !important;
-  height: auto !important;
-  min-height: 48px !important;
-  max-height: none !important;
-  flex-direction: column !important;
-  gap: 0 !important;
-  padding: 0 !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 4px !important;
+  padding: 1px 5px !important;
+  overflow: hidden !important;
 }
 
-html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button[data-side='sell'] { grid-area: sell; }
-html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button[data-side='buy'] { grid-area: buy; }
+html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button .rtx-oct-side-label {
+  --rtx-type-size: 9px;
+  --rtx-type-weight: 700;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
 
-html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button .rtx-oct-side-label,
 html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button .rtx-oct-price {
-  display: block;
-  flex: 0 1 auto;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: auto;
-  padding: 4px 2px;
-  font-size: 12px !important;
-  line-height: 1.2 !important;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  --rtx-type-size: 10px;
+  --rtx-type-weight: 600;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: clip !important;
 }
 
-html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button .rtx-oct-side-label { order: -1; }
+html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button[data-side='buy'] .rtx-oct-price {
+  text-align: right !important;
+}
+
+html:root body .rtx-oct[data-compact='true'] .rtx-oct-trade-button[data-side='sell'] .rtx-oct-price {
+  text-align: left !important;
+}
 
 html:root body .rtx-oct[data-compact='true'] .rtx-oct-volume-control {
-  grid-area: volume;
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  height: 34px !important;
-  min-height: 34px !important;
-  max-height: 34px !important;
+  width: 62px !important;
+  min-width: 58px !important;
+  max-width: 66px !important;
+  flex: 0 0 auto !important;
+  padding: 1px 2px !important;
+  gap: 1px !important;
+}
+
+html:root body .rtx-oct[data-compact='true'] .rtx-oct-volume-control :is(input, button) {
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
 }
 
 html:root body .rtx-oct[data-compact='true'] .rtx-oct-volume-control button {
-  min-width: 24px;
-  min-height: 28px;
+  width: 16px !important;
+  min-width: 16px !important;
+}
+
+html:root body .rtx-oct[data-compact='true'] .rtx-oct-lot-input {
+  --rtx-type-size: 10px;
+  --rtx-type-weight: 700;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  width: 28px !important;
 }

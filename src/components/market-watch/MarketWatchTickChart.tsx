@@ -10,7 +10,6 @@ import {
 } from '../../services/keyboardShortcutManager';
 import {
   getChartDirectionalQuoteColors,
-  selectChartPropertiesForQuote,
   useChartSettingsStore,
 } from '../../store/useChartSettingsStore';
 import { type Tick, useMarketDataStore } from '../../store/useMarketDataStore';
@@ -129,8 +128,12 @@ export function MarketWatchTickChart({
   const normalizedSymbol = normalizeSymbol(symbol);
   const [setCanvas, size] = useChartSize();
   const [isLightSkin, setIsLightSkin] = useState(false);
-  const chartQuoteProperties = useChartSettingsStore((state) => selectChartPropertiesForQuote(state, normalizedSymbol));
-  const { upColor, downColor, isDefaultPalette } = getChartDirectionalQuoteColors(chartQuoteProperties, {
+  const chartCandleProperties = useChartSettingsStore((state) => (
+    (normalizedSymbol ? state.symbolProperties[normalizedSymbol] : undefined)
+    || (state.activeColorSymbol ? state.symbolProperties[state.activeColorSymbol] : undefined)
+    || state.globalProperties
+  ));
+  const { upColor, downColor } = getChartDirectionalQuoteColors(chartCandleProperties, {
     isAdvancedUntitledLight: isLightSkin,
   });
   const [options, setOptions] = useState<MarketWatchTickChartOptions>(() => loadMarketWatchTickChartOptions());
@@ -446,10 +449,10 @@ export function MarketWatchTickChart({
       data-auto-scroll={options.autoScroll}
       data-crosshair={options.crosshair}
       data-grid={options.grid}
-      style={!isDefaultPalette ? {
+      style={{
         '--rtx-tick-chart-bid': upColor,
         '--rtx-tick-chart-ask': downColor,
-      } as CSSProperties : undefined}
+      } as CSSProperties}
     >
       <ContextMenu
         items={contextMenuItems}

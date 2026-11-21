@@ -142,8 +142,8 @@ describe('Toolbox utility commands', () => {
     expect(screen.getByText('Toolbox', { selector: '.rtx-dock-tab' })).toHaveClass('active-tab');
     expect(screen.getByTitle('Cascade')).toBeEnabled();
     expect(getRequestedBottomDockTab()).toBeNull();
-    act(() => openBottomDockTab('Historical Data'));
-    expect(screen.getByText('Historical Data', { selector: '.rtx-dock-tab' })).toHaveClass('active-tab');
+    act(() => openBottomDockTab('History'));
+    expect(screen.getByText('History', { selector: '.rtx-dock-tab' })).toHaveClass('active-tab');
     expect(getRequestedBottomDockTab()).toBeNull();
   });
 });

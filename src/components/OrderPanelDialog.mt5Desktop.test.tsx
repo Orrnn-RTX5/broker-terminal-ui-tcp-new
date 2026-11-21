@@ -684,4 +684,66 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
       vi.useRealTimers();
     }
   });
+
+  it('draws only a single live price line and axis tag on the order mini-chart instead of both bid and ask', () => {
+    const drawnTexts: string[] = [];
+    const mockCtx = {
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
+      fillText: vi.fn((text: string) => {
+        drawnTexts.push(String(text));
+      }),
+      font: '',
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter',
+      globalAlpha: 1,
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    };
+
+    const getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      mockCtx as unknown as CanvasRenderingContext2D,
+    );
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+    const cancelRafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+    try {
+      render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      expect(drawnTexts).toContain('4173.23');
+      expect(drawnTexts).not.toContain('4173.77');
+    } finally {
+      getContextSpy.mockRestore();
+      rafSpy.mockRestore();
+      cancelRafSpy.mockRestore();
+    }
+  });
 });

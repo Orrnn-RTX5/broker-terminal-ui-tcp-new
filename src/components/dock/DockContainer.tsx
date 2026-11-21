@@ -15,6 +15,7 @@ import { DockResizeHandle } from './DockResizeHandle';
 import { activateActiveChartSource } from '../../services/activeChartSource';
 import { X } from 'lucide-react';
 import { StableChartHosts, StableChartSlot, useHasStableChartHosts } from './StableChartHosts';
+import './dock-maximize.css';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -236,6 +237,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
 
   const {
     layout,
+    maximizedPanelId,
     dragState,
     dropTargetId,
     compassDir,
@@ -480,6 +482,35 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
     };
   }, [isRoot, dragState, endDrag, cancelDrag, floatPanel, dockPanel, updateFloatingPosition]);
 
+  // Allow Escape to exit chart fullscreen when no dialog/menu has focus, and
+  // notify chart canvases to measure their new bounds on fullscreen transitions.
+  const hadMaximizedPanelRef = useRef(false);
+  useEffect(() => {
+    if (!isRoot) return;
+    const isTransition = hadMaximizedPanelRef.current || maximizedPanelId !== null;
+    hadMaximizedPanelRef.current = maximizedPanelId !== null;
+    const rafId = isTransition
+      ? window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event('resize'));
+        })
+      : null;
+    if (!maximizedPanelId) {
+      return () => {
+        if (rafId !== null) window.cancelAnimationFrame(rafId);
+      };
+    }
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[aria-modal="true"], [role="dialog"], [role="menu"], .drawing-context-menu, .rtx-chart-context-menu')) return;
+      useDockLayoutStore.getState().setPanelMaximized(maximizedPanelId, false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isRoot, maximizedPanelId]);
+
   // Handle resize
   const handleResize = useCallback((childIndex: number, newRatio: number) => {
     if (!currentContainer.children[childIndex]) return;
@@ -701,8 +732,9 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
             const isContentVisible = focusChartEnabled && hasChartFocusPanel
               ? isFocusChartTarget
               : isActive;
+            const isTabMaximized = panel.component === 'Chart' && maximizedPanelId === panel.id;
 
-            if (!isContentVisible && !mountedTabIds.has(panel.id)) return null;
+            if (!isContentVisible && !isTabMaximized && !mountedTabIds.has(panel.id)) return null;
 
             return (
               <div
@@ -712,11 +744,12 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
                 data-dock-tab-content-is-focus-chart={isFocusChartPanel ? 'true' : 'false'}
                 data-dock-tab-content-focus-target={isFocusChartTarget ? 'true' : 'false'}
                 data-dock-tab-content-active={isActive ? 'true' : 'false'}
+                data-dock-tab-content-maximized={isTabMaximized ? 'true' : 'false'}
                 className="absolute inset-0"
                 style={{
-                  opacity: isContentVisible ? 1 : 0,
-                  pointerEvents: isContentVisible ? 'auto' : 'none',
-                  zIndex: isContentVisible ? 1 : 0,
+                  opacity: isContentVisible || isTabMaximized ? 1 : 0,
+                  pointerEvents: isContentVisible || isTabMaximized ? 'auto' : 'none',
+                  zIndex: isTabMaximized ? 400 : (isContentVisible ? 1 : 0),
                 }}
               >
                 <PanelSlot
@@ -830,6 +863,8 @@ const PanelSlot: React.FC<PanelSlotProps> = ({
 }) => {
   const isDropTarget = isDragging && dropTargetId === panel.id;
   const setPanelMinimized = useDockLayoutStore(state => state.setPanelMinimized);
+  const setPanelMaximized = useDockLayoutStore(state => state.setPanelMaximized);
+  const isMaximized = useDockLayoutStore(state => panel.component === 'Chart' && state.maximizedPanelId === panel.id);
   const showCompass = isDropTarget;
   const showPreview = isDropTarget && compassDir !== null;
   const isFocusChartPanel = isChartFocusPanel(panel);
@@ -839,22 +874,28 @@ const PanelSlot: React.FC<PanelSlotProps> = ({
       data-dock-panel={panel.id}
       data-dock-panel-component={getDockComponentName(panel.component)}
       data-dock-minimized={panel.minimized ? 'true' : 'false'}
+      data-dock-maximized={isMaximized ? 'true' : 'false'}
       data-dock-focus-chart-panel={isFocusChartPanel ? 'true' : 'false'}
       className={cn('h-full relative', className)}
     >
       <DockPanel
         panel={panel}
-        isActive={isActive}
+        isActive={isActive || isMaximized}
+        isMaximized={isMaximized}
         showHeader={showHeader}
         isDropTarget={isDropTarget}
         onClose={onClose}
         onFloat={onFloat}
         onDragStart={onDragStart}
         onMinimizedChange={minimized => setPanelMinimized(panel.id, minimized)}
+        onMaximizedChange={panel.component === 'Chart' ? (maximized => {
+          setPanelMaximized(panel.id, maximized);
+          if (maximized) activateActiveChartSource(`trading-chart:${panel.id}`);
+        }) : undefined}
         onActivate={panel.component === 'Chart' ? () => activateActiveChartSource(`trading-chart:${panel.id}`) : undefined}
       >
         {panel.component === 'Chart'
-          ? <StableChartSlot panel={panel} active={isActive && !panel.minimized} renderPanel={renderPanel} />
+          ? <StableChartSlot panel={panel} active={(isActive || isMaximized) && !panel.minimized} renderPanel={renderPanel} />
           : renderPanel?.(panel, isActive && !panel.minimized, false)}
       </DockPanel>
 
@@ -888,6 +929,7 @@ const FloatingPanelsContent: React.FC<{
 }> = ({ renderPanel }) => {
   const {
     layout,
+    maximizedPanelId,
     removePanel,
     dockPanel,
     redockPanel,
@@ -895,6 +937,7 @@ const FloatingPanelsContent: React.FC<{
     updateFloatingSize,
     startDrag,
     setPanelMinimized,
+    setPanelMaximized,
     bringFloatingToFront,
   } = useDockLayoutStore();
 
@@ -984,6 +1027,7 @@ const FloatingPanelsContent: React.FC<{
         const panel = floating.children[0] as DockPanelConfig;
         if (!panel) return null;
         const isFocusChartPanel = isChartFocusPanel(panel);
+        const isMaximized = panel.component === 'Chart' && maximizedPanelId === panel.id;
 
         return (
           <div
@@ -991,6 +1035,7 @@ const FloatingPanelsContent: React.FC<{
             data-dock-panel={panel.id}
             data-dock-floating-panel="true"
             data-dock-minimized={panel.minimized ? 'true' : 'false'}
+            data-dock-maximized={isMaximized ? 'true' : 'false'}
             data-dock-panel-component={getDockComponentName(panel.component)}
             data-dock-focus-chart-panel={isFocusChartPanel ? 'true' : 'false'}
             className="fixed z-50"
@@ -1006,11 +1051,16 @@ const FloatingPanelsContent: React.FC<{
               panel={panel}
               isActive={true}
               isFloating={true}
+              isMaximized={isMaximized}
               showHeader={true}
               onClose={() => removePanel(panel.id)}
               onFloat={() => redockPanel(panel.id)}
               onDragStart={handleFloatingDrag(floating, panel)}
               onMinimizedChange={minimized => setPanelMinimized(panel.id, minimized)}
+              onMaximizedChange={panel.component === 'Chart' ? (maximized => {
+                setPanelMaximized(panel.id, maximized);
+                if (maximized) activateActiveChartSource(`trading-chart:${panel.id}`);
+              }) : undefined}
               onActivate={panel.component === 'Chart' ? () => activateActiveChartSource(`trading-chart:${panel.id}`) : undefined}
             >
               {panel.component === 'Chart'
@@ -1019,7 +1069,7 @@ const FloatingPanelsContent: React.FC<{
             </DockPanel>
 
             {/* 8 resize handles */}
-            {!panel.minimized && <>
+            {!panel.minimized && !isMaximized && <>
             <div data-dock-floating-resize-handle="true" className="absolute -top-1 left-2.5 right-2.5 h-2 bg-transparent cursor-ns-resize z-20" onMouseDown={(e) => startResize(e, floating, 'n')} />
             <div data-dock-floating-resize-handle="true" className="absolute -bottom-1 left-2.5 right-2.5 h-2 bg-transparent cursor-ns-resize z-20" onMouseDown={(e) => startResize(e, floating, 's')} />
             <div data-dock-floating-resize-handle="true" className="absolute top-2.5 bottom-2.5 -left-1 w-2 bg-transparent cursor-ew-resize z-20" onMouseDown={(e) => startResize(e, floating, 'w')} />

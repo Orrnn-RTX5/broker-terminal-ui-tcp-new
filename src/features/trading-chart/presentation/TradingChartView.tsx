@@ -276,12 +276,15 @@ return (
       {/* API Error banner — suppressed, errors only logged to console */}
 
       {/* Loading — phased status: connecting → receiving → fades out on ready */}
+      {/* Sits above price-anchored trade control bars/hover targets (z 21–22) so
+          detached position pills never float over the blank loader, while staying
+          below the chart HUD (z 28) and One-Click Trading panel (z 30). */}
       {loadingPhase !== 'hidden' && !retainedPublicChartSurface && (
         <div
           data-rtx-chart-loading={loadingPhase}
           role="status"
-          style={{ backgroundColor: chartTheme.background, color: chartTheme.text }}
-          className={`absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none transition-opacity duration-150 ${loadingPhase === 'ready' ? 'opacity-0' : 'opacity-100'}`}
+          style={{ backgroundColor: chartTheme.background, color: chartTheme.text, zIndex: 25 }}
+          className={`absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-150 ${loadingPhase === 'ready' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}
         >
           <div className="flex items-end gap-1 mb-5 opacity-30" aria-hidden="true">
             {Array.from({ length: 14 }).map((_, i) => (
@@ -310,8 +313,8 @@ return (
         <div
           role="status"
           data-rtx-chart-loading={loadingPhase}
-          className="absolute bottom-10 left-3 z-20 flex items-center gap-2 rounded px-2 py-1 text-xs pointer-events-none"
-          style={{ backgroundColor: chartTheme.background, color: chartTheme.text }}
+          className="absolute bottom-10 left-3 flex items-center gap-2 rounded px-2 py-1 text-xs pointer-events-none"
+          style={{ backgroundColor: chartTheme.background, color: chartTheme.text, zIndex: 25 }}
         >
           <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
           {tr('Loading…')}

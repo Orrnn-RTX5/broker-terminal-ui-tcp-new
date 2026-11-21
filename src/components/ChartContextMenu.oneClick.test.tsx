@@ -113,19 +113,27 @@ describe('ChartContextMenu one-click gate + prefill (SUI-T9/T10)', () => {
     }
   });
 
-  it('limit/stop items open prefilled with type, side and click price', async () => {
-    const { onOpenNewOrder } = renderMenu();
-    openTradingSubmenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Buy Limit' }));
-    // Menu actions dispatch async via closeThen (rAF + timeout).
-    await waitFor(() => {
-      expect(onOpenNewOrder).toHaveBeenCalledWith({
-        symbol: 'XAUUSD',
-        orderType: 'Buy Limit',
-        side: 'BUY',
-        price: 901.5,
+  it('limit items fast-apply directly via quickPendingOrder without opening the popup dialog', async () => {
+    const quickPending: Array<Record<string, unknown>> = [];
+    const onQuickPending = (e: Event) => quickPending.push((e as CustomEvent).detail ?? {});
+    window.addEventListener('quickPendingOrder', onQuickPending);
+    try {
+      const { onOpenNewOrder } = renderMenu();
+      openTradingSubmenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Buy Limit' }));
+      await waitFor(() => {
+        expect(quickPending).toEqual([{
+          symbol: 'XAUUSD',
+          orderType: 'Buy Limit',
+          side: 'BUY',
+          price: 901.5,
+          volume: 0.01,
+        }]);
       });
-    });
+      expect(onOpenNewOrder).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('quickPendingOrder', onQuickPending);
+    }
   });
 
   it('stop items open prefilled with stop type', async () => {
@@ -142,53 +150,81 @@ describe('ChartContextMenu one-click gate + prefill (SUI-T9/T10)', () => {
     });
   });
 
-  it('shows Buy Limit at top and Buy Limit / Sell Stop in Trading when right-clicking below live price', async () => {
-    const { onOpenNewOrder } = renderMenu({
-      clickPrice: 3868.13,
-      livePrice: 3868.21,
-      priceDigits: 2,
-      defaultVolume: 0.01,
-    });
-
-    const topItem = screen.getByRole('menuitem', { name: 'Buy Limit 0.01' });
-    expect(topItem).toHaveTextContent('3868.13');
-    openTradingSubmenu();
-    expect(screen.getByRole('menuitem', { name: 'Sell Stop 0.01' })).toHaveTextContent('3868.13');
-    expect(screen.getByRole('menuitem', { name: 'New Order' })).toBeInTheDocument();
-
-    fireEvent.click(topItem);
-    await waitFor(() => {
-      expect(onOpenNewOrder).toHaveBeenCalledWith({
-        symbol: 'XAUUSD',
-        orderType: 'Buy Limit',
-        side: 'BUY',
-        price: 3868.13,
+  it('shows Buy Limit at top and fast-applies directly on the chart without opening a popup when right-clicking below live price', async () => {
+    const quickPending: Array<Record<string, unknown>> = [];
+    const onQuickPending = (e: Event) => quickPending.push((e as CustomEvent).detail ?? {});
+    window.addEventListener('quickPendingOrder', onQuickPending);
+    try {
+      const { onOpenNewOrder } = renderMenu({
+        clickPrice: 3868.13,
+        livePrice: 3868.21,
+        priceDigits: 2,
+        defaultVolume: 0.01,
       });
-    });
+
+      const topItem = screen.getByRole('menuitem', { name: 'Buy Limit 0.01' });
+      expect(topItem).toHaveTextContent('3868.13');
+      openTradingSubmenu();
+      expect(screen.getByRole('menuitem', { name: 'Sell Stop 0.01' })).toHaveTextContent('3868.13');
+      expect(screen.getByRole('menuitem', { name: 'New Order' })).toBeInTheDocument();
+
+      fireEvent.click(topItem);
+      await waitFor(() => {
+        expect(quickPending).toEqual([{
+          symbol: 'XAUUSD',
+          orderType: 'Buy Limit',
+          side: 'BUY',
+          price: 3868.13,
+          volume: 0.01,
+        }]);
+      });
+      expect(onOpenNewOrder).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('quickPendingOrder', onQuickPending);
+    }
   });
 
-  it('shows Sell Limit at top and Sell Limit / Buy Stop in Trading when right-clicking above live price', async () => {
-    const { onOpenNewOrder } = renderMenu({
-      clickPrice: 3868.86,
-      livePrice: 3868.21,
-      priceDigits: 2,
-      defaultVolume: 0.01,
-    });
-
-    const topItem = screen.getByRole('menuitem', { name: 'Sell Limit 0.01' });
-    expect(topItem).toHaveTextContent('3868.86');
-    openTradingSubmenu();
-    const buyStop = screen.getByRole('menuitem', { name: 'Buy Stop 0.01' });
-    expect(buyStop).toHaveTextContent('3868.86');
-
-    fireEvent.click(buyStop);
-    await waitFor(() => {
-      expect(onOpenNewOrder).toHaveBeenCalledWith({
-        symbol: 'XAUUSD',
-        orderType: 'Buy Stop',
-        side: 'BUY',
-        price: 3868.86,
+  it('shows Sell Limit at top and fast-applies Sell Limit directly while Buy Stop still opens prefilled dialog', async () => {
+    const quickPending: Array<Record<string, unknown>> = [];
+    const onQuickPending = (e: Event) => quickPending.push((e as CustomEvent).detail ?? {});
+    window.addEventListener('quickPendingOrder', onQuickPending);
+    try {
+      const { onOpenNewOrder } = renderMenu({
+        clickPrice: 3868.86,
+        livePrice: 3868.21,
+        priceDigits: 2,
+        defaultVolume: 0.01,
       });
-    });
+
+      const topItem = screen.getByRole('menuitem', { name: 'Sell Limit 0.01' });
+      expect(topItem).toHaveTextContent('3868.86');
+      fireEvent.click(topItem);
+      await waitFor(() => {
+        expect(quickPending).toEqual([{
+          symbol: 'XAUUSD',
+          orderType: 'Sell Limit',
+          side: 'SELL',
+          price: 3868.86,
+          volume: 0.01,
+        }]);
+      });
+      expect(onOpenNewOrder).not.toHaveBeenCalled();
+
+      openTradingSubmenu();
+      const buyStop = screen.getByRole('menuitem', { name: 'Buy Stop 0.01' });
+      expect(buyStop).toHaveTextContent('3868.86');
+
+      fireEvent.click(buyStop);
+      await waitFor(() => {
+        expect(onOpenNewOrder).toHaveBeenCalledWith({
+          symbol: 'XAUUSD',
+          orderType: 'Buy Stop',
+          side: 'BUY',
+          price: 3868.86,
+        });
+      });
+    } finally {
+      window.removeEventListener('quickPendingOrder', onQuickPending);
+    }
   });
 });

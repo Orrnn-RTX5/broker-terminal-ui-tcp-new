@@ -3,6 +3,8 @@ import { useSettingsStore } from '../store/useSettingsStore';
 
 export type SystemSoundType =
   | 'open'
+  | 'buy'
+  | 'sell'
   | 'close'
   | 'close-single'
   | 'close-all'
@@ -13,6 +15,8 @@ export type SystemSoundType =
 
 type SoundAssetKey =
   | 'open'
+  | 'buy'
+  | 'sell'
   | 'close-single'
   | 'close-all'
   | 'close-profit'
@@ -27,6 +31,8 @@ interface SoundAssetConfig {
 
 const TRADE_SOUND_TYPES = new Set<SystemSoundType>([
   'open',
+  'buy',
+  'sell',
   'close',
   'close-single',
   'close-all',
@@ -35,15 +41,24 @@ const TRADE_SOUND_TYPES = new Set<SystemSoundType>([
 ]);
 
 /**
- * Authentic MetaTrader 5 (MT5) audio assets extracted from the official MT5
- * desktop application (`ok.wav` for trade execution + subtle studio variants
- * for each close case, and `connect.wav` for login).
+ * Distinct trading audio assets for buy, sell, open, close in profit,
+ * close in loss, close all, single close, and login.
  */
 const SOUND_ASSET_CONFIGS: Record<Exclude<SystemSoundType, 'welcome'>, SoundAssetConfig> = {
   open: {
     assetKey: 'open',
     relativePath: 'sounds/mt5-trade-open.wav',
     gain: 0.92,
+  },
+  buy: {
+    assetKey: 'buy',
+    relativePath: 'sounds/mt5-trade-buy.wav',
+    gain: 0.94,
+  },
+  sell: {
+    assetKey: 'sell',
+    relativePath: 'sounds/mt5-trade-sell.wav',
+    gain: 0.94,
   },
   close: {
     assetKey: 'close-single',
@@ -79,6 +94,8 @@ const SOUND_ASSET_CONFIGS: Record<Exclude<SystemSoundType, 'welcome'>, SoundAsse
 
 const PRELOAD_TRADE_KEYS: readonly SoundAssetKey[] = [
   'open',
+  'buy',
+  'sell',
   'close-single',
   'close-all',
   'close-profit',

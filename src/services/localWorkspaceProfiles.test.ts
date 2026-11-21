@@ -450,4 +450,37 @@ describe('LocalWorkspaceProfileService', () => {
     const preset = createBuiltinWorkspaceProfile('200001', 'Euro', { symbols });
     expect(getChartSymbols(preset.state.dockLayout)).toEqual(['EURUSD.raw', 'EURJPY#']);
   });
+
+  it('migrates legacy saved workspace profiles to volume off by default while keeping explicit post-migration choices', () => {
+    const service = new LocalWorkspaceProfileService(localStorage);
+    useChartSettingsStore.setState({
+      globalProperties: { ...defaultChartProperties, showTickVolumes: true, showRealVolumes: false },
+      symbolProperties: {
+        EURUSD: { ...defaultChartProperties, showTickVolumes: true, showRealVolumes: true },
+      },
+      volumeBarsDefaultMigrationVersion: 1,
+    });
+    service.saveCurrentWorkspaceProfile({ accountId: '200001', profileName: 'LegacyVolume' });
+
+    const restoredLegacy = service.restoreWorkspaceProfile({ accountId: '200001', profileName: 'LegacyVolume' });
+    expect(restoredLegacy.status).toBe('restored');
+    expect(useChartSettingsStore.getState().globalProperties.showTickVolumes).toBe(false);
+    expect(useChartSettingsStore.getState().globalProperties.showRealVolumes).toBe(false);
+    expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showTickVolumes).toBe(false);
+    expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showRealVolumes).toBe(false);
+
+    useChartSettingsStore.setState({
+      globalProperties: { ...defaultChartProperties, showTickVolumes: true, showRealVolumes: false },
+      symbolProperties: {
+        EURUSD: { ...defaultChartProperties, showTickVolumes: true, showRealVolumes: false },
+      },
+      volumeBarsDefaultMigrationVersion: 2,
+    });
+    service.saveCurrentWorkspaceProfile({ accountId: '200001', profileName: 'ExplicitVolume' });
+
+    const restoredExplicit = service.restoreWorkspaceProfile({ accountId: '200001', profileName: 'ExplicitVolume' });
+    expect(restoredExplicit.status).toBe('restored');
+    expect(useChartSettingsStore.getState().globalProperties.showTickVolumes).toBe(true);
+    expect(useChartSettingsStore.getState().symbolProperties.EURUSD.showTickVolumes).toBe(true);
+  });
 });

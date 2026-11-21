@@ -800,8 +800,8 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct>div:first-child {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button {
-  padding: 0 !important;
-  gap: 0 !important;
+  padding: 0 10px !important;
+  gap: 8px !important;
   border: none !important;
   border-radius: 0 !important;
   height: 24px !important;
@@ -836,13 +836,13 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button .r
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button .rtx-oct-price {
   flex: 1 1 auto;
-  padding: 0 10px;
+  padding: 0;
   background: #3183ff;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button .rtx-oct-side-label {
-  min-width: 44px;
-  padding: 0 10px;
+  min-width: 0;
+  padding: 0;
   letter-spacing: 0.2px !important;
   background: #2a6fd9;
 }
@@ -853,6 +853,14 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button[da
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button[data-dir="down"] .rtx-oct-side-label {
   background: #c74141;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button[data-dir="flat"] .rtx-oct-price {
+  background: #8c95a3;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct .rtx-oct-trade-button[data-dir="flat"] .rtx-oct-side-label {
+  background: #788292;
 }
 
 /* Middle volume control: white cell, hairline top/bottom rules */

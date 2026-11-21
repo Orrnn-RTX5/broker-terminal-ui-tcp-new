@@ -28,6 +28,12 @@ import type {
 } from '../../../contracts/tradeActions';
 import { PendingOrdersPanel, type PendingOrderView } from './PendingOrdersPanel';
 import { safeReadBoolean, safeReadJson, safeReadString } from '../preferences';
+import {
+  readSessionString,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionString,
+} from '../../../services/sessionViewState';
 import { escapeHtml } from '../reporting';
 import { getCurrentBrokerAccountSessionScopeKey, normalizeTradeSymbol } from '../sessionScope';
 import { TradeTable } from './TradeTable';
@@ -149,7 +155,15 @@ export const TradeTab = memo(function TradeTab({
         });
     }, []);
 
-    const [tradeView, setTradeView] = useState<'positions' | 'pending'>('positions');
+    const [tradeView, setTradeView] = useState<'positions' | 'pending'>(() => (
+        readSessionString(SESSION_VIEW_KEYS.tradeView, ['positions', 'pending'] as const, 'positions')
+    ));
+    useEffect(() => {
+        writeSessionString(SESSION_VIEW_KEYS.tradeView, tradeView);
+    }, [tradeView]);
+    useEffect(() => subscribeWorkspaceViewReset(() => {
+        setTradeView('positions');
+    }), []);
     const [pendingHeaderActionsHost, setPendingHeaderActionsHost] = useState<HTMLDivElement | null>(null);
     const pendingCount = useAppStore((s) => s.orders?.length ?? 0);
 

@@ -3,7 +3,9 @@ import {
   defaultChartProperties,
   getEffectiveChartColors,
   getPresetSchemeColors,
+  normalizeChartProperties,
 } from '../store/useChartSettingsStore';
+import { buildChartTheme } from '../features/trading-chart/presentation/chartTheme';
 import {
   formatChartSeriesData,
   getAreaTrendDirection,
@@ -55,6 +57,8 @@ const theme = {
   areaDownBottom: 'rgba(239,68,68,0)',
   volumeUp: 'rgba(16,185,129,0.28)',
   volumeDown: 'rgba(239,68,68,0.28)',
+  volumeLineUp: '#10B981',
+  volumeLineDown: '#EF4444',
 };
 
 const realCandle = (time: number, close: number) => ({
@@ -840,5 +844,80 @@ describe('live price overlay colors', () => {
       lineColor: '#000000',
       badgeTextColor: '#ffffff',
     });
+  });
+});
+
+describe('TradingView-style volume histogram formatting across symbols, templates, and timeframes', () => {
+  it('colors bullish and bearish volume bars consistently across every timeframe, symbol, and color template', () => {
+    const timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'] as const;
+    const symbols = ['BTCUSD', 'EURUSD', 'XAUUSD', 'US30'] as const;
+    const schemes = [
+      'Blue and Red',
+      'Green and Red',
+      'Green and White',
+      'Green and Blue',
+      'Blue and White',
+      'Gray and White',
+      'Yellow and White',
+    ] as const;
+
+    const sampleCandles: Candle[] = [
+      { time: utcSeconds(2026, 3, 2, 10, 0), open: 100, high: 105, low: 99, close: 104, volume: 827, tickVolume: 827 },
+      { time: utcSeconds(2026, 3, 2, 11, 0), open: 104, high: 106, low: 98, close: 101, volume: 512, tickVolume: 512 },
+      { time: utcSeconds(2026, 3, 2, 12, 0), open: 101, high: 102, low: 100, close: 101, volume: 250, tickVolume: 250 },
+    ];
+
+    for (const isLight of [false, true]) {
+      for (const scheme of schemes) {
+        const properties = normalizeChartProperties({ colorScheme: scheme, showTickVolumes: true });
+        const colors = getEffectiveChartColors(properties, { isAdvancedUntitledLight: isLight });
+        const chartTheme = buildChartTheme(colors, true, isLight, 'dashed', 'mt5', scheme);
+
+        for (const timeframe of timeframes) {
+          for (const symbol of symbols) {
+            const { volumeData } = formatChartSeriesData(
+              sampleCandles,
+              'candlestick',
+              chartTheme,
+              properties,
+              { symbol, timeframe, brokerOffsetSeconds: 0 },
+            );
+
+            expect(volumeData).toEqual([
+              { time: sampleCandles[0].time, value: 827, color: chartTheme.volumeUp },
+              { time: sampleCandles[1].time, value: 512, color: chartTheme.volumeDown },
+              // Doji candle (close === open) uses bullish volume color matching TradingView
+              { time: sampleCandles[2].time, value: 250, color: chartTheme.volumeUp },
+            ]);
+
+            // Bar and Line charts use the crisp solid directional volume-line colors
+            for (const lineOrBar of ['bar', 'line'] as const) {
+              const spikeResult = formatChartSeriesData(
+                sampleCandles,
+                lineOrBar,
+                chartTheme,
+                properties,
+                { symbol, timeframe, brokerOffsetSeconds: 0 },
+              );
+              expect(spikeResult.volumeData).toEqual([
+                { time: sampleCandles[0].time, value: 827, color: chartTheme.volumeLineUp },
+                { time: sampleCandles[1].time, value: 512, color: chartTheme.volumeLineDown },
+                { time: sampleCandles[2].time, value: 250, color: chartTheme.volumeLineUp },
+              ]);
+            }
+
+            // Area chart omits volume completely even when volume display is enabled
+            const areaResult = formatChartSeriesData(
+              sampleCandles,
+              'area',
+              chartTheme,
+              properties,
+              { symbol, timeframe, brokerOffsetSeconds: 0 },
+            );
+            expect(areaResult.volumeData).toEqual([]);
+          }
+        }
+      }
+    }
   });
 });

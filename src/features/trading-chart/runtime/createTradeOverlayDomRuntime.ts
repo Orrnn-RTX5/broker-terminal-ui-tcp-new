@@ -515,13 +515,13 @@ export const createTradeOverlayDomRuntime = ({
         badge.textContent = formatChartAxisPrice(price, digits);
       }
       const lightSurface = isChartSurfaceLight();
-      const lightEntryColors: Record<string, string> = {
-        [TRADE_ENTRY_LINE_BUY_COLOR]: LIGHT_CHART_TRADE_COLORS.buy,
-        [TRADE_ENTRY_LINE_SELL_COLOR]: LIGHT_CHART_TRADE_COLORS.sell,
-        [TRADE_PENDING_BUY_LINE_COLOR]: LIGHT_CHART_TRADE_COLORS.pendingBuy,
-        [TRADE_PENDING_SELL_LINE_COLOR]: LIGHT_CHART_TRADE_COLORS.pendingSell,
-      };
-      const axisColor = lightSurface ? (lightEntryColors[color] ?? color) : color;
+      const lightEntryColors = new Map<string, string>([
+        [TRADE_ENTRY_LINE_BUY_COLOR, LIGHT_CHART_TRADE_COLORS.buy],
+        [TRADE_ENTRY_LINE_SELL_COLOR, LIGHT_CHART_TRADE_COLORS.sell],
+        [TRADE_PENDING_BUY_LINE_COLOR, LIGHT_CHART_TRADE_COLORS.pendingBuy],
+        [TRADE_PENDING_SELL_LINE_COLOR, LIGHT_CHART_TRADE_COLORS.pendingSell],
+      ]);
+      const axisColor = lightSurface ? (lightEntryColors.get(color) ?? color) : color;
       const borderColor = lightSurface ? axisColor : colorWithAlpha(axisColor, 0.48, axisColor);
       const background = chartThemeRef.current.background ?? (lightSurface ? '#fafbfc' : '#000000');
       badge.style.cssText = `position:absolute;display:none;right:0;height:18px;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box;border:1px solid ${borderColor};border-radius:3px;background-color:${background};background-image:none;color:${axisColor};font-family:${CHART_AXIS_FONT_FAMILY};font-size:12px;font-weight:600;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;transform:translateY(-50%);pointer-events:none;z-index:8;`;

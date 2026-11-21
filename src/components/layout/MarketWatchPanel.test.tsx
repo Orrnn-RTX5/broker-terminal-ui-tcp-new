@@ -173,6 +173,8 @@ describe('MarketWatchPanel symbol visibility', () => {
     localStorage.removeItem('rtx5_marketwatch_options');
     localStorage.removeItem('rtx5_symbol_sets');
     localStorage.removeItem('rtx5_symbol_set_columns');
+    sessionStorage.removeItem('rtx5_session_mw_view');
+    sessionStorage.removeItem('rtx5_session_mw_sort');
     vi.useRealTimers();
   });
 
@@ -727,14 +729,14 @@ describe('MarketWatchPanel symbol visibility', () => {
         padding: '0 5px',
       });
       expect(screen.getByRole('columnheader', { name: 'Bid' })).toHaveClass('rtx-market-watch__column-heading--bid');
-      expect(screen.getByRole('columnheader', { name: 'Bid' })).toHaveStyle({ fontSize: '12px', fontWeight: '400', textAlign: 'center' });
+      expect(screen.getByRole('columnheader', { name: 'Bid' })).toHaveStyle({ fontSize: '12px', fontWeight: '400', textAlign: 'right' });
       expect(screen.getByRole('columnheader', { name: 'Ask' })).toHaveClass('rtx-market-watch__column-heading--ask');
-      expect(screen.getByRole('columnheader', { name: 'Ask' })).toHaveStyle({ textAlign: 'center' });
+      expect(screen.getByRole('columnheader', { name: 'Ask' })).toHaveStyle({ textAlign: 'right' });
       expect(screen.getByRole('columnheader', { name: 'Daily Change' })).toHaveStyle({ textAlign: 'right' });
 
       const selectedRow = screen.getByText('BTCUSD').closest('tr')!;
-      expect(selectedRow.querySelector('.rtx-market-watch__price--bid')?.closest('td')).toHaveStyle({ textAlign: 'center' });
-      expect(selectedRow.querySelector('.rtx-market-watch__price--ask')?.closest('td')).toHaveStyle({ textAlign: 'center' });
+      expect(selectedRow.querySelector('.rtx-market-watch__price--bid')?.closest('td')).toHaveStyle({ textAlign: 'right' });
+      expect(selectedRow.querySelector('.rtx-market-watch__price--ask')?.closest('td')).toHaveStyle({ textAlign: 'right' });
       expect(selectedRow.querySelector('.rtx-market-watch__daily')?.closest('td')).toHaveStyle({ textAlign: 'center' });
       expect(selectedRow.querySelector('.rtx-market-watch__price--bid')).toHaveStyle({ fontSize: '13px', fontWeight: '500' });
       expect(selectedRow.querySelector('.rtx-market-watch__price--ask')).toHaveStyle({ fontSize: '13px', fontWeight: '500' });
@@ -2002,8 +2004,12 @@ describe('MarketWatchPanel symbol visibility', () => {
       'false',
       'false',
     ]);
-    expect(within(options[0]).getByText('Subscribed')).toHaveClass('rtx-market-watch__subscribed-badge');
-    expect(within(options[1]).getByText('Subscribed')).toHaveClass('rtx-market-watch__subscribed-badge');
+    const firstSubscribedBadge = within(options[0]).getByText('Subscribed');
+    const secondSubscribedBadge = within(options[1]).getByText('Subscribed');
+    expect(firstSubscribedBadge).toHaveClass('rtx-market-watch__subscribed-badge');
+    expect(secondSubscribedBadge).toHaveClass('rtx-market-watch__subscribed-badge');
+    expect(firstSubscribedBadge.querySelector('svg')).toBeNull();
+    expect(secondSubscribedBadge.querySelector('svg')).toBeNull();
     expect(within(options[2]).queryByText('Subscribed')).not.toBeInTheDocument();
     expect(within(options[3]).queryByText('Subscribed')).not.toBeInTheDocument();
   });

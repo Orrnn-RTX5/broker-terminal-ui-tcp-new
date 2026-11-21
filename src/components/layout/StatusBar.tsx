@@ -94,7 +94,21 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                         className="rtx-status-bar__logo h-4 w-4 shrink-0 rounded-sm object-contain"
                         appFallbackUrl={statusBarFallbackLogoSrc}
                     />
-                    <span className="rtx-status-bar__metric rtx-status-bar__title truncate whitespace-nowrap font-normal" title={tr(terminalTitle)}>{tr(terminalTitle)}</span>
+                    <div className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
+                        <span className="rtx-status-bar__metric rtx-status-bar__title truncate whitespace-nowrap font-normal" title={tr(terminalTitle)}>{tr(terminalTitle)}</span>
+                        {brokerInfo.accountTypeLabel && (
+                            <>
+                                <span className="rtx-status-bar__account-type-sep shrink-0" aria-hidden="true">-</span>
+                                <span
+                                    className="rtx-status-bar__account-type shrink-0 whitespace-nowrap"
+                                    data-account-type={brokerInfo.accountType}
+                                    title={tr(brokerInfo.accountTypeLabel)}
+                                >
+                                    {tr(brokerInfo.accountTypeLabel)}
+                                </span>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
             <div className="rtx-status-bar__utilities flex shrink-0 items-center gap-3">

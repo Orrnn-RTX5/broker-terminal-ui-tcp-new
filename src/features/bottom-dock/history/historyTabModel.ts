@@ -48,7 +48,7 @@ export function getHistoryStatusBadgeClass(status: CanonicalHistoryOrderStatus):
 export type HistoryColumnVisibility = Record<HistoryColumnKey, boolean>;
 export type HistoryContextMenuState = { x: number; y: number; trade?: Trade };
 
-export const HISTORY_COLUMN_STORAGE_KEY = 'rtx5_history_columns_v2';
+export const HISTORY_COLUMN_STORAGE_KEY = 'rtx5_history_columns_v3';
 export const HISTORY_VOLUME_MODE_STORAGE_KEY = 'rtx5_history_volume_mode';
 export const HISTORY_SHOW_MILLISECONDS_STORAGE_KEY = 'rtx5_history_show_milliseconds';
 export const HISTORY_AUTO_ARRANGE_STORAGE_KEY = 'rtx5_history_auto_arrange';
@@ -72,7 +72,7 @@ export const HISTORY_COLUMN_DEFS: Array<{ key: HistoryColumnKey; label: string }
 
 export const DEFAULT_HISTORY_COLUMNS: HistoryColumnVisibility = {
   ticket: true,
-  status: true,
+  status: false,
   marketValue: false,
   commission: false,
   swap: false,

@@ -735,7 +735,7 @@ describe('createDockedLevelChip', () => {
       [doubleBtn, 'Double position'],
       [reverseBtn, 'Reverse position'],
       [closeBtn, 'Close position'],
-      [volumeChip, 'BUY 1 lots · #987'],
+      [volumeChip, 'BUY 1 lots #987'],
       [moneyChip, 'Profit / Loss: — USD'],
     ] as const) {
       el.dispatchEvent(new MouseEvent('mouseenter'));

@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useSyncExternalStore } from 'react';
+import React, { useLayoutEffect, useRef, useMemo, useSyncExternalStore } from 'react';
 import { getLiveQuotesVersion, subscribeLiveQuotes } from '../../services/liveQuotes';
 import { getLivePositionProfit } from '../../services/livePositionMetrics';
 import { useBulkCloseConfirmStore } from '../../store/useBulkCloseConfirmStore';
@@ -18,9 +18,7 @@ export function BulkCloseConfirmDialog() {
     const {
         isOpen,
         type,
-        symbol,
         positions,
-        combinedPnL,
         onConfirm,
         onCancel,
     } = useBulkCloseConfirmStore();
@@ -32,13 +30,60 @@ export function BulkCloseConfirmDialog() {
         zeroSnapshot,
     );
 
+    const backdropRef = useRef<HTMLDivElement>(null);
     const cancelBtnRef = useRef<HTMLButtonElement>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
     useDialogFocusScope({ isOpen, dialogRef, onClose: onCancel, initialFocusRef: cancelBtnRef });
 
-    const { livePositions, liveCombinedPnL } = useMemo(() => {
+    // Keep the dialog top at or below the bottom dock's top border so it never
+    // rises over the chart or its time axis, regardless of the user's dock height.
+    useLayoutEffect(() => {
+        if (!isOpen) return;
+        const backdropEl = backdropRef.current;
+        if (!backdropEl) return;
+
+        const syncDockMaxHeight = () => {
+            const dockEl = document.querySelector<HTMLElement>('.rtx-bottom-dock');
+            if (!dockEl) {
+                backdropEl.style.removeProperty('--rtx-bulk-close-max-height');
+                return;
+            }
+            const dockRect = dockEl.getBoundingClientRect();
+            if (!(dockRect.height > 0) || !(dockRect.top > 0)) {
+                backdropEl.style.removeProperty('--rtx-bulk-close-max-height');
+                return;
+            }
+            const bottomPadding = Number.parseFloat(window.getComputedStyle(backdropEl).paddingBottom) || 36;
+            const backdropRect = backdropEl.getBoundingClientRect();
+            const dialogBottom = backdropRect.bottom > 0
+                ? backdropRect.bottom - bottomPadding
+                : window.innerHeight - bottomPadding;
+            const availableHeight = Math.floor(dialogBottom - dockRect.top) - 2;
+            if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+                backdropEl.style.removeProperty('--rtx-bulk-close-max-height');
+                return;
+            }
+            backdropEl.style.setProperty('--rtx-bulk-close-max-height', `${Math.max(120, availableHeight)}px`);
+        };
+
+        syncDockMaxHeight();
+        window.addEventListener('resize', syncDockMaxHeight);
+        const dockEl = document.querySelector<HTMLElement>('.rtx-bottom-dock');
+        const resizeObserver = dockEl && typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(syncDockMaxHeight)
+            : null;
+        if (dockEl && resizeObserver) resizeObserver.observe(dockEl);
+
+        return () => {
+            window.removeEventListener('resize', syncDockMaxHeight);
+            resizeObserver?.disconnect();
+            backdropEl.style.removeProperty('--rtx-bulk-close-max-height');
+        };
+    }, [isOpen]);
+
+    const livePositions = useMemo(() => {
         if (!isOpen || storePositions.length === 0 || positions.length === 0) {
-            return { livePositions: positions, liveCombinedPnL: combinedPnL };
+            return positions;
         }
 
         const liveById = new Map<number, Position>();
@@ -69,15 +114,10 @@ export function BulkCloseConfirmDialog() {
             };
         });
 
-        if (!hasLiveMatch) {
-            return { livePositions: positions, liveCombinedPnL: combinedPnL };
-        }
-
-        const nextCombinedPnL = nextPositions.reduce((total, pos) => total + pos.pnl, 0);
-        return { livePositions: nextPositions, liveCombinedPnL: nextCombinedPnL };
+        return hasLiveMatch ? nextPositions : positions;
     // quotesVersion is the change signal for the live quotes read by getLivePositionProfit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, positions, combinedPnL, storePositions, quotesVersion]);
+    }, [isOpen, positions, storePositions, quotesVersion]);
 
     // Sort positions by P&L descending
     const sortedPositions = useMemo(() =>
@@ -86,78 +126,49 @@ export function BulkCloseConfirmDialog() {
     );
     const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
-    const profitableCount = livePositions.filter(p => p.pnl > 0).length;
-    const losingCount = livePositions.filter(p => p.pnl < 0).length;
-    const breakEvenCount = livePositions.filter(p => p.pnl === 0).length;
-
     if (!isOpen) return null;
 
+    const modeKey = type === 'WINNERS' ? 'winners' : type === 'LOSERS' ? 'losers' : 'all';
     const modeLabel = type === 'ALL'
         ? tr('Close All Positions')
         : type === 'WINNERS'
             ? tr('Close In-Profit Positions')
             : tr('Close In-Loss Positions');
-
-    const pnlSign = liveCombinedPnL >= 0 ? '+' : '';
-    const pnlFormatted = `${pnlSign}${liveCombinedPnL.toFixed(accountCurrencyDigits)}`;
-    const pnlTone = liveCombinedPnL >= 0 ? 'profit' : 'loss';
+    const confirmButtonLabel = livePositions.length === 1
+        ? `${tr('Close')} 1 ${tr('Position')}`
+        : `${tr('Close')} ${livePositions.length} ${tr('Positions')}`;
 
     return (
         <div
+            ref={backdropRef}
             className="rtx-bulk-close-backdrop"
             onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
             onContextMenuCapture={(e) => { e.stopPropagation(); e.preventDefault(); }}
             onContextMenu={(e) => e.stopPropagation()}
         >
-            <div ref={dialogRef} tabIndex={-1} className="rtx-bulk-close-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-close-title" style={dragStyle}>
-
-                {/* ─── Header ─── */}
-                <div className="rtx-bulk-close-dialog__header" {...dragHandleProps}>
-                    <div className="rtx-bulk-close-dialog__header-left">
-                        <span id="bulk-close-title" className="rtx-bulk-close-dialog__title">{modeLabel}</span>
-                        {symbol && (
-                            <span className="rtx-bulk-close-dialog__symbol-badge">{symbol}</span>
-                        )}
-                    </div>
-                    <button type="button" onClick={onCancel} className="rtx-bulk-close-dialog__close-btn" aria-label={tr('Close dialog')}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                    </button>
-                </div>
-
-                {/* ─── Summary Stats ─── */}
-                <div className="rtx-bulk-close-dialog__stats">
-                    <div className="rtx-bulk-close-dialog__stat">
-                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Positions')}</span>
-                        <span className="rtx-bulk-close-dialog__stat-value">{livePositions.length}</span>
-                    </div>
-                    <div className="rtx-bulk-close-dialog__stat-divider" />
-                    <div className="rtx-bulk-close-dialog__stat">
-                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Combined P&L')}</span>
-                        <span className={`rtx-bulk-close-dialog__stat-value rtx-bulk-close-dialog__stat-value--${pnlTone}`}>
-                            {pnlFormatted}
-                        </span>
-                    </div>
-                    <div className="rtx-bulk-close-dialog__stat-divider" />
-                    <div className="rtx-bulk-close-dialog__stat">
-                        <span className="rtx-bulk-close-dialog__stat-label">{tr('Breakdown')}</span>
-                        <span className="rtx-bulk-close-dialog__stat-value rtx-bulk-close-dialog__breakdown">
-                            <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--profit">{profitableCount} ↑</span>
-                            <span className="rtx-bulk-close-dialog__breakdown-sep">·</span>
-                            <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--loss">{losingCount} ↓</span>
-                            {breakEvenCount > 0 && (
-                                <>
-                                    <span className="rtx-bulk-close-dialog__breakdown-sep">·</span>
-                                    <span className="rtx-bulk-close-dialog__breakdown-item rtx-bulk-close-dialog__breakdown-item--neutral">{breakEvenCount} ―</span>
-                                </>
-                            )}
-                        </span>
-                    </div>
-                </div>
+            <div
+                ref={dialogRef}
+                tabIndex={-1}
+                className="rtx-bulk-close-dialog"
+                data-mode={modeKey}
+                role="dialog"
+                aria-modal="true"
+                aria-label={modeLabel}
+                style={dragStyle}
+            >
 
                 {/* ─── Position Preview Table ─── */}
                 <div className="rtx-bulk-close-dialog__table-wrapper">
                     <table className="rtx-bulk-close-dialog__table">
-                        <thead>
+                        <colgroup>
+                            <col style={{ width: '18%' }} />
+                            <col style={{ width: '18%' }} />
+                            <col style={{ width: '14%' }} />
+                            <col style={{ width: '13%' }} />
+                            <col style={{ width: '20%' }} />
+                            <col style={{ width: '17%' }} />
+                        </colgroup>
+                        <thead {...dragHandleProps}>
                             <tr>
                                 <th>{tr('Ticket')}</th>
                                 <th>{tr('Symbol')}</th>
@@ -202,7 +213,7 @@ export function BulkCloseConfirmDialog() {
                         onClick={onConfirm}
                         className="rtx-bulk-close-dialog__btn-confirm"
                     >
-                        {tr('Close')} {livePositions.length} {tr('Positions')}
+                        {confirmButtonLabel}
                     </button>
                 </div>
             </div>

@@ -2160,11 +2160,12 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
         id: 'menu-color-templates',
         title: 'Color Templates',
         category: 'menus',
-        categoryLabel: 'Menu Bar → Color Templates',
+        categoryLabel: 'Menu Bar → Theme → Color Templates',
         description: 'Apply chart color scheme templates or sync Bid/Ask price colors with chart',
         keywords: [
           'color templates',
           'color template',
+          'theme',
           'green and red',
           'green and white',
           'green and blue',
@@ -2177,28 +2178,28 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
         ],
         locations: [
           {
-            path: 'Menu Bar → Color Templates',
-            prepare: () => revealMenuBarPath('color-templates', 'Charts', []),
-            findElements: () => findMenuElements('Green and Red', 'color-templates', []),
+            path: 'Menu Bar → Theme → Color Templates',
+            prepare: () => revealMenuBarPath('theme', 'Charts', ['Color Templates']),
+            findElements: () => findMenuElements('Green and Red', 'theme', ['Color Templates']),
           },
         ],
-        execute: () => revealMenuBarPath('color-templates', 'Charts', []),
+        execute: () => revealMenuBarPath('theme', 'Charts', ['Color Templates']),
       },
       {
         id: 'menu-theme-appearance',
-        title: 'Appearance & Themes...',
+        title: 'Appearance',
         category: 'menus',
-        categoryLabel: 'Menu Bar → Appearance & Themes',
-        description: 'Open Appearance & Themes dialog to customize Light/Dark presets and terminal colors',
-        keywords: ['appearance', 'themes', 'appearance & themes', 'custom theme', 'skin'],
+        categoryLabel: 'Menu Bar → Theme → Appearance',
+        description: 'Open Appearance dialog to customize Light/Dark presets and terminal colors',
+        keywords: ['appearance', 'themes', 'theme', 'appearance & themes', 'custom theme', 'skin', 'light theme', 'dark theme'],
         locations: [
           {
-            path: 'Menu Bar → Appearance & Themes...',
-            prepare: () => revealMenuBarPath('appearance-themes', 'View', ['Theme']),
-            findElements: () => findMenuElements('Appearance & Themes...', 'appearance-themes', []),
+            path: 'Menu Bar → Theme → Appearance',
+            prepare: () => revealMenuBarPath('theme', 'View', ['Theme']),
+            findElements: () => findMenuElements('Appearance', 'theme', []),
           },
         ],
-        execute: () => revealMenuBarPath('appearance-themes', 'View', ['Theme']),
+        execute: () => revealMenuBarPath('theme', 'View', ['Theme']),
       },
       {
         id: 'menu-font-size',
@@ -2459,10 +2460,9 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
 
     const bottomTabs: Array<{ id: string; label: string; desc: string; keywords: string[] }> = [
       { id: 'trade', label: 'Trade Tab', desc: 'View and manage active positions, pending orders, balance, equity, and margin', keywords: ['trade tab', 'positions', 'open orders', 'pending orders', 'balance', 'equity', 'margin'] },
-      { id: 'history', label: 'History Tab', desc: 'View historical trades, closed positions, profit/loss summary, and custom date exports', keywords: ['history tab', 'closed trades', 'deals', 'account history', 'statement', 'export'] },
+      { id: 'history', label: 'History Tab', desc: 'View historical trades, closed positions, deposit history, withdrawal history, profit/loss summary, and custom date exports', keywords: ['history tab', 'closed trades', 'deals', 'account history', 'deposit history', 'withdrawal history', 'statement', 'export'] },
       { id: 'exposure', label: 'Exposure Tab', desc: 'Analyze portfolio net exposure by asset and currency with visual distribution', keywords: ['exposure', 'portfolio', 'currency exposure', 'risk'] },
       { id: 'toolbox', label: 'Toolbox Tab', desc: 'Calculate required margin, pip value, swap rates, and risk-based position size', keywords: ['toolbox', 'calculator', 'margin calculator', 'pip value', 'position size'] },
-      { id: 'historical-data', label: 'Historical Data', desc: 'Download historical OHLCV bars and tick data for any symbol and timeframe', keywords: ['historical data', 'history downloader', 'export csv', 'candles download', 'f2'] },
       { id: 'journal', label: 'Journal Tab', desc: 'Inspect real-time terminal activity, order execution telemetry, and connection status logs', keywords: ['journal', 'logs', 'activity log', 'execution log', 'errors'] },
     ];
 
@@ -2486,10 +2486,6 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           },
         ],
         execute: () => {
-          if (bt.id === 'historical-data' && onOpenHistoryDownloader) {
-            onOpenHistoryDownloader();
-            return;
-          }
           const tabs = Array.from(document.querySelectorAll<HTMLElement>('.rtx-bottom-dock__tabs .rtx-dock-tab'));
           const match = tabs.find((b) => b.textContent?.toLowerCase().includes(bt.label.split(' ')[0].toLowerCase()));
           match?.click();

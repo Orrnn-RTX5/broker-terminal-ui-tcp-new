@@ -5,7 +5,7 @@ import { useUiTranslation } from '../hooks/useUiTranslation';
  * Toggled by Alt+T, sits on top-left of chart
  */
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useAppStore, type Position } from '../store/useAppStore';
 import { useLastSymbolStore } from '../store/useLastSymbolStore';
@@ -41,6 +41,8 @@ import {
     isBinaryTcpOrderEnabled,
 } from '../services/binaryTcpOrderClient';
 import { resolveDefaultTradeVolume, useSettingsStore } from '../store/useSettingsStore';
+import { isOneClickTradingAccepted, useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
 import './OneClickTrading.css';
 import { hasAuthenticatedTradingSession, requireTradingAuth } from '../services/tradingAuthGate';
 
@@ -55,6 +57,8 @@ interface OneClickTradingProps {
     maxVolume?: number;
     volumeStep?: number;
 }
+
+export const MT5_ONE_CLICK_STALE_MS = 15_000;
 
 type LooseRecord = Record<string, unknown>;
 
@@ -175,6 +179,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     volumeStep,
 }) => {
     const tr = useUiTranslation();
+    const disclaimerOwnerId = useId();
     const volumeConstraints = useMemo(() => resolveTradeVolumeConstraints({
         minVolume,
         maxVolume,
@@ -228,7 +233,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         const parent = panelRef.current?.parentElement;
         if (!parent || !visible) return;
         const update = (width: number) => {
-            if (width > 0) setCompact(width < 390);
+            if (width > 0) setCompact(width < 290);
         };
         update(parent.getBoundingClientRect().width);
         if (typeof ResizeObserver === 'undefined') {
@@ -265,23 +270,35 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         ),
     );
 
-    // Track price direction for color flash
+    // Official MT5 One-Click Trading tick direction:
+    // Each button tracks its own quote (Bid for SELL, Ask for BUY):
+    // - Blue (`up`): current price > previous price
+    // - Red (`down`): current price < previous price
+    // - Gray (`flat`): price unchanged for 15 seconds (or before first tick delta)
     const [bidFlash, setBidFlash] = useState<'up' | 'down' | ''>('');
     const [askFlash, setAskFlash] = useState<'up' | 'down' | ''>('');
-    // MT5 colors each side by its own last tick direction (blue = up, red =
-    // down) and the color persists until the next tick — unlike the transient
-    // *Flash states above, which clear after 350ms.
-    const [bidDir, setBidDir] = useState<'up' | 'down'>('up');
-    const [askDir, setAskDir] = useState<'up' | 'down'>('up');
+    const [bidDir, setBidDir] = useState<'up' | 'down' | 'flat'>('flat');
+    const [askDir, setAskDir] = useState<'up' | 'down' | 'flat'>('flat');
+
+    useEffect(() => {
+        prevBidRef.current = 0;
+        prevAskRef.current = 0;
+        setBidDir('flat');
+        setAskDir('flat');
+    }, [symbol]);
 
     useEffect(() => {
         if (prevBidRef.current && bid !== prevBidRef.current) {
             const dir = bid > prevBidRef.current ? 'up' : 'down';
             setBidFlash(dir);
             setBidDir(dir);
-            const t = setTimeout(() => setBidFlash(''), 350);
             prevBidRef.current = bid;
-            return () => clearTimeout(t);
+            const flashTimer = setTimeout(() => setBidFlash(''), 350);
+            const staleTimer = setTimeout(() => setBidDir('flat'), MT5_ONE_CLICK_STALE_MS);
+            return () => {
+                clearTimeout(flashTimer);
+                clearTimeout(staleTimer);
+            };
         }
         prevBidRef.current = bid;
     }, [bid]);
@@ -291,9 +308,13 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             const dir = ask > prevAskRef.current ? 'up' : 'down';
             setAskFlash(dir);
             setAskDir(dir);
-            const t = setTimeout(() => setAskFlash(''), 350);
             prevAskRef.current = ask;
-            return () => clearTimeout(t);
+            const flashTimer = setTimeout(() => setAskFlash(''), 350);
+            const staleTimer = setTimeout(() => setAskDir('flat'), MT5_ONE_CLICK_STALE_MS);
+            return () => {
+                clearTimeout(flashTimer);
+                clearTimeout(staleTimer);
+            };
         }
         prevAskRef.current = ask;
     }, [ask]);
@@ -419,6 +440,10 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             window.dispatchEvent(new Event('rtx:requestTradeLogin'));
             return;
         }
+        if (!isOneClickTradingAccepted()) {
+            void useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
+            return;
+        }
         if (!tradeAllowed) {
             setBlockedMessage(orderBlockedReason || staleQuoteMessage);
             return;
@@ -496,7 +521,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                 upsertImmediatePosition(immediatePosition);
             }
             useLastSymbolStore.getState().setLastSymbol(symbol, side.toUpperCase() as 'BUY' | 'SELL');
-            import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
+            import('../utils/audio').then((m) => m.playSystemSound(side === 'sell' ? 'sell' : 'buy')).catch(() => undefined);
             scheduleIdlePositionsReconcile();
         } catch (err: unknown) {
             if (!ownsOrderSession()) return;
@@ -510,7 +535,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         } finally {
             setTimeout(() => setFlashSide(null), 500);
         }
-    }, [isAuthenticated, tradeAllowed, marketOpenForTrading, effectiveMarketStatus, isVolumeValid, hasExecutablePrice, volume, symbol, getAccountLogin, tick, bid, ask, tr, orderBlockedReason, staleQuoteMessage, scheduleIdlePositionsReconcile]);
+    }, [disclaimerOwnerId, isAuthenticated, tradeAllowed, marketOpenForTrading, effectiveMarketStatus, isVolumeValid, hasExecutablePrice, volume, symbol, getAccountLogin, tick, bid, ask, tr, orderBlockedReason, staleQuoteMessage, scheduleIdlePositionsReconcile]);
 
     if (!visible || !symbol) return null;
 
@@ -566,18 +591,20 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         const price = isBuy ? askPrice : bidPrice;
         const priceText = `${price.small}${price.big}${price.pip}`;
         const priceFlash = isBuy ? askFlash : bidFlash;
+        const buttonDir: 'up' | 'down' | 'flat' = isBuy ? askDir : bidDir;
         const priceFlashColor = priceFlash === 'down'
             ? '#ff6b6b'
-            : isBuy ? '#6b9fff' : '#6bff6b';
-        const restingBackground = isBuy
+            : '#6b9fff';
+        const restingBackground = buttonDir === 'up'
             ? '#4597ff'
-            : '#ff5858';
-        const activeBackground = isBuy
+            : buttonDir === 'down'
+                ? '#ff5858'
+                : '#6b7280';
+        const activeBackground = buttonDir === 'up'
             ? '#2563eb'
-            : '#dc2626';
-        const hoverBackground = isBuy
-            ? '#3183ff'
-            : '#ef4444';
+            : buttonDir === 'down'
+                ? '#dc2626'
+                : '#4b5563';
         const label = isBuy ? 'BUY' : 'SELL';
 
         return (
@@ -585,7 +612,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                 type="button"
                 className="rtx-oct-trade-button"
                 data-side={side}
-                data-dir={isBuy ? askDir : bidDir}
+                data-dir={buttonDir}
                 data-active={flashSide === side}
                 onClick={() => placeOrder(side)}
                 disabled={tradeControlDisabled}
@@ -595,12 +622,6 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                     ...sharedButtonStyle,
                     background: flashSide === side ? activeBackground : restingBackground,
                     borderRadius: 0,
-                }}
-                onMouseEnter={(event) => {
-                    if (!flashSide) event.currentTarget.style.background = hoverBackground;
-                }}
-                onMouseLeave={(event) => {
-                    if (!flashSide) event.currentTarget.style.background = restingBackground;
                 }}
             >
                 {isBuy && <span className="rtx-oct-side-label">{tr(label)}</span>}
@@ -625,7 +646,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             className="rtx-oct absolute top-[28px] left-[10px] z-30 select-none drop-shadow-2xl"
             data-compact={compact}
             data-insufficient-margin={hasInsufficientAccountFunds ? 'true' : 'false'}
-            style={{ pointerEvents: 'auto', fontFamily: 'var(--font-sans)', display: 'inline-block', width: compact ? 'calc(100% - 20px)' : 'fit-content', maxWidth: 'calc(100% - 20px)' }}
+            style={{ pointerEvents: 'auto', fontFamily: 'var(--font-sans)', display: 'inline-block', width: 'fit-content', maxWidth: 'calc(100% - 20px)' }}
         >
             <div
                 data-testid="one-click-trading-row"
@@ -796,6 +817,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                 </div>
             )}
             {blockedMessage && <TradeUnavailableDialog message={blockedMessage} onClose={() => setBlockedMessage(null)} />}
+            <OneClickDisclaimerDialog ownerId={disclaimerOwnerId} />
             {error && (
                 <div
                     className="rtx-oct-banner rtx-oct-banner--error"

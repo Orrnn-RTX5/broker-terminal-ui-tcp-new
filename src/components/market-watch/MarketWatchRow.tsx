@@ -315,20 +315,20 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
         </td>
 
         {lastClose ? <>
-          <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'center', opacity: 1 }}>
-            <span className="rtx-market-watch__last-close" style={{ display: 'inline-flex', justifyContent: 'center', alignItems: 'baseline', flexWrap: 'wrap', gap: '0 6px', color: 'var(--text-primary)' }}>
+          <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'right', opacity: 1 }}>
+            <span className="rtx-market-watch__last-close" style={{ display: 'inline-flex', justifyContent: 'flex-end', alignItems: 'baseline', flexWrap: 'wrap', gap: '0 6px', color: 'var(--text-primary)' }}>
               <span style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
                 <PriceDisplay price={lastClose.close} symbol={symbol} digits={priceDigits} />
               </span>
             </span>
           </td>
           {showAsk && (
-            <td style={{ padding: '3px 4px', textAlign: 'center', opacity: 1 }}>
+            <td style={{ padding: '3px 4px', textAlign: 'right', opacity: 1 }}>
               <span className="rtx-market-watch__price rtx-market-watch__price--ask rtx-market-watch__price--empty" style={{ fontSize: 13, color: '#36363e', opacity: 0.45 }}>—</span>
             </td>
           )}
         </> : <>
-          <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'center', opacity: 1 }}>
+          <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'right', opacity: 1 }}>
             <span className={`rtx-market-watch__price rtx-market-watch__price--bid${bidToneClass ? ` rtx-market-watch__price--${bidToneClass}` : ''}${!hasData ? ' rtx-market-watch__price--empty' : ''}`} style={{
               display: 'inline-block',
               fontSize: 13,
@@ -350,7 +350,7 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
           </td>
 
           {showAsk && (
-            <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'center', opacity: 1 }}>
+            <td title={lastPriceTitle} style={{ padding: '3px 4px', textAlign: 'right', opacity: 1 }}>
               <span className={`rtx-market-watch__price rtx-market-watch__price--ask${askToneClass ? ` rtx-market-watch__price--${askToneClass}` : ''}${!hasData ? ' rtx-market-watch__price--empty' : ''}`} style={{
                 display: 'inline-block',
                 fontSize: 13,

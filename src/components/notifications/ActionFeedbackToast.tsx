@@ -27,6 +27,8 @@ export interface ActionFeedbackNotice {
   metaIcon?: IconName;
   /** Brief next step or clarification shown below the destination. */
   hint?: UiMessage;
+  /** Where to render the notice; defaults to centered unless anchored to the chart bottom-left. */
+  placement?: 'center' | 'chart-bottom-left';
   /** Captured export data for the persistent result sheet and CSV action. */
   exportResult?: MarketWatchExportResult;
 }
@@ -457,9 +459,11 @@ export function ActionFeedbackToast({
     return typeof document === 'undefined' ? receipt : createPortal(receipt, document.body);
   }
   const compactToast = <CompactToast durationMs={durationMs} message={message} notice={notice} onDismiss={onDismiss} tone={tone} />;
+  const shouldCenterNotice = Boolean(notice && notice.placement !== 'chart-bottom-left');
   // Structured action results belong at the visual center and must not inherit
-  // a transformed application ancestor as their fixed-position containing box.
-  return notice && typeof document !== 'undefined'
+  // a transformed application ancestor as their fixed-position containing box,
+  // unless explicitly anchored to the chart bottom-left stack.
+  return shouldCenterNotice && typeof document !== 'undefined'
     ? createPortal(compactToast, document.body)
     : compactToast;
 }
@@ -472,6 +476,8 @@ function CompactToast({ durationMs, message, notice, onDismiss, tone }: Omit<Act
     ? Math.max(0, durationMs - EXIT_ANIMATION_MS)
     : durationMs;
   const { dismiss, exiting, paused, setHold } = useToastLifetime(activeDurationMs, onDismiss);
+  const isCenteredNotice = Boolean(notice && notice.placement !== 'chart-bottom-left');
+  const isChartNotice = Boolean(notice && notice.placement === 'chart-bottom-left');
 
   const className = [
     'rtx-action-feedback',
@@ -481,7 +487,15 @@ function CompactToast({ durationMs, message, notice, onDismiss, tone }: Omit<Act
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={`rtx-action-feedback-region${notice ? ' rtx-action-feedback-region--notice-center' : ''}`}>
+    <div
+      className={`rtx-action-feedback-region${
+        isCenteredNotice
+          ? ' rtx-action-feedback-region--notice-center'
+          : isChartNotice
+            ? ' rtx-action-feedback-region--chart-notice'
+            : ''
+      }`}
+    >
       <section
         aria-atomic="true"
         aria-live={tone === 'success' ? 'polite' : 'assertive'}

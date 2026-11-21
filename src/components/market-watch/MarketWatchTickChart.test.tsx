@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../store/useAppStore';
+import { useChartSettingsStore } from '../../store/useChartSettingsStore';
 import { type Tick, useMarketDataStore } from '../../store/useMarketDataStore';
 import { MarketWatchTickChart } from './MarketWatchTickChart';
 import { MARKET_WATCH_TICK_CHART_LIMIT } from './tickChartGeometry';
@@ -359,6 +360,19 @@ describe('MarketWatchTickChart', () => {
       window.removeEventListener('openOrderDialog', orderListener);
       window.removeEventListener('openChart', chartListener);
     }
+  });
+
+  it('always binds Market Watch tick graph bid/ask colors to the active chart candle colors', () => {
+    useChartSettingsStore.getState().resetToDefaults();
+    useChartSettingsStore.getState().updateSymbolColor('EURUSD', 'bullCandle', '#16a34a');
+    useChartSettingsStore.getState().updateSymbolColor('EURUSD', 'bearCandle', '#e11d48');
+
+    const { container } = render(<MarketWatchTickChart symbol="EURUSD" />);
+    const section = container.querySelector('section.rtx-market-tick-chart') as HTMLElement;
+    expect(section.style.getPropertyValue('--rtx-tick-chart-bid').toLowerCase()).toBe('#16a34a');
+    expect(section.style.getPropertyValue('--rtx-tick-chart-ask').toLowerCase()).toBe('#e11d48');
+
+    useChartSettingsStore.getState().resetToDefaults();
   });
 });
 

@@ -74,6 +74,8 @@ export interface TradingViewChartTheme {
   areaDownBottom: string;
   volumeUp: string;
   volumeDown: string;
+  volumeLineUp: string;
+  volumeLineDown: string;
 }
 
 export interface LivePriceOverlayColors {

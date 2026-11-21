@@ -185,6 +185,49 @@ describe('stream-driven history refetch', () => {
     expect(refreshOrdersAndHistory).toHaveBeenCalledTimes(1);
   });
 
+  it('anchors pending-order filled feedback to the chart bottom-left inside the chart', () => {
+    const feedbackEvents: CustomEvent[] = [];
+    const onFeedback = (event: Event) => feedbackEvents.push(event as CustomEvent);
+    window.addEventListener('rtx:order-feedback', onFeedback);
+    try {
+      useAppStore.setState({
+        orders: [{
+          id: 901001,
+          ticket: 901001,
+          symbol: 'ETHUSD',
+          type: 'buy_limit',
+          side: 'BUY',
+          volume: 0.1,
+          price: 2350,
+          status: 'PENDING',
+        } as never],
+      });
+      deliver(`orders.${LOGIN}`, {
+        type: 'order_filled',
+        data: {
+          ticket: 901001,
+          symbol: 'ETHUSD',
+          side: 'buy',
+          order_type: 'buy_limit',
+          volume: 0.1,
+          price: 2350,
+          status: 'filled',
+          filled_at: Math.floor(Date.now() / 1000) + 1,
+        },
+      });
+      expect(feedbackEvents).toHaveLength(1);
+      expect(feedbackEvents[0].detail).toMatchObject({
+        type: 'success',
+        notice: expect.objectContaining({
+          title: 'Pending Order Filled',
+          placement: 'chart-bottom-left',
+        }),
+      });
+    } finally {
+      window.removeEventListener('rtx:order-feedback', onFeedback);
+    }
+  });
+
   it('unmount after the burst has settled leaves nothing to flush or fire', () => {
     deliverOrderFrame(12065);
     vi.advanceTimersByTime(STREAM_HISTORY_LEAD_MS);

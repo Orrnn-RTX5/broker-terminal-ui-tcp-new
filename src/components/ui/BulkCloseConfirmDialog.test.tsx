@@ -67,9 +67,49 @@ describe('BulkCloseConfirmDialog', () => {
     expect(dialogStart).toBeGreaterThan(-1);
     expect(backdropRule).not.toContain('blur(');
     expect(backdropRule).not.toContain('animation:');
+    expect(backdropRule).toContain('align-items: flex-end;');
+    expect(backdropRule).toContain('justify-content: flex-end;');
     expect(dialogRule).not.toContain('animation:');
     expect(css).not.toContain('rtx-bulk-close-backdrop-in');
     expect(css).not.toContain('rtx-bulk-close-dialog-in');
+    expect(dialogRule).toContain('max-height: var(--rtx-bulk-close-max-height, min(174px, calc(100dvh - 52px)));');
+  });
+
+  it('caps dialog max-height at the bottom dock top border so it never overlaps the chart', () => {
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+    const dock = document.createElement('div');
+    dock.className = 'rtx-bottom-dock';
+    dock.getBoundingClientRect = () => ({
+      top: 688,
+      bottom: 876,
+      left: 0,
+      right: 1200,
+      width: 1200,
+      height: 188,
+      x: 0,
+      y: 688,
+      toJSON: () => ({}),
+    });
+    document.body.appendChild(dock);
+
+    try {
+      const { container } = render(<BulkCloseConfirmDialog />);
+      act(() => {
+        void useBulkCloseConfirmStore.getState().showBulkCloseConfirm({
+          type: 'ALL',
+          positions,
+          combinedPnL: 1.25,
+        });
+      });
+
+      const backdrop = container.querySelector<HTMLElement>('.rtx-bulk-close-backdrop');
+      // 900 - 36 (default bottom inset) - 688 (dock top) - 2 (clearance) = 174px
+      expect(backdrop?.style.getPropertyValue('--rtx-bulk-close-max-height')).toBe('174px');
+    } finally {
+      dock.remove();
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
+    }
   });
 
   it('starts on Cancel and ignores global Enter instead of confirming a financial action', async () => {
@@ -121,7 +161,7 @@ describe('BulkCloseConfirmDialog', () => {
     ['ALL', 'Close All Positions'],
     ['WINNERS', 'Close In-Profit Positions'],
     ['LOSERS', 'Close In-Loss Positions'],
-  ])('updates per-position P&L and combined P&L in real time for %s mode', (type, title) => {
+  ])('updates per-position P&L in real time without rendering summary stat cards for %s mode', (type, title) => {
     useAppStore.setState({
       positions: [
         {
@@ -170,9 +210,15 @@ describe('BulkCloseConfirmDialog', () => {
     });
 
     const dialog = screen.getByRole('dialog', { name: title });
+    expect(dialog.querySelector('.rtx-bulk-close-dialog__header')).toBeNull();
+    expect(dialog.querySelector('.rtx-bulk-close-dialog__mode-dot')).toBeNull();
+    expect(within(dialog).queryByText(title)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Close dialog' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Positions')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Combined P&L')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Breakdown')).not.toBeInTheDocument();
     expect(within(dialog).getByText('+2.50')).toBeInTheDocument();
     expect(within(dialog).getByText('-1.25')).toBeInTheDocument();
-    expect(within(dialog).getByText('+1.25')).toBeInTheDocument();
 
     act(() => {
       useAppStore.setState({
@@ -215,9 +261,18 @@ describe('BulkCloseConfirmDialog', () => {
 
     expect(within(dialog).getByText('+3.80')).toBeInTheDocument();
     expect(within(dialog).getByText('+0.40')).toBeInTheDocument();
-    expect(within(dialog).getByText('+4.20')).toBeInTheDocument();
-    expect(within(dialog).getByText('2 ↑')).toBeInTheDocument();
-    expect(within(dialog).getByText('0 ↓')).toBeInTheDocument();
+  });
+
+  it('uses singular Close 1 Position label when confirming a single position', () => {
+    render(<BulkCloseConfirmDialog />);
+    act(() => {
+      void useBulkCloseConfirmStore.getState().showBulkCloseConfirm({
+        type: 'WINNERS',
+        positions: positions.slice(0, 1),
+        combinedPnL: 2.5,
+      });
+    });
+    expect(screen.getByRole('button', { name: 'Close 1 Position' })).toBeInTheDocument();
   });
 
   it('renders all positions in the scrollable preview table without truncating at 10 rows', () => {
@@ -246,12 +301,13 @@ describe('BulkCloseConfirmDialog', () => {
     expect(within(dialog).queryByText(/more positions? not shown/i)).not.toBeInTheDocument();
   });
 
-  it('uses softened light-red tones instead of deep crimson and keeps direction/breakdown text-only across all bulk close action sheets', () => {
+  it('uses the canonical Buy/Sell colors and keeps direction text-only across all bulk close action sheets', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/styles/bulk-close-dialog.css'), 'utf8');
-    expect(css).toContain('--rtx-bulk-close-red: #f28b82;');
-    expect(css).toContain('--rtx-bulk-close-btn-bg: linear-gradient(180deg, #e57373 0%, #d95f5f 100%);');
-    expect(css).not.toMatch(/#(?:dc2626|b91c1c|991b1b)/i);
-    expect(css).toMatch(/\.rtx-bulk-close-dialog__direction--buy,\s*\.rtx-bulk-close-dialog__direction--sell\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*#ffffff;[\s\S]*?border:\s*none;/);
-    expect(css).toMatch(/\.rtx-bulk-close-dialog__breakdown-item\s*\{[\s\S]*?border:\s*none;[\s\S]*?background:\s*transparent;/);
+    expect(css).toContain('--rtx-bulk-close-buy: #4597ff;');
+    expect(css).toContain('--rtx-bulk-close-red: #ff5858;');
+    expect(css).toContain('--rtx-bulk-close-btn-bg: #ff5858;');
+    expect(css).toContain('--rtx-bulk-close-btn-bg: var(--rtx-light-sell, #dc2626);');
+    expect(css).toMatch(/\.rtx-bulk-close-dialog__direction--buy\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--rtx-bulk-close-buy\);[\s\S]*?border:\s*none;/);
+    expect(css).toMatch(/\.rtx-bulk-close-dialog__direction--sell\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--rtx-bulk-close-red\);[\s\S]*?border:\s*none;/);
   });
 });

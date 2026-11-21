@@ -5,8 +5,8 @@ export const TRADE_BUY_COLOR = '#22c55e';
 export const TRADE_SELL_COLOR = '#ef4444';
 export const TRADE_ENTRY_LINE_BUY_COLOR = '#2962ff';
 export const TRADE_ENTRY_LINE_SELL_COLOR = '#ef4444';
-export const TRADE_PENDING_BUY_LINE_COLOR = '#ea580c';
-export const TRADE_PENDING_SELL_LINE_COLOR = '#a855f7';
+export const TRADE_PENDING_BUY_LINE_COLOR = '#2962ff';
+export const TRADE_PENDING_SELL_LINE_COLOR = '#ef4444';
 
 export const getEntryLineColor = (
   side: TradeSide,

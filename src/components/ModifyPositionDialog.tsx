@@ -14,11 +14,8 @@ import {
     ChevronUp,
     Crosshair,
     Grid3X3,
-    Info,
     RotateCcw,
     X,
-    ZoomIn,
-    ZoomOut,
 } from 'lucide-react';
 import '../styles/modify-position-dialog.css';
 import { useAppStore, useTick } from '../store/useAppStore';
@@ -108,7 +105,6 @@ type MiniChartAction =
     | { type: 'append'; key: string; sample: MiniChartSample };
 
 const MAX_MINI_CHART_SAMPLES = 60;
-const MINI_CHART_ZOOM_LEVELS = [1, 1.35, 1.8, 2.4] as const;
 const initialMiniChartState: MiniChartState = { key: null, samples: [] };
 
 const getMiniChartKey = (position: ModifyPosition, kind: ModifyDialogKind) => {
@@ -261,20 +257,19 @@ const buildMiniMarketDepthLevels = (
 
 const MarketDepthIcon = () => (
     <svg
-        width="14"
-        height="14"
+        width="13"
+        height="13"
         viewBox="0 0 14 14"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
     >
-        <rect x="1.5" y="1.5" width="3" height="3" rx="0.6" fill="#ff4d57" />
-        <rect x="1.5" y="5.5" width="3" height="3" rx="0.6" fill="#ff4d57" opacity="0.75" />
-        <rect x="1.5" y="9.5" width="3" height="3" rx="0.6" fill="#ff4d57" opacity="0.5" />
-        <rect x="9.5" y="1.5" width="3" height="3" rx="0.6" fill="#2f8cff" opacity="0.5" />
-        <rect x="9.5" y="5.5" width="3" height="3" rx="0.6" fill="#2f8cff" opacity="0.75" />
-        <rect x="9.5" y="9.5" width="3" height="3" rx="0.6" fill="#2f8cff" />
-        <path d="M6.1 2.8H7.9M6.1 7H7.9M6.1 11.2H7.9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        <path
+            d="M2 3.25H6.2M2 7H4.8M2 10.75H6.8M12 3.25H8.8M12 7H7.4M12 10.75H9.4"
+            stroke="currentColor"
+            strokeWidth="1.45"
+            strokeLinecap="round"
+        />
     </svg>
 );
 
@@ -306,7 +301,7 @@ export function ModifyPositionDialog(props: ModifyPositionDialogProps) {
     />;
 }
 
-function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, position, kind = 'position' }: Omit<ModifyPositionDialogProps, 'position'> & { position: ModifyPosition }) {
+function ModifyPositionDialogContent({ isOpen, onClose, position, kind = 'position' }: Omit<ModifyPositionDialogProps, 'position'> & { position: ModifyPosition }) {
     const tr = useUiTranslation();
     // Same tick Market Watch rows display (app store, tick lookup). The fresh
     // quote (null when stale or missing) drives seeding and red marking; submit
@@ -389,7 +384,6 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [showMiniChart, setShowMiniChart] = useState(true);
     const [showMiniMarketDepth, setShowMiniMarketDepth] = useState(false);
-    const [miniChartZoomIndex, setMiniChartZoomIndex] = useState(0);
     const [showMiniChartGrid, setShowMiniChartGrid] = useState(true);
     const [showMiniChartPriceLines, setShowMiniChartPriceLines] = useState(true);
     const dialogRef = useRef<HTMLDivElement>(null);
@@ -440,7 +434,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
     const [miniChartState, dispatchMiniChart] = useReducer(miniChartReducer, initialMiniChartState);
 
     const chartContainerRef = useRef<HTMLDivElement | null>(null);
-    const [chartDimensions, setChartDimensions] = useState({ width: 450, height: 460 });
+    const [chartDimensions, setChartDimensions] = useState({ width: 310, height: 260 });
 
     useEffect(() => {
         clearScheduledClose();
@@ -470,13 +464,24 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
     useEffect(() => {
         const container = chartContainerRef.current;
-        if (!container || typeof ResizeObserver === 'undefined') return;
+        if (!container) return;
+        const measure = (width: number, height: number) => {
+            const nextWidth = Math.round(width);
+            const nextHeight = Math.round(height);
+            if (nextWidth > 50 && nextHeight > 50) {
+                setChartDimensions((prev) => (
+                    prev.width === nextWidth && prev.height === nextHeight
+                        ? prev
+                        : { width: nextWidth, height: nextHeight }
+                ));
+            }
+        };
+        const rect = container.getBoundingClientRect();
+        measure(rect.width, rect.height);
+        if (typeof ResizeObserver === 'undefined') return;
         const observer = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                const { width, height } = entry.contentRect;
-                if (width > 50 && height > 50) {
-                    setChartDimensions({ width: Math.round(width), height: Math.round(height) });
-                }
+                measure(entry.contentRect.width, entry.contentRect.height);
             }
         });
         observer.observe(container);
@@ -828,9 +833,6 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
     const parsedVolume = Number.parseFloat(volumeStr);
     const actionVolume = Number.isFinite(parsedVolume) && parsedVolume > 0 ? parsedVolume : 0;
-    // Validated-only close label: an invalid volume disables the button
-    // (submit guards the same conditions with messages).
-    const closeVolumeInvalid = actionVolume <= 0 || actionVolume > position.volume + 0.0000001;
     const contractSpec = resolvePositionContractSpec(position);
     const volumeDescription = formatPositionVolumeDescription(actionVolume, contractSpec.contractSize, contractSpec.contractUnit);
 
@@ -906,7 +908,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 price_tp: tpVal > 0 ? tpVal : undefined,
                 comment: comment.trim() || undefined,
             }, { intentAtMs });
-            import('../utils/audio').then((m) => m.playSystemSound('open')).catch(() => undefined);
+            import('../utils/audio').then((m) => m.playSystemSound(side === 'SELL' ? 'sell' : 'buy')).catch(() => undefined);
             refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
             if (!isCurrentDialogSession(mutationContext)) return;
             setSuccessMessage(`${side === 'BUY' ? 'Buy' : 'Sell'} market order placed successfully`);
@@ -923,76 +925,8 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
         }
     };
 
-    const handleCloseByMarket = async () => {
-        if (isSubmitting) return;
-        const mutationContext = getCurrentMutationContext();
-        if (!mutationContext) return;
-        if (kind === 'pending-order') {
-            setError('Close by market is only available for open positions');
-            return;
-        }
-        if (actionVolume <= 0) {
-            setError('Volume must be greater than zero');
-            return;
-        }
-        if (actionVolume > position.volume + 0.0000001) {
-            setError('Close volume cannot be greater than position volume');
-            return;
-        }
-        // The close endpoint takes a volume; a smaller volume is a partial close.
-        const isPartialClose = Math.abs(actionVolume - position.volume) > 0.0000001;
-
-        setIsSubmitting(true);
-        setError(null);
-        setSuccessMessage(null);
-
-        try {
-            if (onClosePosition && !isPartialClose) {
-                const closeOperation = Promise.resolve(onClosePosition(position.id));
-                // The shared coordinator removes the pending row immediately
-                // and owns failure feedback/rollback, so this dialog need not
-                // wait on the broker round trip before leaving the workspace.
-                onCloseRef.current();
-                await closeOperation;
-                return;
-            }
-            await api.positions.closePosition(String(position.id), isPartialClose ? { volume: actionVolume } : undefined);
-            import('../utils/audio').then((m) => m.playSystemSound('close-single')).catch(() => undefined);
-            refreshHistoryAfterFill(Number(useAppStore.getState().accountId));
-            if (!isCurrentDialogSession(mutationContext)) return;
-            if (!isPartialClose) {
-                const store = useAppStore.getState();
-                store.setPositions(store.positions.filter(p => p.id !== position.id), { closedTickets: [position.id] });
-                refreshPositionsAfterTrade();
-            } else {
-                // A partial close already has an authoritative response. Patch
-                // the displayed volume locally instead of forcing a full
-                // positions/account/metrics refresh before confirmation.
-                const remainingVolume = Math.max(0, Math.round((position.volume - actionVolume) * 1e8) / 1e8);
-                const store = useAppStore.getState();
-                store.setPositions(store.positions.map((p) => (
-                    p.id === position.id ? { ...p, volume: remainingVolume } : p
-                )));
-            }
-            setSuccessMessage(isPartialClose ? `Closed ${actionVolume} of #${position.id}` : 'Position closed successfully');
-            onCloseRef.current();
-        } catch (err: unknown) {
-            if (!isCurrentDialogSession(mutationContext)) return;
-            console.error('[Close by Market] Error:', err);
-            const staleMessage = handleStalePositionRefusal(err, position.id, { refresh: requestPositionsRefresh, tr });
-            setError(staleMessage ?? getErrorMessage(err));
-        } finally {
-            if (isCurrentDialogSession(mutationContext)) {
-                setIsSubmitting(false);
-            }
-        }
-    };
-
-    const canZoomInMiniChart = miniChartZoomIndex < MINI_CHART_ZOOM_LEVELS.length - 1;
-    const canZoomOutMiniChart = miniChartZoomIndex > 0;
     const resetMiniChartView = () => {
         setShowMiniChart(true);
-        setMiniChartZoomIndex(0);
         setShowMiniChartGrid(true);
         setShowMiniChartPriceLines(true);
     };
@@ -1024,47 +958,38 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
     const renderMiniChartToolbar = () => (
         <div className="rtx-modify-chart-toolbar">
-            {renderChartToolButton(
-                showMiniMarketDepth ? 'Hide market depth' : 'Show market depth',
-                <MarketDepthIcon />,
-                () => setShowMiniMarketDepth(value => !value),
-                { active: showMiniMarketDepth }
-            )}
-            {renderChartToolButton(
-                showMiniChart ? 'Hide chart' : 'Show chart',
-                <Activity size={14} strokeWidth={1.8} />,
-                () => setShowMiniChart(value => !value),
-                { active: showMiniChart }
-            )}
-            <div className="rtx-modify-tool-divider" />
-            {renderChartToolButton(
-                showMiniChartGrid ? 'Hide grid' : 'Show grid',
-                <Grid3X3 size={14} strokeWidth={1.8} />,
-                () => setShowMiniChartGrid(value => !value),
-                { active: showMiniChartGrid, disabled: !showMiniChart }
-            )}
-            {renderChartToolButton(
-                showMiniChartPriceLines ? 'Hide price lines' : 'Show price lines',
-                <Crosshair size={14} strokeWidth={1.8} />,
-                () => setShowMiniChartPriceLines(value => !value),
-                { active: showMiniChartPriceLines, disabled: !showMiniChart }
-            )}
-            <div className="rtx-modify-tool-divider" />
-            {renderChartToolButton(
-                'Zoom in',
-                <ZoomIn size={14} strokeWidth={1.8} />,
-                () => setMiniChartZoomIndex(index => Math.min(index + 1, MINI_CHART_ZOOM_LEVELS.length - 1)),
-                { disabled: !showMiniChart || !canZoomInMiniChart }
-            )}
-            {renderChartToolButton(
-                'Zoom out',
-                <ZoomOut size={14} strokeWidth={1.8} />,
-                () => setMiniChartZoomIndex(index => Math.max(index - 1, 0)),
-                { disabled: !showMiniChart || !canZoomOutMiniChart }
-            )}
-            {renderChartToolButton('Fit chart', <RotateCcw size={14} strokeWidth={1.8} />, resetMiniChartView)}
-            <div className="rtx-modify-tool-zoom">
-                {MINI_CHART_ZOOM_LEVELS[miniChartZoomIndex].toFixed(2)}x
+            <div className="rtx-modify-chart-toolbar__left">
+                {renderChartToolButton(
+                    showMiniMarketDepth ? 'Hide market depth' : 'Show market depth',
+                    <MarketDepthIcon />,
+                    () => setShowMiniMarketDepth(value => !value),
+                    { active: showMiniMarketDepth }
+                )}
+                {renderChartToolButton(
+                    showMiniChart ? 'Hide chart' : 'Show chart',
+                    <Activity size={13} strokeWidth={1.75} />,
+                    () => setShowMiniChart(value => !value),
+                    { active: showMiniChart }
+                )}
+                {renderChartToolButton(
+                    showMiniChartGrid ? 'Hide grid' : 'Show grid',
+                    <Grid3X3 size={13} strokeWidth={1.75} />,
+                    () => setShowMiniChartGrid(value => !value),
+                    { active: showMiniChartGrid, disabled: !showMiniChart }
+                )}
+                {renderChartToolButton(
+                    showMiniChartPriceLines ? 'Hide price lines' : 'Show price lines',
+                    <Crosshair size={13} strokeWidth={1.75} />,
+                    () => setShowMiniChartPriceLines(value => !value),
+                    { active: showMiniChartPriceLines, disabled: !showMiniChart }
+                )}
+            </div>
+            <div className="rtx-modify-chart-toolbar__right">
+                {renderChartToolButton(
+                    'Fit chart',
+                    <RotateCcw size={12.5} strokeWidth={1.75} />,
+                    resetMiniChartView
+                )}
             </div>
         </div>
     );
@@ -1141,11 +1066,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
     // Mini chart renderer
     const renderMiniChart = () => {
-        const zoomLevel = MINI_CHART_ZOOM_LEVELS[miniChartZoomIndex];
-        const visibleSampleCount = zoomLevel > 1
-            ? Math.max(12, Math.ceil(miniChartSamples.length / zoomLevel))
-            : miniChartSamples.length;
-        const visibleMiniChartSamples = miniChartSamples.slice(-visibleSampleCount);
+        const visibleMiniChartSamples = miniChartSamples;
         const bidData = visibleMiniChartSamples.map(sample => sample.bid);
         const askData = visibleMiniChartSamples.map(sample => sample.ask);
         const timeData = visibleMiniChartSamples.map(sample => sample.timestamp);
@@ -1179,30 +1100,31 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
         const w = Math.max(220, chartDimensions.width);
         const h = Math.max(180, chartDimensions.height);
-        const plotLeft = 6;
-        const plotTop = 8;
+        const plotLeft = 0;
+        const plotTop = 6;
         const samplePriceStr = fmtPrice(max);
-        const tagWidth = Math.max(80, Math.round(samplePriceStr.length * 8.2) + 16);
-        const plotRight = Math.max(plotLeft + 60, w - tagWidth - 8);
-        const plotBottom = Math.max(plotTop + 60, h - 28);
+        const tagWidth = Math.max(60, Math.round(samplePriceStr.length * 6.3) + 12);
+        const plotRight = Math.max(plotLeft + 80, w - tagWidth - 8);
+        const plotBottom = Math.max(plotTop + 60, h - 22);
         const plotWidth = plotRight - plotLeft;
         const plotHeight = plotBottom - plotTop;
-        const timeAxisY = h - 9;
+        const timeAxisY = h - 7;
         const tagX = plotRight + 4;
-        const tagHeight = 22;
+        const tagHeight = 17;
         const minTagY = plotTop + 1;
         const maxTagY = plotBottom - tagHeight - 1;
-        const gridFractions = [0, 0.25, 0.5, 0.75, 1];
+        const gridFractions = [0.1, 0.3, 0.5, 0.7, 0.9];
+        const verticalGridFractions = [0.25, 0.5, 0.75];
         const timeFractions = [0, 0.5, 1];
-        const chartBackground = 'var(--modify-chart-background, #101216)';
-        const plotBackground = 'var(--modify-chart-plot, #0c0e12)';
-        const gridColor = 'var(--modify-chart-grid, #222632)';
-        const axisColor = 'var(--modify-chart-text, #cbd2dc)';
-        const axisBg = 'var(--modify-chart-axis, #121519)';
+        const chartBackground = 'var(--modify-chart-background, #0f1115)';
+        const plotBackground = 'var(--modify-chart-plot, #0f1115)';
+        const gridColor = 'var(--modify-chart-grid, rgba(255, 255, 255, 0.055))';
+        const axisColor = 'var(--modify-chart-text, #848d9b)';
+        const axisBg = 'var(--modify-chart-axis, #14171d)';
         const borderColor = 'var(--modify-chart-border, #252932)';
-        const tickColor = 'var(--modify-chart-tick, #3b4049)';
-        const askColor = 'var(--modify-chart-ask, #ff5b6b)';
-        const bidColor = 'var(--modify-chart-bid, #00d2ff)';
+        const tickColor = 'var(--modify-chart-tick, #2e333f)';
+        const askColor = 'var(--modify-chart-ask, #ff5858)';
+        const bidColor = 'var(--modify-chart-bid, #4597ff)';
 
         const toPath = (data: number[]) => {
             return data.map((v, i) => {
@@ -1261,20 +1183,20 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
             return (
                 <g key={fill}>
                     {Math.abs(centerY - y) > 3 && (
-                        <line x1={plotRight} y1={y} x2={arrowBaseX} y2={centerY} stroke={fill} strokeWidth="1" strokeOpacity="0.7" strokeDasharray="2 2" />
+                        <line x1={plotRight} y1={y} x2={arrowBaseX} y2={centerY} stroke={fill} strokeWidth="1" strokeOpacity="0.6" strokeDasharray="2 2" />
                     )}
                     <polygon
-                        points={`${arrowTipX},${y} ${arrowBaseX},${clamp(y - 4, tagY + 1, tagY + tagHeight - 1)} ${arrowBaseX},${clamp(y + 4, tagY + 1, tagY + tagHeight - 1)}`}
+                        points={`${arrowTipX},${y} ${arrowBaseX},${clamp(y - 3, tagY + 1, tagY + tagHeight - 1)} ${arrowBaseX},${clamp(y + 3, tagY + 1, tagY + tagHeight - 1)}`}
                         fill={fill}
                     />
-                    <rect x={tagX} y={tagY} width={tagWidth} height={tagHeight} rx={3} fill={fill} />
+                    <rect x={tagX} y={tagY} width={tagWidth} height={tagHeight} rx={2.5} fill={fill} />
                     <text
                         x={tagX + tagWidth / 2}
-                        y={tagY + 15}
+                        y={tagY + 11.8}
                         fill={textColor}
-                        fontSize="12"
-                        fontWeight="700"
-                        fontFamily="Consolas, monospace"
+                        fontSize="10"
+                        fontWeight="600"
+                        fontFamily="var(--font-mono), Consolas, monospace"
                         textAnchor="middle"
                     >
                         {tr(label)}
@@ -1283,20 +1205,22 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
             );
         };
 
+        const askTagCenterY = askTagY + tagHeight / 2;
+        const bidTagCenterY = bidTagY + tagHeight / 2;
+
         return (
             <svg
                 width={w}
                 height={h}
                 viewBox={`0 0 ${w} ${h}`}
-                className="h-full w-full"
+                className="absolute inset-0 block h-full w-full"
                 role="img"
                 aria-label={tr("{{value0}} bid and ask tick chart", { value0: position.symbol })}
-                preserveAspectRatio="none"
             >
                 <defs>
                     <linearGradient id="rtx-spread-corridor-grad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={askColor} stopOpacity="0.22" />
-                        <stop offset="100%" stopColor={bidColor} stopOpacity="0.16" />
+                        <stop offset="0%" stopColor={askColor} stopOpacity="0.13" />
+                        <stop offset="100%" stopColor={bidColor} stopOpacity="0.08" />
                     </linearGradient>
                     <clipPath id="rtx-plot-clip">
                         <rect x={plotLeft} y={plotTop} width={plotWidth} height={plotHeight} />
@@ -1304,36 +1228,44 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 </defs>
 
                 <rect x={0} y={0} width={w} height={h} fill={chartBackground} />
-                <rect x={plotLeft} y={plotTop} width={plotWidth} height={plotHeight} fill={plotBackground} stroke={borderColor} strokeWidth="1" rx={3} />
+                <rect x={plotLeft} y={plotTop} width={plotWidth} height={plotHeight} fill={plotBackground} />
 
-                {/* Right Axis Background */}
-                <rect x={plotRight} y={plotTop} width={w - plotRight} height={plotHeight} fill={axisBg} />
+                {/* Right Price Scale & Bottom Time Scale Surfaces */}
+                <rect x={plotRight} y={0} width={Math.max(0, w - plotRight)} height={h} fill={axisBg} />
+                <rect x={0} y={plotBottom} width={w} height={Math.max(0, h - plotBottom)} fill={axisBg} />
 
-                {/* Grid Lines */}
+                {/* Grid Lines & Non-Colliding Right Axis Price Labels */}
                 {gridFractions.map(f => {
                     const y = plotTop + f * plotHeight;
                     const price = max - f * range;
+                    const collidesWithLiveTag = showMiniChartPriceLines && (
+                        Math.abs(y - askTagCenterY) < 13 || Math.abs(y - bidTagCenterY) < 13
+                    );
                     return (
                         <g key={`price-${f}`}>
                             {showMiniChartGrid && (
-                                <line x1={plotLeft} y1={y} x2={plotRight} y2={y} stroke={gridColor} strokeWidth="0.8" strokeDasharray="3 3" />
+                                <line x1={plotLeft} y1={y} x2={plotRight} y2={y} stroke={gridColor} strokeWidth="1" strokeDasharray="2 3" />
                             )}
-                            <line x1={plotRight} y1={y} x2={plotRight + 4} y2={y} stroke={tickColor} strokeWidth="1" />
-                            <text
-                                x={plotRight + 6}
-                                y={clamp(y + 4, plotTop + 12, plotBottom - 4)}
-                                fill={axisColor}
-                                fontSize="12"
-                                fontWeight="600"
-                                fontFamily="Consolas, monospace"
-                            >
-                                {fmtPrice(price)}
-                            </text>
+                            {!collidesWithLiveTag && (
+                                <>
+                                    <line x1={plotRight} y1={y} x2={plotRight + 3} y2={y} stroke={tickColor} strokeWidth="1" />
+                                    <text
+                                        x={plotRight + 6}
+                                        y={clamp(y + 3.2, plotTop + 10, plotBottom - 4)}
+                                        fill={axisColor}
+                                        fontSize="10"
+                                        fontWeight="500"
+                                        fontFamily="var(--font-mono), Consolas, monospace"
+                                    >
+                                        {fmtPrice(price)}
+                                    </text>
+                                </>
+                            )}
                         </g>
                     );
                 })}
 
-                {showMiniChartGrid && gridFractions.map(f => {
+                {showMiniChartGrid && verticalGridFractions.map(f => {
                     const x = plotLeft + f * plotWidth;
                     return (
                         <line
@@ -1343,38 +1275,39 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                             x2={x}
                             y2={plotBottom}
                             stroke={gridColor}
-                            strokeWidth="0.8"
-                            strokeDasharray="3 3"
+                            strokeWidth="1"
+                            strokeDasharray="2 3"
                         />
                     );
                 })}
 
-                <line x1={plotRight} y1={plotTop} x2={plotRight} y2={plotBottom} stroke={borderColor} strokeWidth="1" />
-                <line x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} stroke={borderColor} strokeWidth="1" />
-
                 {/* Clipped curves & area fills */}
                 <g clipPath="url(#rtx-plot-clip)">
-                    {/* Clear, subtle Spread Corridor Band between Ask & Bid */}
+                    {/* Subtle Spread Corridor Band between Ask & Bid */}
                     <path d={toSpreadBandPath(effectiveAskData, effectiveBidData)} fill="url(#rtx-spread-corridor-grad)" />
 
                     {/* Reference Price Horizontal Dashed Lines */}
                     {showMiniChartPriceLines && (
                         <>
-                            <line x1={plotLeft} y1={askY} x2={plotRight} y2={askY} stroke={askColor} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.9" />
-                            <line x1={plotLeft} y1={bidY} x2={plotRight} y2={bidY} stroke={bidColor} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.9" />
+                            <line x1={plotLeft} y1={askY} x2={plotRight} y2={askY} stroke={askColor} strokeWidth="1" strokeDasharray="2 3" opacity="0.58" />
+                            <line x1={plotLeft} y1={bidY} x2={plotRight} y2={bidY} stroke={bidColor} strokeWidth="1" strokeDasharray="2 3" opacity="0.58" />
                         </>
                     )}
 
                     {/* Price Curves */}
-                    <path d={toPath(effectiveAskData)} fill="none" stroke={askColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d={toPath(effectiveBidData)} fill="none" stroke={bidColor} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d={toPath(effectiveAskData)} fill="none" stroke={askColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d={toPath(effectiveBidData)} fill="none" stroke={bidColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
 
-                    {/* Live Current Tick Dots with soft glowing halo */}
-                    <circle cx={plotRight} cy={askY} r="3.5" fill={askColor} />
-                    <circle cx={plotRight} cy={askY} r="8" fill={askColor} fillOpacity="0.32" />
-                    <circle cx={plotRight} cy={bidY} r="3.5" fill={bidColor} />
-                    <circle cx={plotRight} cy={bidY} r="8" fill={bidColor} fillOpacity="0.32" />
+                    {/* Live Current Tick Dots */}
+                    <circle cx={plotRight - 2} cy={askY} r="2.2" fill={askColor} />
+                    <circle cx={plotRight - 2} cy={askY} r="5" fill={askColor} fillOpacity="0.2" />
+                    <circle cx={plotRight - 2} cy={bidY} r="2.2" fill={bidColor} />
+                    <circle cx={plotRight - 2} cy={bidY} r="5" fill={bidColor} fillOpacity="0.2" />
                 </g>
+
+                {/* Crisp Institutional Scale Dividers */}
+                <line x1={plotRight} y1={0} x2={plotRight} y2={plotBottom} stroke={borderColor} strokeWidth="1" />
+                <line x1={0} y1={plotBottom} x2={w} y2={plotBottom} stroke={borderColor} strokeWidth="1" />
 
                 {/* Price Tags on Right Axis */}
                 {showMiniChartPriceLines && (
@@ -1387,17 +1320,20 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 {/* Time Axis */}
                 {timeFractions.map(f => {
                     const x = plotLeft + f * plotWidth;
+                    const textX = f === 0 ? plotLeft + 6 : f === 1 ? plotRight - 4 : x;
                     const anchor = f === 0 ? 'start' : f === 1 ? 'end' : 'middle';
                     return (
                         <g key={`time-${f}`}>
-                            <line x1={x} y1={plotBottom} x2={x} y2={plotBottom + 5} stroke={tickColor} strokeWidth="1" />
+                            {f > 0 && f < 1 && (
+                                <line x1={x} y1={plotBottom} x2={x} y2={plotBottom + 3} stroke={tickColor} strokeWidth="1" />
+                            )}
                             <text
-                                x={x}
+                                x={textX}
                                 y={timeAxisY}
                                 fill={axisColor}
-                                fontSize="12"
-                                fontWeight="600"
-                                fontFamily="Consolas, monospace"
+                                fontSize="10"
+                                fontWeight="500"
+                                fontFamily="var(--font-mono), Consolas, monospace"
                                 textAnchor={anchor}
                             >
                                 {getAxisTime(f)}
@@ -1479,7 +1415,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                             {position.side}
                         </span>
                         <span className="rtx-modify-meta-detail">
-                            {position.volume.toFixed(2)} {position.symbol} @ {fmtPrice(position.openPrice)}
+                            {position.volume.toFixed(2)}
                         </span>
                     </div>
                     <button
@@ -1496,26 +1432,12 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                 <div className="rtx-modify-body">
                     {/* Left: Mini Chart */}
                     <div className={`rtx-modify-chart-panel ${chartPanelWidthClass}`}>
-                        <div className="rtx-modify-chart-header">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span className="rtx-modify-chart-symbol">{position.symbol}</span>
-                                <span className="rtx-modify-chart-badge">TICK</span>
-                                <span className="rtx-modify-chart-spread-pill">
-                                    {tr("Spread ")}{spreadPointsLabel} pts
-                                </span>
-                            </div>
-                            <div className="rtx-modify-chart-quote-pills">
-                                <span className="rtx-modify-chart-quote--bid">{fmtPrice(bid)}</span>
-                                <span className="rtx-modify-chart-quote-separator text-[#555a64]">/</span>
-                                <span className="rtx-modify-chart-quote--ask">{fmtPrice(ask)}</span>
-                            </div>
-                        </div>
                         {renderMiniChartToolbar()}
-                        <div className="rtx-modify-chart-canvas min-h-0 flex-1 bg-[#101216] p-0 flex flex-col items-stretch overflow-hidden">
+                        <div className="rtx-modify-chart-canvas min-h-0 flex-1 bg-[#0f1115] p-0 flex flex-col items-stretch overflow-hidden">
                             {showMiniMarketDepth ? (
                                 <div className={showMiniChart ? 'grid h-full min-h-0 grid-cols-[minmax(0,1fr)_154px] gap-1.5' : 'h-full'}>
                                     {showMiniChart && (
-                                        <div ref={chartContainerRef} className="h-full min-h-0 w-full overflow-hidden">
+                                        <div ref={chartContainerRef} className="relative h-full min-h-[210px] w-full overflow-hidden">
                                             {renderMiniChart()}
                                         </div>
                                     )}
@@ -1523,7 +1445,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                                 </div>
                             ) : (
                                 showMiniChart ? (
-                                    <div ref={chartContainerRef} className="h-full min-h-0 w-full overflow-hidden">
+                                    <div ref={chartContainerRef} className="relative h-full min-h-[210px] w-full overflow-hidden">
                                         {renderMiniChart()}
                                     </div>
                                 ) : null
@@ -1758,46 +1680,35 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
 
                         {/* Action Buttons */}
                         <div className="rtx-modify-actions-stack">
-                            {/* Modify Button */}
-                            <button
-                                type="button"
-                                onClick={handleSubmit}
-                                disabled={isSubmitting}
-                                className="rtx-modify-btn--submit"
-                            >
-                                {isSubmitting ? tr("Processing...") : tr("Modify #{{value0}} {{value1}} {{value2}} {{value3}} {{value4}}", { value0: position.id, value1: position.side.toLowerCase(), value2: position.volume.toFixed(2), value3: position.symbol, value4: fmtPrice(position.openPrice) })}
-                            </button>
-
-                            {kind === 'position' && (
-                                <>
-                                    <div className="rtx-modify-market-grid">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleMarketOrder('SELL')}
-                                            disabled={isSubmitting || bid <= 0}
-                                            className="rtx-modify-btn--market rtx-modify-btn--sell"
-                                        >
-                                            {tr("Sell by Market")}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleMarketOrder('BUY')}
-                                            disabled={isSubmitting || ask <= 0}
-                                            className="rtx-modify-btn--market rtx-modify-btn--buy"
-                                        >
-                                            {tr("Buy by Market")}
-                                        </button>
-                                    </div>
+                            {kind === 'pending-order' ? (
+                                /* Modify Button (pending orders only) */
+                                <button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting}
+                                    className="rtx-modify-btn--submit"
+                                >
+                                    {isSubmitting ? tr("Processing...") : tr("Modify #{{value0}} {{value1}} {{value2}} {{value3}} {{value4}}", { value0: position.id, value1: position.side.toLowerCase(), value2: position.volume.toFixed(2), value3: position.symbol, value4: fmtPrice(position.openPrice) })}
+                                </button>
+                            ) : (
+                                <div className="rtx-modify-market-grid">
                                     <button
                                         type="button"
-                                        onClick={handleCloseByMarket}
-                                        disabled={isSubmitting || closeVolumeInvalid}
-                                        title={closeVolumeInvalid ? tr("Enter a valid close volume first") : undefined}
-                                        className="rtx-modify-btn--close"
+                                        onClick={() => handleMarketOrder('SELL')}
+                                        disabled={isSubmitting || bid <= 0}
+                                        className="rtx-modify-btn--market rtx-modify-btn--sell"
                                     >
-                                        {tr("Close #")}{position.id} {position.side.toLowerCase()} {(actionVolume > 0 ? actionVolume : position.volume).toFixed(2)} {position.symbol} {fmtPrice(position.openPrice)} {tr(" by Market")}
+                                        {tr("Sell by Market")}
                                     </button>
-                                </>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleMarketOrder('BUY')}
+                                        disabled={isSubmitting || ask <= 0}
+                                        className="rtx-modify-btn--market rtx-modify-btn--buy"
+                                    >
+                                        {tr("Buy by Market")}
+                                    </button>
+                                </div>
                             )}
                         </div>
 
@@ -1812,14 +1723,6 @@ function ModifyPositionDialogContent({ isOpen, onClose, onClosePosition, positio
                                 {successMessage}
                             </div>
                         )}
-
-                        {/* Information Note */}
-                        <div className="rtx-modify-notice">
-                            <Info size={14} className="rtx-modify-notice-icon" aria-hidden="true" />
-                            <div className="rtx-modify-notice-text">
-                                <div className="rtx-modify-notice-helper text-[#737882] text-[12px] font-normal">{tr("Stops processing is performed on the broker side.")}</div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>

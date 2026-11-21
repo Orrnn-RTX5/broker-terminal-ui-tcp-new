@@ -127,14 +127,33 @@ export const MarketWatchGrid = ({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = viewportRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.width > 0) setPanelWidth(entry.contentRect.width);
+    const readWidth = () => {
+      // Measure outer border-box width (offsetWidth) rather than contentRect so
+      // vertical scrollbar appearance/disappearance when closing Navigator
+      // cannot toggle column-width breakpoints and cause a brief shrink jump.
+      const nextWidth = Math.round(element.offsetWidth);
+      if (nextWidth > 0) {
+        setPanelWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+      }
+    };
+    readWidth();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      const measured = Math.round(
+        element.offsetWidth
+        || entry?.borderBoxSize?.[0]?.inlineSize
+        || entry?.contentRect?.width
+        || 0,
+      );
+      if (measured > 0) {
+        setPanelWidth((prev) => (prev === measured ? prev : measured));
+      }
     });
     observer.observe(element);
-    if (element.offsetWidth > 0) setPanelWidth(element.offsetWidth);
     return () => observer.disconnect();
   }, []);
 
@@ -217,8 +236,8 @@ export const MarketWatchGrid = ({
               }}
             >
               <span>{translate(columnHeaders.symbol)}</span>
-              <span style={{ textAlign: 'center' }}>{translate(columnHeaders.bid)}</span>
-              <span style={{ textAlign: 'center' }}>{translate(columnHeaders.ask)}</span>
+              <span style={{ textAlign: 'right' }}>{translate(columnHeaders.bid)}</span>
+              <span style={{ textAlign: 'right' }}>{translate(columnHeaders.ask)}</span>
               <span style={{ textAlign: 'right' }}>{translate(columnHeaders.dailyChange)}</span>
             </div>
             <div aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', padding: '4px 0' }}>
@@ -366,9 +385,7 @@ export const MarketWatchGrid = ({
                     style={{
                       textAlign: column === 'symbol' || column === 'source'
                         ? 'left'
-                        : column === 'bid' || column === 'ask'
-                          ? 'center'
-                          : 'right',
+                        : 'right',
                       padding: '0 5px',
                       fontSize: 12,
                       fontWeight: 400,

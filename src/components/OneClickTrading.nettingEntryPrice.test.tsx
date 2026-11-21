@@ -18,6 +18,8 @@ vi.mock('../app/trading/tradeHistoryFreshness', () => ({
 }));
 
 import { useAppStore, type Position } from '../store/useAppStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { normalizeMarketStatus } from '../utils/marketStatus';
 import { OneClickTrading } from './OneClickTrading';
 
@@ -95,6 +97,10 @@ const clickBuy = async () => {
 describe('OneClickTrading immediate result on an existing (netting) position', () => {
   beforeEach(() => {
     useAppStore.getState().reset();
+    useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateTradeSettings({ oneClickTrading: true });
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useOneClickDisclaimerStore.getState().setAcceptedInSession(true);
     orderMocks.placeMarketOrder.mockReset();
     useAppStore.setState({
       isAuthenticated: true,
@@ -110,6 +116,8 @@ describe('OneClickTrading immediate result on an existing (netting) position', (
 
   afterEach(() => {
     cleanup();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useSettingsStore.getState().resetToDefaults();
     useAppStore.getState().reset();
     vi.restoreAllMocks();
   });

@@ -284,7 +284,7 @@ export const defaultChartProperties: ChartProperties = {
   colors: { ...blueSchemeColors },
 };
 
-const VOLUME_BARS_DEFAULT_MIGRATION_VERSION = 1;
+export const VOLUME_BARS_DEFAULT_MIGRATION_VERSION = 2;
 const PERIOD_SEPARATORS_DEFAULT_MIGRATION_VERSION = 1;
 const CHART_SHIFT_DEFAULT_MIGRATION_VERSION = 1;
 const OHLC_DEFAULT_MIGRATION_VERSION = 1;

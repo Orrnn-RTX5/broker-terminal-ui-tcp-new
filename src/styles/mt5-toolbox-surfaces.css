@@ -43,12 +43,56 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) :is(
   box-shadow: none !important;
 }
 
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs,
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs {
+  position: relative;
+  height: 27px !important;
+  min-height: 27px !important;
+  padding: 0 4px 4px 4px !important;
+  border-top: 0 !important;
   background: var(--rtx-toolbox-tabs) !important;
+  box-sizing: border-box !important;
 }
 
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs [aria-selected='true'] {
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs::before,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--text-primary, #e2e2e8) 40%, var(--bg-secondary, #1f1f1f));
+  pointer-events: none;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs button {
+  position: relative;
+  height: 100% !important;
+  min-height: 0 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  color: #c6c6cc !important;
+  background: transparent !important;
+  box-sizing: border-box !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button[aria-selected='true'],
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button:first-child[aria-selected='true'],
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs button[aria-selected='true'] {
+  position: relative;
+  z-index: 2;
+  margin-top: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
   background: var(--bg-secondary) !important;
+  border: 1px solid color-mix(in srgb, var(--text-primary, #e2e2e8) 42%, var(--bg-secondary, #1f1f1f)) !important;
+  border-top: 0 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
@@ -143,7 +187,6 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock table
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
   .rtx-trade-footer,
   .rtx-history-summary-bar,
-  .rtx-withdrawal-summary-bar,
   .rtx-exposure-account-bar
 ) {
   background: var(--rtx-toolbox-summary) !important;
@@ -155,13 +198,100 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-
 }
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs {
+  --rtx-mt5-tab-border: color-mix(in srgb, var(--text-primary, #e2e2e8) 42%, var(--bg-secondary, #1f1f1f));
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  box-sizing: border-box !important;
+  padding: 0 4px 4px 4px !important;
+  border-top: 0 !important;
   background: var(--rtx-toolbox-tabs) !important;
   box-shadow: none !important;
 }
 
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-dock-tab.active-tab {
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: 1px;
+  background: var(--rtx-mt5-tab-border, #72727a);
+  pointer-events: none;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs :is(
+  .rtx-bottom-dock__tab-content,
+  .rtx-dock-tab-scroller,
+  .rtx-dock-tab-actions
+) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled) {
+  color: #c6c6cc !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:disabled {
+  color: #7c7c84 !important;
+  background: transparent !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab {
+  position: relative;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs :is(
+  .rtx-dock-tab-scroller .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)),
+  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)):not(:last-child)
+)::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 0;
+  bottom: 5px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs:has(.rtx-dock-tab-actions .rtx-dock-tab:first-child.active-tab) .rtx-dock-tab-scroller .rtx-dock-tab:last-child::after {
+  display: none;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):active {
+  position: relative;
+  z-index: 2;
+  margin: 0 !important;
+  height: 100% !important;
   background: var(--bg-secondary) !important;
-  border-top-color: #c2c2c2 !important;
+  border: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
+  border-top: 0 !important;
+  border-radius: 0 !important;
+  color: #ffffff !important;
   box-shadow: none !important;
 }
 
@@ -299,9 +429,7 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) :is(
     .rtx-modify-header,
     .rtx-modify-form-panel,
     .rtx-modify-chart-panel,
-    .rtx-modify-chart-header,
     .rtx-modify-chart-toolbar,
-    .rtx-modify-notice,
     .rtx-print-preview__header,
     .rtx-print-preview__footer
   ) {
@@ -324,8 +452,6 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) :is(
     .rtx-modify-volume-stepper,
     .rtx-modify-volume-desc,
     .rtx-modify-badge-id,
-    .rtx-modify-chart-spread-pill,
-    .rtx-modify-chart-quote-pills,
     .rtx-modify-quote-strip,
     .rtx-modify-quote-spread,
     .rtx-modify-btn--submit,
@@ -474,8 +600,12 @@ html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.t
   background: var(--rtx-dark-accent, #007acc) !important;
 }
 
-html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
-  border-top-color: var(--rtx-dark-accent, #007acc) !important;
+html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab,
+html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):active {
+  border-top: 0 !important;
+  border-left: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
+  border-right: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
+  border-bottom: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
 }
 
 html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch .rtx-market-watch__row--selected {
@@ -539,7 +669,6 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
   .rtx-bottom-dock__tabs,
   .rtx-trade-footer,
   .rtx-history-summary-bar,
-  .rtx-withdrawal-summary-bar,
   .rtx-status-bar,
   .rtx-top-chrome,
   .rtx-main-toolbar,

@@ -68,7 +68,7 @@ const extractSocketBalanceOperations = (
   if (Array.isArray(message.data)) candidates.push(...message.data);
   if (data && !Array.isArray(data)) {
     const dataRecord = data as Record<string, unknown>;
-    candidates.push(dataRecord.operation, dataRecord.transaction, dataRecord.withdrawal, dataRecord.data);
+    candidates.push(dataRecord.operation, dataRecord.transaction, dataRecord.deposit, dataRecord.withdrawal, dataRecord.data);
     if (Array.isArray(dataRecord.operations)) candidates.push(...dataRecord.operations);
     if (Array.isArray(dataRecord.history)) candidates.push(...dataRecord.history);
   }

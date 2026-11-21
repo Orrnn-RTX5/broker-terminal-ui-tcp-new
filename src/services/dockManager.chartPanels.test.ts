@@ -229,4 +229,26 @@ describe('bounded chart creation', () => {
     expect(manager.getLayout().floatingPanels).toEqual([]);
     expect(chartPanels(manager.getLayout())[0].props?.symbol).toBe('USDJPY');
   });
+
+  it('normalizes split ratios when closing Navigator or Market Watch and restores them into left-sidebar', () => {
+    const manager = new DockManager();
+    expect(manager.removePanel('navigator')).toBe(true);
+    const afterNavClose = manager.getLayout();
+    const sidebar = afterNavClose.root.children[0] as DockContainer;
+    expect(sidebar.id).toBe('left-sidebar');
+    expect(sidebar.children).toHaveLength(1);
+    expect(sidebar.children[0].ratio).toBeCloseTo(1, 4);
+
+    expect(manager.removePanel('market-watch')).toBe(true);
+    const afterMwClose = manager.getLayout();
+    expect(afterMwClose.root.children).toHaveLength(1);
+    expect(afterMwClose.root.children[0].id).toBe('center-main');
+    expect(afterMwClose.root.children[0].ratio).toBeCloseTo(1, 4);
+
+    expect(manager.addPanel({ id: 'market-watch', title: 'Market Watch', component: 'MarketWatch' }, 'left-sidebar', 'left')).toBe(true);
+    const afterReopen = manager.getLayout();
+    expect(afterReopen.root.children[0].id).toBe('left-sidebar');
+    expect(afterReopen.root.children[0].ratio).toBeCloseTo(0.2, 4);
+    expect(afterReopen.root.children[1].ratio).toBeCloseTo(0.8, 4);
+  });
 });

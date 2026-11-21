@@ -15,6 +15,60 @@ html:root .rtx-status-bar .rtx-status-bar__title {
     color: var(--text-primary);
 }
 
+html:root .rtx-status-bar .rtx-status-bar__account-type-sep {
+    color: var(--text-primary);
+}
+
+html:root .rtx-status-bar .rtx-status-bar__account-type {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
+    color: var(--text-primary);
+    font-size: inherit;
+    font-weight: 500;
+    line-height: inherit;
+    letter-spacing: 0.01em;
+}
+
+html:root .rtx-status-bar .rtx-status-bar__account-type[data-account-type='demo'] {
+    border: none;
+    background-color: transparent;
+    color: #4ade80;
+}
+
+html:root .rtx-status-bar .rtx-status-bar__account-type[data-account-type='real'] {
+    border: none;
+    background-color: transparent;
+    color: #facc15;
+}
+
+html:root .rtx-status-bar .rtx-status-bar__account-type[data-account-type='contest'] {
+    border: none;
+    background-color: transparent;
+    color: #60a5fa;
+}
+
+html:root.rtx-skin-untitled-light .rtx-status-bar .rtx-status-bar__account-type[data-account-type='demo'] {
+    border: none;
+    background-color: transparent;
+    color: #15803d;
+}
+
+html:root.rtx-skin-untitled-light .rtx-status-bar .rtx-status-bar__account-type[data-account-type='real'] {
+    border: none;
+    background-color: transparent;
+    color: #a16207;
+}
+
+html:root.rtx-skin-untitled-light .rtx-status-bar .rtx-status-bar__account-type[data-account-type='contest'] {
+    border: none;
+    background-color: transparent;
+    color: #2563eb;
+}
+
 html:root .rtx-status-bar .rtx-status-bar__version-group {
     border-color: var(--border-primary);
 }

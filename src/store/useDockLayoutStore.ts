@@ -11,6 +11,7 @@ import { runOutsideChartFocus } from '../utils/advancedViewRootClasses';
 import { getCommittedBrokerAccountSessionScope, getCommittedBrokerAccountSessionScopeKey } from '../services/brokerSession';
 import { getActiveChartSource } from '../services/activeChartSource';
 import { getPanelIdFromChartContextId } from '../services/chartCommandTarget';
+import { SESSION_VIEW_KEYS, writeSessionString } from '../services/sessionViewState';
 
 export type DragState = 'idle' | 'dragging' | 'dropping';
 
@@ -47,6 +48,7 @@ export interface DockState {
   resizeDirection: 'horizontal' | 'vertical' | null;
 
   // UI State
+  maximizedPanelId: string | null;
   showDropIndicators: boolean;
   ghostPreview: {
     visible: boolean;
@@ -96,6 +98,9 @@ export interface DockState {
   updateContainerSize: (containerId: string, ratio: number) => void;
   updatePanelProps: (panelId: string, updates: Partial<Pick<DockPanelConfig, 'props' | 'title' | 'chartSymbolTabs'>>) => void;
   setPanelMinimized: (panelId: string, minimized: boolean) => void;
+  setPanelMaximized: (panelId: string, maximized: boolean) => void;
+  togglePanelMaximized: (panelId: string) => void;
+  clearMaximizedPanel: () => void;
   bringFloatingToFront: (panelId: string) => void;
 
   // History Actions
@@ -145,6 +150,15 @@ const findPanel = (layout: DockLayout, panelId: string): DockPanelConfig | null 
   return findInContainer(layout.root)
     || layout.floatingPanels.map(findInContainer).find(Boolean)
     || null;
+};
+
+const resolveValidMaximizedPanelId = (
+  layout: DockLayout,
+  maximizedPanelId: string | null,
+): string | null => {
+  if (!maximizedPanelId) return null;
+  const panel = findPanel(layout, maximizedPanelId);
+  return panel && panel.component === 'Chart' && !panel.minimized ? maximizedPanelId : null;
 };
 
 const listChartPanels = (layout: DockLayout): DockPanelConfig[] => {
@@ -230,14 +244,17 @@ const useDockLayoutStore = create<DockState>()(
         compassDir: null,
         resizingContainerId: null,
         resizeDirection: null,
+        maximizedPanelId: null,
         showDropIndicators: true,
         ghostPreview: { visible: false, x: 0, y: 0, width: 0, height: 0 },
 
         // Layout Actions
         setLayout: (layout) => {
           dockManager.setLayout(layout, true);
+          const nextLayout = dockManager.getLayout();
           set({
-            layout: dockManager.getLayout(),
+            layout: nextLayout,
+            maximizedPanelId: resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
             recentlyClosedCharts: mergeOverflowCharts(dockManager.takeOverflowCharts(), get().recentlyClosedCharts),
           });
         },
@@ -379,7 +396,7 @@ const useDockLayoutStore = create<DockState>()(
             // Grid creation uses layout ratios, not DOM measurements, so return
             // the atomic result synchronously while revealing the divided view.
             runOutsideChartFocus(() => {});
-            set({ layout: dockManager.getLayout() });
+            set({ layout: dockManager.getLayout(), maximizedPanelId: null });
           }
           return result;
         },
@@ -389,7 +406,13 @@ const useDockLayoutStore = create<DockState>()(
           const removed = dockManager.removePanel(panelId);
           if (!removed) return;
 
-          const nextState: Partial<DockState> = { layout: dockManager.getLayout() };
+          const nextLayout = dockManager.getLayout();
+          const nextState: Partial<DockState> = {
+            layout: nextLayout,
+            maximizedPanelId: get().maximizedPanelId === panelId
+              ? null
+              : resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
+          };
           if (panel?.component === 'Chart') {
             nextState.recentlyClosedCharts = [
               clonePanel(panel),
@@ -458,17 +481,37 @@ const useDockLayoutStore = create<DockState>()(
 
         dockPanel: (panelId, targetId, direction) => {
           dockManager.dockPanel(panelId, targetId, direction);
-          set({ layout: dockManager.getLayout() });
+          const nextLayout = dockManager.getLayout();
+          set({
+            layout: nextLayout,
+            maximizedPanelId: get().maximizedPanelId === panelId
+              ? null
+              : resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
+          });
         },
 
         redockPanel: (panelId) => {
           const redocked = dockManager.redockPanel(panelId);
-          if (redocked) set({ layout: dockManager.getLayout() });
+          if (redocked) {
+            const nextLayout = dockManager.getLayout();
+            set({
+              layout: nextLayout,
+              maximizedPanelId: get().maximizedPanelId === panelId
+                ? null
+                : resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
+            });
+          }
           return redocked;
         },
         floatPanel: (panelId, position, size) => {
           dockManager.floatPanel(panelId, position, size);
-          set({ layout: dockManager.getLayout() });
+          const nextLayout = dockManager.getLayout();
+          set({
+            layout: nextLayout,
+            maximizedPanelId: get().maximizedPanelId === panelId
+              ? null
+              : resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
+          });
         },
 
         updateFloatingPosition: (panelId, position) => {
@@ -497,7 +540,41 @@ const useDockLayoutStore = create<DockState>()(
         },
         setPanelMinimized: (panelId, minimized) => {
           dockManager.setPanelMinimized(panelId, minimized);
-          set({ layout: dockManager.getLayout() });
+          const nextLayout = dockManager.getLayout();
+          set({
+            layout: nextLayout,
+            maximizedPanelId: minimized && get().maximizedPanelId === panelId
+              ? null
+              : resolveValidMaximizedPanelId(nextLayout, get().maximizedPanelId),
+          });
+        },
+        setPanelMaximized: (panelId, maximized) => {
+          if (!maximized) {
+            if (get().maximizedPanelId === panelId) {
+              writeSessionString(SESSION_VIEW_KEYS.maximizedPanelId, null);
+              set({ maximizedPanelId: null });
+            }
+            return;
+          }
+          const panel = findPanel(get().layout, panelId);
+          if (!panel || panel.component !== 'Chart') return;
+          writeSessionString(SESSION_VIEW_KEYS.maximizedPanelId, panelId);
+          if (panel.minimized) {
+            dockManager.setPanelMinimized(panelId, false);
+            set({ layout: dockManager.getLayout(), maximizedPanelId: panelId });
+          } else {
+            set({ maximizedPanelId: panelId });
+          }
+        },
+        togglePanelMaximized: (panelId) => {
+          const isCurrentlyMaximized = get().maximizedPanelId === panelId;
+          get().setPanelMaximized(panelId, !isCurrentlyMaximized);
+        },
+        clearMaximizedPanel: () => {
+          writeSessionString(SESSION_VIEW_KEYS.maximizedPanelId, null);
+          if (get().maximizedPanelId !== null) {
+            set({ maximizedPanelId: null });
+          }
         },
         bringFloatingToFront: (panelId) => {
           dockManager.bringFloatingToFront(panelId);
@@ -507,13 +584,13 @@ const useDockLayoutStore = create<DockState>()(
         // History Actions
         undo: () => {
           runOutsideChartFocus(() => {
-            if (dockManager.undo()) set({ layout: dockManager.getLayout() });
+            if (dockManager.undo()) set({ layout: dockManager.getLayout(), maximizedPanelId: null });
           });
         },
 
         redo: () => {
           runOutsideChartFocus(() => {
-            if (dockManager.redo()) set({ layout: dockManager.getLayout() });
+            if (dockManager.redo()) set({ layout: dockManager.getLayout(), maximizedPanelId: null });
           });
         },
 
@@ -531,19 +608,20 @@ const useDockLayoutStore = create<DockState>()(
           ]);
           if (sessionLayoutKey !== currentSessionLayoutKey) {
             currentSessionLayoutKey = sessionLayoutKey;
-            set({ recentlyClosedCharts: [] });
+            set({ recentlyClosedCharts: [], maximizedPanelId: null });
           }
           const loaded = dockManager.loadFromStorage(layoutKey);
           if (loaded) {
-            set({ layout: dockManager.getLayout() });
+            set({ layout: dockManager.getLayout(), maximizedPanelId: null });
           }
           return loaded;
         },
         resetToDefaultLayout: () => {
           dockManager.resetToDefaultLayout();
-          set({ layout: dockManager.getLayout() });
+          set({ layout: dockManager.getLayout(), maximizedPanelId: null });
         },
         tileWindows: (mode = 'grid') => {
+          set({ maximizedPanelId: null });
           runOutsideChartFocus(() => {
             // Explicit tiling must divide the default one-chart workspace.
             // Once divided, changing the arrangement reuses its existing charts.
@@ -556,6 +634,7 @@ const useDockLayoutStore = create<DockState>()(
           });
         },
         stepTileWindows: () => {
+          set({ maximizedPanelId: null });
           runOutsideChartFocus(() => {
             dockManager.stepTileWindows();
           });
@@ -569,6 +648,7 @@ const useDockLayoutStore = create<DockState>()(
           const sourcePanelId = getPanelIdFromChartContextId(source?.id);
           const activeChart = currentCharts.find(panel => panel.id === sourcePanelId)
             || findActiveChart(currentLayout, source?.symbol);
+          set({ maximizedPanelId: null });
           runOutsideChartFocus(() => {
             dockManager.resetWindows(activeChart?.id);
             const layout = dockManager.getLayout();
@@ -577,6 +657,7 @@ const useDockLayoutStore = create<DockState>()(
             const closedIds = new Set(closedCharts.map(panel => panel.id));
             set({
               layout,
+              maximizedPanelId: null,
               recentlyClosedCharts: [
                 ...closedCharts.map(clonePanel),
                 ...get().recentlyClosedCharts.filter(panel => !closedIds.has(panel.id)),
@@ -586,13 +667,15 @@ const useDockLayoutStore = create<DockState>()(
         },
         arrangeIcons: () => {
           const count = get().layout.floatingPanels.filter(container => container.children.some(child => !('children' in child) && child.minimized)).length;
+          set({ maximizedPanelId: null });
           runOutsideChartFocus(() => {
             dockManager.arrangeIcons();
-            set({ layout: dockManager.getLayout() });
+            set({ layout: dockManager.getLayout(), maximizedPanelId: null });
           });
           return count;
         },
         arrangeCharts: (mode) => {
+          set({ maximizedPanelId: null });
           runOutsideChartFocus(() => {
             dockManager.arrangeCharts(mode);
           });
@@ -625,9 +708,11 @@ let isUpdating = false;
 dockManager.subscribe((layout) => {
   if (!isUpdating) {
     isUpdating = true;
+    const currentState = useDockLayoutStore.getState();
     useDockLayoutStore.setState({
       layout,
-      recentlyClosedCharts: mergeOverflowCharts(dockManager.takeOverflowCharts(), useDockLayoutStore.getState().recentlyClosedCharts),
+      maximizedPanelId: resolveValidMaximizedPanelId(layout, currentState.maximizedPanelId),
+      recentlyClosedCharts: mergeOverflowCharts(dockManager.takeOverflowCharts(), currentState.recentlyClosedCharts),
     });
     isUpdating = false;
   }

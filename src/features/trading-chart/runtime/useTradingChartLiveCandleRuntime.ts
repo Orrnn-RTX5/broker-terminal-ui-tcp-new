@@ -80,10 +80,12 @@ import type {
 import {
   getDisplayVolume,
   getValidSortedCandles,
+  getVolumeBarColor,
   isCandleAtOrBeforeFinalizedTime,
   markFinalizedCandleTime,
   resolveCandleFinalityFromActivePeriod,
   shouldRecomputeMarketGapSeparatorsForCandle,
+  shouldShowVolumeForChartType,
 } from '../../../components/TradingChart.helpers';
 import {
   getStartupSnapshotCandleCount,
@@ -405,13 +407,13 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
         } else {
           series.update({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close });
         }
-        if (volumeRef.current && shouldBuildVolumeData(chartSettingsRef.current)) {
+        if (volumeRef.current && shouldBuildVolumeData(chartSettingsRef.current) && shouldShowVolumeForChartType(ct)) {
           const theme = chartThemeRef.current;
           const displayVolume = getDisplayVolume(c, chartSettingsRef.current);
           volumeRef.current.update({
             time: c.time as Time,
             value: displayVolume,
-            color: c.close >= c.open ? theme.volumeUp : theme.volumeDown,
+            color: getVolumeBarColor(c, ct, theme),
           });
         }
         updateDrawingCandle(lastRenderedCandlesRef.current, c);

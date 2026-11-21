@@ -142,7 +142,7 @@ html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid th
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid th:is(.rtx-market-watch__column-heading--bid, .rtx-market-watch__column-heading--ask) {
-  text-align: center !important;
+  text-align: right !important;
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__sort-arrow {
@@ -384,6 +384,65 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-
   background: rgba(255, 255, 255, 0.06) !important;
   border-color: var(--mw-desktop-selection, #3b82f6) !important;
   box-shadow: 0 1px 4px rgba(59, 130, 246, 0.18) !important;
+}
+
+/* Professional symbol explorer polish (category view & subscribed status) */
+html:root .rtx-market-watch .rtx-market-watch__group-header:hover {
+  background: var(--bg-quaternary) !important;
+}
+
+html:root .rtx-market-watch .rtx-market-watch__symbol-option:hover .rtx-market-watch__add-badge {
+  border-color: var(--border-secondary) !important;
+  background: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__symbol-explorer {
+  background: var(--rtx-light-elevated, #ffffff) !important;
+  border-top-color: var(--rtx-light-border, #e2e8f0) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__group-header {
+  background: var(--rtx-light-panel-header, #f8fafc) !important;
+  border-bottom-color: var(--rtx-light-border, #e2e8f0) !important;
+  color: var(--rtx-light-text, #0f172a) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__group-header:hover {
+  background: var(--rtx-light-hover, #f1f5f9) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__group-back-icon {
+  background: var(--rtx-light-elevated, #ffffff) !important;
+  border: 1px solid var(--rtx-light-border, #dbe3ee) !important;
+  color: var(--rtx-light-text-secondary, #475569) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__group-count-pill {
+  background: var(--rtx-light-elevated, #ffffff) !important;
+  border-color: var(--rtx-light-border-strong, #cbd5e1) !important;
+  color: var(--rtx-light-text-secondary, #475569) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch :is(.rtx-market-watch__group-option, .rtx-market-watch__symbol-option) {
+  border-bottom-color: var(--rtx-light-border, #eef2f6) !important;
+  color: var(--rtx-light-text, #0f172a) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch :is(.rtx-market-watch__group-option, .rtx-market-watch__symbol-option)[aria-selected='true'],
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch :is(.rtx-market-watch__group-option, .rtx-market-watch__symbol-option):hover {
+  background: var(--rtx-light-hover, #f1f5f9) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__subscribed-badge {
+  background: rgba(21, 128, 61, 0.1) !important;
+  border-color: rgba(21, 128, 61, 0.28) !important;
+  color: #15803d !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__add-badge {
+  border-color: var(--rtx-light-border-strong, #cbd5e1) !important;
+  color: var(--rtx-light-text-secondary, #64748b) !important;
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch-details {

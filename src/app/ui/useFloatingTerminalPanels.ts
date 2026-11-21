@@ -7,6 +7,12 @@ import {
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
 } from 'react';
+import {
+  readSessionJson,
+  SESSION_VIEW_KEYS,
+  subscribeWorkspaceViewReset,
+  writeSessionJson,
+} from '../../services/sessionViewState';
 
 type Point = { x: number; y: number };
 type Size = { w: number; h: number };
@@ -94,16 +100,58 @@ export interface FloatingTerminalPanelsController {
   handleDataWindowResizeMouseDown: (event: ReactMouseEvent, mode: ResizeMode) => void;
 }
 
-export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTerminalPanelsController => {
-  const [showDOM, setShowDOM] = useState(false);
-  const [domSymbol, setDomSymbol] = useState(initialSymbol);
-  const [domSize, setDomSize] = useState<Size>(() => resolveDefaultDomSize());
-  const [domPos, setDomPos] = useState<Point>(() => resolveDefaultDomPosition(resolveDefaultDomSize()));
-  const [showDataWindow, setShowDataWindow] = useState(false);
-  const [dataWindowPos, setDataWindowPos] = useState<Point>({ x: 620, y: 56 });
-  const [dataWindowSize, setDataWindowSize] = useState<Size>({ w: 248, h: 306 });
+interface PersistedFloatingPanelsState {
+  showDOM?: boolean;
+  domSymbol?: string;
+  domPos?: Point;
+  domSize?: Size;
+  domHasDraggedOrResized?: boolean;
+  showDataWindow?: boolean;
+  dataWindowPos?: Point;
+  dataWindowSize?: Size;
+}
 
-  const domHasDraggedOrResizedRef = useRef(false);
+const isValidPoint = (value: unknown): value is Point => (
+  Boolean(value) && typeof value === 'object'
+  && Number.isFinite((value as Point).x) && Number.isFinite((value as Point).y)
+);
+
+const isValidSize = (value: unknown): value is Size => (
+  Boolean(value) && typeof value === 'object'
+  && Number.isFinite((value as Size).w) && (value as Size).w >= 200
+  && Number.isFinite((value as Size).h) && (value as Size).h >= 200
+);
+
+export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTerminalPanelsController => {
+  const persistedInitialRef = useRef<PersistedFloatingPanelsState | null>(null);
+  if (persistedInitialRef.current === null) {
+    persistedInitialRef.current = readSessionJson<PersistedFloatingPanelsState>(SESSION_VIEW_KEYS.floatingPanels, {});
+  }
+  const persistedInitial = persistedInitialRef.current;
+
+  const [showDOM, setShowDOM] = useState(() => persistedInitial.showDOM === true);
+  const [domSymbol, setDomSymbol] = useState(() => (
+    typeof persistedInitial.domSymbol === 'string' && persistedInitial.domSymbol.trim()
+      ? persistedInitial.domSymbol
+      : initialSymbol
+  ));
+  const [domSize, setDomSize] = useState<Size>(() => (
+    isValidSize(persistedInitial.domSize) ? persistedInitial.domSize : resolveDefaultDomSize()
+  ));
+  const [domPos, setDomPos] = useState<Point>(() => (
+    isValidPoint(persistedInitial.domPos)
+      ? persistedInitial.domPos
+      : resolveDefaultDomPosition(isValidSize(persistedInitial.domSize) ? persistedInitial.domSize : resolveDefaultDomSize())
+  ));
+  const [showDataWindow, setShowDataWindow] = useState(() => persistedInitial.showDataWindow === true);
+  const [dataWindowPos, setDataWindowPos] = useState<Point>(() => (
+    isValidPoint(persistedInitial.dataWindowPos) ? persistedInitial.dataWindowPos : { x: 620, y: 56 }
+  ));
+  const [dataWindowSize, setDataWindowSize] = useState<Size>(() => (
+    isValidSize(persistedInitial.dataWindowSize) ? persistedInitial.dataWindowSize : { w: 248, h: 306 }
+  ));
+
+  const domHasDraggedOrResizedRef = useRef(persistedInitial.domHasDraggedOrResized === true);
   const domSizeRef = useRef(domSize);
   domSizeRef.current = domSize;
   const domDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
@@ -294,6 +342,35 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }, [dataWindowPos, dataWindowSize]);
+
+  useEffect(() => {
+    const isDefaultClosed = !showDOM && !showDataWindow && !domHasDraggedOrResizedRef.current;
+    if (isDefaultClosed) {
+      writeSessionJson(SESSION_VIEW_KEYS.floatingPanels, null);
+      return;
+    }
+    writeSessionJson(SESSION_VIEW_KEYS.floatingPanels, {
+      showDOM,
+      domSymbol,
+      domPos,
+      domSize,
+      domHasDraggedOrResized: domHasDraggedOrResizedRef.current,
+      showDataWindow,
+      dataWindowPos,
+      dataWindowSize,
+    } satisfies PersistedFloatingPanelsState);
+  }, [dataWindowPos, dataWindowSize, domPos, domSize, domSymbol, showDOM, showDataWindow]);
+
+  useEffect(() => subscribeWorkspaceViewReset(() => {
+    domHasDraggedOrResizedRef.current = false;
+    const nextSize = resolveDefaultDomSize();
+    setShowDOM(false);
+    setDomSize(nextSize);
+    setDomPos(resolveDefaultDomPosition(nextSize));
+    setShowDataWindow(false);
+    setDataWindowPos({ x: 620, y: 56 });
+    setDataWindowSize({ w: 248, h: 306 });
+  }), []);
 
   return {
     showDOM,

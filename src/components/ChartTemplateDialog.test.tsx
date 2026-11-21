@@ -127,4 +127,24 @@ describe('retained lazy chart templates', () => {
     ]);
     expect(screen.queryByRole('textbox')).toBeNull();
   });
+
+  it('ships all built-in chart templates with volume off by default and migrates persisted defaults', () => {
+    expect(initialTemplates.filter((template) => template.isDefault).every((template) => template.showVolumes === false)).toBe(true);
+
+    const merge = useTemplateStore.persist.getOptions().merge!;
+    const merged = merge(
+      {
+        templates: [
+          { ...initialTemplates[0], id: 'default', isDefault: true, showVolumes: true },
+          { ...initialTemplates[2], id: 'technical-analysis', isDefault: true, showVolumes: true },
+          { ...initialTemplates[0], id: 'custom-volume-on', name: 'Custom Volume', isDefault: false, showVolumes: true },
+        ],
+      },
+      useTemplateStore.getState(),
+    );
+
+    expect(merged.templates.find((t) => t.id === 'default')?.showVolumes).toBe(false);
+    expect(merged.templates.find((t) => t.id === 'technical-analysis')?.showVolumes).toBe(false);
+    expect(merged.templates.find((t) => t.id === 'custom-volume-on')?.showVolumes).toBe(true);
+  });
 });

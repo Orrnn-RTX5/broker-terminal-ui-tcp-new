@@ -839,6 +839,7 @@ export class DockManager {
         }
       }
 
+      this.normalizeSplitTree(layout.root);
       this.setLayout(layout);
       return true;
     }
@@ -1044,6 +1045,56 @@ export class DockManager {
   addPanel(panel: DockPanelConfig, targetId?: string, direction: DockDirection = 'center'): boolean {
     if (panel.component === 'Chart' && !this.canAddChart()) return false;
     const layout = this.getLayout();
+
+    // Keep Market Watch and Navigator docked inside the canonical left-sidebar
+    // container so closing and re-opening either panel never jumps width or leaves gaps.
+    if (
+      targetId === 'left-sidebar'
+      && (panel.component === 'MarketWatch' || panel.component === 'Navigator')
+    ) {
+      let leftSidebar = this.findContainer(layout.root, 'left-sidebar');
+      if (!leftSidebar) {
+        leftSidebar = {
+          id: 'left-sidebar',
+          type: 'split',
+          direction: 'vertical',
+          ratio: DESKTOP_WEB_PARITY_RATIOS.sidebar,
+          children: [],
+        };
+        if (layout.root.type === 'split' && layout.root.direction === 'horizontal') {
+          const remainingRatio = 1 - DESKTOP_WEB_PARITY_RATIOS.sidebar;
+          const currentTotal = layout.root.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0) || 1;
+          layout.root.children.forEach((child: any) => {
+            child.ratio = ((child.ratio || DEFAULT_RATIO) / currentTotal) * remainingRatio;
+          });
+          layout.root.children.unshift(leftSidebar);
+        } else {
+          layout.root.children.unshift(leftSidebar);
+          this.normalizeRatios(layout.root);
+        }
+      }
+      const restoredRatio = panel.component === 'MarketWatch'
+        ? SIDEBAR_DEFAULT_RATIOS.marketWatch
+        : SIDEBAR_DEFAULT_RATIOS.navigator;
+      if (panel.component === 'MarketWatch') {
+        leftSidebar.children.forEach((child) => {
+          if (!('children' in child) && child.component === 'Navigator') {
+            child.ratio = SIDEBAR_DEFAULT_RATIOS.navigator;
+          }
+        });
+        leftSidebar.children.unshift({ ...panel, ratio: restoredRatio });
+      } else {
+        leftSidebar.children.forEach((child) => {
+          if (!('children' in child) && child.component === 'MarketWatch') {
+            child.ratio = SIDEBAR_DEFAULT_RATIOS.marketWatch;
+          }
+        });
+        leftSidebar.children.push({ ...panel, ratio: restoredRatio });
+      }
+      this.normalizeRatios(leftSidebar);
+      this.setLayout(layout);
+      return true;
+    }
 
     // First try to find targetId as a container  
     let target = targetId ? this.findContainer(layout.root, targetId) : layout.root;
@@ -1760,11 +1811,26 @@ export class DockManager {
     if (container.children.length === 0) return;
 
     const totalRatio = container.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0);
+    if (totalRatio <= 0) return;
     const factor = 1 / totalRatio;
 
     container.children.forEach((child: any) => {
       child.ratio = (child.ratio || DEFAULT_RATIO) * factor;
     });
+  }
+
+  private normalizeSplitTree(container: DockContainer): void {
+    for (const child of container.children) {
+      if ('children' in child) {
+        this.normalizeSplitTree(child as DockContainer);
+      }
+    }
+    if (container.type === 'split' && container.children.length > 0) {
+      const totalRatio = container.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0);
+      if (Math.abs(totalRatio - 1) > 0.0001) {
+        this.normalizeRatios(container);
+      }
+    }
   }
 
   private dockToTarget(

@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import type { DockPanelConfig } from '../../services/dockManager';
-import { X, Minus } from 'lucide-react';
+import { X, Minus, Maximize, Minimize } from 'lucide-react';
 import { ChartSymbolTabs } from './ChartSymbolTabs';
 import { ActiveChartWindowBorder } from './ActiveChartWindowBorder';
 import { MarketWatchServerClock } from '../layout/MarketWatchServerClock';
@@ -28,6 +28,7 @@ export interface DockPanelProps {
   panel: DockPanelConfig;
   isActive?: boolean;
   isFloating?: boolean;
+  isMaximized?: boolean;
   isDropTarget?: boolean;
   showHeader?: boolean;
   className?: string;
@@ -36,6 +37,7 @@ export interface DockPanelProps {
   onFloat?: () => void;
   onActivate?: () => void;
   onMinimizedChange?: (minimized: boolean) => void;
+  onMaximizedChange?: (maximized: boolean) => void;
   onDragStart?: (e: React.MouseEvent | React.TouchEvent) => void;
   style?: React.CSSProperties;
 }
@@ -44,6 +46,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
   panel,
   isActive = true,
   isFloating = false,
+  isMaximized = false,
   isDropTarget,
   showHeader = true,
   className,
@@ -52,19 +55,32 @@ export const DockPanel: React.FC<DockPanelProps> = ({
   onFloat,
   onActivate,
   onMinimizedChange,
+  onMaximizedChange,
   onDragStart,
   style,
 }) => {
     const tr = useUiTranslation();
   // Docked windows use layout state; standalone panels keep local control.
   const [localMinimized, setLocalMinimized] = useState(false);
+  const [localMaximized, setLocalMaximized] = useState(false);
   const minimized = onMinimizedChange ? Boolean(panel.minimized) : localMinimized;
+  const maximized = onMaximizedChange ? Boolean(isMaximized) : localMaximized;
   const isChart = panel.component === 'Chart';
   const chartsBarVisible = useTerminalBarsStore(state => state.chartsBarVisible);
   const chartSymbol = typeof panel.props?.symbol === 'string' ? panel.props.symbol : panel.title.split(',')[0];
   const setMinimized = (value: boolean) => {
     if (onMinimizedChange) onMinimizedChange(value);
-    else setLocalMinimized(value);
+    else {
+      setLocalMinimized(value);
+      if (value) setLocalMaximized(false);
+    }
+  };
+  const setMaximized = (value: boolean) => {
+    if (onMaximizedChange) onMaximizedChange(value);
+    else {
+      setLocalMaximized(value);
+      if (value) setLocalMinimized(false);
+    }
   };
 
   return (
@@ -106,7 +122,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
         }
       }}
     >
-      {isChart && isActive && !minimized && <ActiveChartWindowBorder panelId={panel.id} />}
+      {isChart && isActive && !minimized && !maximized && <ActiveChartWindowBorder panelId={panel.id} />}
       {/* ── MT5-style thin title bar ── */}
       {showHeader && (
         <div
@@ -127,11 +143,18 @@ export const DockPanel: React.FC<DockPanelProps> = ({
               setMinimized(false);
               return;
             }
+            if (maximized) return;
             onDragStart?.(e);
           }}
           onDoubleClick={(e) => {
             const target = e.target as HTMLElement;
             if (target.closest('button:not([role="tab"])')) return;
+            if (maximized) {
+              e.preventDefault();
+              e.stopPropagation();
+              setMaximized(false);
+              return;
+            }
             if (panel.floatable === false) return;
             e.preventDefault();
             e.stopPropagation();
@@ -152,6 +175,31 @@ export const DockPanel: React.FC<DockPanelProps> = ({
               <span className="ml-1 text-[12px] font-normal text-zinc-600 italic">{tr("(minimized)")}</span>
             )}
           </span>
+
+          {/* ── Fullscreen / Maximize ↔ Exit Fullscreen / Restore Down button (charts only) ── */}
+          {isChart && (
+            <button
+              type="button"
+              data-dock-action="maximize"
+              data-dock-maximized-button={maximized ? 'true' : 'false'}
+              aria-pressed={maximized}
+              aria-label={tr(
+                maximized ? 'Exit fullscreen chart {{symbol}}' : 'Fullscreen chart {{symbol}}',
+                { symbol: chartSymbol },
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMaximized(!maximized);
+              }}
+              className={cn(
+                'dock-panel__action dock-panel__action--maximize shrink-0 flex items-center justify-center w-6 h-6 rounded-sm hover:bg-zinc-600/80 text-zinc-400 hover:text-white transition-colors mr-0.5',
+                maximized && 'dock-panel__action--maximized text-zinc-200',
+              )}
+              title={maximized ? tr("Exit Fullscreen") : tr("Fullscreen")}
+            >
+              {maximized ? <Minimize className="w-3 h-3" /> : <Maximize className="w-3 h-3" />}
+            </button>
+          )}
 
           {/* ── Minimize button ── */}
           {!NON_MINIMIZABLE_COMPONENTS.has(panel.component) && (
