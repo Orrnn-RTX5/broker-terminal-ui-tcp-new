@@ -10,6 +10,7 @@ import {
 import {
   loadTerminalHistory,
   peekTerminalHistory,
+  registerHistoryTabMounted,
 } from '../../../services/terminalHistory';
 import { useAppStore } from '../../../store/useAppStore';
 import { EMPTY_HISTORY_DATA_SET } from './historyFilters';
@@ -261,6 +262,9 @@ export const useHistoryDataController = (
     setLedger(null);
     void fetchHistory({ background: Boolean(cached) });
   }, [activeLogin, activeScopeKey, fetchHistory, requestScope]);
+
+  // Lets background refreshes know a visible tab needs one refresh after an invalidation.
+  useEffect(() => registerHistoryTabMounted(), []);
 
   useEffect(() => {
     const handleCompleted = (event: Event) => {

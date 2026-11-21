@@ -286,6 +286,19 @@ const createLocalTerminalJournalEntry = (
     };
 };
 
+// Telemetry samples are frozen after creation, so the derived local Journal row can be built once
+// per sample and reused by every later merge (new server rows arrive far more often than samples).
+const localTerminalJournalEntryCache = new WeakMap<PlacementTerminalSample, JournalLogEntry>();
+
+const getLocalTerminalJournalEntry = (sample: PlacementTerminalSample): JournalLogEntry => {
+    let entry = localTerminalJournalEntryCache.get(sample);
+    if (entry === undefined) {
+        entry = createLocalTerminalJournalEntry(sample);
+        localTerminalJournalEntryCache.set(sample, entry);
+    }
+    return entry;
+};
+
 const getServerTerminalStatus = (
     log: JournalLogEntry,
 ): TradeOrderTerminalStatus | null => {
@@ -299,37 +312,95 @@ const getServerTerminalStatus = (
     return null;
 };
 
-const hasExactServerAttemptId = (
-    log: JournalLogEntry,
-    sample: PlacementTerminalSample,
-): boolean => (
-    Boolean(sample.clientOrderId)
-    && log.client_order_id !== undefined
-    && String(log.client_order_id).trim() === sample.clientOrderId
-);
-
-const isMatchingServerTerminalRow = (
-    log: JournalLogEntry,
-    sample: PlacementTerminalSample,
-): boolean => {
-    if (!hasExactServerAttemptId(log, sample)) return false;
-    return getServerTerminalStatus(log) !== null;
+type HeuristicCandidateFacts = {
+    messageLower: string;
+    hasSide: boolean;
+    hasNumber: boolean;
+    isLifecycleMessage: boolean;
 };
 
-const mergeTerminalTradeJournalLogs = (
+const compareJournalLogsNewestFirst = (left: JournalLogEntry, right: JournalLogEntry): number => {
+    const rightMs = right.datetime_ms ?? (right.datetime * 1000);
+    const leftMs = left.datetime_ms ?? (left.datetime * 1000);
+    return rightMs - leftMs;
+};
+
+// Differential-tested against the original O(M x N) findIndex/some version:
+// identical output and ordering, but every sample resolves through Map/Set
+// indexes (exact clientOrderId queue, per-status per-second buckets).
+// eslint-disable-next-line react-refresh/only-export-components
+export const mergeTerminalTradeJournalLogs = (
     serverLogs: readonly JournalLogEntry[],
     terminalSamples: readonly PlacementTerminalSample[],
 ): JournalLogEntry[] => {
     const mergedServerLogs = serverLogs.map(log => ({ ...log }));
+    if (terminalSamples.length === 0) {
+        return mergedServerLogs.sort(compareJournalLogsNewestFirst);
+    }
     const claimedServerRows = new Set<number>();
     const localRows: JournalLogEntry[] = [];
 
+    // Exact client order id -> ascending indexes of terminal server rows.
+    const exactQueues = new Map<string, number[]>();
+    const exactHeads = new Map<string, number>();
+    // Heuristic candidates (no client id, no latency, terminal status):
+    // status -> floor(datetime) -> ascending indexes, plus the full ordered list.
+    const heuristicBuckets = new Map<TradeOrderTerminalStatus, Map<number, number[]>>();
+    const heuristicAll = new Map<TradeOrderTerminalStatus, number[]>();
+    // Per-candidate message facts, computed once instead of once per (row, sample) pair.
+    const candidateFacts = new Map<number, HeuristicCandidateFacts>();
+
+    for (let index = 0; index < mergedServerLogs.length; index += 1) {
+        const log = mergedServerLogs[index];
+        const status = getServerTerminalStatus(log);
+        if (status === null) continue;
+        const rawClientId = log.client_order_id;
+        const trimmedClientId = rawClientId !== undefined ? String(rawClientId).trim() : '';
+        if (rawClientId !== undefined && trimmedClientId !== '') {
+            const queue = exactQueues.get(trimmedClientId);
+            if (queue) queue.push(index);
+            else exactQueues.set(trimmedClientId, [index]);
+            continue;
+        }
+        if (log.latency_ms !== undefined) continue;
+        if (!Number.isFinite(log.datetime)) continue;
+        let byStatus = heuristicBuckets.get(status);
+        let all = heuristicAll.get(status);
+        if (!byStatus || !all) {
+            byStatus = new Map();
+            all = [];
+            heuristicBuckets.set(status, byStatus);
+            heuristicAll.set(status, all);
+        }
+        const messageTrimmed = log.message.trim();
+        const messageLower = messageTrimmed.toLowerCase();
+        candidateFacts.set(index, {
+            messageLower,
+            hasSide: /\b(buy|sell)\b/.test(messageLower),
+            hasNumber: /\b\d+(?:\.\d+)?\b/.test(messageLower),
+            isLifecycleMessage: /^(?:position\s+opened|order\s+(?:filled|executed|completed|succeeded|rejected|expired|failed))\b/i.test(messageTrimmed),
+        });
+        const second = Math.floor(log.datetime);
+        const bucket = byStatus.get(second);
+        if (bucket) bucket.push(index);
+        else byStatus.set(second, [index]);
+        all.push(index);
+    }
+
     for (const sample of terminalSamples) {
-        const matchingIndex = mergedServerLogs.findIndex((log, index) => (
-            !claimedServerRows.has(index) && isMatchingServerTerminalRow(log, sample)
-        ));
+        let matchingIndex = -1;
+        if (sample.clientOrderId) {
+            const queue = exactQueues.get(sample.clientOrderId);
+            if (queue) {
+                const head = exactHeads.get(sample.clientOrderId) ?? 0;
+                if (head < queue.length) {
+                    matchingIndex = queue[head];
+                    exactHeads.set(sample.clientOrderId, head + 1);
+                }
+            }
+        }
         if (matchingIndex < 0) {
-            localRows.push(createLocalTerminalJournalEntry(sample));
+            localRows.push(getLocalTerminalJournalEntry(sample));
             continue;
         }
 
@@ -346,43 +417,91 @@ const mergeTerminalTradeJournalLogs = (
         }
     }
 
-    for (const sample of terminalSamples) {
-        if (sample.clientOrderId && mergedServerLogs.some(log => isMatchingServerTerminalRow(log, sample))) {
-            continue;
-        }
-        const heuristicIndex = mergedServerLogs.findIndex((log, index) => {
-            if (claimedServerRows.has(index)) return false;
-            if (log.client_order_id !== undefined && String(log.client_order_id).trim() !== '') return false;
-            if (log.latency_ms !== undefined) return false;
-            if (getServerTerminalStatus(log) !== sample.terminalStatus) return false;
-            if (!sample.symbol && !sample.side && !sample.clientOrderId) return false;
+    // id -> ascending positions in localRows (positions, not objects: cached rows may repeat).
+    const localRowsById = new Map<string, number[]>();
+    for (let position = 0; position < localRows.length; position += 1) {
+        const rowId = String(localRows[position].id);
+        const positions = localRowsById.get(rowId);
+        if (positions) positions.push(position);
+        else localRowsById.set(rowId, [position]);
+    }
+    const removedLocalRows = new Set<number>();
 
-            const sampleSec = Math.floor(sample.recordedAtEpochMs / 1000);
-            if (!Number.isFinite(log.datetime) || Math.abs(log.datetime - sampleSec) > 15) return false;
+    const matchesHeuristic = (
+        index: number,
+        sample: PlacementTerminalSample,
+        sampleSec: number,
+        symbolLower: string,
+        sideLower: string,
+        volumeStrings: readonly [string, string] | null,
+    ): boolean => {
+        const log = mergedServerLogs[index];
+        if (!Number.isFinite(log.datetime) || Math.abs(log.datetime - sampleSec) > 15) return false;
 
-            const messageLower = log.message.trim().toLowerCase();
-            if (sample.symbol && messageLower.includes(sample.symbol.toLowerCase())) {
-                if (sample.side && /\b(buy|sell)\b/.test(messageLower) && !messageLower.includes(sample.side.toLowerCase())) {
+        const facts = candidateFacts.get(index)!;
+        const messageLower = facts.messageLower;
+        if (symbolLower && messageLower.includes(symbolLower)) {
+            if (sideLower && facts.hasSide && !messageLower.includes(sideLower)) {
+                return false;
+            }
+            if (volumeStrings !== null) {
+                const [normalizedVol, fixedVol] = volumeStrings;
+                if (
+                    normalizedVol
+                    && facts.hasNumber
+                    && !messageLower.includes(normalizedVol)
+                    && !messageLower.includes(fixedVol)
+                ) {
                     return false;
                 }
-                if (typeof sample.volume === 'number' && Number.isFinite(sample.volume)) {
-                    const normalizedVol = formatLocalOrderVolume(sample.volume);
-                    const fixedVol = sample.volume.toFixed(2);
-                    if (
-                        normalizedVol
-                        && /\b\d+(?:\.\d+)?\b/.test(messageLower)
-                        && !messageLower.includes(normalizedVol)
-                        && !messageLower.includes(fixedVol)
-                    ) {
-                        return false;
+            }
+            return true;
+        }
+
+        return Math.abs(log.datetime - sampleSec) <= 5 && facts.isLifecycleMessage;
+    };
+
+    for (const sample of terminalSamples) {
+        if (sample.clientOrderId && exactQueues.has(sample.clientOrderId)) {
+            continue;
+        }
+        if (!sample.symbol && !sample.side && !sample.clientOrderId) continue;
+        const byStatus = heuristicBuckets.get(sample.terminalStatus);
+        if (!byStatus) continue;
+
+        const sampleSec = Math.floor(sample.recordedAtEpochMs / 1000);
+        const symbolLower = sample.symbol ? sample.symbol.toLowerCase() : '';
+        const sideLower = sample.side ? sample.side.toLowerCase() : '';
+        const volumeStrings: readonly [string, string] | null = (
+            typeof sample.volume === 'number' && Number.isFinite(sample.volume)
+        )
+            ? [formatLocalOrderVolume(sample.volume), sample.volume.toFixed(2)]
+            : null;
+        let heuristicIndex = -1;
+        if (Number.isNaN(sampleSec)) {
+            // NaN never fails the original window check; keep the linear scan.
+            const all = heuristicAll.get(sample.terminalStatus) ?? [];
+            for (const index of all) {
+                if (claimedServerRows.has(index)) continue;
+                if (matchesHeuristic(index, sample, sampleSec, symbolLower, sideLower, volumeStrings)) {
+                    heuristicIndex = index;
+                    break;
+                }
+            }
+        } else if (Number.isFinite(sampleSec)) {
+            for (let second = sampleSec - 15; second <= sampleSec + 15; second += 1) {
+                const bucket = byStatus.get(second);
+                if (!bucket) continue;
+                for (const index of bucket) {
+                    if (heuristicIndex >= 0 && index >= heuristicIndex) break;
+                    if (claimedServerRows.has(index)) continue;
+                    if (matchesHeuristic(index, sample, sampleSec, symbolLower, sideLower, volumeStrings)) {
+                        heuristicIndex = index;
+                        break;
                     }
                 }
-                return true;
             }
-
-            return Math.abs(log.datetime - sampleSec) <= 5
-                && /^(?:position\s+opened|order\s+(?:filled|executed|completed|succeeded|rejected|expired|failed))\b/i.test(log.message.trim());
-        });
+        }
         if (heuristicIndex < 0) continue;
 
         claimedServerRows.add(heuristicIndex);
@@ -390,19 +509,16 @@ const mergeTerminalTradeJournalLogs = (
             ...mergedServerLogs[heuristicIndex],
             latency_ms: sample.totalMs,
         };
-        const localRowIndex = localRows.findIndex(
-            row => row.id === `local-order-${sample.clientOrderId || sample.traceId}-${sample.sequence}`,
-        );
-        if (localRowIndex >= 0) {
-            localRows.splice(localRowIndex, 1);
-        }
+        const localPosition = localRowsById.get(
+            `local-order-${sample.clientOrderId || sample.traceId}-${sample.sequence}`,
+        )?.shift();
+        if (localPosition !== undefined) removedLocalRows.add(localPosition);
     }
 
-    return [...localRows, ...mergedServerLogs].sort((left, right) => {
-        const rightMs = right.datetime_ms ?? (right.datetime * 1000);
-        const leftMs = left.datetime_ms ?? (left.datetime * 1000);
-        return rightMs - leftMs;
-    });
+    const finalLocalRows = removedLocalRows.size === 0
+        ? localRows
+        : localRows.filter((_, position) => !removedLocalRows.has(position));
+    return [...finalLocalRows, ...mergedServerLogs].sort(compareJournalLogsNewestFirst);
 };
 
 type ServerTradeLatency = {
@@ -465,7 +581,7 @@ const JournalLogTable = React.memo(function JournalLogTable({
     const tr = useUiTranslation();
     const scrollViewportRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLTableSectionElement>(null);
-    const firstRowRef = useRef<HTMLTableRowElement>(null);
+    const firstRowRef = useRef<HTMLTableRowElement | null>(null);
     const [rowGeometry, setRowGeometry] = useState({
         rowHeight: JOURNAL_ROW_HEIGHT,
         headerHeight: JOURNAL_HEADER_HEIGHT,
@@ -546,10 +662,29 @@ const JournalLogTable = React.memo(function JournalLogTable({
 
     // Density, text preferences and font loading can change the real table
     // heights. Use those same heights for the virtual window and its spacers.
+    // The observer is created once; the first-row element changes whenever a
+    // new log arrives, so it is re-observed from a callback ref instead of
+    // recreating the observer (and forcing a sync layout read) per log row.
+    const geometryObserverRef = useRef<ResizeObserver | null>(null);
+    const observedFirstRowRef = useRef<HTMLTableRowElement | null>(null);
+    const measureGeometryRef = useRef<(() => void) | null>(null);
+    const setFirstRowElement = useCallback((node: HTMLTableRowElement | null) => {
+        firstRowRef.current = node;
+        const observer = geometryObserverRef.current;
+        const previous = observedFirstRowRef.current;
+        if (previous === node) return;
+        if (observer && previous) observer.unobserve?.(previous);
+        observedFirstRowRef.current = node;
+        if (observer && node) observer.observe(node);
+        // The first row appearing (empty -> populated) is measured once synchronously; later row swaps
+        // are covered by the observer, which reports each newly observed element.
+        if (node && previous === null) measureGeometryRef.current?.();
+    }, []);
+
     useLayoutEffect(() => {
         const header = headerRef.current;
-        const firstRow = firstRowRef.current;
         const measure = () => {
+            const firstRow = firstRowRef.current;
             const rowHeight = firstRow?.getBoundingClientRect().height || JOURNAL_ROW_HEIGHT;
             const headerHeight = header?.getBoundingClientRect().height || JOURNAL_HEADER_HEIGHT;
             setRowGeometry(current => (
@@ -559,13 +694,19 @@ const JournalLogTable = React.memo(function JournalLogTable({
             ));
         };
 
+        measureGeometryRef.current = measure;
         measure();
         if (typeof ResizeObserver === 'undefined') return;
         const observer = new ResizeObserver(measure);
+        geometryObserverRef.current = observer;
         if (header) observer.observe(header);
-        if (firstRow) observer.observe(firstRow);
-        return () => observer.disconnect();
-    }, [logs, virtualWindow.startIndex]);
+        if (observedFirstRowRef.current) observer.observe(observedFirstRowRef.current);
+        return () => {
+            observer.disconnect();
+            geometryObserverRef.current = null;
+            measureGeometryRef.current = null;
+        };
+    }, []);
 
     const visibleLogs = logs.slice(virtualWindow.startIndex, virtualWindow.endIndex);
 
@@ -602,7 +743,7 @@ const JournalLogTable = React.memo(function JournalLogTable({
                         return (
                             <tr
                                 key={getJournalLogKey(log, absoluteIndex)}
-                                ref={visibleIndex === 0 ? firstRowRef : undefined}
+                                ref={visibleIndex === 0 ? setFirstRowElement : undefined}
                                 data-testid="journal-rendered-row"
                                 aria-rowindex={absoluteIndex + 2}
                                 className="rtx-journal-row h-[30px] bg-[#131316] transition-colors hover:bg-[#202126]"

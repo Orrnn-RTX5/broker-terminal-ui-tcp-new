@@ -61,7 +61,6 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
   clearStableActiveMarkerTime,
   clearTradeLevelRuntimeState,
   clearTradeLevelRuntimeStateByKey,
-  clearTradeOverlayLayer,
   clearTradeOverlayVisualRuntime,
   closeSuppressedTradeKeysRef,
   drawingRuntimeContextRef,
@@ -114,7 +113,7 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
     }
 
     // Ticks no longer rewrite state.positions (they go to the live-quote store), so a positions
-    // change is a real trade event/snapshot and keeps the original full-reconcile rule below.
+    // change is a real trade event/snapshot: it always reconciles (incrementally, per trade key).
     // Live ticks only need a relayout so the chart profit chip follows the latest price.
     let lastLiveQuote = getLiveQuote(symbol);
     const unsubscribeLiveQuotes = subscribeLiveQuotes(() => {
@@ -267,7 +266,8 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
         scheduleHistoryRefresh();
       }
 
-      clearTradeOverlayLayer('active');
+      // No sync wipe of the active layer: the keyed reconcile removes only the closed (or restores the
+      // failed) trade's nodes and leaves every other trade's DOM untouched.
       renderTradeOverlayNow({ forceActive: true, forceHistory: status !== 'failed' });
     };
     // Filled positions change the active signature themselves. Forcing a

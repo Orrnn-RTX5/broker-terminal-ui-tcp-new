@@ -20,6 +20,143 @@ type localBinaryStreamSub struct {
 	// lastResync (unix nanos) is touched by the stream's writer goroutine only: at most one full snapshot resync
 	// per localResyncMinGap.
 	lastResync int64
+	// pend conflates 0x21 tick frames while the stream is backed up (nil = no conflation: ticks on a full queue
+	// are dropped as before). Set once at creation, never changed.
+	pend *tickConflator
+}
+
+// maxPendingTickSymbols bounds a stream's pending map (a source carries a few hundred symbols); a new symbol
+// beyond it is lost (resync covers it).
+const maxPendingTickSymbols = 4096
+
+// localTickFramesConflated counts 0x21 tick frames merged into the per-symbol pending ticks of a backed-up stream
+// instead of being dropped (the newest tick per symbol is still delivered).
+var localTickFramesConflated atomic.Uint64
+
+type pendingTick [rtx5tcp.BinaryTickRecordSize]byte
+
+// tickConflator holds, per symbol, the newest 0x21 tick a backed-up stream has not been sent yet. The hub
+// broadcast only touches it on the slow path; the writer drains it. has is true while the map is non-empty.
+type tickConflator struct {
+	has atomic.Bool
+	sig chan struct{} // cap 1: wakes the writer when the map goes from empty to non-empty
+	mu  sync.Mutex
+	m   map[[rtx5tcp.BinarySymbolMaxBytes]byte]pendingTick
+}
+
+func newTickConflator() *tickConflator {
+	return &tickConflator{sig: make(chan struct{}, 1), m: make(map[[rtx5tcp.BinarySymbolMaxBytes]byte]pendingTick, 64)}
+}
+
+// put stores every record of a 0x21 payload ([count u16][count x 48 B]) as its symbol latest tick, overwriting
+// an older one, without decoding or allocating. It returns the number of ticks that could not be kept.
+func (c *tickConflator) put(payload []byte) (lost int) {
+	const rs = rtx5tcp.BinaryTickRecordSize
+	if len(payload) < 2 {
+		return 1
+	}
+	n := int(binary.LittleEndian.Uint16(payload[:2]))
+	if len(payload) < 2+n*rs {
+		return 1
+	}
+	c.mu.Lock()
+	for i := 0; i < n; i++ {
+		rec := payload[2+i*rs : 2+(i+1)*rs]
+		var key [rtx5tcp.BinarySymbolMaxBytes]byte
+		copy(key[:], rec)
+		if _, ok := c.m[key]; !ok && len(c.m) >= maxPendingTickSymbols {
+			lost++
+			continue
+		}
+		var pt pendingTick
+		copy(pt[:], rec)
+		c.m[key] = pt
+	}
+	wake := len(c.m) > 0 && !c.has.Load()
+	if wake {
+		c.has.Store(true)
+	}
+	c.mu.Unlock()
+	if wake {
+		select {
+		case c.sig <- struct{}{}:
+		default:
+		}
+	}
+	return lost
+}
+
+// take appends the pending records to dst and empties the map.
+func (c *tickConflator) take(dst []byte) []byte {
+	c.mu.Lock()
+	for _, v := range c.m {
+		dst = append(dst, v[:]...)
+	}
+	clear(c.m)
+	c.has.Store(false)
+	c.mu.Unlock()
+	return dst
+}
+
+// discard empties the map (stream closed, or a resync snapshot that supersedes the pending ticks).
+func (c *tickConflator) discard() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	clear(c.m)
+	c.has.Store(false)
+	c.mu.Unlock()
+}
+
+const localConflateInterval = 16 * time.Millisecond
+
+// conflateScratch holds the writer reusable buffers for flushConflated.
+type conflateScratch struct {
+	recs  []byte
+	frame []byte
+}
+
+// flushConflated is the writer drain of a backed-up stream. It first writes the market frames already queued in
+// ch (a snapshot of its length: they are older than every pending tick, because a symbol only becomes pending
+// once ch is full and then stays pending), calling between every 32 packets, and then the pending ticks as
+// 0x21 frames of up to 64 ticks. Writing the queue first and the pending map second is what keeps each symbol
+// ticks in order.
+func (s *localBinaryStreamSub) flushConflated(sc *conflateScratch, write func([]byte) error, between func() error) error {
+	for n := len(s.ch); n > 0; n-- {
+		select {
+		case pkt := <-s.ch:
+			if err := write(pkt); err != nil {
+				return err
+			}
+		default:
+			n = 0
+		}
+		if between != nil && n%32 == 0 {
+			if err := between(); err != nil {
+				return err
+			}
+		}
+	}
+	const rs = rtx5tcp.BinaryTickRecordSize
+	sc.recs = s.pend.take(sc.recs[:0])
+	for recs := sc.recs; len(recs) > 0; {
+		k := len(recs) / rs
+		if k > 64 {
+			k = 64
+		}
+		f := sc.frame[:0]
+		f = append(f, rtx5tcp.FrameBinaryTickBatch, 0, 0, 0, 0, 0)
+		binary.LittleEndian.PutUint16(f[2:4], uint16(2+k*rs))
+		binary.LittleEndian.PutUint16(f[4:6], uint16(k))
+		f = append(f, recs[:k*rs]...)
+		sc.frame = f
+		if err := write(f); err != nil {
+			return err
+		}
+		recs = recs[k*rs:]
+	}
+	return nil
 }
 
 type clientBinaryMarketHub struct {
@@ -81,6 +218,7 @@ func (h *clientBinaryMarketHub) broadcastPacket(pkt []byte) {
 		return
 	}
 	frameType := pkt[0]
+	isTick := frameType == rtx5tcp.FrameBinaryTickBatch && len(pkt) >= 4
 	h.mu.RLock()
 	if len(h.subs) == 0 {
 		h.mu.RUnlock()
@@ -111,12 +249,31 @@ func (h *clientBinaryMarketHub) broadcastPacket(pkt []byte) {
 			}
 			continue
 		}
+		// Backed-up stream (some tick is pending): every tick goes to the per-symbol pending map until the writer
+		// has drained it, so a symbol's ticks can never overtake its older pending one. One atomic load otherwise.
+		if isTick && s.pend != nil && s.pend.has.Load() {
+			s.conflateTick(pkt)
+			continue
+		}
 		select {
 		case s.ch <- pkt:
 		default:
+			if isTick && s.pend != nil {
+				s.conflateTick(pkt)
+				continue
+			}
 			s.needResync.Store(true)
 		}
 	}
+}
+
+// conflateTick stores the ticks of a 0x21 frame as the latest pending tick of their symbols (slow path only).
+// Ticks that cannot be kept (malformed frame, pending map full) request a resync.
+func (s *localBinaryStreamSub) conflateTick(pkt []byte) {
+	if lost := s.pend.put(pkt[4:]); lost > 0 {
+		s.needResync.Store(true)
+	}
+	localTickFramesConflated.Add(1)
 }
 
 func (h *clientBinaryMarketHub) clearCache() {
@@ -149,6 +306,10 @@ func (h *clientBinaryMarketHub) resyncPackets(s *localBinaryStreamSub) [][]byte 
 			n = 0
 		}
 	}
+	// Discard the pending ticks BEFORE taking the snapshot: every discarded tick is already in latestTicks, and a
+	// tick pended after this point is sent after the snapshot (at worst a harmless repeat). Discarding after the
+	// snapshot could drop a tick that reached latestTicks too late for it.
+	s.pend.discard()
 	h.mu.RLock()
 	snaps := make([]rtx5tcp.BinaryTick, 0, len(h.latestTicks))
 	for _, bt := range h.latestTicks {
@@ -203,6 +364,7 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 	sub := &localBinaryStreamSub{
 		prioCh: make(chan []byte, 512),
 		ch:     make(chan []byte, 2048),
+		pend:   newTickConflator(),
 	}
 
 	c.binHub.mu.Lock()
@@ -215,6 +377,7 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 
 	defer func() {
 		sub.closed.Store(true)
+		sub.pend.discard()
 		c.binHub.mu.Lock()
 		delete(c.binHub.subs, sub)
 		c.binHub.mu.Unlock()
@@ -301,6 +464,30 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 			resyncTimer.Stop()
 		}
 	}()
+	// Conflated-tick writer state: pendSig wakes the loop when the first tick goes pending; the flush runs at most
+	// once per localConflateInterval (timer-armed when it is not due yet).
+	var pendTimer *time.Timer
+	var pendC <-chan time.Time
+	var pendSig <-chan struct{}
+	if sub.pend != nil {
+		pendSig = sub.pend.sig
+	}
+	defer func() {
+		if pendTimer != nil {
+			pendTimer.Stop()
+		}
+	}()
+	var lastFlush time.Time
+	var scratch conflateScratch
+	writeRaw := func(pkt []byte) error {
+		refreshDeadline()
+		_, err := w.Write(pkt)
+		return err
+	}
+	betweenPrio := func() error {
+		_, err := drainPrio(localStreamMaxPrioBurst)
+		return err
+	}
 	ctxDone := r.Context().Done()
 	for {
 		select {
@@ -330,6 +517,22 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 				resyncC = resyncTimer.C
 			}
 		}
+		if sub.pend != nil && sub.pend.has.Load() {
+			if wait := localConflateInterval - time.Since(lastFlush); wait <= 0 {
+				if err := sub.flushConflated(&scratch, writeRaw, betweenPrio); err != nil {
+					return
+				}
+				lastFlush = time.Now()
+				flusher.Flush()
+			} else if pendC == nil {
+				if pendTimer == nil {
+					pendTimer = time.NewTimer(wait)
+				} else {
+					pendTimer.Reset(wait)
+				}
+				pendC = pendTimer.C
+			}
+		}
 		if wrote, err := drainPrio(localStreamMaxPrioBurst); err != nil {
 			return
 		} else if wrote {
@@ -347,6 +550,9 @@ func (c *DesktopClient) serveLocalBinaryMarketStream(w http.ResponseWriter, r *h
 			return
 		case <-resyncC:
 			resyncC = nil
+		case <-pendSig:
+		case <-pendC:
+			pendC = nil
 		case pkt := <-sub.prioCh:
 			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {

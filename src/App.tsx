@@ -1086,14 +1086,15 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         volume: position.volume,
         login,
       }, { intentAtMs });
-      refreshHistoryAfterFill(login);
+      // Adding volume only opens: closed history is unchanged.
+      refreshHistoryAfterFill(login, undefined, { skipHistory: true });
       if (!isTradeOperationContextCurrent(operationContext)) return;
       publishOrderFeedback(
         [feedbackValue(`#${ticket} · `), feedbackLabel(position.side), feedbackValue(` +${position.volume} ${position.symbol}`)],
         'success',
       );
       postTradeRefresh.refreshPositions(login, { allowWsCommit: true });
-      postTradeRefresh.refreshOrdersAndHistory(login).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
+      postTradeRefresh.refreshOrdersAndHistory(login, { skipHistory: true }).catch(err => console.error('[Trade] Failed to refresh orders/history after chart position action:', err));
       window.dispatchEvent(new Event('rtx:force-refresh-positions'));
     } catch (err) {
       console.error('[Chart] Double position failed:', err);
@@ -1149,7 +1150,8 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       return;
     }
 
-    refreshHistoryAfterFill(loginId);
+    // Cancelling a pending order does not change closed history.
+    refreshHistoryAfterFill(loginId, undefined, { skipHistory: true });
     const ordersPayload = await api.orders.getPendingOrders(loginId).catch(() => null);
     if (!isAuthenticatedRef.current || getLiveTradingLogin() !== loginId || ordersPayload === null) return;
 
@@ -1628,7 +1630,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     markServerClosedTickets,
     markTradeWsMessage,
     reconcileOptimisticClosedPositions,
-    refreshOrdersAndHistory,
+    refreshOrdersAndHistory: postTradeRefresh.refreshOrdersAndHistory,
     reloadMarketSymbols: activeMarketSnapshot.reload,
   });
   const {

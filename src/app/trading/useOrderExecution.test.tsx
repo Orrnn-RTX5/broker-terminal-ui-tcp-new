@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beginPositionsRead, useAppStore } from '../../store/useAppStore';
 import { api } from '../../services/api';
 import {
   createTradeOperationContext,
@@ -63,6 +64,8 @@ const createController = (
 
 describe('useOrderExecution', () => {
   beforeEach(() => {
+    // A loaded broker positions snapshot lets a fill be recognised as a pure open.
+    useAppStore.getState().setPositions([], { readStartedAt: beginPositionsRead() });
     vi.clearAllMocks();
     vi.mocked(api.orders.placeMarketOrder).mockResolvedValue({ ticket: 71 } as never);
   });
@@ -80,7 +83,7 @@ describe('useOrderExecution', () => {
     );
     expect(upsertImmediatePosition).toHaveBeenCalledOnce();
     expect(controller.refreshPositions).toHaveBeenCalledWith(123);
-    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123);
+    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123, { skipHistory: true });
   });
 
   it('drops a successful response after the broker-account session changes', async () => {

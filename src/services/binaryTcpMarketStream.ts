@@ -38,6 +38,10 @@ const MAX_CONSECUTIVE_STREAM_DEFER_MS = 200;
  */
 export const STREAM_SILENCE_RECONNECT_MS = 30_000;
 const STREAM_SILENCE_CHECK_MS = 5_000;
+/** An access token this close to (or past) its `exp` is refreshed before the account subscription is re-bound. */
+export const STREAM_TOKEN_REFRESH_LEAD_MS = 60_000;
+/** Longest a silence re-bind waits for a stale-token refresh before binding with the stored token. */
+export const STREAM_TOKEN_REFRESH_WAIT_MS = 3_000;
 const VISIBILITY_RECOVERY_STALE_MS = 15_000;
 
 export const FRAME_BINARY_TICK_BATCH = 0x21;
@@ -303,6 +307,65 @@ export function decodeBinaryTradeEvent(payload: Uint8Array): DecodedBinaryTradeE
   };
 }
 
+const COALESCE_METRICS_TYPES = new Set(['metrics_update', 'account_metrics', 'account_snapshot']);
+const COALESCE_POSITION_TYPES = new Set(['position_update', 'position_updated']);
+
+const normalizeTradeEventChannel = (channel: string): string => {
+  const trimmed = channel.trim().toLowerCase();
+  return trimmed.startsWith('rtx5.') ? trimmed.slice(5) : trimmed;
+};
+
+/** Account scope of an event (login segment of its channel), shared by positions/orders/account/deals channels. */
+export function getTradeEventScope(ev: DecodedBinaryTradeEvent): string {
+  const channel = normalizeTradeEventChannel(ev.channel);
+  const dot = channel.lastIndexOf('.');
+  const tail = dot >= 0 ? channel.slice(dot + 1) : '';
+  return tail || String(ev.accountLogin);
+}
+
+/**
+ * Returns a coalescing key when the event is a pure "latest state wins" snapshot
+ * (account/metrics snapshot, or a single-ticket tick-driven position pnl patch),
+ * otherwise null. Anything not provably a snapshot (open/close/modify, orders,
+ * deals, batches, closed-ticket lists, unknown shapes) returns null and is never
+ * merged or dropped.
+ */
+export function getTradeEventCoalesceKey(ev: DecodedBinaryTradeEvent): string | null {
+  const payload = ev.payload;
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const type = typeof record.type === 'string' ? record.type.trim().toLowerCase() : '';
+  if (type === '') return null;
+  const channel = normalizeTradeEventChannel(ev.channel);
+
+  if (COALESCE_METRICS_TYPES.has(type)) {
+    if (record.closed_tickets !== undefined || record.closedTickets !== undefined) return null;
+    return `m|${channel}|${type}`;
+  }
+
+  if (COALESCE_POSITION_TYPES.has(type)) {
+    if (record.closed_tickets !== undefined || record.closedTickets !== undefined || record.tickets !== undefined) {
+      return null;
+    }
+    const data = record.data;
+    let row: unknown = data;
+    if (Array.isArray(data)) {
+      if (data.length !== 1) return null;
+      row = data[0];
+    }
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return null;
+    const rowRecord = row as Record<string, unknown>;
+    if (rowRecord.update_kind !== 'pnl' || rowRecord.closed === true) return null;
+    const ticket = rowRecord.ticket ?? rowRecord.position_id ?? rowRecord.id ?? rowRecord.position_ticket;
+    if (typeof ticket !== 'number' && typeof ticket !== 'string') return null;
+    const ticketKey = String(ticket).trim();
+    if (!/^\d+$/.test(ticketKey) || ticketKey === '0') return null;
+    const version = rowRecord.state_version ?? '';
+    return `p|${channel}|${ticketKey}|${String(version)}`;
+  }
+  return null;
+}
+
 function safeGetLocalStorageItem(key: string): string | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -429,7 +492,15 @@ class BinaryTcpMarketStream {
   private readonly deferredCandles = new Map<string, DecodedBinaryCandle>();
   private readonly deferredDepths = new Map<string, DecodedBinaryDepth>();
   private deferredTradeEvents: DecodedBinaryTradeEvent[] = [];
+  // Coalescing of deferred snapshot events: key -> slot in deferredTradeEvents (+ scope epoch when queued).
+  // A non-snapshot event bumps its account scope's epoch, so a snapshot arriving after it never
+  // overwrites a slot queued before it (keeps open/close/order/deal ordering intact).
+  private readonly deferredTradeCoalesce = new Map<string, { index: number; epoch: number }>();
+  private readonly deferredTradeScopeEpoch = new Map<string, number>();
   private deferredFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  // Set by the silence watchdog: the next successful stream open refreshes a stale JWT before re-binding 0x3B.
+  private refreshTokenOnNextBind = false;
+  private tokenRefreshInFlight: Promise<void> | null = null;
   private deferredSinceMs = 0;
   private lastTradeEventSig = '';
   private lastTradeEventAtMs = 0;
@@ -462,6 +533,8 @@ class BinaryTcpMarketStream {
           this.deferredCandles.clear();
           this.deferredDepths.clear();
           this.deferredTradeEvents = [];
+          this.deferredTradeCoalesce.clear();
+          this.deferredTradeScopeEpoch.clear();
           this.deferredSinceMs = 0;
           this.boundAccountKey = null;
           this.inFlightAccountKey = null;
@@ -769,6 +842,7 @@ class BinaryTcpMarketStream {
       }
       if (now - lastProgressAt >= STREAM_SILENCE_RECONNECT_MS && !controller.signal.aborted) {
         silenced = true;
+        this.refreshTokenOnNextBind = true;
         console.warn(`[BinaryTcpMarketStream] no market data frames for ${Math.round((now - lastProgressAt) / 1000)}s; reconnecting the stream`);
         try { controller.abort(); } catch { /* ignore */ }
       }
@@ -796,7 +870,12 @@ class BinaryTcpMarketStream {
       this.inFlightAccountKey = null;
       this.reconnectAttempts = 0;
       this.setConnected(true);
-      this.syncAccountSubscription(undefined, true);
+      if (this.refreshTokenOnNextBind) {
+        this.refreshTokenOnNextBind = false;
+        void this.refreshStaleTokenThenBindAccount(controller);
+      } else {
+        this.syncAccountSubscription(undefined, true);
+      }
 
       const reader = response.body.getReader();
       while (!controller.signal.aborted) {
@@ -823,6 +902,52 @@ class BinaryTcpMarketStream {
         this.scheduleReconnect();
       }
     }
+  }
+
+  /**
+   * After a silence reconnect, an idle session may hold an expired access token whose server-side quote
+   * gate was cleared by a 401. Refresh first (single-flight, through the existing BrokerAPI refresh flow),
+   * then re-POST the 0x3B account subscription. A failed refresh keeps the previous behaviour: re-bind
+   * with whatever token is stored; no retry loop.
+   */
+  private async refreshStaleTokenThenBindAccount(controller: AbortController): Promise<void> {
+    const tokenBefore = (getAccessToken() ?? '').trim();
+    // Never leave the account unbound behind a hung refresh: after STREAM_TOKEN_REFRESH_WAIT_MS bind with the
+    // stored token anyway. A refresh that lands later re-binds through `auth:token-updated`.
+    let waitTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.refreshTokenIfStale(tokenBefore),
+        new Promise<void>((resolve) => {
+          waitTimer = setTimeout(resolve, STREAM_TOKEN_REFRESH_WAIT_MS);
+        }),
+      ]);
+    } catch {
+      /* keep today's behaviour: bind with the stored token */
+    } finally {
+      if (waitTimer !== undefined) clearTimeout(waitTimer);
+    }
+    if (controller.signal.aborted) return;
+    const tokenAfter = (getAccessToken() ?? '').trim();
+    // A refreshed token already triggers a non-forced bind through `auth:token-updated`; the
+    // non-forced call below is then a no-op. Unchanged token => force the re-bind on the new stream.
+    this.syncAccountSubscription(undefined, tokenAfter === tokenBefore);
+  }
+
+  private refreshTokenIfStale(token: string): Promise<void> {
+    if (this.tokenRefreshInFlight) return this.tokenRefreshInFlight;
+    const exp = Number(decodeJwtPayload(token)?.exp);
+    if (!Number.isFinite(exp) || exp * 1000 - Date.now() > STREAM_TOKEN_REFRESH_LEAD_MS) {
+      return Promise.resolve();
+    }
+    const run = (async () => {
+      const { brokerApi } = await import('../api/brokerApi');
+      await brokerApi.refreshTokenAhead();
+    })().finally(() => {
+      this.tokenRefreshInFlight = null;
+    });
+    this.tokenRefreshInFlight = run;
+    return run;
   }
 
   private consumeChunk(chunk: Uint8Array): void {
@@ -977,6 +1102,8 @@ class BinaryTcpMarketStream {
     if (this.deferredTradeEvents.length > 0) {
       const events = this.deferredTradeEvents;
       this.deferredTradeEvents = [];
+      this.deferredTradeCoalesce.clear();
+      this.deferredTradeScopeEpoch.clear();
       if (this.tradeEventListeners.size > 0) {
         for (let i = 0; i < events.length; i++) {
           const ev = events[i];
@@ -986,6 +1113,24 @@ class BinaryTcpMarketStream {
         }
       }
     }
+  }
+
+  private enqueueDeferredTradeEvent(ev: DecodedBinaryTradeEvent): void {
+    const scope = getTradeEventScope(ev);
+    const key = getTradeEventCoalesceKey(ev);
+    if (key === null) {
+      this.deferredTradeScopeEpoch.set(scope, (this.deferredTradeScopeEpoch.get(scope) ?? 0) + 1);
+      this.deferredTradeEvents.push(ev);
+      return;
+    }
+    const epoch = this.deferredTradeScopeEpoch.get(scope) ?? 0;
+    const prior = this.deferredTradeCoalesce.get(key);
+    if (prior !== undefined && prior.epoch === epoch) {
+      this.deferredTradeEvents[prior.index] = ev;
+      return;
+    }
+    this.deferredTradeCoalesce.set(key, { index: this.deferredTradeEvents.length, epoch });
+    this.deferredTradeEvents.push(ev);
   }
 
   private decodeTradeEventFrame(
@@ -1006,7 +1151,7 @@ class BinaryTcpMarketStream {
     this.lastTradeEventAtMs = nowMs;
 
     if (this.shouldDeferForActiveBinaryOrder()) {
-      this.deferredTradeEvents.push(decoded);
+      this.enqueueDeferredTradeEvent(decoded);
       this.scheduleDeferredFlushSafety();
       return;
     }

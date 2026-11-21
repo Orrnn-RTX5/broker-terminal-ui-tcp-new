@@ -322,3 +322,40 @@ describe('createStreamHistoryCoalescer', () => {
     switching.dispose();
   });
 });
+
+describe('skip-history fallbacks', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('an open fallback (skipHistory) does not suppress the close fallback of the stream coalescer', () => {
+    const refresh = vi.fn((...args: [number, { skipHistory?: boolean }?]) => Promise.resolve(args.length > 0 ? undefined : undefined));
+    const owner = createHistoryFreshnessOwner(refresh, () => true);
+    const coalescer = createStreamHistoryCoalescer({ refresh, isCurrent: () => true });
+
+    refreshHistoryAfterFill(LOGIN, owner, { skipHistory: true });
+    expect(refresh).toHaveBeenLastCalledWith(LOGIN, { skipHistory: true });
+    coalescer.onFrame(LOGIN, 'close');
+
+    // Leading refetch plus the close fallback: the open's timer owes no history, so it must not
+    // swallow the close fallback.
+    vi.advanceTimersByTime(STREAM_CLOSE_FALLBACK_MS + 1);
+    const historyCalls = refresh.mock.calls.filter((call) => !call[1]?.skipHistory);
+    expect(historyCalls).toHaveLength(2);
+    coalescer.dispose();
+    disposeHistoryFreshnessOwner(owner);
+  });
+
+  it('a history-owing ACK fallback still suppresses the duplicate close fallback', () => {
+    const refresh = vi.fn((...args: [number]) => Promise.resolve(args.length > 0 ? undefined : undefined));
+    const owner = createHistoryFreshnessOwner(refresh, () => true);
+    const coalescer = createStreamHistoryCoalescer({ refresh, isCurrent: () => true });
+
+    refreshHistoryAfterFill(LOGIN, owner);
+    coalescer.onFrame(LOGIN, 'close');
+    vi.advanceTimersByTime(STREAM_CLOSE_FALLBACK_MS + 1);
+    // ACK refetch, the stream lead refetch and the ACK fallback; no extra close fallback.
+    expect(refresh).toHaveBeenCalledTimes(3);
+    coalescer.dispose();
+    disposeHistoryFreshnessOwner(owner);
+  });
+});

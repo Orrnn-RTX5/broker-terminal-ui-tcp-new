@@ -990,12 +990,27 @@ export const useTradingChartTradeRuntime = ({
       schedule();
     });
     tradeControlSizeObservationRef.current = resize !== null;
+    // Observed elements are tracked so a mutation only observes the newly added nodes and unobserves the
+    // removed ones. Re-observing all N controls (disconnect + observe) re-fired the observer for every
+    // control and forced another layout pass per trade open/close.
+    const observed = new Set<Element>();
+    const observeOnce = (element: Element, options?: ResizeObserverOptions) => {
+      if (!resize || observed.has(element)) return;
+      observed.add(element);
+      resize.observe(element, options);
+    };
     const observeControlSizes = () => {
-      resize?.disconnect();
-      resize?.observe(wrapper);
-      resize?.observe(container, { box: 'border-box' });
-      container.querySelectorAll('td, canvas').forEach(element => resize?.observe(element));
-      wrapper.querySelectorAll('.rtx-trade-controls').forEach(element => resize?.observe(element));
+      if (resize) {
+        for (const element of observed) {
+          if (element.isConnected) continue;
+          resize.unobserve(element);
+          observed.delete(element);
+        }
+        observeOnce(wrapper);
+        observeOnce(container, { box: 'border-box' });
+        container.querySelectorAll('td, canvas').forEach(element => observeOnce(element));
+        wrapper.querySelectorAll('.rtx-trade-controls').forEach(element => observeOnce(element));
+      }
       schedule();
     };
     const scheduleObserveControlSizes = () => {
@@ -1012,6 +1027,7 @@ export const useTradingChartTradeRuntime = ({
     return () => {
       children.disconnect();
       resize?.disconnect();
+      observed.clear();
       tradeControlSizeObservationRef.current = false;
       tradeControlSizesRef.current = new WeakMap();
       tradeOverlayContainerSizesRef.current = new WeakMap();

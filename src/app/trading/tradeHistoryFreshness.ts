@@ -31,7 +31,15 @@ export const STREAM_CLOSE_FALLBACK_MS = 1500;
 /** Fallback refetch after a fill or close ACK. */
 export const ACK_HISTORY_FALLBACK_MS = 1500;
 
-export type HistoryRefresh = (login: number) => unknown;
+/**
+ * skipHistory: the fill only opened a position (or placed a pending order), so closed-trade
+ * history cannot have changed. Orders and account metrics are still refreshed.
+ */
+export interface HistoryRefreshOptions {
+  skipHistory?: boolean;
+}
+
+export type HistoryRefresh = (login: number, options?: HistoryRefreshOptions) => unknown;
 
 export interface HistoryFreshnessOwner {
   refresh: HistoryRefresh;
@@ -54,15 +62,18 @@ const releaseAckFallback = (login: number): void => {
   else pendingAckFallbacks.delete(login);
 };
 
+/** Pending ACK fallback timers that still owe a closed-history read, per owner. */
+const historyOwingTimers = new WeakMap<HistoryFreshnessOwner, Set<number>>();
+
 const hasPendingAckFallback = (login: number): boolean => (pendingAckFallbacks.get(login) ?? 0) > 0;
 
 const reportRefreshError = (error: unknown): void => {
   console.error('[History] Failed to refresh orders/history:', error);
 };
 
-const runRefresh = (refresh: HistoryRefresh, login: number): void => {
+const runRefresh = (refresh: HistoryRefresh, login: number, options?: HistoryRefreshOptions): void => {
   try {
-    void Promise.resolve(refresh(login)).catch(reportRefreshError);
+    void Promise.resolve(options?.skipHistory ? refresh(login, options) : refresh(login)).catch(reportRefreshError);
   } catch (error) {
     reportRefreshError(error);
   }
@@ -76,9 +87,10 @@ export const createHistoryFreshnessOwner = (
 export const disposeHistoryFreshnessOwner = (owner: HistoryFreshnessOwner): void => {
   owner.timers.forEach((login, timerId) => {
     window.clearTimeout(timerId);
-    releaseAckFallback(login);
+    if (historyOwingTimers.get(owner)?.has(timerId)) releaseAckFallback(login);
   });
   owner.timers.clear();
+  historyOwingTimers.delete(owner);
 };
 
 let defaultOwner: HistoryFreshnessOwner | null = null;
@@ -103,32 +115,50 @@ export const bindDefaultHistoryFreshnessOwner = (owner: HistoryFreshnessOwner): 
 export const refreshHistoryAfterFill = (
   login: number,
   owner: HistoryFreshnessOwner | null = defaultOwner,
+  options?: HistoryRefreshOptions,
 ): void => {
   if (!owner || !Number.isSafeInteger(login) || login <= 0) return;
   const binaryTcpEnabled = isBinaryTcpOrderEnabled();
+  let skipHistory = options?.skipHistory === true;
+  let owing = historyOwingTimers.get(owner);
+  if (!owing) {
+    owing = new Set<number>();
+    historyOwingTimers.set(owner, owing);
+  }
+  const owingTimers = owing;
   if (!binaryTcpEnabled) {
-    if (owner.isCurrent(login)) runRefresh(owner.refresh, login);
+    if (owner.isCurrent(login)) runRefresh(owner.refresh, login, skipHistory ? { skipHistory: true } : undefined);
   } else {
     owner.timers.forEach((timerLogin, existingTimerId) => {
       if (timerLogin === login) {
         window.clearTimeout(existingTimerId);
         owner.timers.delete(existingTimerId);
-        releaseAckFallback(login);
+        // A replaced fallback that owed a history read keeps this one a full read.
+        if (owingTimers.delete(existingTimerId)) {
+          skipHistory = false;
+          releaseAckFallback(login);
+        }
       }
     });
   }
+  const refreshOptions: HistoryRefreshOptions | undefined = skipHistory ? { skipHistory: true } : undefined;
   const scheduleFallback = () => {
     const timerId = window.setTimeout(() => {
       owner.timers.delete(timerId);
-      releaseAckFallback(login);
+      if (owingTimers.delete(timerId)) releaseAckFallback(login);
       if (binaryTcpEnabled && getActiveBinaryTcpOrderCount() > 0) {
         scheduleFallback();
         return;
       }
-      if (owner.isCurrent(login)) runRefresh(owner.refresh, login);
+      if (owner.isCurrent(login)) runRefresh(owner.refresh, login, refreshOptions);
     }, ACK_HISTORY_FALLBACK_MS);
     owner.timers.set(timerId, login);
-    retainAckFallback(login);
+    // Only timers that owe a closed-history read count as a pending ACK fallback, so a skip-history
+    // open fallback never suppresses a close's own history fallback.
+    if (!skipHistory) {
+      owingTimers.add(timerId);
+      retainAckFallback(login);
+    }
   };
   scheduleFallback();
 };

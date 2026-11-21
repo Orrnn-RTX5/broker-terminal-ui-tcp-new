@@ -704,7 +704,9 @@ export function TradeTable({
     observer?.observe(scroller);
     if (tableRef.current) observer?.observe(tableRef.current);
     return () => observer?.disconnect();
-  }, [visibleLivePositions.length, visibleTradeTableWidth]);
+    // Row count is intentionally not a dependency: the table's height changes with every added or
+    // removed row, which already fires this ResizeObserver, so the observer is not torn down per trade.
+  }, [visibleTradeTableWidth]);
 
   const closeColumnWidth = Math.max(columnWidths.close || 0, TRADE_FIXED_COLUMN_DEFS.close.minWidth);
   const toColumnWidthStyle = (width: number) => (

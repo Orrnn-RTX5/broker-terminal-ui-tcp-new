@@ -347,7 +347,9 @@ describe('TradingChart interaction-priority contract', () => {
     expect(loadingEffects).toContain('window.clearInterval(interval)');
     expect(overlayStart).toBeGreaterThan(-1);
     expect(overlayEnd).toBeGreaterThan(overlayStart);
-    expect(overlayEffect).toContain('return bindTradeOverlayRuntimeSubscriptions({');
+    // The effect keeps the unbind handle so its cleanup can also cancel the coalesced label-placement frame.
+    expect(overlayEffect).toContain('const unbindSubscriptions = bindTradeOverlayRuntimeSubscriptions({');
+    expect(overlayEffect).toContain('unbindSubscriptions();');
     expect(tradeSubscriptionsSource).toContain('subscribeVisibleLogicalRangeChange(timeScaleHandler)');
     expect(tradeSubscriptionsSource).toContain('useAppStore.subscribe(');
     expect(tradeSubscriptionsSource).toContain('useChartSettingsStore.subscribe(');

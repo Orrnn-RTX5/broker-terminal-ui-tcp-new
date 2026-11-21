@@ -208,7 +208,8 @@ describe('cTrader-style position controls contract', () => {
     expect(chartSource).toContain("const TRADE_ENTRY_LINE_SELL_COLOR = '#ef4444';");
     expect(chartSource).toContain("const TRADE_PENDING_BUY_LINE_COLOR = '#ea580c';");
     expect(chartSource).toContain("const TRADE_PENDING_SELL_LINE_COLOR = '#a855f7';");
-    expect(chartSource).toContain('createEntryPriceLevels(sortedActiveSnapshots, new Set(nextActiveSnapshots.keys()));');
+    // Entry lines are reconciled per exact-price group (keyed), so only a changed group is rebuilt.
+    expect(chartSource).toContain('build: () => createEntryPriceLevels(group, liveTradeKeys)');
     expect(chartSource).toContain('createEntryControlsForTrade(trade, levels, { showAxisPriceLine: false });');
     const entries = chartSection('const createEntryPriceLevels =', 'const submitTradeLevelChange =');
     expect(entries).toContain('groups.get(trade.entryPrice)');

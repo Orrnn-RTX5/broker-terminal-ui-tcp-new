@@ -15,6 +15,8 @@ vi.mock('../../services/api', () => ({
 }));
 vi.mock('../../services/terminalHistory', () => ({
   beginTradeHistoryRefresh: vi.fn(),
+  invalidateTerminalHistory: vi.fn(),
+  isHistoryTabMounted: vi.fn(() => false),
 }));
 vi.mock('./orderHistoryRefresh', () => ({
   fetchOrderHistory: vi.fn(async () => ({ trades: [], warning: null })),

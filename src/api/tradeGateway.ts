@@ -627,6 +627,47 @@ const sortHistoryRows = (rows: Trade[]): Trade[] => (
     .sort((a, b) => historyTime(b) - historyTime(a))
 );
 
+/**
+ * Collapses a TRUNCATED newest-first deal page (a limited read that returned `limit` rows).
+ * The page can miss the entry deals of positions that opened before its oldest row, so a row
+ * is only `safe` when the page provably holds the whole position: its entry-in volume equals
+ * its exit volume (fully closed, nothing older missing). Standalone exit rows (entry deal not
+ * in the page) and partially closed or unbalanced groups are `unverified`; the caller must not
+ * store them as history unless it can tie them to a row it already holds.
+ */
+export const collapseTruncatedDealWindow = (deals: Trade[]): { safe: Trade[]; unverified: Trade[] } => {
+  const volumes = new Map<number, { inVol: number; outVol: number }>();
+  for (const deal of deals) {
+    const positionId = finiteNumberOrUndefined(deal.positionId);
+    if (!positionId) continue;
+    const entry = volumes.get(positionId) ?? { inVol: 0, outVol: 0 };
+    const volume = Number(deal.volume);
+    const safeVolume = Number.isFinite(volume) && volume > 0 ? volume : 0;
+    if (isEntryInDeal(deal)) entry.inVol += safeVolume;
+    else if (isEntryOutDeal(deal)) entry.outVol += safeVolume;
+    else if (isEntryInOutDeal(deal)) { entry.inVol += safeVolume; entry.outVol += safeVolume; }
+    volumes.set(positionId, entry);
+  }
+  const safe: Trade[] = [];
+  const unverified: Trade[] = [];
+  for (const row of collapseDealHistory(deals)) {
+    if (row.historySource === 'deal' && isEntryOutDeal(row)) {
+      unverified.push(row);
+      continue;
+    }
+    const entry = volumes.get(Number(row.id));
+    if (entry) {
+      const tolerance = Math.max(1e-9, Math.max(entry.inVol, entry.outVol) * 1e-6);
+      if (entry.inVol <= 0 || Math.abs(entry.inVol - entry.outVol) > tolerance) {
+        unverified.push(row);
+        continue;
+      }
+    }
+    safe.push(row);
+  }
+  return { safe, unverified };
+};
+
 export const buildClosedPositionHistory = (
   closedPositions: Trade[],
   deals: Trade[],
@@ -656,9 +697,21 @@ const historyRequestError = (error: unknown): string => (
 const settledHistoryReads = new Map<string, unknown>();
 const inflightHistoryReads = new Map<string, Promise<unknown>>();
 let historyReadGeneration = 0;
+// Bumped when settled snapshots go stale (a fill happened) without ending the session: reads that
+// started before the bump finish and are delivered, but are not stored as the cached result.
+let settledCacheEpoch = 0;
 
 // History opens again after startup already read the same deals and closed
 // positions. Reuse that result until a fill, close, or explicit refresh.
+// Drops settled results (and stops new callers joining older in-flight reads) after an event that
+// cannot end the session. In-flight reads are NOT cancelled: unlike clearTradeHistoryRequestCache
+// this never bumps historyReadGeneration, so a read in progress still completes for its caller.
+export const invalidateSettledTradeHistoryReads = (): void => {
+  settledCacheEpoch += 1;
+  settledHistoryReads.clear();
+  inflightHistoryReads.clear();
+};
+
 export const clearTradeHistoryRequestCache = (): void => {
   historyReadGeneration += 1;
   settledHistoryReads.clear();
@@ -676,9 +729,10 @@ const cachedTradeRead = <T>(key: string, force: boolean, load: () => Promise<T>)
     if (pending) return pending as Promise<T>;
   }
 
+  const startedEpoch = settledCacheEpoch;
   const promise = load()
     .then((value) => {
-      if (inflightHistoryReads.get(flightKey) === promise) settledHistoryReads.set(key, value);
+      if (inflightHistoryReads.get(flightKey) === promise && startedEpoch === settledCacheEpoch) settledHistoryReads.set(key, value);
       return value;
     })
     .finally(() => {
@@ -754,19 +808,21 @@ const arrayFrom = <T>(data: unknown, key?: string, requireArray = false): T[] =>
 };
 
 /** Financial history must include every page, not just the latest 500 deals. */
-const loadAllDealPages = async (endpoint: string, login?: number): Promise<DealHistoryRead> => {
+const loadAllDealPages = async (endpoint: string, login?: number, recentLimit?: number): Promise<DealHistoryRead> => {
+  // recentLimit: background refreshes read one small newest-first page instead of every page.
+  const pageSize = recentLimit ?? 500;
   const generation = historyReadGeneration;
   const to = endpoint === '/account/deals' ? Math.floor(Date.now() / 1000) : undefined;
   const rows: GatewayDeal[] = [];
   const seen = new Set<string>();
   const result = (error: string | null): DealHistoryRead => ({ deals: rows.map(normalizeDeal), error });
   const incomplete = (reason: string) => result(`${reason}; showing ${rows.length} available deals. Older history records are unavailable.`);
-  for (let offset = 0; offset < 500_000; offset += 500) {
+  for (let offset = 0; offset < 500_000; offset += pageSize) {
     let page: GatewayDeal[];
     try {
       const data = await apiClient.get<GatewayDeal[] | { deals: GatewayDeal[] }>(endpoint, {
         baseUrl: API_V2_BASE_URL,
-        params: { limit: 500, offset, ...(to === undefined ? {} : { to }) },
+        params: { limit: pageSize, offset, ...(to === undefined ? {} : { to }) },
       });
       if (generation !== historyReadGeneration) throw new Error('History session changed');
       page = arrayFrom<GatewayDeal>(data, 'deals', true);
@@ -787,7 +843,7 @@ const loadAllDealPages = async (endpoint: string, login?: number): Promise<DealH
       added += 1;
     }
     if (!added && page.length > 0) return incomplete('Broker repeated a history page');
-    if (page.length < 500) return result(null);
+    if (recentLimit !== undefined || page.length < pageSize) return result(null);
   }
   return incomplete('Deal history exceeds the supported page limit');
 };
@@ -828,11 +884,11 @@ export const tradeGatewayApi = {
     return arrayFrom<GatewayPosition>(data, 'positions').map(normalizePosition);
   },
 
-  async getDeals(login?: number, options?: { force?: boolean }): Promise<Trade[]> {
+  async getDeals(login?: number, options?: { force?: boolean; limit?: number }): Promise<Trade[]> {
     return (await this.getDealHistory(login, options)).deals;
   },
 
-  async getDealHistory(login?: number, options?: { force?: boolean }): Promise<DealHistoryRead> {
+  async getDealHistory(login?: number, options?: { force?: boolean; limit?: number }): Promise<DealHistoryRead> {
     // The trader route supports limit/offset; the legacy login route on some
     // brokers always repeats its latest 500 rows. JWT claims select a route
     // only; the server authorizes it and each returned account is validated.
@@ -840,22 +896,24 @@ export const tradeGatewayApi = {
     const tokenLogin = readBackendNumber(payload?.account_login ?? payload?.login);
     const ownAccount = login === undefined || tokenLogin === login;
     const endpoint = ownAccount ? '/account/deals' : `/deals/${login}`;
-    return cachedTradeRead(`deals:${login ?? 'session'}`, options?.force === true, async () => {
+    const recentLimit = options?.limit;
+    return cachedTradeRead(`deals:${login ?? 'session'}${recentLimit === undefined ? '' : `:limit${recentLimit}`}`, options?.force === true, async () => {
       try {
-        return await loadAllDealPages(endpoint, login);
+        return await loadAllDealPages(endpoint, login, recentLimit);
       } catch (caught) {
         const status = caught && typeof caught === 'object' && 'status' in caught ? Number(caught.status) : null;
         if (!ownAccount || !login || (status !== 404 && status !== 501)) throw caught;
-        return loadAllDealPages(`/deals/${login}`, login);
+        return loadAllDealPages(`/deals/${login}`, login, recentLimit);
       }
     });
   },
 
-  async getClosedPositions(login: number, options?: { force?: boolean }): Promise<Trade[]> {
-    return cachedTradeRead(`closed:${login}`, options?.force === true, async () => {
+  async getClosedPositions(login: number, options?: { force?: boolean; limit?: number }): Promise<Trade[]> {
+    const limit = options?.limit ?? 500;
+    return cachedTradeRead(`closed:${login}${options?.limit === undefined ? '' : `:limit${limit}`}`, options?.force === true, async () => {
       const data = await apiClient.get<GatewayClosedPosition[] | { positions: GatewayClosedPosition[] }>(
         `/positions/${login}/history`,
-        { baseUrl: API_V2_BASE_URL, params: { limit: 500, offset: 0 } }
+        { baseUrl: API_V2_BASE_URL, params: { limit, offset: 0 } }
       );
       return arrayFrom<GatewayClosedPosition>(data, 'positions').map(normalizeClosedPosition);
     });

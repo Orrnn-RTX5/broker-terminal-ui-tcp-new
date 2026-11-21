@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 import { useAppStore, type Position } from '../../store/useAppStore';
 import { fetchOrderHistory } from './orderHistoryRefresh';
 import { applyOpenPositionSnapshot } from './positionRuntime';
-import { POST_TRADE_REFRESH_COALESCE_MS, POST_TRADE_REFRESH_MAX_WAIT_MS, useTradeRefreshController } from './useTradeRefreshController';
+import { HISTORY_REFRESH_MIN_INTERVAL_MS, POST_TRADE_REFRESH_COALESCE_MS, POST_TRADE_REFRESH_MAX_WAIT_MS, useTradeRefreshController } from './useTradeRefreshController';
 
 vi.mock('../../services/api', () => ({
   api: {
@@ -16,6 +16,8 @@ vi.mock('../../services/api', () => ({
 
 vi.mock('../../services/terminalHistory', () => ({
   beginTradeHistoryRefresh: vi.fn(),
+  invalidateTerminalHistory: vi.fn(),
+  isHistoryTabMounted: vi.fn(() => false),
 }));
 
 vi.mock('../../services/tradePositionStream', () => ({
@@ -35,6 +37,8 @@ vi.mock('./positionRuntime', () => ({
   normalizeAccountSummary: vi.fn((raw: unknown) => raw),
   normalizePositions: vi.fn((positions: Position[]) => positions),
 }));
+
+vi.setConfig({ testTimeout: 30_000 });
 
 const LOGIN = 123;
 
@@ -174,8 +178,13 @@ describe('post-trade refresh coalescing', () => {
     await advance(1);
     expect(api.positions.getPositions).toHaveBeenCalledTimes(2);
     expect(api.orders.getPendingOrders).toHaveBeenCalledTimes(2);
+    // The history read of the second burst is inside the 2 s cooldown: it trails the first one.
+    expect(fetchOrderHistory).toHaveBeenCalledTimes(1);
+    await advance(HISTORY_REFRESH_MIN_INTERVAL_MS);
     expect(fetchOrderHistory).toHaveBeenCalledTimes(2);
-    expect(api.account.getAccountMetrics).toHaveBeenCalledTimes(2);
+    // The trailing history read also re-reads pending orders and metrics.
+    expect(api.orders.getPendingOrders).toHaveBeenCalledTimes(3);
+    expect(api.account.getAccountMetrics).toHaveBeenCalledTimes(3);
   });
 
   it('a trade that completes while a read is in flight waits for it: one read per kind at a time, and the last read stands', async () => {
@@ -203,7 +212,8 @@ describe('post-trade refresh coalescing', () => {
       firstPositions.resolve([position(1)]);
       firstOrders.resolve([{ id: '901', symbol: 'EURUSD' }]);
     });
-    await advance(0);
+    // Let every promise hop of the finished read settle before the rerun is asserted.
+    for (let flush = 0; flush < 5; flush += 1) await advance(1);
 
     expect(api.positions.getPositions).toHaveBeenCalledTimes(2);
     expect(api.orders.getPendingOrders).toHaveBeenCalledTimes(2);

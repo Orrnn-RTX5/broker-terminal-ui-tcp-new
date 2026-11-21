@@ -41,6 +41,26 @@ import { createStreamHistoryCoalescer } from './tradeHistoryFreshness';
 type Subscribe = (channel: string, callback: (data: unknown) => void) => () => void;
 type UnknownRecord = Record<string, unknown>;
 
+/** True only for a deal frame that explicitly reports an entry-in deal (a position open or add). */
+const isEntryInDealFrame = (frame: unknown): boolean => {
+  const outer = asRecord(asRecord(frame)?.data) ?? asRecord(frame);
+  const inner = asRecord(outer?.data) ?? outer;
+  const entry = String(inner?.entry ?? inner?.entry_kind ?? '').trim().toLowerCase();
+  return entry === 'in' || entry === 'entry_in';
+};
+
+const PENDING_LIFECYCLE_NO_HISTORY_STATUSES = new Set([
+  'placed', 'pending', 'new', 'accepted', 'modified', 'cancelled', 'canceled', 'rejected', 'expired', 'limit_activated',
+]);
+
+/** True only for an orders.* frame that reports a known pending-order lifecycle status that cannot touch closed history. */
+const isKnownPendingLifecycleFrame = (frame: unknown): boolean => {
+  const outer = asRecord(asRecord(frame)?.data) ?? asRecord(frame);
+  const inner = asRecord(outer?.data) ?? asRecord(outer?.order) ?? outer;
+  const status = String(inner?.status ?? outer?.status ?? '').trim().toLowerCase();
+  return PENDING_LIFECYCLE_NO_HISTORY_STATUSES.has(status);
+};
+
 const asRecord = (value: unknown): UnknownRecord | null => (
   value !== null && typeof value === 'object' ? value as UnknownRecord : null
 );
@@ -56,7 +76,7 @@ interface UseTradeStreamRuntimeOptions {
   markServerClosedTickets: (ticketIds?: number[]) => void;
   markTradeWsMessage: () => void;
   reconcileOptimisticClosedPositions: (positions: Position[]) => Position[];
-  refreshOrdersAndHistory: (login?: number) => Promise<void>;
+  refreshOrdersAndHistory: (login?: number, options?: { skipHistory?: boolean }) => Promise<void>;
   reloadMarketSymbols: () => void | Promise<unknown>;
 }
 
@@ -81,6 +101,7 @@ export const useTradeStreamRuntime = ({
   reloadMarketSymbols,
 }: UseTradeStreamRuntimeOptions): void => {
   const historyRefreshTimerRef = useRef<number | null>(null);
+  const openRefreshTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -106,12 +127,37 @@ export const useTradeStreamRuntime = ({
       refresh: (login) => refreshOrdersAndHistory(login),
       isCurrent: (login) => isSessionActive() && getLiveTradingLogin() === login,
     });
+    // Frames that cannot change closed history (position opens, pending-order lifecycle) refresh
+    // orders and account metrics only, through their own coalescer so they never replace a
+    // pending closed-history refetch.
+    const openCoalescer = createStreamHistoryCoalescer({
+      refresh: (login) => refreshOrdersAndHistory(login, { skipHistory: true }),
+      isCurrent: (login) => isSessionActive() && getLiveTradingLogin() === login,
+    });
     const pendingLifecycleDeduper = createPendingLifecycleDeduper(256, {
       persistKey: 'rtx5_seen_pending_lifecycle_v1',
     });
     const streamMountedAtMs = Date.now();
 
-    const scheduleStreamHistoryRefresh = (targetLogin: number, kind: 'close' | 'order'): void => {
+    const scheduleStreamHistoryRefresh = (targetLogin: number, kind: 'close' | 'order', opensOnly = false): void => {
+      if (opensOnly) {
+        if (isBinaryTcpOrderEnabled()) {
+          if (openRefreshTimerRef.current !== null) window.clearTimeout(openRefreshTimerRef.current);
+          const runOpen = () => {
+            if (getActiveBinaryTcpOrderCount() > 0) {
+              openRefreshTimerRef.current = window.setTimeout(runOpen, 600);
+              return;
+            }
+            openRefreshTimerRef.current = null;
+            if (!isSessionActive() || getLiveTradingLogin() !== targetLogin) return;
+            void refreshOrdersAndHistory(targetLogin, { skipHistory: true }).catch((error) => console.error('[WS ORDERS REFRESH ERROR]', error));
+          };
+          openRefreshTimerRef.current = window.setTimeout(runOpen, 1200);
+          return;
+        }
+        openCoalescer.onFrame(targetLogin, kind);
+        return;
+      }
       if (isBinaryTcpOrderEnabled()) {
         if (historyRefreshTimerRef.current !== null) {
           window.clearTimeout(historyRefreshTimerRef.current);
@@ -317,6 +363,8 @@ export const useTradeStreamRuntime = ({
           );
           if (!login || isTradeSubscriptionControlFrame(data)) return;
           markTradeWsMessage();
+          // History is skipped only for frames positively known not to change it.
+          let frameMayChangeHistory = !data.channel.startsWith('deals.') && !isKnownPendingLifecycleFrame(data);
           if (data.channel.startsWith('orders.') || data.channel.startsWith('rtx5.pending_orders.')) {
             const currentOrders = (useAppStore.getState().orders ?? []) as unknown as ReadonlyArray<Record<string, unknown>>;
             const notice = parsePendingOrderLifecycleFrame(data.channel, data.data ?? data, currentOrders);
@@ -345,6 +393,9 @@ export const useTradeStreamRuntime = ({
                 pendingLifecycleDeduper.markSeen(notice.dedupeKey);
               }
             }
+            // A pending order that fills can reduce or close a netting position: keep history then.
+            if (notice && (notice.status === 'filled' || notice.status === 'triggered')) frameMayChangeHistory = true;
+            else if (notice && PENDING_LIFECYCLE_NO_HISTORY_STATUSES.has(notice.status)) frameMayChangeHistory = false;
             if (notice && pendingLifecycleDeduper.shouldEmit(notice.dedupeKey)) {
               const specDigits = readRegisteredSymbolPriceSpec(notice.symbol)?.digits;
               const priceLabel = notice.price > 0 ? formatPrice(notice.price, specDigits ?? undefined) : '';
@@ -408,7 +459,8 @@ export const useTradeStreamRuntime = ({
               }
             }
           }
-          scheduleStreamHistoryRefresh(login, 'order');
+          if (data.channel.startsWith('deals.') && !isEntryInDealFrame(data)) frameMayChangeHistory = true;
+          scheduleStreamHistoryRefresh(login, 'order', !frameMayChangeHistory);
           return;
         }
 
@@ -511,6 +563,11 @@ export const useTradeStreamRuntime = ({
       invalidator.dispose();
       unsubscribe();
       historyCoalescer.dispose();
+      openCoalescer.dispose();
+      if (openRefreshTimerRef.current !== null) {
+        window.clearTimeout(openRefreshTimerRef.current);
+        openRefreshTimerRef.current = null;
+      }
       if (historyRefreshTimerRef.current !== null) {
         window.clearTimeout(historyRefreshTimerRef.current);
         historyRefreshTimerRef.current = null;

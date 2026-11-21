@@ -1,5 +1,6 @@
 import {
     clearTradeHistoryRequestCache,
+    invalidateSettledTradeHistoryReads,
     tradeGatewayApi,
     type TradeHistoryDataSet,
 } from '../api/tradeGateway';
@@ -71,6 +72,36 @@ export const beginTradeHistoryRefresh = (): void => {
     }
     primed = true;
 };
+
+// Cheap invalidation for fills that cannot change closed history (opens, pending orders):
+// the next History tab mount refetches instead of reusing a snapshot without the new deals.
+// No network read happens here.
+export const invalidateTerminalHistory = (): void => {
+    // Drop only settled snapshots. In-flight reads (a gated close read, the tab's own load) keep
+    // running and are delivered to their callers: nothing here may fail them.
+    cache = null;
+    // A flight that started before this call still resolves for its caller, but must not
+    // publish its older snapshot as the cache; new loads start a fresh flight.
+    publishSerial += 1;
+    flights.clear();
+    invalidateSettledTradeHistoryReads();
+};
+
+let mountedHistoryTabs = 0;
+
+// The History tab registers while mounted so background refreshes know a visible tab needs
+// one refresh after an invalidation.
+export const registerHistoryTabMounted = (): (() => void) => {
+    mountedHistoryTabs += 1;
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        mountedHistoryTabs -= 1;
+    };
+};
+
+export const isHistoryTabMounted = (): boolean => mountedHistoryTabs > 0;
 
 export const loadTerminalHistory = (
     login: number,

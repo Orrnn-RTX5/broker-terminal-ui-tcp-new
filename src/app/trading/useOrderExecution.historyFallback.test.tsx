@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beginPositionsRead, useAppStore } from '../../store/useAppStore';
 import { api } from '../../services/api';
 import {
   createTradeOperationContext,
@@ -63,6 +64,8 @@ describe('useOrderExecution ACK history fallback', () => {
   const context = createTradeOperationContext('broker:123', 123, 4);
 
   beforeEach(() => {
+    // A loaded broker positions snapshot lets a fill be recognised as a pure open.
+    useAppStore.getState().setPositions([], { readStartedAt: beginPositionsRead() });
     vi.useFakeTimers();
     vi.clearAllMocks();
     vi.mocked(api.orders.placeMarketOrder).mockResolvedValue({ ticket: 71 } as never);
@@ -76,7 +79,7 @@ describe('useOrderExecution ACK history fallback', () => {
 
     vi.advanceTimersByTime(ACK_HISTORY_FALLBACK_MS);
     expect(controller.refreshOrdersAndHistory).toHaveBeenCalledTimes(2);
-    expect(controller.refreshOrdersAndHistory).toHaveBeenLastCalledWith(123);
+    expect(controller.refreshOrdersAndHistory).toHaveBeenLastCalledWith(123, { skipHistory: true });
     vi.advanceTimersByTime(ACK_HISTORY_FALLBACK_MS * 3);
     expect(controller.refreshOrdersAndHistory).toHaveBeenCalledTimes(2);
   });

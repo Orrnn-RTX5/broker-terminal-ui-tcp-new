@@ -96,6 +96,9 @@ import {
   TRADE_LEVEL_CROSS_REFRESH_MIN_DISPATCH_INTERVAL_MS,
 } from '../presentation/tradeOverlayPresentation';
 
+const RAF_WATCHDOG_MS = 100;
+const RAF_SUSTAINED_DEFERRAL_CAP_MS = 200;
+
 interface UseTradingChartLiveCandleRuntimeOptions {
   discardRetainedPublicChartSurface: () => void;
   activeTradeSnapshotsRef: RefObject<Map<string, ActiveTradeSnapshot>>;
@@ -281,6 +284,15 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
     // VSync rAF coalescing state: multiple ticks arriving within one 16 ms monitor frame
     // update OHLC High/Low/Close immediately in RAM and paint once on VSync!
     let rafPaintId: number | null = null;
+    let rafWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let rafDeferralStartedAt = 0;
+    let forceWatchdogPaint = false;
+    const clearRafWatchdog = () => {
+      if (rafWatchdogTimer !== null) {
+        clearTimeout(rafWatchdogTimer);
+        rafWatchdogTimer = null;
+      }
+    };
     let queuedVSyncNewBar = false;
     let queuedVSyncAskPrice: number | null = null;
     let queuedVSyncLastPrice: number | null = null;
@@ -423,16 +435,22 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
 
     const flushVSyncLivePaint = () => {
       rafPaintId = null;
+      clearRafWatchdog();
+      const forcedPaint = forceWatchdogPaint;
+      forceWatchdogPaint = false;
       if (liveEffectClosed || isDisposedRef.current || isRebuildingRef.current || liveMarketDataFrozenRef.current) {
+        rafDeferralStartedAt = 0;
         return;
       }
 
-      if (getActiveBinaryTcpOrderCount() > 0 && getBinaryTcpOrderActiveDurationMs() < 250) {
+      if (!forcedPaint && getActiveBinaryTcpOrderCount() > 0 && getBinaryTcpOrderActiveDurationMs() < 250) {
         if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
           rafPaintId = window.requestAnimationFrame(flushVSyncLivePaint);
+          armRafWatchdog();
           return;
         }
       }
+      rafDeferralStartedAt = 0;
 
       if (pendingSupplementalPriceLines && canPaintLiveChart(true)) {
         const pending = pendingSupplementalPriceLines;
@@ -471,11 +489,30 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
       repaintLivePriceOverlayOrDefer(active);
     };
 
+    // rAF is paused in background/occluded WebView2 or tabs. Fallback timer paints
+    // once if the frame callback has not fired; whichever fires first cancels the other.
+    const runWatchdogPaint = () => {
+      rafWatchdogTimer = null;
+      if (rafPaintId !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(rafPaintId);
+      }
+      forceWatchdogPaint = true;
+      flushVSyncLivePaint();
+    };
+    function armRafWatchdog() {
+      if (rafWatchdogTimer !== null) return;
+      const now = Date.now();
+      if (rafDeferralStartedAt === 0) rafDeferralStartedAt = now;
+      const remainingCap = Math.max(0, RAF_SUSTAINED_DEFERRAL_CAP_MS - (now - rafDeferralStartedAt));
+      rafWatchdogTimer = setTimeout(runWatchdogPaint, Math.min(RAF_WATCHDOG_MS, remainingCap));
+    }
+
     const scheduleVSyncLivePaint = (isNewBar: boolean) => {
       if (isNewBar) queuedVSyncNewBar = true;
       if (rafPaintId !== null) return;
       if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
         rafPaintId = window.requestAnimationFrame(flushVSyncLivePaint);
+        armRafWatchdog();
       } else {
         flushVSyncLivePaint();
       }
@@ -897,7 +934,7 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
           candleTimeframe,
           brokerTimeOffsetSecRef.current,
         )?.startTime;
-        if (candleTimeframe === 'M1' || !Number.isFinite(activePeriodStart) || c.time < Number(activePeriodStart)) {
+        if (!Number.isFinite(activePeriodStart) || c.time < Number(activePeriodStart)) {
           markFinalizedCandleTime(finalizedCandleTimeByTimeframe, candleTimeframe, c.time);
         }
         candlesRef.current = mergeBackendCandlePage(candlesRef.current, [c]).candles;
@@ -1150,6 +1187,7 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
 
     return () => {
       liveEffectClosed = true;
+      clearRafWatchdog();
       if (rafPaintId !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
         window.cancelAnimationFrame(rafPaintId);
         rafPaintId = null;

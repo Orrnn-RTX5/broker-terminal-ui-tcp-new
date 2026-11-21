@@ -26,6 +26,9 @@ type webBinaryStreamSub struct {
 	// lastResync (unix nanos) is touched by the tab's writer goroutine only: at most one full snapshot resync
 	// per webResyncMinGap, so a persistent overflow cannot turn into a snapshot storm.
 	lastResync int64
+	// pend conflates 0x21 tick frames while the tab is backed up (nil = no conflation: ticks on a full queue are
+	// dropped as before). Set once at creation, never changed.
+	pend *tickConflator
 
 	// src is the one market source (guest hub or an account tunnel's hub) this tab takes 0x21/0x22/depth
 	// frames from. It only changes under brokerLink.srcMu (see moveSubLocked); the hot path never reads it.
@@ -275,19 +278,176 @@ func (h *webBinaryMarketHub) broadcastMarketPacket(pkt []byte) {
 	if len(pkt) == 0 {
 		return
 	}
+	isTick := pkt[0] == rtx5tcp.FrameBinaryTickBatch && len(pkt) >= 4
 	h.mu.RLock()
 	for s := range h.subs {
 		if s.closed.Load() {
 			continue
 		}
+		// Backed-up tab (some tick is pending): every tick goes to the per-symbol pending map until the writer
+		// has drained it, so a symbol's ticks can never overtake its older pending one. One atomic load otherwise.
+		if isTick && s.pend != nil && s.pend.has.Load() {
+			s.conflateTick(h, pkt)
+			continue
+		}
 		select {
 		case s.ch <- pkt:
 		default:
+			if isTick && s.pend != nil {
+				s.conflateTick(h, pkt)
+				continue
+			}
 			webStreamMarketFramesDropped.Add(1)
 			s.needResync.Store(true)
 		}
 	}
 	h.mu.RUnlock()
+}
+
+// conflateTick stores the ticks of a 0x21 frame as the latest pending tick of their symbols (slow path only).
+// Ticks that cannot be kept (malformed frame, pending map full) are the only ones counted as dropped.
+func (s *webBinaryStreamSub) conflateTick(h *webBinaryMarketHub, pkt []byte) {
+	if lost := s.pend.put(pkt[4:], h); lost > 0 {
+		webStreamMarketFramesDropped.Add(uint64(lost))
+		s.needResync.Store(true)
+	}
+	webStreamTickFramesConflated.Add(1)
+}
+
+// maxPendingTickSymbols bounds a tab's pending map (a source carries a few hundred symbols); a new symbol beyond it
+// is dropped and counted like any other lost frame.
+const maxPendingTickSymbols = 4096
+
+type pendingTick struct {
+	rec [rtx5tcp.BinaryTickRecordSize]byte
+	src *webBinaryMarketHub // the hub the tick came from: a tab that moved to another source discards the old one's
+}
+
+// tickConflator holds, per symbol, the newest 0x21 tick a backed-up tab has not been sent yet. Producers (hub
+// broadcast) only touch it on the slow path; the writer drains it. has is true while the map is non-empty.
+type tickConflator struct {
+	has atomic.Bool
+	sig chan struct{} // cap 1: wakes the writer when the map goes from empty to non-empty
+	mu  sync.Mutex
+	m   map[[rtx5tcp.BinarySymbolMaxBytes]byte]pendingTick
+}
+
+func newTickConflator() *tickConflator {
+	return &tickConflator{sig: make(chan struct{}, 1), m: make(map[[rtx5tcp.BinarySymbolMaxBytes]byte]pendingTick, 64)}
+}
+
+// put stores every record of a 0x21 payload ([count u16][count x 48 B]) as its symbol's latest tick, overwriting
+// an older one, without decoding or allocating. It returns the number of ticks that could not be kept.
+func (c *tickConflator) put(payload []byte, src *webBinaryMarketHub) (lost int) {
+	const rs = rtx5tcp.BinaryTickRecordSize
+	if len(payload) < 2 {
+		return 1
+	}
+	n := int(binary.LittleEndian.Uint16(payload[:2]))
+	if len(payload) < 2+n*rs {
+		return 1
+	}
+	c.mu.Lock()
+	for i := 0; i < n; i++ {
+		rec := payload[2+i*rs : 2+(i+1)*rs]
+		var key [rtx5tcp.BinarySymbolMaxBytes]byte
+		copy(key[:], rec)
+		pt, ok := c.m[key]
+		if !ok && len(c.m) >= maxPendingTickSymbols {
+			lost++
+			continue
+		}
+		copy(pt.rec[:], rec)
+		pt.src = src
+		c.m[key] = pt
+	}
+	wake := len(c.m) > 0 && !c.has.Load()
+	if wake {
+		c.has.Store(true)
+	}
+	c.mu.Unlock()
+	if wake {
+		select {
+		case c.sig <- struct{}{}:
+		default:
+		}
+	}
+	return lost
+}
+
+// take appends the pending records (of src; all when src is nil) to dst and empties the map.
+func (c *tickConflator) take(dst []byte, src *webBinaryMarketHub) []byte {
+	c.mu.Lock()
+	for _, v := range c.m {
+		if src == nil || v.src == src {
+			dst = append(dst, v.rec[:]...)
+		}
+	}
+	clear(c.m)
+	c.has.Store(false)
+	c.mu.Unlock()
+	return dst
+}
+
+// discard empties the map (tab closed, or a resync snapshot that supersedes the pending ticks).
+func (c *tickConflator) discard() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	clear(c.m)
+	c.has.Store(false)
+	c.mu.Unlock()
+}
+
+const webConflateInterval = 16 * time.Millisecond
+
+// conflateScratch holds the writer's reusable buffers for flushConflated.
+type conflateScratch struct {
+	recs  []byte
+	frame []byte
+}
+
+// flushConflated is the writer's drain of a backed-up tab. It first writes the market frames already queued in
+// ch (a snapshot of its length: they are older than every pending tick, because a symbol only becomes pending
+// once ch is full and then stays pending), calling between every 32 packets, and then the pending ticks as
+// 0x21 frames of up to 64 ticks. Writing the queue first and the pending map second is what keeps each symbol's
+// ticks in order.
+func (s *webBinaryStreamSub) flushConflated(sc *conflateScratch, write func([]byte) error, between func() error) error {
+	for n := len(s.ch); n > 0; n-- {
+		select {
+		case pkt := <-s.ch:
+			if err := write(pkt); err != nil {
+				return err
+			}
+		default:
+			n = 0
+		}
+		if between != nil && n%32 == 0 {
+			if err := between(); err != nil {
+				return err
+			}
+		}
+	}
+	const rs = rtx5tcp.BinaryTickRecordSize
+	sc.recs = s.pend.take(sc.recs[:0], s.src.Load())
+	for recs := sc.recs; len(recs) > 0; {
+		k := len(recs) / rs
+		if k > 64 {
+			k = 64
+		}
+		f := sc.frame[:0]
+		f = append(f, rtx5tcp.FrameBinaryTickBatch, 0, 0, 0, 0, 0)
+		binary.LittleEndian.PutUint16(f[2:4], uint16(2+k*rs))
+		binary.LittleEndian.PutUint16(f[4:6], uint16(k))
+		f = append(f, recs[:k*rs]...)
+		sc.frame = f
+		if err := write(f); err != nil {
+			return err
+		}
+		recs = recs[k*rs:]
+	}
+	return nil
 }
 
 // broadcastTradeEvent isolates 0x3A private account/position events strictly by each browser tab's bound AccountLogin (bytes[2:10]),
@@ -379,6 +539,10 @@ func (s *webBinaryStreamSub) resyncPackets() [][]byte {
 			n = 0
 		}
 	}
+	// Discard the pending ticks BEFORE taking the snapshot: every discarded tick is already in the hub cache the
+	// snapshot reads, and a tick pended after this point is sent after the snapshot (at worst a harmless repeat).
+	// Discarding after the snapshot could drop a tick that reached the cache too late for it.
+	s.pend.discard()
 	var out [][]byte
 	if h := s.src.Load(); h != nil {
 		snap, _ := h.snapshotPackets()
@@ -436,11 +600,13 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 		clientKey: clientKey,
 		prioCh:    make(chan []byte, 512),
 		ch:        make(chan []byte, 2048),
+		pend:      newTickConflator(),
 	}
 
 	// Registers the tab on its market source (guest hub, or its account tunnel's hub when that is up) and
 	// returns that source's snapshot.
 	snaps, depthSnaps := link.attachSub(sub)
+	defer sub.pend.discard() // runs after detachSub: frees the pending map when the tab closes
 	defer link.detachSub(sub)
 
 	bytesSent := 0
@@ -537,6 +703,30 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 			resyncTimer.Stop()
 		}
 	}()
+	// Conflated-tick writer state: pendSig wakes the loop when the first tick goes pending; the flush runs at most
+	// once per webConflateInterval (timer-armed when it is not due yet).
+	var pendTimer *time.Timer
+	var pendC <-chan time.Time
+	var pendSig <-chan struct{}
+	if sub.pend != nil {
+		pendSig = sub.pend.sig
+	}
+	defer func() {
+		if pendTimer != nil {
+			pendTimer.Stop()
+		}
+	}()
+	var lastFlush time.Time
+	var scratch conflateScratch
+	writeRaw := func(pkt []byte) error {
+		refreshDeadline()
+		_, err := w.Write(pkt)
+		return err
+	}
+	betweenPrio := func() error {
+		_, err := drainPrio(webStreamMaxPrioBurst)
+		return err
+	}
 	ctxDone := r.Context().Done()
 	for {
 		select {
@@ -566,6 +756,22 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 				resyncC = resyncTimer.C
 			}
 		}
+		if sub.pend != nil && sub.pend.has.Load() {
+			if wait := webConflateInterval - time.Since(lastFlush); wait <= 0 {
+				if err := sub.flushConflated(&scratch, writeRaw, betweenPrio); err != nil {
+					return
+				}
+				lastFlush = time.Now()
+				flusher.Flush()
+			} else if pendC == nil {
+				if pendTimer == nil {
+					pendTimer = time.NewTimer(wait)
+				} else {
+					pendTimer.Reset(wait)
+				}
+				pendC = pendTimer.C
+			}
+		}
 		if wrote, err := drainPrio(webStreamMaxPrioBurst); err != nil {
 			return
 		} else if wrote {
@@ -583,6 +789,9 @@ func (s *WebTerminalServer) serveBinaryMarketStream(w http.ResponseWriter, r *ht
 			return
 		case <-resyncC:
 			resyncC = nil
+		case <-pendSig:
+		case <-pendC:
+			pendC = nil
 		case pkt := <-sub.prioCh:
 			refreshDeadline()
 			if _, err := w.Write(pkt); err != nil {

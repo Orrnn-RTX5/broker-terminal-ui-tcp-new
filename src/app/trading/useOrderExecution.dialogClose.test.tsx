@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beginPositionsRead, useAppStore } from '../../store/useAppStore';
 import { ApiError } from '../../api/client';
 import { ORDER_FEEDBACK_EVENT } from '../../contracts/terminalEvents';
 import {
@@ -71,6 +72,8 @@ describe('useOrderExecution dialog-close contract', () => {
   let feedbackMessages: string[];
 
   beforeEach(() => {
+    // A loaded broker positions snapshot lets a fill be recognised as a pure open.
+    useAppStore.getState().setPositions([], { readStartedAt: beginPositionsRead() });
     vi.clearAllMocks();
     feedbackMessages = [];
     const onFeedback = (event: Event) => {
@@ -133,6 +136,7 @@ describe('useOrderExecution dialog-close contract', () => {
     );
     expect(upsertImmediatePosition).toHaveBeenCalledOnce();
     expect(controller.refreshPositions).toHaveBeenCalledWith(123);
-    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123);
+    // A market fill that only opens a position refreshes orders/metrics, not closed history.
+    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123, { skipHistory: true });
   });
 });

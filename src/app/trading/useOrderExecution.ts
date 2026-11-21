@@ -9,7 +9,7 @@ import type { SymbolMarketStatusState } from '../../hooks/useSymbolMarketStatus'
 import { getCachedSymbolMarketStatus } from '../../hooks/useSymbolMarketStatus';
 import { captureTradeOrderIntent } from '../../services/orderLatencyTelemetry';
 import { requireTradingAuth } from '../../services/tradingAuthGate';
-import { useAppStore, type Position } from '../../store/useAppStore';
+import { getPositionsAuthoritativeSeq, useAppStore, type Position } from '../../store/useAppStore';
 import { formatOrderError } from '../../utils/orderError';
 import {
   createUnavailableMarketStatus,
@@ -53,6 +53,29 @@ const admitImmediateOrderResultPosition = (position: Position | undefined): void
     && normalizeSymbolName(existing.symbol) === symbol);
   if (targetsExistingRow) return;
   upsertImmediatePosition(position);
+};
+
+/**
+ * True when a market fill only OPENED a position, so closed-trade history cannot have changed.
+ * The result must be a new ticket (a known ticket is a netting add/reduce/close), and no open
+ * position on the symbol may sit on the opposite side (a netting flip or reduce closes volume).
+ * Anything unclear returns false so history is still refreshed.
+ */
+const isPureOpenFill = (position: Position | undefined, side: string, symbol: string): boolean => {
+  if (!position) return false;
+  // No broker positions snapshot yet: the open-position list cannot be trusted, so refresh history.
+  if (getPositionsAuthoritativeSeq() === 0) return false;
+  const ticket = String(position.id);
+  const normalizedSymbol = normalizeSymbolName(symbol);
+  const wantedSide = String(side).toUpperCase();
+  const positions = useAppStore.getState().positions as unknown as Position[];
+  for (let i = 0; i < positions.length; i += 1) {
+    const existing = positions[i];
+    if (normalizeSymbolName(existing.symbol) !== normalizedSymbol) continue;
+    if (String(existing.id) === ticket) return false;
+    if (String(existing.side).toUpperCase() !== wantedSide) return false;
+  }
+  return true;
 };
 
 export interface OrderPanelSubmission {
@@ -102,7 +125,7 @@ interface UseOrderExecutionOptions {
   captureTradeOperationContext: (expectedLogin?: number) => TradeOperationContext | null;
   isTradeOperationContextCurrent: (expected: TradeOperationContext) => boolean;
   refreshPositions: (login?: number, options?: RefreshPositionsOptions) => Promise<void>;
-  refreshOrdersAndHistory: (login?: number) => Promise<void>;
+  refreshOrdersAndHistory: (login?: number, options?: { skipHistory?: boolean }) => Promise<void>;
 }
 
 interface OrderExecutionController {
@@ -174,7 +197,7 @@ export const useOrderExecution = ({
   }, [refreshOrdersAndHistory, getLiveTradingLogin]);
   useEffect(() => {
     const owner = createHistoryFreshnessOwner(
-      (login) => latestHistoryDepsRef.current.refreshOrdersAndHistory(login),
+      (login, options) => latestHistoryDepsRef.current.refreshOrdersAndHistory(login, options),
       (login) => latestHistoryDepsRef.current.getLiveTradingLogin() === login,
     );
     historyOwnerRef.current = owner;
@@ -249,6 +272,7 @@ export const useOrderExecution = ({
       const chartEntryPrice = getChartEntryPriceForSymbol(submitSymbol, side);
       const chartEntryTime = new Date().toISOString();
       const result = await orderPromise;
+      let opensOnly = false;
       const resultCommitted = commitIfCurrentTradeOperation(
         operationContext,
         () => captureTradeOperationContext(),
@@ -262,12 +286,13 @@ export const useOrderExecution = ({
             chartEntryPrice,
             chartEntryTime,
           }]);
+          opensOnly = isPureOpenFill(immediatePosition, side, submitSymbol);
           admitImmediateOrderResultPosition(immediatePosition);
         },
       );
       if (!resultCommitted) return;
       scheduleRefreshPositions(loginId);
-      refreshHistoryAfterFill(loginId, historyOwnerRef.current);
+      refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {
       publishOrderFeedback(formatOrderError(error));
     }
@@ -362,7 +387,8 @@ export const useOrderExecution = ({
         feedbackValue(`: ${request.price} · `),
         feedbackLabel('request submitted successfully!'),
       ], 'success');
-      refreshHistoryAfterFill(loginId, historyOwnerRef.current);
+      // A placed pending order changes the orders list, not closed history.
+      refreshHistoryAfterFill(loginId, historyOwnerRef.current, { skipHistory: true });
     } catch (error) {
       publishOrderFeedback(formatOrderError(error));
     }
@@ -493,7 +519,7 @@ export const useOrderExecution = ({
           feedbackValue(`: ${orderPrice} · `),
           feedbackLabel('request submitted successfully!'),
         ], 'success');
-        refreshHistoryAfterFill(loginId, historyOwnerRef.current);
+        refreshHistoryAfterFill(loginId, historyOwnerRef.current, { skipHistory: true });
         return;
       }
 
@@ -511,6 +537,7 @@ export const useOrderExecution = ({
       const chartEntryPrice = getChartEntryPriceForSymbol(submitSymbol, side);
       const chartEntryTime = new Date().toISOString();
       const result = await orderPromise;
+      let opensOnly = false;
       const resultCommitted = commitIfCurrentTradeOperation(
         operationContext,
         () => captureTradeOperationContext(),
@@ -524,12 +551,13 @@ export const useOrderExecution = ({
             chartEntryPrice,
             chartEntryTime,
           }]);
+          opensOnly = isPureOpenFill(immediatePosition, side, submitSymbol);
           admitImmediateOrderResultPosition(immediatePosition);
         },
       );
       if (!resultCommitted) return;
       scheduleRefreshPositions(loginId);
-      refreshHistoryAfterFill(loginId, historyOwnerRef.current);
+      refreshHistoryAfterFill(loginId, historyOwnerRef.current, opensOnly ? { skipHistory: true } : undefined);
     } catch (error) {
       const failureMessage = formatOrderError(error);
       publishOrderFeedback(failureMessage);

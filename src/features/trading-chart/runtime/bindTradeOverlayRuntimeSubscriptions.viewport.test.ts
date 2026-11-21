@@ -294,7 +294,7 @@ describe('viewport-driven trade history DOM', () => {
     }));
 
     expect(h.closeSuppressedTradeKeysRef.current.has('trade:17')).toBe(true);
-    expect(h.clearTradeOverlayLayer).toHaveBeenCalledExactlyOnceWith('active');
+    expect(h.clearTradeOverlayLayer).not.toHaveBeenCalled();
     expect(h.renderTradeOverlay).toHaveBeenCalledExactlyOnceWith({ forceActive: true, forceHistory: true });
     expect(h.scheduleHistoryRefresh).toHaveBeenCalledOnce();
     expect(frames.size).toBe(0);

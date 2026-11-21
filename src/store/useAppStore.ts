@@ -436,6 +436,8 @@ interface AppState {
   setPositions: (positions: Position[], options?: { closedTickets?: number[]; removedTickets?: number[]; touchedTickets?: readonly number[]; readStartedAt?: number; unlistedTickets?: readonly number[] }) => void;
   setOrders: (orders: Order[]) => void;
   setTrades: (trades: Trade[]) => void;
+  /** Merges a limited (newest-rows) history refresh into the loaded list; see mergeTradeHistory. */
+  mergeTrades: (trades: Trade[], options?: MergeTradeHistoryOptions) => boolean;
   setAccount: (account: Account | null) => void;
   addSavedAccount: (account: SavedAccount) => void;
   removeSavedAccount: (login: number, server?: string, identity?: Pick<SavedAccount, 'brokerId' | 'serverUrl'>) => void;
@@ -876,6 +878,95 @@ const dedupedLocalStorage: StateStorage = {
     localStorage.setItem(name, value);
   },
   removeItem: (name) => localStorage.removeItem(name),
+};
+
+const TRADE_HISTORY_MAX_ROWS = 500;
+
+export interface MergeTradeHistoryOptions {
+  /**
+   * Rows from a truncated deal page whose entry deal is not provably in the page. They are never
+   * stored. A row whose position is already held with a close time at or after the row's own is
+   * covered and ignored; any other (a newer exit, an unknown position) sets needsFullRead.
+   */
+  unverified?: readonly Trade[];
+  /** Late result of an older read: add missing rows, never overwrite a row already held. */
+  preferExisting?: boolean;
+}
+
+const shallowSameRow = (a: Trade, b: Trade): boolean => {
+  if (a === b) return true;
+  const left = a as unknown as Record<string, unknown>;
+  const right = b as unknown as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  for (const key of keys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+};
+
+/**
+ * Merges a limited history refresh (newest rows only) into the history already loaded.
+ * Rows are keyed `${type}:${id}`, so a row is never duplicated, and a row from another source
+ * (closed-position or standalone deal rows) whose id or positionId matches a held `closed:<id>`
+ * row is dropped: one position is one row. Incoming rows win unless preferExisting is set; a row
+ * identical to the held one keeps the held object. Order and cap match fetchOrderHistory: newest
+ * close first, at most 500 rows. The returned array is the `existing` array itself when nothing
+ * changed, so the store can skip the update.
+ */
+export const mergeTradeHistory = (
+  existing: Trade[],
+  incoming: Trade[],
+  options: MergeTradeHistoryOptions = {},
+): { trades: Trade[]; needsFullRead: boolean } => {
+  const keyOf = (trade: Trade): string => `${trade?.type}:${trade?.id}`;
+  const timeOf = (trade: Trade): number => Date.parse(trade?.closeTime ?? trade?.openTime) || 0;
+  const positionIdOf = (trade: Trade): number => Number((trade as { positionId?: unknown }).positionId);
+  const unverified = options.unverified ?? [];
+  if (incoming.length === 0 && unverified.length === 0) return { trades: existing, needsFullRead: false };
+  const byKey = new Map<string, Trade>();
+  const heldClosedIds = new Set<string>();
+  for (const trade of existing) {
+    byKey.set(keyOf(trade), trade);
+    if (trade?.type === 'closed') heldClosedIds.add(String(trade.id));
+  }
+  // A non-`closed` row belongs to a held `closed:<id>` position when its positionId matches, or — for a
+  // closed-position row only, whose id IS the position ticket — when its id matches. A standalone deal row's
+  // id is a deal ticket and is never compared with position ids.
+  const coveredByClosedRow = (trade: Trade): boolean => {
+    if (trade?.type === 'closed') return false;
+    const positionId = positionIdOf(trade);
+    if (positionId > 0 && heldClosedIds.has(String(positionId))) return true;
+    return (trade as { historySource?: unknown }).historySource === 'closed-position'
+      && heldClosedIds.has(String(trade?.id));
+  };
+  for (const trade of incoming) {
+    const key = keyOf(trade);
+    if (coveredByClosedRow(trade)) continue;
+    const held = byKey.get(key);
+    if (held) {
+      if (options.preferExisting || shallowSameRow(held, trade)) continue;
+    }
+    byKey.set(key, trade);
+    if (trade?.type === 'closed') heldClosedIds.add(String(trade.id));
+  }
+  let needsFullRead = false;
+  for (const trade of unverified) {
+    // An exit deal keeps its own deal id; the full read stores the position as closed:<positionId>.
+    const positionId = positionIdOf(trade);
+    const heldByPosition = positionId > 0 ? byKey.get(`closed:${positionId}`) : undefined;
+    const held = heldByPosition ?? byKey.get(keyOf(trade));
+    const sameSymbol = held && String(held.symbol).toUpperCase() === String(trade.symbol).toUpperCase();
+    if (!(held && sameSymbol && timeOf(held) >= timeOf(trade))) needsFullRead = true;
+  }
+  // The other direction: a row held from another source before its `closed:<id>` row arrived is dropped
+  // now, so one position never stays as two rows.
+  const merged = Array.from(byKey.values())
+    .filter((trade) => !coveredByClosedRow(trade))
+    .sort((a, b) => timeOf(b) - timeOf(a))
+    .slice(0, TRADE_HISTORY_MAX_ROWS);
+  const unchanged = merged.length === existing.length && merged.every((row, index) => row === existing[index]);
+  return { trades: unchanged ? existing : merged, needsFullRead };
 };
 
 export const useAppStore = create<AppState>()(
@@ -1363,6 +1454,16 @@ export const useAppStore = create<AppState>()(
         setOrders: (orders) => set({ orders }),
 
         setTrades: (trades) => set({ trades }),
+
+        mergeTrades: (trades, options) => {
+          let needsFullRead = false;
+          set((state) => {
+            const merged = mergeTradeHistory(state.trades, trades, options);
+            needsFullRead = merged.needsFullRead;
+            return merged.trades === state.trades ? state : { trades: merged.trades };
+          });
+          return needsFullRead;
+        },
 
         setAccount: (account) => set((state) => {
           const previous = state.account;
