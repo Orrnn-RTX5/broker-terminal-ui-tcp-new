@@ -306,6 +306,13 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-brand-slot {
   border-right-color: var(--rtx-light-line-border, #64748b);
 }
 
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-brand,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-application-menu__brand-logo {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
 html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__button,
 html.rtx-advanced-view.rtx-skin-untitled-light .web-drawing-tools-rail__menu-slot .rtx-application-menu-trigger {
   color: var(--rtx-light-text);
@@ -611,6 +618,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .navigator-panel {
 
 html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row {
   border-radius: 2px !important;
+  margin-bottom: 0 !important;
   transition: background-color 120ms ease, color 120ms ease !important;
 }
 
@@ -670,16 +678,25 @@ html.rtx-advanced-view.rtx-skin-untitled-light :where(td, tr):not(.tv-lightweigh
   color: var(--rtx-light-text) !important;
 }
 
-/* Bottom-dock tables from Trade to Historical Data use clear horizontal separators without vertical cell edges. */
+/* Bottom-dock tables use clear horizontal separators and subtle light vertical dividers between columns. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead th, tbody td:not(.rtx-journal-spacer-cell)),
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table :is(thead th, tbody td),
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td),
 html.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td),
 html.rtx-desktop-shell-active .rtx-trade-table :is(thead th, tbody td) {
   border-left: none !important;
-  border-right: none !important;
-  border-bottom: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  border-right: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
   box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead th, tbody td:not(.rtx-journal-spacer-cell)):last-child,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-tab .rtx-trade-table :is(thead th, tbody td):last-child,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock .rtx-history-table[data-grid='false'] :is(thead th, tbody td:not(.rtx-journal-spacer-cell)),
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td):last-child,
+html.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td):last-child,
+html.rtx-desktop-shell-active .rtx-trade-table :is(thead th, tbody td):last-child {
+  border-right: none !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock :is(.rtx-trade-table, .rtx-history-table, .rtx-exposure-tab table, .rtx-pending-orders-table, .rtx-journal-table) :is(thead, thead tr, thead th) {
@@ -745,7 +762,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar :is(.rt
   color: var(--rtx-light-text) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar .rtx-history-time-btn[aria-pressed="true"] {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-toolbar .rtx-history-time-btn[aria-selected="true"] {
   background: var(--rtx-light-selected) !important;
   color: var(--rtx-light-accent-strong) !important;
   box-shadow: none !important;
@@ -851,7 +868,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-account-bar {
-  display: none;
+  display: flex;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-exposure-tab .bg-\[\#2a2d34\],
@@ -872,7 +889,8 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-status-bar {
   box-shadow: none !important;
 }
 
-/* Market Watch search sits in a rounded field above the full-width explorer. */
+/* Market Watch inline "click to add..." matches dark mode's flat, borderless row;
+   the rounded search field applies only when the symbol explorer is open. */
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search {
   background: var(--rtx-light-panel) !important;
   border: 0 !important;
@@ -880,8 +898,24 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-marke
   box-shadow: none !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar {
-  margin: 4px 6px;
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--inline {
+  border-top: 1px solid var(--mw-desktop-grid, var(--rtx-light-border)) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--inline .rtx-market-watch__search-bar {
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--inline .rtx-market-watch__symbol-count {
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar {
+  margin: 7px 8px;
   background: var(--rtx-light-elevated) !important;
   border: 1px solid var(--rtx-light-border) !important;
   border-radius: 6px !important;
@@ -889,11 +923,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-marke
   transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar {
-  margin: 7px 8px;
-}
-
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:hover {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar:hover {
   border-color: var(--rtx-light-border-strong) !important;
   box-shadow: 0 1px 3px rgb(15 23 42 / 6%) !important;
 }
@@ -903,9 +933,13 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-marke
   background: transparent !important;
   border: 0 !important;
   border-color: transparent !important;
-  border-radius: 6px !important;
+  border-radius: 0 !important;
   box-shadow: none !important;
   outline: none !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar .mw-input {
+  border-radius: 6px !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar .mw-input::placeholder {
@@ -913,16 +947,16 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-marke
   opacity: 1;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar > svg {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar > svg {
   color: var(--rtx-light-text-muted) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:focus-within {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar:focus-within {
   border-color: var(--rtx-light-buy, #2563eb) !important;
   box-shadow: 0 1px 4px rgb(37 99 235 / 12%) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search-bar:focus-within > svg {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch .rtx-market-watch__search--open .rtx-market-watch__search-bar:focus-within > svg {
   color: var(--rtx-light-buy, #2563eb) !important;
 }
 
@@ -1004,9 +1038,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-login-dialog button[type
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-cp-tab-active,
-  .rtx-oad-item-selected,
-  .rtx-journal-time-btn.bg-zinc-600,
-  .rtx-journal-time-btn[aria-pressed="true"]) {
+  .rtx-oad-item-selected) {
   background: var(--rtx-light-accent-soft) !important;
   border-color: var(--rtx-light-accent-border) !important;
   color: var(--rtx-light-accent-strong) !important;
@@ -1469,7 +1501,8 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-wrapper>div[class*="bg
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span,
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span>span {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud>span>span,
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud .rtx-chart-hud__ohlc-value {
   background: transparent !important;
   border-radius: 0 !important;
   padding: 0 !important;
@@ -1685,11 +1718,20 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-desktop-menu-bar,
   line-height: 18px !important;
 }
 
-/* Open positions share the panel surface and the same selection as Market Watch. */
+/* Open positions follow MT5 desktop alternating row shading (#ebebeb / #ffffff)
+   and share Market Watch's selection highlight. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row,
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(odd),
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(even) {
   background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected)[data-row-parity="even"] {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected)[data-row-parity="odd"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):not([data-row-parity]):nth-child(odd) {
+  background: var(--rtx-toolbox-row-alt, #ebebeb) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):hover,
@@ -1750,20 +1792,21 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-close-button:focus-vis
 }
 
 /* Pending Orders bulk-action toolbar & row action buttons in Light theme */
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="true"] {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-selected="true"] {
   background: #ffffff !important;
   border: 1px solid #cbd5e1 !important;
+  border-top: 0 !important;
   color: var(--rtx-light-accent-strong, #1e4788) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="false"] {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-selected="false"] {
   background: transparent !important;
   border: 1px solid transparent !important;
   color: var(--rtx-light-text-secondary, #334155) !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-pressed="false"]:hover {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-subtab-btn[aria-selected="false"]:hover {
   background: var(--rtx-light-hover, #e8eef6) !important;
   color: var(--rtx-light-text, #182230) !important;
 }
@@ -1839,9 +1882,21 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel:not(
   color: #ffffff !important;
 }
 
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__save {
+  background: var(--rtx-light-accent, #2457a7) !important;
+  border-color: var(--rtx-light-accent, #2457a7) !important;
+  color: #ffffff !important;
+}
+
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__save:not(:disabled):hover {
-  background: #007d3b !important;
-  border-color: #007d3b !important;
+  background: var(--rtx-light-accent-strong, #1e4788) !important;
+  border-color: var(--rtx-light-accent-strong, #1e4788) !important;
+  color: #ffffff !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__save:not(:disabled):active {
+  background: var(--rtx-light-accent-pressed, #173768) !important;
+  border-color: var(--rtx-light-accent-pressed, #173768) !important;
   color: #ffffff !important;
 }
 
@@ -2226,8 +2281,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-journal-toolbar .rtx-jou
   .rtx-cp-shell .rtx-cp-btn,
   .rtx-cp-shell .rtx-cp-color-text,
   .rtx-history-downloader .rtx-history-clear-btn,
-  .rtx-history-downloader .rtx-history-seg-btn,
-  .rtx-market-watch .mw-input) {
+  .rtx-history-downloader .rtx-history-seg-btn) {
   line-height: var(--rtx-light-control-line-height) !important;
   letter-spacing: 0 !important;
 }
@@ -2298,7 +2352,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch [role="alert"] 
   color: var(--color-loss) !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-sl-value {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-sl-value:not(.text-zinc-100) {
   color: #b42318 !important;
   background: transparent !important;
   background-color: transparent !important;
@@ -2307,10 +2361,26 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-sl-value {
   box-shadow: none !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-tp-value {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-sl-value.text-zinc-100 {
+  color: var(--rtx-light-text, #182230) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-tp-value:not(.text-zinc-100) {
   color: #027a48 !important;
   background: transparent !important;
   background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-tp-value.text-zinc-100 {
+  color: var(--rtx-light-text, #182230) !important;
+  background: transparent !important;
   border: none !important;
   padding: 0 !important;
   box-shadow: none !important;
@@ -2552,7 +2622,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-alerts-badge > div {
   height: 0 !important;
 }
 
-.rtx-history-toolbar :is(.rtx-history-time-btn, .rtx-history-refresh-btn) {
+.rtx-history-toolbar .rtx-history-refresh-btn {
   display: inline-flex !important;
   align-items: center !important;
   height: 22px !important;

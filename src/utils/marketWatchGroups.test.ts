@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildMarketWatchSymbolGroups,
+  CORE_MARKET_WATCH_SYMBOLS,
+  DEFAULT_MARKET_WATCH_MAX_SYMBOLS,
   resolveMarketWatchSymbolGroup,
   selectDefaultMarketWatchSymbols,
 } from './marketWatchGroups';
@@ -72,7 +74,7 @@ describe('Market Watch symbol groups', () => {
     });
   });
 
-  it('keeps the three requested core symbols first and adds representatives from eligible remaining groups', () => {
+  it('keeps core symbols first, adds representatives from eligible remaining groups, and caps defaults at 7', () => {
     const defaults = selectDefaultMarketWatchSymbols([
       { symbol: 'GBPUSD', category: 'Forex', bid: 1.27, ask: 1.28 },
       { symbol: 'EURUSD', category: 'Forex', bid: 1.08, ask: 1.09 },
@@ -91,15 +93,34 @@ describe('Market Watch symbol groups', () => {
       { symbol: 'MISC', category: 'Other', bid: 999999, ask: 1000000 },
     ]);
 
+    expect(defaults).toHaveLength(DEFAULT_MARKET_WATCH_MAX_SYMBOLS);
     expect(defaults).toEqual([
+      'EURUSD',
+      'GBPUSD',
       'XAUUSD',
       'BTCUSD',
-      'EURUSD',
-      'US30',
       'USTEC',
+      'US30',
       'USOIL',
-      'BRK.A',
-      'BOND30',
+    ]);
+  });
+
+  it('caps defaults to at most 7 symbols even when all 12 core symbols are present', () => {
+    const defaults = selectDefaultMarketWatchSymbols([
+      ...CORE_MARKET_WATCH_SYMBOLS,
+      'AAPL',
+      'TSLA',
+    ]);
+
+    expect(defaults).toHaveLength(7);
+    expect(defaults).toEqual([
+      'EURUSD',
+      'GBPUSD',
+      'USDJPY',
+      'XAUUSD',
+      'BTCUSD',
+      'ETHUSD',
+      'USTEC',
     ]);
   });
 
@@ -114,7 +135,7 @@ describe('Market Watch symbol groups', () => {
     // fallback order while the non-catalog default never renders.
     expect(
       selectDefaultMarketWatchSymbols(sources, sources, ['XAUUSD', 'EURUSD']),
-    ).toEqual(['XAUUSD', 'EURUSD']);
+    ).toEqual(['EURUSD', 'XAUUSD']);
 
     // Full catalog: every core symbol renders in the declared fallback order.
     expect(
@@ -123,7 +144,17 @@ describe('Market Watch symbol groups', () => {
         sources,
         [{ symbol: 'XAUUSD' }, { symbol: 'BTCUSD' }, { symbol: 'EURUSD' }],
       ),
-    ).toEqual(['XAUUSD', 'BTCUSD', 'EURUSD']);
+    ).toEqual(['EURUSD', 'XAUUSD', 'BTCUSD']);
+
+    // Filtering by eligibleUniverse happens before applying the 7-symbol cap
+    // so unavailable core symbols can fall back to the next eligible core ones.
+    expect(
+      selectDefaultMarketWatchSymbols(
+        CORE_MARKET_WATCH_SYMBOLS,
+        CORE_MARKET_WATCH_SYMBOLS,
+        CORE_MARKET_WATCH_SYMBOLS.filter((symbol) => symbol !== 'GBPUSD' && symbol !== 'USDJPY'),
+      ),
+    ).toEqual(['EURUSD', 'XAUUSD', 'BTCUSD', 'ETHUSD', 'USTEC', 'US500', 'US30']);
 
     // Empty eligible catalog: nothing renders.
     expect(selectDefaultMarketWatchSymbols(sources, sources, [])).toEqual([]);
@@ -139,12 +170,12 @@ describe('Market Watch symbol groups', () => {
     );
 
     expect(defaults).toEqual([
+      'EUROUSD',
+      'GBPUSD',
       'XAUUSD',
       'BTCUSD',
-      'EUROUSD',
       'HIGH',
     ]);
-    expect(selectDefaultMarketWatchSymbols(['GBPUSD', 'GBPUSD.r'])).toEqual([]);
     expect(selectDefaultMarketWatchSymbols([])).toEqual([]);
   });
 });

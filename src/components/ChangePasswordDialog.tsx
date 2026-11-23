@@ -133,14 +133,14 @@ export function ChangePasswordDialog({ isOpen, onClose, accountLogin }: ChangePa
                 className="rtx-action-sheet bg-[#131316] border border-zinc-700 rounded-lg shadow-2xl flex flex-col w-[400px] max-w-full max-h-[calc(100dvh-32px)] overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
-                <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-[#191a1e]" {...dragHandleProps}>
+                <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-800 bg-[#191a1e]" {...dragHandleProps}>
                     <h2 id={`${dialogId}-title`} className="min-w-0 break-words text-zinc-200 font-medium">{tr("Change Password - ")}{accountLogin}</h2>
                     <button type="button" onClick={onClose} aria-label={tr("Close")} className="shrink-0 text-zinc-400 hover:text-white transition-colors">
                         ✕
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="min-h-0 overflow-y-auto p-4 space-y-4">
+                <form onSubmit={handleSubmit} className="min-h-0 overflow-y-auto p-3.5 space-y-2.5">
                     <div className="space-y-1">
                         <label htmlFor={`${dialogId}-type`} className="text-xs text-zinc-400">{tr("Password Type")}</label>
                         <select

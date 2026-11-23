@@ -47,6 +47,14 @@ describe('MarketWatchTickChart', () => {
     localStorage.clear();
     useMarketDataStore.getState().clearAllData();
     useAppStore.getState().setTicks({});
+    useChartSettingsStore.getState().resetToDefaults();
+    useChartSettingsStore.setState({ symbolProperties: {}, activeColorSymbol: null });
+    document.documentElement.classList.remove('rtx-advanced-view', 'rtx-skin-untitled-light', 'theme-light');
+    document.documentElement.removeAttribute('data-rtx-theme-configured');
+    document.documentElement.removeAttribute('data-rtx-theme-preset');
+    document.documentElement.style.removeProperty('--rtx-theme-chart-bg');
+    document.documentElement.style.removeProperty('--rtx-theme-chart-fg');
+    document.documentElement.style.removeProperty('--rtx-theme-chart-grid');
   });
 
   it('shows an accessible empty state until the broker publishes ticks', () => {
@@ -373,6 +381,96 @@ describe('MarketWatchTickChart', () => {
     expect(section.style.getPropertyValue('--rtx-tick-chart-ask').toLowerCase()).toBe('#e11d48');
 
     useChartSettingsStore.getState().resetToDefaults();
+  });
+
+  it('matches the main chart background and fine/square/scale grid styling', () => {
+    setTickBuffer('BTCUSD', [
+      { symbol: 'BTCUSD', bid: 61210, ask: 61225, spread: 15, timestamp: Date.UTC(2026, 10, 23, 9, 50, 0) },
+      { symbol: 'BTCUSD', bid: 61220, ask: 61235, spread: 15, timestamp: Date.UTC(2026, 10, 23, 9, 51, 0) },
+      { symbol: 'BTCUSD', bid: 61217.29, ask: 61232.29, spread: 15, timestamp: Date.UTC(2026, 10, 23, 9, 52, 49) },
+    ]);
+
+    const { container } = render(
+      <MarketWatchTickChart symbol="BTCUSD" instrumentSources={[{ symbol: 'BTCUSD', digits: 2 }]} />,
+    );
+    const section = container.querySelector('section.rtx-market-tick-chart') as HTMLElement;
+    const grid = screen.getByTestId('market-tick-grid');
+
+    // Default dark chart uses #000000 background and 32px Fine ('mt5') dashed slate grid.
+    expect(section.style.getPropertyValue('--rtx-tick-chart-plot').toLowerCase()).toBe('#000000');
+    expect(grid).toHaveAttribute('data-grid-type', 'mt5');
+    expect(grid).toHaveAttribute('data-grid-style', 'dashed');
+    expect(grid).toHaveAttribute('stroke-width', '1');
+    expect(grid).toHaveAttribute('stroke-opacity', '0.5');
+    expect(grid).toHaveAttribute('stroke-dasharray', '1 2');
+    expect(grid).toHaveAttribute('shape-rendering', 'crispEdges');
+
+    const readPositions = (axis: 'horizontal' | 'vertical') => Array.from(
+      grid.querySelectorAll(`line[data-axis="${axis}"]`),
+    ).map((line) => Number(line.getAttribute(axis === 'horizontal' ? 'y1' : 'x1')));
+
+    const fineHorz = readPositions('horizontal');
+    const fineVert = readPositions('vertical');
+    expect(fineHorz.length).toBeGreaterThan(2);
+    expect(fineVert.length).toBeGreaterThan(2);
+    expect(fineHorz[1] - fineHorz[0]).toBe(32);
+    expect(fineVert[1] - fineVert[0]).toBe(32);
+    expect(grid.querySelector('line[data-axis="horizontal"]')).toHaveAttribute('stroke', '#778899');
+    expect(grid.querySelector('line[data-axis="vertical"]')).toHaveAttribute('stroke', '#778899');
+
+    // Switching to Square solid grid updates spacing to 64px, hairline width, and removes dashes.
+    act(() => {
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridType', 'square');
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridLineStyle', 'solid');
+    });
+    expect(grid).toHaveAttribute('data-grid-type', 'square');
+    expect(grid).toHaveAttribute('data-grid-style', 'solid');
+    expect(grid).toHaveAttribute('stroke-width', '0.25');
+    expect(grid).not.toHaveAttribute('stroke-opacity');
+    expect(grid).not.toHaveAttribute('stroke-dasharray');
+    expect(grid).toHaveAttribute('shape-rendering', 'auto');
+    const squareHorz = readPositions('horizontal');
+    const squareVert = readPositions('vertical');
+    expect(squareHorz[1] - squareHorz[0]).toBe(64);
+    expect(squareVert[1] - squareVert[0]).toBe(64);
+
+    // Switching to Scale dashed grid uses 2 2 dash pattern aligned with axis ticks.
+    act(() => {
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridType', 'scale');
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridLineStyle', 'dashed');
+    });
+    expect(grid).toHaveAttribute('data-grid-type', 'scale');
+    expect(grid).toHaveAttribute('stroke-width', '1');
+    expect(grid).toHaveAttribute('stroke-dasharray', '2 2');
+    expect(grid).toHaveAttribute('shape-rendering', 'crispEdges');
+
+    // Custom chart background and grid color propagate directly to the ticks chart.
+    act(() => {
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridType', 'mt5');
+      useChartSettingsStore.getState().updateSymbolColor('BTCUSD', 'background', '#0b192c');
+      useChartSettingsStore.getState().updateSymbolColor('BTCUSD', 'grid', '#38bdf8');
+    });
+    expect(section.style.getPropertyValue('--rtx-tick-chart-plot').toLowerCase()).toBe('#0b192c');
+    expect(grid.querySelector('line[data-axis="horizontal"]')).toHaveAttribute('stroke', '#38bdf8');
+    expect(grid.querySelector('line[data-axis="vertical"]')).toHaveAttribute('stroke', '#38bdf8');
+  });
+
+  it('syncs ticks background and grid colors with the light chart surface', () => {
+    document.documentElement.classList.add('rtx-advanced-view', 'rtx-skin-untitled-light');
+    setTickBuffer('BTCUSD', [
+      { symbol: 'BTCUSD', bid: 61210, ask: 61225, spread: 15, timestamp: Date.UTC(2026, 10, 23, 9, 50, 0) },
+      { symbol: 'BTCUSD', bid: 61220, ask: 61235, spread: 15, timestamp: Date.UTC(2026, 10, 23, 9, 51, 0) },
+    ]);
+
+    const { container } = render(
+      <MarketWatchTickChart symbol="BTCUSD" instrumentSources={[{ symbol: 'BTCUSD', digits: 2 }]} />,
+    );
+    const section = container.querySelector('section.rtx-market-tick-chart') as HTMLElement;
+    const grid = screen.getByTestId('market-tick-grid');
+
+    expect(section.style.getPropertyValue('--rtx-tick-chart-plot').toLowerCase()).toBe('#fafbfc');
+    expect(grid.querySelector('line[data-axis="horizontal"]')).toHaveAttribute('stroke', 'rgba(71, 85, 105, 0.6)');
+    expect(grid.querySelector('line[data-axis="vertical"]')).toHaveAttribute('stroke', 'rgba(71, 85, 105, 0.6)');
   });
 });
 

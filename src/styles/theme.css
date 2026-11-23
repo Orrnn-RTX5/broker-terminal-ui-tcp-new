@@ -424,9 +424,9 @@ body {
 
 .rtx-toolbar-brand {
   align-items: center;
-  background: #27272d;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   display: inline-flex;
   flex: 0 0 auto;
   height: 28px;
@@ -441,6 +441,10 @@ body {
   height: 20px;
   object-fit: contain;
   width: 20px;
+}
+
+html:is(.rtx-skin-untitled-light, .theme-light) .rtx-toolbar-brand__logo {
+  filter: invert(0.92) hue-rotate(180deg);
 }
 
 .rtx-chart-toolbar-scroll {
@@ -1412,6 +1416,10 @@ textarea {
   background: var(--bg-tertiary);
 }
 
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 ::-webkit-scrollbar-thumb {
   background: var(--border-secondary);
   border-radius: var(--radius-sm);
@@ -1728,8 +1736,8 @@ textarea {
 }
 
 .rtx-application-menu__brand-logo {
-  background-color: #27272d;
-  border-radius: 4px;
+  background-color: transparent;
+  border-radius: 0;
   flex: 0 0 auto;
   height: 20px;
   object-fit: contain;
@@ -3167,6 +3175,11 @@ html.rtx-desktop-shell-active .rtx-trade-tp-value {
 html.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td),
 html.rtx-desktop-shell-active.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td) {
   border-left: none !important;
+  border-right: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
+}
+
+html.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td):last-child,
+html.rtx-desktop-shell-active.rtx-skin-untitled-light .rtx-trade-table :is(thead th, tbody td):last-child {
   border-right: none !important;
-  border-bottom: 1px solid var(--rtx-light-border-strong, #d1d5db) !important;
 }

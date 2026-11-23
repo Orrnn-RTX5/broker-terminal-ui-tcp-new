@@ -248,7 +248,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
     removePanel,
     floatPanel,
     dockPanel,
-    updateContainerSize,
+    updateSplitPairSizes,
     updateFloatingPosition,
   } = useDockLayoutStore();
 
@@ -511,15 +511,6 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
     };
   }, [isRoot, maximizedPanelId]);
 
-  // Handle resize
-  const handleResize = useCallback((childIndex: number, newRatio: number) => {
-    if (!currentContainer.children[childIndex]) return;
-    const child = currentContainer.children[childIndex] as any;
-    if (child.id) {
-      updateContainerSize(child.id, newRatio);
-    }
-  }, [currentContainer, updateContainerSize]);
-
   const isDragging = dragState === 'dragging';
 
   // ─── Render split container ─────────────────────────────────────
@@ -605,31 +596,111 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
                 )}
               </div>
 
-              {index < currentContainer.children.length - 1 && !isCollapsed && !isMinimizedChartGroup(currentContainer.children[index + 1]) && (
-                <DockResizeHandle
-                  direction={isHorizontal ? 'vertical' : 'horizontal'}
-                  onResize={(delta) => {
-                    // For a horizontal split (flex-row), we are dragging a vertical handle left/right.
-                    // The total size we care about is the container's width.
-                    // For a vertical split (flex-col), we drag a horizontal handle up/down.
-                    const totalSize = isHorizontal
-                      ? containerRef.current?.offsetWidth || window.innerWidth
-                      : containerRef.current?.offsetHeight || window.innerHeight;
+              {index < currentContainer.children.length - 1 && !isCollapsed && !isMinimizedChartGroup(currentContainer.children[index + 1]) && (() => {
+                const nextChild = currentContainer.children[index + 1];
+                const rawCur = childRatios[index];
+                const rawNext = childRatios[index + 1];
+                const normCur = totalChildRatio > 0 ? rawCur / totalChildRatio : fallbackRatio;
+                const normNext = totalChildRatio > 0 ? rawNext / totalChildRatio : fallbackRatio;
+                const combinedNorm = normCur + normNext;
+                const combinedRaw = rawCur + rawNext;
+                const readSplitMetrics = () => {
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  const totalSize = isHorizontal
+                    ? (rect?.width || containerRef.current?.offsetWidth || window.innerWidth)
+                    : (rect?.height || containerRef.current?.offsetHeight || window.innerHeight);
 
-                    const ratioDelta = delta / totalSize;
-                    const currentRatio = childItem.ratio || (1 / currentContainer.children.length);
-                    const nextChild = currentContainer.children[index + 1];
-                    const nextRatio = nextChild?.ratio || (1 / currentContainer.children.length);
+                  const findDirectChildEl = (childId: string | undefined): HTMLElement | null => {
+                    if (!childId || !containerRef.current) return null;
+                    for (const node of Array.from(containerRef.current.children)) {
+                      if (node instanceof HTMLElement && node.getAttribute('data-dock-child') === childId) {
+                        return node;
+                      }
+                    }
+                    return null;
+                  };
+                  const readCssMinPx = (el: HTMLElement | null): number => {
+                    if (!el || typeof window === 'undefined' || !window.getComputedStyle) return 0;
+                    const raw = isHorizontal ? window.getComputedStyle(el).minWidth : window.getComputedStyle(el).minHeight;
+                    const parsed = Number.parseFloat(raw);
+                    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+                  };
 
-                    const newCur = Math.max(0.05, Math.min(0.95, currentRatio + ratioDelta));
-                    const newNext = Math.max(0.05, Math.min(0.95, nextRatio - ratioDelta));
-                    const combined = currentRatio + nextRatio;
+                  const firstEl = findDirectChildEl(childItem.id);
+                  const secondEl = findDirectChildEl(nextChild?.id);
+                  const firstRect = firstEl?.getBoundingClientRect();
+                  const secondRect = secondEl?.getBoundingClientRect();
+                  const measuredFirst = isHorizontal ? (firstRect?.width ?? 0) : (firstRect?.height ?? 0);
+                  const measuredSecond = isHorizontal ? (secondRect?.width ?? 0) : (secondRect?.height ?? 0);
+                  const hasMeasuredPair = measuredFirst > 0 && measuredSecond > 0;
 
-                    handleResize(index, combined * (newCur / (newCur + newNext)));
-                    handleResize(index + 1, combined * (newNext / (newCur + newNext)));
-                  }}
-                />
-              )}
+                  const curPx = hasMeasuredPair ? measuredFirst : normCur * totalSize;
+                  const nextPx = hasMeasuredPair ? measuredSecond : normNext * totalSize;
+                  const pairPx = curPx + nextPx;
+                  const baseMinPx = isHorizontal ? 160 : 100;
+                  const minFirstPx = Math.min(
+                    pairPx * 0.45,
+                    Math.max(baseMinPx, readCssMinPx(firstEl), pairPx * 0.05),
+                  );
+                  const minSecondPx = Math.min(
+                    pairPx * 0.45,
+                    Math.max(baseMinPx, readCssMinPx(secondEl), pairPx * 0.05),
+                  );
+                  const originCoord = hasMeasuredPair && firstRect
+                    ? (isHorizontal ? firstRect.right : firstRect.bottom)
+                    : undefined;
+
+                  return {
+                    curPx,
+                    nextPx,
+                    pairPx,
+                    minFirstPx,
+                    minSecondPx,
+                    originCoord,
+                    containerRect: {
+                      left: rect?.left ?? 0,
+                      top: rect?.top ?? 0,
+                      width: rect?.width || containerRef.current?.offsetWidth || window.innerWidth,
+                      height: rect?.height || containerRef.current?.offsetHeight || window.innerHeight,
+                    },
+                  };
+                };
+
+                return (
+                  <DockResizeHandle
+                    direction={isHorizontal ? 'vertical' : 'horizontal'}
+                    getDragBounds={() => {
+                      const { curPx, nextPx, minFirstPx, minSecondPx, originCoord, containerRect } = readSplitMetrics();
+                      return {
+                        minDelta: -Math.max(0, curPx - minFirstPx),
+                        maxDelta: Math.max(0, nextPx - minSecondPx),
+                        originCoord,
+                        containerRect,
+                      };
+                    }}
+                    onResizeCommit={(totalDelta) => {
+                      if (!childItem.id || !nextChild?.id) return;
+                      const { curPx, pairPx, minFirstPx, minSecondPx } = readSplitMetrics();
+                      if (pairPx <= 0) return;
+
+                      const targetFirstPx = Math.max(
+                        minFirstPx,
+                        Math.min(pairPx - minSecondPx, curPx + totalDelta),
+                      );
+                      const targetSecondPx = Math.max(minSecondPx, pairPx - targetFirstPx);
+                      const targetPairPx = targetFirstPx + targetSecondPx;
+
+                      updateSplitPairSizes(
+                        currentContainer.id,
+                        childItem.id,
+                        combinedRaw * (targetFirstPx / targetPairPx),
+                        nextChild.id,
+                        combinedRaw * (targetSecondPx / targetPairPx),
+                      );
+                    }}
+                  />
+                );
+              })()}
             </React.Fragment>
           );
         })}

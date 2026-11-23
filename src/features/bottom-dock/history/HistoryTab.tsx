@@ -1013,27 +1013,22 @@ ${rows}
             className="rtx-history-tab h-full flex flex-col relative bg-[#131316] overflow-hidden"
             onContextMenu={(event) => handleHistoryContextMenu(event)}
         >
-            <div className="rtx-history-toolbar flex h-7 min-h-[28px] flex-nowrap items-center justify-between gap-1.5 px-1.5 py-0 border-b border-zinc-700 bg-[#191a1e] shrink-0 text-[11.5px] font-normal text-zinc-300 tabular-nums">
+            <div className="rtx-history-toolbar rtx-trade-view-bar" role="tablist" aria-label={tr('History time filters')}>
                 <div className="rtx-history-toolbar__periods flex h-full min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap">
-                    <div
-                        className="rtx-history-filter-box inline-flex h-[24px] shrink-0 items-center gap-0.5 rounded border border-zinc-700 bg-[#131316] px-1"
-                        role="group"
-                        aria-label={tr('History time filters')}
-                    >
                         {HISTORY_PERIOD_PRESETS.map(([period, label]) => (
                             <button
                                 key={period}
                                 type="button"
-                                aria-pressed={periodFilter === period}
+                                role="tab"
+                                aria-selected={periodFilter === period}
                                 onClick={() => selectPeriod(periodFilter === period ? 'all' : period)}
-                                className={`rtx-history-time-btn inline-flex h-[22px] shrink-0 items-center px-2 py-0 text-[12px] leading-[20px] font-normal rounded-sm transition-colors ${periodFilter === period ? 'bg-zinc-700/70 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                className="rtx-history-time-btn rtx-trade-subtab-btn"
                             >
                                 {tr(label)}
                             </button>
                         ))}
-                    </div>
                 </div>
-                <div className="rtx-history-toolbar__meta flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap">
+                <div className="rtx-history-toolbar__meta flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap" style={{ marginLeft: 'auto' }}>
                     <span className="rtx-history-toolbar__summary hidden h-[22px] shrink-0 items-center text-[11.5px] leading-[20px] font-normal text-zinc-400 lg:inline-flex">{activeToolbarSummary}</span>
                     <span className="rtx-history-toolbar__count inline-flex h-[22px] shrink-0 items-center whitespace-nowrap text-[11.5px] leading-[20px] font-normal text-zinc-400">{activeToolbarCount} {tr(" records")}</span>
                     <button
@@ -1129,6 +1124,7 @@ ${rows}
                                         <tr
                                             aria-selected={isSelected}
                                             data-history-row-kind={op.type}
+                                            data-row-parity={index % 2 === 0 ? 'odd' : 'even'}
                                             className={`rtx-trade-row rtx-history-row rtx-history-row--${op.type} h-[30px] transition-colors cursor-default ${isSelected ? 'rtx-trade-row--selected' : ''}`}
                                             title={note !== '-' ? note : undefined}
                                             onClick={() => setSelectedTradeKey(row.key)}
@@ -1185,10 +1181,23 @@ ${rows}
                             const closePriceCellLabel = rowStatus !== 'FILLED' && !(Number(order.closePrice) > 0)
                                 ? '—'
                                 : formatPriceCell(order.closePrice, order.symbol, order.digits);
+                            const slCellLabel = formatLevelCell(order.sl, order.symbol, order.digits);
+                            const tpCellLabel = formatLevelCell(order.tp, order.symbol, order.digits);
+                            const commentLower = String(order.comment ?? '').toLowerCase();
+                            const hasClosePrice = Number(order.closePrice) > 0;
+                            const isTpHit = (order.tp ?? 0) > 0 && hasClosePrice && (
+                                commentLower.includes('[tp')
+                                || tpCellLabel === closePriceCellLabel
+                            );
+                            const isSlHit = !isTpHit && (order.sl ?? 0) > 0 && hasClosePrice && (
+                                commentLower.includes('[sl')
+                                || slCellLabel === closePriceCellLabel
+                            );
                             return (
                                 <Fragment key={`${tradeKey}-${index}`}>
                                     <tr
                                         aria-selected={isSelected}
+                                        data-row-parity={index % 2 === 0 ? 'odd' : 'even'}
                                         className={`rtx-trade-row rtx-history-row h-[30px] transition-colors cursor-default ${isSelected ? 'rtx-trade-row--selected' : ''}`}
                                         onClick={() => setSelectedTradeKey(tradeKey)}
                                         onContextMenu={(event) => handleHistoryContextMenu(event, order)}
@@ -1201,11 +1210,11 @@ ${rows}
                                         </td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal text-zinc-100 tabular-nums`} title={tr(volumeMode === 'lots' ? "Volume: {{value0}}" : "Amount: {{value0}}", { value0: volumeLabel })}>{volumeLabel}</td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Open price: {{value0}}", { value0: formatPriceCell(order.openPrice, order.symbol, order.digits) })}>{formatPriceCell(order.openPrice, order.symbol, order.digits)}</td>
-                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Stop Loss: {{value0}}", { value0: formatLevelCell(order.sl, order.symbol, order.digits) })}>
-                                            <span className={(order.sl ?? 0) > 0 ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.sl, order.symbol, order.digits)}</span>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums${isSlHit ? ' rtx-history-cell--sl-hit' : ''}`} title={tr("Stop Loss: {{value0}}", { value0: slCellLabel })}>
+                                            <span className={(order.sl ?? 0) > 0 && !isSlHit ? "text-[#ff7676] bg-red-950/20 px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{slCellLabel}</span>
                                         </td>
-                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums`} title={tr("Take Profit: {{value0}}", { value0: formatLevelCell(order.tp, order.symbol, order.digits) })}>
-                                            <span className={(order.tp ?? 0) > 0 ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{formatLevelCell(order.tp, order.symbol, order.digits)}</span>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums${isTpHit ? ' rtx-history-cell--tp-hit' : ''}`} title={tr("Take Profit: {{value0}}", { value0: tpCellLabel })}>
+                                            <span className={(order.tp ?? 0) > 0 && !isTpHit ? "rtx-history-tp-value text-profit px-1 rounded-sm font-normal" : "text-zinc-100 font-normal"}>{tpCellLabel}</span>
                                         </td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums whitespace-nowrap`} title={tr("Close time: {{value0}}", { value0: formatTs(order.closeTime) })}>{formatTs(order.closeTime)}</td>
                                         <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Close price: {{value0}}", { value0: closePriceCellLabel })}>{closePriceCellLabel}</td>

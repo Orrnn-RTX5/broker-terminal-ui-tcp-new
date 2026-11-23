@@ -735,7 +735,7 @@ export const MenuBar = ({
 
             // Settings
             {
-                label: 'TCP Server (:4443)...',
+                label: 'Access Server...',
                 translateLabel: false,
                 shortcut: 'Alt+Shift+T',
                 icon: <Icon name="server" size="sm" className="text-emerald-400" />,

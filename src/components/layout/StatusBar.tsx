@@ -112,15 +112,6 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
                 </div>
             </div>
             <div className="rtx-status-bar__utilities flex shrink-0 items-center gap-3">
-                <button
-                    type="button"
-                    onClick={openTcpDialog}
-                    title="Configure Broker TCP Access Server (:4443) — Alt+Shift+T"
-                    className="flex items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-[12px] text-zinc-300 transition-colors hover:bg-white/5 hover:text-white [.rtx-advanced-view_&]:text-zinc-700 [.rtx-advanced-view_&]:hover:bg-zinc-300/50"
-                >
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${tcpConnected ? 'bg-emerald-400' : 'bg-red-500'}`} />
-                    <span>TCP {tcpAddr}</span>
-                </button>
                 {/* Connection Status Indicator (Live) */}
                 {wsRef && (
                     <ConnectionStatus wsRef={wsRef} reconnectCallback={reconnectCallback} />

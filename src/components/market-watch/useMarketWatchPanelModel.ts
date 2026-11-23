@@ -147,9 +147,9 @@ export const useMarketWatchPanelModel = ({
   const quoteEligibleSymbols = catalogSymbols;
   const quoteEligibleSymbolSet = useMemo(() => new Set(quoteEligibleSymbols), [quoteEligibleSymbols]);
   const defaultSymbols = useMemo(() => {
-    // Authenticated defaults are the whole account catalog; guest defaults are
-    // the curated core list intersected with the quote-eligible catalog so a
-    // non-catalog default never renders. The core list is fallback order only.
+    // Both authenticated and guest defaults are capped to 7 symbols by default
+    // and strictly intersected with the active catalog so a non-catalog symbol
+    // never renders. The core list is fallback order only.
     if (accountUniverseActive) {
       return selectAccountDefaultMarketWatchSymbols(
         [...marketInstruments],

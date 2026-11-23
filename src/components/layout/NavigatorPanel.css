@@ -104,6 +104,10 @@ html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data
     border-color: rgba(100, 116, 139, 0.22);
 }
 
+html.rtx-advanced-view.rtx-skin-untitled-light .navigator-panel .navigator-tree-item__line--leaf {
+    width: 28px !important;
+}
+
 @media (max-width: 1720px), (max-height: 920px) {
     .navigator-panel .navigator-account-type-badge {
         font-size: 9px;
@@ -132,6 +136,14 @@ html.rtx-skin-untitled-light .navigator-panel .navigator-account-type-badge[data
     .navigator-panel .navigator-tree-item__line[style*="top: 15px"] {
         top: 10px !important;
         width: 6px !important;
+    }
+
+    .navigator-panel .navigator-tree-item__line--leaf[style*="top: 15px"] {
+        width: 21px !important;
+    }
+
+    html.rtx-advanced-view.rtx-skin-untitled-light .navigator-panel .navigator-tree-item__line--leaf[style*="top: 15px"] {
+        width: 24px !important;
     }
 
     .navigator-panel .navigator-tree-item__icon svg,

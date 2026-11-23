@@ -128,7 +128,7 @@ describe('TradeAuthDialog', () => {
     view.unmount();
   });
 
-  it('creates a demo session and returns the draft to App for review', async () => {
+  it('creates a demo session without claiming the order ticket will reopen automatically', async () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
     vi.mocked(registerRuntimeBrokerDemoAccount).mockResolvedValue({
@@ -151,6 +151,7 @@ describe('TradeAuthDialog', () => {
     );
 
     expect(screen.getByText(/order will not be sent automatically/i)).toBeInTheDocument();
+    expect(screen.queryByText(/ticket reopens after login/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create demo account/i }));
     await user.type(screen.getByLabelText(/full name/i), 'Demo User');
     await user.type(screen.getByLabelText(/^email$/i), 'demo@example.com');

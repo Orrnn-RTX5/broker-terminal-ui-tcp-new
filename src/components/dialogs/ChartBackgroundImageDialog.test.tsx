@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartBackgroundImageDialog } from './ChartBackgroundImageDialog';
@@ -65,13 +67,15 @@ describe('ChartBackgroundImageDialog', () => {
     );
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('Background image - BTCUSD, m1')).toBeInTheDocument();
+    expect(screen.getByText('Background image - BTCUSD')).toBeInTheDocument();
+    expect(screen.queryByText('Background image - BTCUSD, m1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Background image - RTX5')).not.toBeInTheDocument();
     // Opening the dialog must not mutate a default-off chart watermark to on.
     expect(useChartSettingsStore.getState().symbolProperties.BTCUSD.showBackgroundLogo).toBe(false);
     expect(useChartSettingsStore.getState().symbolProperties.BTCUSD.backgroundLogoMode).toBe('none');
   });
 
-  it('renders the cTrader-style Background image dialog, live-previews changes, and reverts on Cancel', () => {
+  it('renders the Background image dialog without timeframe or RTX5 bar, live-previews changes, and reverts on Cancel', () => {
     const onClose = vi.fn();
     render(
       <ChartBackgroundImageDialog
@@ -82,7 +86,8 @@ describe('ChartBackgroundImageDialog', () => {
       />,
     );
 
-    expect(screen.getByText('Background image - BTCUSD, m1')).toBeInTheDocument();
+    expect(screen.getByText('Background image - BTCUSD')).toBeInTheDocument();
+    expect(screen.queryByText(/RTX5/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Default'));
     expect(useChartSettingsStore.getState().symbolProperties.BTCUSD.showBackgroundLogo).toBe(true);
@@ -117,5 +122,33 @@ describe('ChartBackgroundImageDialog', () => {
     expect(state.symbolProperties.BTCUSD.backgroundLogoOpacity).toBe(28);
     expect(state.symbolProperties.EURUSD.backgroundLogoOpacity).toBe(28);
     expect(state.globalProperties.backgroundLogoOpacity).toBe(28);
+  });
+
+  it('uses institutional non-green styling for the Save button across themes', () => {
+    render(
+      <ChartBackgroundImageDialog
+        isOpen={true}
+        symbol="BTCUSD"
+        timeframe="M1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const saveButton = screen.getByTestId('chart-background-image-save');
+    expect(saveButton).toHaveClass('rtx-bg-image-dialog__action', 'rtx-bg-image-dialog__save');
+    expect(saveButton.getAttribute('style') ?? '').not.toContain('009245');
+
+    const dialogCss = readFileSync(
+      resolve(process.cwd(), 'src/components/dialogs/chart-background-image-dialog.css'),
+      'utf8',
+    );
+    const enterpriseLightCss = readFileSync(
+      resolve(process.cwd(), 'src/styles/enterprise-light.css'),
+      'utf8',
+    );
+
+    expect(dialogCss).not.toMatch(/#009245|#007d3b/i);
+    expect(dialogCss).toContain('.rtx-bg-image-dialog__save');
+    expect(enterpriseLightCss).not.toMatch(/#007d3b|#009245/i);
   });
 });

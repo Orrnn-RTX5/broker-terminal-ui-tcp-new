@@ -1,0 +1,223 @@
+/* Chart Background Image Dialog — Institutional Header & Action Controls */
+
+.rtx-bg-image-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  background: transparent;
+}
+
+html:root .rtx-bg-image-dialog__title {
+  --rtx-type-size: 14px;
+  --rtx-type-weight: 600;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rtx-bg-image-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+html:root .rtx-bg-image-dialog__action {
+  --rtx-type-size: 13px;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 5px;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+html:root .rtx-bg-image-dialog__save {
+  --rtx-type-weight: 600;
+  font-weight: 600;
+  background: #2463c8;
+  border: 1px solid #3576de;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 14%),
+    0 1px 2px rgb(0 0 0 / 28%);
+}
+
+html:root .rtx-bg-image-dialog__save:hover:not(:disabled) {
+  background: #2b6fd9;
+  border-color: #4686eb;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 18%),
+    0 2px 4px rgb(0 0 0 / 32%);
+}
+
+html:root .rtx-bg-image-dialog__save:active:not(:disabled) {
+  background: #1d52a8;
+  border-color: #2463c8;
+  color: #ffffff;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 26%);
+}
+
+html:root .rtx-bg-image-dialog__save:focus-visible {
+  outline: 2px solid #5b9bff;
+  outline-offset: 2px;
+}
+
+html:root .rtx-bg-image-dialog__save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+html:root .rtx-bg-image-dialog__cancel {
+  --rtx-type-weight: 500;
+  font-weight: 500;
+  background: #2d3036;
+  border: 1px solid #484c56;
+  color: #e4e4e7;
+  box-shadow: none;
+}
+
+html:root .rtx-bg-image-dialog__cancel:hover:not(:disabled) {
+  background: #383c44;
+  border-color: #5c616e;
+  color: #ffffff;
+}
+
+html:root .rtx-bg-image-dialog__cancel:active:not(:disabled) {
+  background: #26292f;
+  border-color: #484c56;
+  color: #e4e4e7;
+}
+
+html:root .rtx-bg-image-dialog__cancel:focus-visible,
+html:root .rtx-bg-image-dialog__secondary:focus-visible,
+html:root .rtx-bg-image-dialog__close:focus-visible {
+  outline: 2px solid #5b9bff;
+  outline-offset: 2px;
+}
+
+.rtx-bg-image-dialog__secondary:not(.rtx-bg-image-dialog__cancel) {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.rtx-bg-image-dialog__secondary:not(.rtx-bg-image-dialog__cancel):hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.rtx-bg-image-dialog__close {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.rtx-bg-image-dialog__close:hover:not(:disabled) {
+  background: rgb(255 255 255 / 9%);
+  color: #ffffff;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__close,
+html:root [data-theme='light'] .rtx-bg-image-dialog__close {
+  color: #475569;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__close:hover:not(:disabled),
+html:root [data-theme='light'] .rtx-bg-image-dialog__close:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Light theme (Enterprise Light + Standard Light) */
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__save,
+html:root [data-theme='light'] .rtx-bg-image-dialog__save {
+  background: var(--rtx-light-accent, #2457a7);
+  border-color: var(--rtx-light-accent, #2457a7);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 16%),
+    0 1px 2px rgb(15 23 42 / 14%);
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__save:hover:not(:disabled),
+html:root [data-theme='light'] .rtx-bg-image-dialog__save:hover:not(:disabled) {
+  background: var(--rtx-light-accent-strong, #1e4788);
+  border-color: var(--rtx-light-accent-strong, #1e4788);
+  color: #ffffff;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__save:active:not(:disabled),
+html:root [data-theme='light'] .rtx-bg-image-dialog__save:active:not(:disabled) {
+  background: var(--rtx-light-accent-pressed, #173768);
+  border-color: var(--rtx-light-accent-pressed, #173768);
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 22%);
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__save:focus-visible,
+html:root [data-theme='light'] .rtx-bg-image-dialog__save:focus-visible {
+  outline-color: var(--rtx-light-accent, #2457a7);
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__cancel,
+html:root [data-theme='light'] .rtx-bg-image-dialog__cancel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__cancel:hover:not(:disabled),
+html:root [data-theme='light'] .rtx-bg-image-dialog__cancel:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__cancel:active:not(:disabled),
+html:root [data-theme='light'] .rtx-bg-image-dialog__cancel:active:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light)
+  .rtx-bg-image-dialog__cancel:focus-visible,
+html:root [data-theme='light'] .rtx-bg-image-dialog__cancel:focus-visible {
+  outline-color: var(--rtx-light-accent, #2457a7);
+}

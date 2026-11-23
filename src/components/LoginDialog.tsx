@@ -777,7 +777,7 @@ export function LoginDialog({
                                     <button
                                         type="button"
                                         onClick={openTcpEndpointDialog}
-                                        title="Configure Broker TCP Access Server (:4443) — Alt+Shift+T"
+                                        title="Configure Broker Access Server — Alt+Shift+T"
                                         style={{
                                             padding: '2px 7px',
                                             borderRadius: 4,
@@ -789,7 +789,7 @@ export function LoginDialog({
                                             cursor: 'pointer',
                                         }}
                                     >
-                                        TCP (:4443)
+                                        Server
                                     </button>
                                 </div>
                             </div>
@@ -991,7 +991,7 @@ export function LoginDialog({
                             {healthStatus === 'offline' && (
                                 <div className="rtx-login-offline">
                                     <AlertCircle size={14} aria-hidden="true" />
-                                    <span>{tr("Broker TCP Server (:4443) unreachable")}</span>
+                                    <span>{tr("Broker server unreachable")}</span>
                                 </div>
                             )}
                         </div>

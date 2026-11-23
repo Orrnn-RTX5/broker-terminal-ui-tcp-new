@@ -96,6 +96,13 @@ export interface DockState {
   updateFloatingSize: (panelId: string, size: { width: number; height: number }) => void;
   moveToTab: (panelId: string, tabContainerId: string, insertIndex?: number) => void;
   updateContainerSize: (containerId: string, ratio: number) => void;
+  updateSplitPairSizes: (
+    parentId: string,
+    firstChildId: string,
+    firstRatio: number,
+    secondChildId: string,
+    secondRatio: number,
+  ) => void;
   updatePanelProps: (panelId: string, updates: Partial<Pick<DockPanelConfig, 'props' | 'title' | 'chartSymbolTabs'>>) => void;
   setPanelMinimized: (panelId: string, minimized: boolean) => void;
   setPanelMaximized: (panelId: string, maximized: boolean) => void;
@@ -531,6 +538,11 @@ const useDockLayoutStore = create<DockState>()(
 
         updateContainerSize: (containerId, ratio) => {
           dockManager.updateContainerSize(containerId, ratio);
+          set({ layout: dockManager.getLayout() });
+        },
+
+        updateSplitPairSizes: (parentId, firstChildId, firstRatio, secondChildId, secondRatio) => {
+          dockManager.updateSplitPairSizes(parentId, firstChildId, firstRatio, secondChildId, secondRatio);
           set({ layout: dockManager.getLayout() });
         },
 

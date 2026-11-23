@@ -1,5 +1,11 @@
-import { pruneSymbolsToUniverse } from './accountSymbolUniverse';
+import {
+  CORE_MARKET_WATCH_SYMBOLS,
+  DEFAULT_MARKET_WATCH_MAX_SYMBOLS,
+  pruneSymbolsToUniverse,
+} from './accountSymbolUniverse';
 import { resolveMarketWatchSymbolInput } from './marketWatchSource';
+
+export { CORE_MARKET_WATCH_SYMBOLS, DEFAULT_MARKET_WATCH_MAX_SYMBOLS };
 
 export interface MarketWatchGroupSource {
   symbol?: unknown;
@@ -31,24 +37,6 @@ interface ResolvedGroup {
   key: string;
   label: string;
 }
-
-/**
- * Flagship MT5 default Market Watch symbols — 100% live IC Markets cServer instruments.
- */
-export const CORE_MARKET_WATCH_SYMBOLS = [
-  'EURUSD',
-  'GBPUSD',
-  'USDJPY',
-  'XAUUSD',
-  'BTCUSD',
-  'ETHUSD',
-  'USTEC',
-  'US500',
-  'US30',
-  'AUS200',
-  'DE40',
-  'XBRUSD',
-] as const;
 
 const GROUP_PRIORITY = new Map([
   ['forex', 0],
@@ -249,23 +237,29 @@ export const buildMarketWatchSymbolGroups = (
 };
 
 /**
- * Builds the curated built-in Market Watch.
+ * Builds the curated built-in Market Watch, capped to
+ * `DEFAULT_MARKET_WATCH_MAX_SYMBOLS` (7) symbols by default.
  *
- * The three requested core symbols are a FALLBACK ORDER only: they decide
- * which catalog symbols to try first, never which symbols are allowed. Every
- * returned symbol is intersected with the broker/account catalog (the
- * `sources` universe, further narrowed by `eligibleUniverse` when provided),
- * so a default that the catalog does not expose never renders. Every
- * remaining detected group except Other then contributes one representative:
- * the symbol with the highest current bid/ask midpoint. Symbols without a
- * usable price remain deterministic via an alphabetical fallback. Custom
+ * The core symbols are a FALLBACK ORDER only: they decide which catalog
+ * symbols to try first, never which symbols are allowed. Every returned
+ * symbol is intersected with the broker/account catalog (the `sources`
+ * universe, further narrowed by `eligibleUniverse` when provided), so a
+ * default that the catalog does not expose never renders. Remaining detected
+ * groups except Other then contribute one representative (highest bid/ask
+ * midpoint, alphabetical fallback) until the limit is reached. Custom
  * watchlists do not use this selection.
  */
 export const selectDefaultMarketWatchSymbols = (
   sources: readonly unknown[],
   metadataSources: readonly unknown[] = sources,
   eligibleUniverse?: readonly unknown[],
+  maxSymbols: number = DEFAULT_MARKET_WATCH_MAX_SYMBOLS,
 ): string[] => {
+  const limit = Number.isFinite(maxSymbols)
+    ? Math.max(0, Math.floor(maxSymbols))
+    : DEFAULT_MARKET_WATCH_MAX_SYMBOLS;
+  if (limit === 0) return [];
+
   const symbolUniverse = Array.from(new Set(sources.map(readSymbol).filter(Boolean)));
   if (symbolUniverse.length === 0) return [];
 
@@ -315,7 +309,9 @@ export const selectDefaultMarketWatchSymbols = (
   // The core list is fallback order only: membership is decided by the
   // catalog. Intersect with the eligible universe (the T11 quote-eligible
   // catalog at the call site) via the shared catalog helper so a non-catalog
-  // default can never leak into the UI.
-  if (eligibleUniverse === undefined) return selected;
-  return pruneSymbolsToUniverse(selected, eligibleUniverse);
+  // default can never leak into the UI, then cap to the default symbol limit.
+  const eligibleSelected = eligibleUniverse === undefined
+    ? selected
+    : pruneSymbolsToUniverse(selected, eligibleUniverse);
+  return eligibleSelected.slice(0, limit);
 };

@@ -46,6 +46,7 @@ export function ExposureTab({ positions, formatMoney, account }: ExposureTabProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const exposure = useMemo(() => buildExposureSummary(positions ?? [], account), [positions, account, quotesVersion]);
   const [metricsNow, setMetricsNow] = useState(Date.now);
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setMetricsNow(Date.now()), 1000);
@@ -79,7 +80,7 @@ export function ExposureTab({ positions, formatMoney, account }: ExposureTabProp
             </thead>
             <tbody className="font-mono text-[12.5px] leading-[20px] text-zinc-200">
               {!exposure.freeMarginAvailable ? (
-                <tr data-testid="exposure-cash-leg-unavailable" className="rtx-exposure-row h-[34px] border-b border-zinc-800/90 bg-[#111318]">
+                <tr data-testid="exposure-cash-leg-unavailable" data-row-parity="odd" className="rtx-exposure-row h-[34px] border-b border-zinc-800/90 bg-[#111318]">
                   <td className="p-1.5 pl-3 font-sans font-semibold text-amber-400">{exposure.accountCurrency}</td>
                   <td className="p-1.5 text-right text-zinc-500">{METRIC_UNAVAILABLE}</td>
                   <td className="p-1.5 text-right text-zinc-500">{METRIC_UNAVAILABLE}</td>
@@ -96,9 +97,13 @@ export function ExposureTab({ positions, formatMoney, account }: ExposureTabProp
               ) : exposure.rows.map((row, index) => {
                 const isLong = row.value >= 0;
                 const badge = getAssetBadgeStyle(row.asset);
+                const absoluteIndex = (!exposure.freeMarginAvailable ? 1 : 0) + index;
                 return (
                   <tr
                     key={row.asset}
+                    aria-selected={selectedAsset === row.asset}
+                    data-row-parity={absoluteIndex % 2 === 0 ? 'odd' : 'even'}
+                    onClick={() => setSelectedAsset(row.asset)}
                     className={`rtx-exposure-row h-[34px] border-b border-zinc-800/90 transition-colors hover:bg-white/[0.03] ${index % 2 === 0 ? 'bg-[#111318]' : 'bg-[#0e0f14]'}`}
                   >
                     <td className="p-1.5 pl-3 font-sans font-semibold">

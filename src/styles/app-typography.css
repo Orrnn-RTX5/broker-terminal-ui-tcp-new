@@ -4,28 +4,26 @@
    Functional text shares one face; code, branding and user-authored drawings
    retain their own typography. */
 html:root {
-  --rtx-ui-font-family: "Segoe UI", Tahoma, Arial, sans-serif;
-  --rtx-ui-font-size: 14px;
+  --rtx-ui-font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-ui-font-size: 12px;
   --rtx-ui-line-height: calc(var(--rtx-ui-font-size) + 6px);
-  --rtx-font-weight-body: 400;
-  --rtx-font-weight-control: 400;
-  --rtx-font-weight-heading: 500;
-  --rtx-section-font-size: calc(var(--rtx-ui-font-size) + 2px);
-  --rtx-dialog-font-size: calc(var(--rtx-ui-font-size) + 6px);
-  --rtx-page-font-size: calc(var(--rtx-ui-font-size) + 10px);
+  --rtx-font-weight-body: 300;
+  --rtx-font-weight-control: 300;
+  --rtx-font-weight-heading: 300;
+  --rtx-section-font-size: var(--rtx-ui-font-size);
+  --rtx-dialog-font-size: var(--rtx-ui-font-size);
+  --rtx-page-font-size: var(--rtx-ui-font-size);
   --rtx-advanced-primary-font-size: var(--rtx-ui-font-size);
   --rtx-advanced-dense-font-size: var(--rtx-ui-font-size);
   --rtx-advanced-header-font-size: var(--rtx-ui-font-size);
 }
 
-html:root.rtx-advanced-font-small { --rtx-ui-font-size: 13px; }
-html:root.rtx-advanced-font-large { --rtx-ui-font-size: 15px; }
+html:root.rtx-advanced-font-small { --rtx-ui-font-size: 11px; }
+html:root.rtx-advanced-font-large { --rtx-ui-font-size: 13px; }
 
-/* One renderer for ordinary UI text. Component roles below supply the size,
-   weight and leading; existing inline micro-sizes no longer defeat the user's
-   font preference. Entry screens have their own responsive reading hierarchy. */
-/* Important declarations in this named layer bridge legacy inline/utility
-   sizes; semantic variables below remain the single source of role values. */
+/* One uniform renderer matching Market Watch value/symbol typography (12px / 300)
+   globally across the terminal. Entry screens, SVG icons, and user-authored
+   chart drawings retain their own typography. */
 @media screen {
   @layer rtx-typography {
     html:root body,
@@ -43,9 +41,11 @@ html:root.rtx-advanced-font-large { --rtx-ui-font-size: 15px; }
       .rtx-order-dialog__spinner-button, .rtx-order-dialog__close,
       .navigator-tree-item__icon, .navigator-tree-item__chevron
     )) {
-      font-family: var(--rtx-type-family, var(--rtx-ui-font-family)) !important;
-      font-size: var(--rtx-type-size, var(--rtx-ui-font-size)) !important;
-      font-weight: var(--rtx-type-weight, var(--rtx-font-weight-body)) !important;
+      font-family: var(--rtx-ui-font-family) !important;
+      font-size: var(--rtx-ui-font-size) !important;
+      font-weight: var(--rtx-font-weight-body) !important;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
   }
 }
@@ -205,6 +205,10 @@ html:root :is(.rtx-order-dialog__chart-symbol, .rtx-oct-price, .rtx-chart-hud__s
   --rtx-type-weight: var(--rtx-font-weight-control);
 }
 
+html:root .rtx-chart-hud .rtx-chart-hud__ohlc-value {
+  --rtx-type-weight: 500;
+}
+
 html:root body :is(
   .rtx-market-watch__symbol, .rtx-market-watch__price, .rtx-market-watch__daily,
   .rtx-market-watch__column-heading, .navigator-tree-item__label,
@@ -316,17 +320,17 @@ html:root .rtx-order-dialog__volume-control { min-height: 32px; }
 
 html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 
-/* Laptop responsive typography tokens so all header items, dock tabs, panels, buttons, and trade columns scale proportionally to laptop screen ratio */
+/* Laptop responsive layout metrics while preserving the global 12px / 300 typography */
 @media (max-width: 1720px), (max-height: 920px) {
   html:root,
   html:root:is(.rtx-advanced-font-small, .rtx-advanced-font-normal, .rtx-advanced-font-large) {
-    --rtx-ui-font-size: 11.5px;
-    --rtx-ui-line-height: 16px;
-    --rtx-chart-axis-font-size: 10px;
-    --rtx-chart-price-scale-min-width: 56px;
-    --rtx-font-weight-body: 400;
-    --rtx-font-weight-control: 400;
-    --rtx-font-weight-heading: 500;
+    --rtx-ui-font-size: 12px;
+    --rtx-ui-line-height: 18px;
+    --rtx-chart-axis-font-size: 12px;
+    --rtx-chart-price-scale-min-width: 64px;
+    --rtx-font-weight-body: 300;
+    --rtx-font-weight-control: 300;
+    --rtx-font-weight-heading: 300;
   }
 
   html:root .rtx-oct {
@@ -339,26 +343,26 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root .rtx-chart-price-badge > span:first-child {
-    --rtx-type-size: 10px;
-    --rtx-type-weight: 500;
-    font-size: 10px !important;
-    font-weight: 500 !important;
-    line-height: 12px !important;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    font-size: 12px !important;
+    font-weight: 300 !important;
+    line-height: 15px !important;
   }
 
   html:root .rtx-chart-price-badge > span[data-live-price-countdown] {
-    --rtx-type-size: 9px;
-    --rtx-type-weight: 400;
-    font-size: 9px !important;
-    font-weight: 400 !important;
-    line-height: 10.5px !important;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    font-size: 12px !important;
+    font-weight: 300 !important;
+    line-height: 14px !important;
   }
 
   html:root .rtx-chart-crosshair-label {
-    --rtx-type-size: 10px;
-    --rtx-type-weight: 400;
-    font-size: 10px !important;
-    line-height: 12px !important;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    font-size: 12px !important;
+    line-height: 15px !important;
     padding: 1px 4px !important;
     border-radius: 2px !important;
   }
@@ -403,14 +407,14 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-report-bug-button,
     .rtx-report-bug-button > span
   ) {
-    --rtx-type-size: 11px;
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 9px;
-    --rtx-type-weight: 600;
-    height: 15px !important;
-    line-height: 13px !important;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    height: 18px !important;
+    line-height: 16px !important;
     padding: 0 3.5px !important;
     min-width: 32px !important;
   }
@@ -429,8 +433,8 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   html:root .dock-panel__title,
   html:root .dock-panel__title :is(span, button, time),
   html:root .navigator-panel__header {
-    --rtx-type-size: 11px;
-    --rtx-type-weight: 500;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
     line-height: 20px !important;
   }
 
@@ -441,32 +445,36 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 
   html:root .rtx-chart-hud,
   html:root .rtx-chart-hud span {
-    --rtx-type-size: 11px;
-    --rtx-type-weight: 400;
-    line-height: 15px !important;
-  }
-
-  html:root .rtx-chart-hud__symbol {
-    --rtx-type-weight: 600;
-  }
-
-  html:root body .navigator-tree-item__label {
-    --rtx-type-size: 11px;
-    --rtx-type-weight: 400;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
     line-height: 16px !important;
   }
 
+  html:root .rtx-chart-hud__symbol {
+    --rtx-type-weight: 300;
+  }
+
+  html:root .rtx-chart-hud .rtx-chart-hud__ohlc-value {
+    --rtx-type-weight: 300;
+  }
+
+  html:root body .navigator-tree-item__label {
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    line-height: 18px !important;
+  }
+
   html:root .rtx-trade-view-bar {
-    min-height: 22px !important;
-    height: 22px !important;
-    padding: 0 6px !important;
+    min-height: 27px !important;
+    height: 27px !important;
+    padding: 0 4px 4px 0 !important;
   }
 
   html:root .rtx-trade-subtab-btn {
-    --rtx-type-size: 10.5px;
-    --rtx-type-weight: 500;
-    padding: 1px 7px !important;
-    line-height: 15px !important;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
+    padding: 0 10px !important;
+    line-height: 1 !important;
   }
 
   html:root .rtx-bottom-dock__tabs {
@@ -476,21 +484,21 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 10.5px;
+    --rtx-type-size: 12px;
     line-height: 1 !important;
   }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
   html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
-    --rtx-type-size: 10.5px;
+    --rtx-type-size: 12px;
     line-height: 18px !important;
   }
 
   html:root body .rtx-trade-table thead th,
   html:root body .rtx-trade-table__head th {
-    --rtx-type-size: 10px;
-    --rtx-type-weight: 500;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
     height: 22px !important;
     min-height: 22px !important;
     line-height: 20px !important;
@@ -503,8 +511,8 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
 
   html:root body .rtx-status-bar,
   html:root body .rtx-status-bar :is(span, button, div) {
-    --rtx-type-size: 10.5px;
-    --rtx-type-weight: 400;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
     line-height: 18px !important;
   }
 
@@ -526,8 +534,8 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root :is(.rtx-order-dialog__title, .rtx-order-dialog__price) {
-    --rtx-type-size: 11px;
-    --rtx-type-weight: 500;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 300;
     line-height: 1.25 !important;
   }
 
@@ -543,17 +551,17 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-order-dialog__chart-meta,
     .rtx-order-dialog__chart-quotes
   ) {
-    line-height: 15px !important;
+    line-height: 16px !important;
   }
 }
 
 @media (max-width: 1440px), (max-height: 780px) {
   html:root,
   html:root:is(.rtx-advanced-font-small, .rtx-advanced-font-normal, .rtx-advanced-font-large) {
-    --rtx-ui-font-size: 11px;
-    --rtx-ui-line-height: 15px;
-    --rtx-chart-axis-font-size: 9.5px;
-    --rtx-chart-price-scale-min-width: 52px;
+    --rtx-ui-font-size: 12px;
+    --rtx-ui-line-height: 18px;
+    --rtx-chart-axis-font-size: 12px;
+    --rtx-chart-price-scale-min-width: 64px;
   }
 
   html:root .rtx-chart-price-badge {
@@ -561,21 +569,21 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   }
 
   html:root .rtx-chart-price-badge > span:first-child {
-    --rtx-type-size: 9.5px;
-    font-size: 9.5px !important;
-    line-height: 11px !important;
+    --rtx-type-size: 12px;
+    font-size: 12px !important;
+    line-height: 15px !important;
   }
 
   html:root .rtx-chart-price-badge > span[data-live-price-countdown] {
-    --rtx-type-size: 8.5px;
-    font-size: 8.5px !important;
-    line-height: 10px !important;
+    --rtx-type-size: 12px;
+    font-size: 12px !important;
+    line-height: 14px !important;
   }
 
   html:root .rtx-chart-crosshair-label {
-    --rtx-type-size: 9.5px;
-    font-size: 9.5px !important;
-    line-height: 11px !important;
+    --rtx-type-size: 12px;
+    font-size: 12px !important;
+    line-height: 15px !important;
   }
 
   html:root .rtx-main-toolbar :is(
@@ -587,27 +595,27 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-report-bug-button,
     .rtx-report-bug-button > span
   ) {
-    --rtx-type-size: 10.5px;
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 9px;
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 10px;
+    --rtx-type-size: 12px;
   }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
   html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
-    --rtx-type-size: 10px;
+    --rtx-type-size: 12px;
   }
 
   html:root body .navigator-tree-item__label,
   html:root body .rtx-status-bar,
   html:root body .rtx-status-bar :is(span, button, div) {
-    --rtx-type-size: 10.5px;
+    --rtx-type-size: 12px;
   }
 }
 
@@ -621,21 +629,21 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-report-bug-button,
     .rtx-report-bug-button > span
   ) {
-    --rtx-type-size: clamp(9.5px, 0.85vw, 10.5px);
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 8.5px;
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 10px;
+    --rtx-type-size: 12px;
   }
 
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
   html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
-    --rtx-type-size: 10px;
+    --rtx-type-size: 12px;
   }
 }
 
@@ -654,11 +662,11 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
     .rtx-report-bug-button,
     .rtx-report-bug-button > span
   ) {
-    --rtx-type-size: 11px;
+    --rtx-type-size: 12px;
   }
 
   html:root .rtx-main-toolbar .rtx-toolbar-symbol-badge {
-    --rtx-type-size: 9px;
+    --rtx-type-size: 12px;
   }
 }
 
@@ -666,24 +674,24 @@ html:root .rtx-oct { top: calc(14px + var(--rtx-ui-line-height)); }
   html:root body .rtx-trade-table :is(th, td, th span, th button),
   html:root body .rtx-trade-footer :is(.rtx-trade-metric-label, .rtx-trade-footer-metric, .rtx-trade-footer-floating, .rtx-trade-footer-currency),
   html:root body .rtx-history-summary-bar :is(.rtx-history-summary-row, .rtx-history-summary-row > td, .rtx-history-summary-metric, .rtx-history-summary-label, .rtx-history-summary-value) {
-    --rtx-type-size: 9px;
+    --rtx-type-size: 12px;
   }
 }
 
 @container rtx-dock-tabs (max-width: 1180px) {
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 10.5px;
+    --rtx-type-size: 12px;
   }
 }
 
 @container rtx-dock-tabs (max-width: 960px) {
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 9.5px;
+    --rtx-type-size: 12px;
   }
 }
 
 @container rtx-dock-tabs (max-width: 780px) {
   html:root .rtx-bottom-dock__tabs :is(.rtx-dock-tab, .rtx-dock-tab span) {
-    --rtx-type-size: 8.8px;
+    --rtx-type-size: 12px;
   }
 }

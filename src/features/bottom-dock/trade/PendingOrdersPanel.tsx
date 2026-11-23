@@ -111,6 +111,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
   const storeTicks = useAppStore((s) => s.ticks);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<number | null>(null);
 
   const orders = useMemo(() => {
     const views: PendingOrderView[] = [];
@@ -275,13 +276,20 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
             </tr>
           </thead>
           <tbody>
-            {orders.map((order) => {
+            {orders.map((order, index) => {
               // Spec digits only (order row, registered catalog, live tick, store catalog); unknown renders raw downstream.
               const orderTick = (storeTicks ?? {})[order.symbol]
                 ?? (storeTicks ?? {})[order.symbol.toUpperCase()];
               const digits = resolveSymbolPriceDigits(order.symbol, order.digits, orderTick?.digits);
               return (
-                <tr key={order.ticket} className="rtx-pending-order-row border-b border-zinc-800 hover:bg-zinc-800/40" data-ticket={order.ticket}>
+                <tr
+                  key={order.ticket}
+                  aria-selected={selectedTicket === order.ticket}
+                  onClick={() => setSelectedTicket(order.ticket)}
+                  className="rtx-pending-order-row border-b border-zinc-800 hover:bg-zinc-800/40"
+                  data-ticket={order.ticket}
+                  data-row-parity={index % 2 === 0 ? 'odd' : 'even'}
+                >
                   <td className="py-1 pl-4 pr-2 text-left text-zinc-300 whitespace-nowrap">{order.ticket}</td>
                   <td className="px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{order.symbol}</td>
                   <td className="px-2 py-1 text-center text-zinc-400 whitespace-nowrap">{order.orderType}</td>

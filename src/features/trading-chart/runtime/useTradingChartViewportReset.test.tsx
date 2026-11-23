@@ -19,6 +19,8 @@ const createFixture = (chartShift: boolean, timeframe: Timeframe = 'M1') => {
   let latestIndex = 499;
   let range: LogicalRangeLike = { from: 460, to: 499 };
   const timeScale = {
+    applyOptions: vi.fn(),
+    getVisibleLogicalRange: () => range,
     setVisibleLogicalRange: vi.fn((next: LogicalRangeLike) => { range = next; }),
     scrollPosition: () => range.to - latestIndex,
   };
@@ -75,13 +77,21 @@ describe('latest candle viewport', () => {
     expect(fixture.timeScale.setVisibleLogicalRange).not.toHaveBeenCalled();
   });
 
-  it('uses the default 7px candle density on initial load, wide viewports, and Reset Layout', () => {
+  it('uses the default 10px candle density on initial load, wide viewports, and Reset Layout', () => {
     const fixture = createFixture(false, 'M1');
     act(() => { fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
-    // (1000px container - 60px price scale) / 7px TARGET_BAR_PX = 134 visible bars
-    expect(fixture.getRange()).toEqual({ from: 366, to: 499 });
+    // (1000px container - 60px price scale) / 10px TARGET_BAR_PX = 94 visible bars
+    expect(fixture.getRange()).toEqual({ from: 406, to: 499 });
 
-    // Wide desktop charts must stay at 7px candle density rather than clamping at 200 bars.
+    // barSpacing must be explicitly reset to TARGET_BAR_PX (10) AFTER
+    // setVisibleLogicalRange so the candle width is always the same on
+    // initial load, Reset Layout, and viewport reset.
+    expect(fixture.timeScale.applyOptions).toHaveBeenCalledWith({ barSpacing: 10 });
+    const applyOrder = fixture.timeScale.applyOptions.mock.invocationCallOrder[0];
+    const rangeOrder = fixture.timeScale.setVisibleLogicalRange.mock.invocationCallOrder[0];
+    expect(applyOrder).toBeGreaterThan(rangeOrder);
+
+    // Wide desktop charts must stay at 10px candle density rather than clamping at 200 bars.
     const wideFixture = renderHook(() => useTradingChartViewportReset({
       chartRef: { current: fixture.chart },
       chartSettingsRef: fixture.settingsRef,
@@ -94,12 +104,12 @@ describe('latest candle viewport', () => {
       timeframe: 'M1',
     }));
     act(() => { wideFixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
-    // (1920px container - 60px price scale) / 7px TARGET_BAR_PX = 265 visible bars
-    expect(fixture.getRange()).toEqual({ from: 235, to: 499 });
+    // (1920px container - 60px price scale) / 10px TARGET_BAR_PX = 186 visible bars
+    expect(fixture.getRange()).toEqual({ from: 314, to: 499 });
 
-    // Zooming away and triggering Reset Layout restores the exact same 7px candle density.
+    // Zooming away and triggering Reset Layout restores the exact same 10px candle density.
     act(() => { fixture.timeScale.setVisibleLogicalRange({ from: 470, to: 499 }); });
     act(() => { window.dispatchEvent(new Event('resetLayout')); });
-    expect(fixture.getRange()).toEqual({ from: 235, to: 499 });
+    expect(fixture.getRange()).toEqual({ from: 314, to: 499 });
   });
 });

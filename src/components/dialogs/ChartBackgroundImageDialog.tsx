@@ -11,11 +11,10 @@ import {
 import { RTX5_DEFAULT_CHART_WATERMARK_SRC } from '../../utils/squareChartGridPrimitive';
 import {
   getPrimaryBrokerWatermarkUrl,
-  resolveActiveBrokerWatermarkCandidates,
   subscribeBrokerWatermarkChanges,
 } from '../../utils/brokerWatermark';
-import { toLocalDevProxyUrl } from '../../config/api';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
+import './chart-background-image-dialog.css';
 
 export interface ChartBackgroundImageDialogProps {
   isOpen: boolean;
@@ -59,7 +58,6 @@ function readSnapshot(props: ChartProperties): SnapshotState {
 export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProps> = ({
   isOpen,
   symbol,
-  timeframe,
   onClose,
 }) => {
   const tr = useUiTranslation();
@@ -82,14 +80,6 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
     if (!isOpen) return undefined;
     return subscribeBrokerWatermarkChanges(() => setBrokerWatermarkTick((v) => v + 1));
   }, [isOpen]);
-
-  const brokerWatermarkCandidates = brokerWatermarkTick >= 0
-    ? [...resolveActiveBrokerWatermarkCandidates().map((url) => toLocalDevProxyUrl(url)), RTX5_DEFAULT_CHART_WATERMARK_SRC]
-    : [RTX5_DEFAULT_CHART_WATERMARK_SRC];
-  const headerLogoSignature = brokerWatermarkCandidates.join('\n');
-  const [headerLogoAttempt, setHeaderLogoAttempt] = useState({ signature: headerLogoSignature, index: 0 });
-  const headerLogoIndex = headerLogoAttempt.signature === headerLogoSignature ? headerLogoAttempt.index : 0;
-  const headerLogoSrc = brokerWatermarkCandidates[headerLogoIndex] || RTX5_DEFAULT_CHART_WATERMARK_SRC;
 
   const defaultBrokerWatermarkUrl = brokerWatermarkTick >= 0 ? getPrimaryBrokerWatermarkUrl() : undefined;
   const defaultWatermarkDisplayUrl = defaultBrokerWatermarkUrl || (
@@ -215,10 +205,6 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         surface: '#ffffff',
         surfaceBorder: '#cfd8e3',
         shadow: '0 20px 50px rgba(15, 23, 42, 0.18)',
-        titleBarBg: '#f8fafc',
-        titleBarBorder: '1px solid #e2e8f0',
-        titleBarText: '#0f172a',
-        closeButtonText: '#475569',
         headingText: '#0f172a',
         bodyText: '#1e293b',
         mutedText: '#64748b',
@@ -227,9 +213,10 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         inputBorder: '#cbd5e1',
         inputText: '#0f172a',
         radioBg: '#ffffff',
-        radioBorderChecked: '#009245',
+        radioBorderChecked: '#2457a7',
         radioBorderUnchecked: '#94a3b8',
-        radioDot: '#009245',
+        radioDot: '#2457a7',
+        accent: '#2457a7',
         checkboxBgUnchecked: '#ffffff',
         checkboxBorderUnchecked: '#94a3b8',
         secondaryBtnBg: '#f1f5f9',
@@ -241,10 +228,6 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         surface: '#2d2e32',
         surfaceBorder: '#45474d',
         shadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
-        titleBarBg: '#ffffff',
-        titleBarBorder: 'none',
-        titleBarText: '#18181b',
-        closeButtonText: '#3f3f46',
         headingText: '#ffffff',
         bodyText: '#e4e4e7',
         mutedText: '#9ca3af',
@@ -256,8 +239,9 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         radioBorderChecked: '#9ca3af',
         radioBorderUnchecked: '#4b5563',
         radioDot: '#d4d4d8',
+        accent: '#2463c8',
         checkboxBgUnchecked: '#1b1c1f',
-        checkboxBorderUnchecked: '#1b1c1f',
+        checkboxBorderUnchecked: '#4b5563',
         secondaryBtnBg: '#52555c',
         secondaryBtnBorder: 'none',
         secondaryBtnText: '#ffffff',
@@ -337,8 +321,8 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         width: 13,
         height: 13,
         borderRadius: 2,
-        background: checked ? '#009245' : palette.checkboxBgUnchecked,
-        border: checked ? '1px solid #009245' : `1px solid ${palette.checkboxBorderUnchecked}`,
+        background: checked ? palette.accent : palette.checkboxBgUnchecked,
+        border: checked ? `1px solid ${palette.accent}` : `1px solid ${palette.checkboxBorderUnchecked}`,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -376,13 +360,13 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         ref={setSheetElement}
         role="dialog"
         aria-modal="true"
-        aria-label={`${tr('Background image')} - ${symbol}, ${timeframe}`}
+        aria-label={`${tr('Background image')} - ${symbol}`}
         data-theme={isLightTheme ? 'light' : 'dark'}
         style={{
           width: 356,
           background: palette.surface,
           border: `1px solid ${palette.surfaceBorder}`,
-          borderRadius: 2,
+          borderRadius: 6,
           boxShadow: palette.shadow,
           color: palette.bodyText,
           overflow: 'hidden',
@@ -391,73 +375,33 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Native-style Window Title Bar */}
+        {/* Unified Dialog Header */}
         <div
+          className="rtx-bg-image-dialog__header"
           onMouseDown={dragHandleProps.onMouseDown}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            height: 28,
-            padding: '0 10px',
-            background: palette.titleBarBg,
-            borderBottom: palette.titleBarBorder,
-            color: palette.titleBarText,
-            fontSize: 12,
-            fontWeight: 400,
+            borderBottom: `1px solid ${palette.divider}`,
             ...dragHandleProps.style,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <img
-              key={headerLogoSrc}
-              src={headerLogoSrc}
-              alt=""
-              onError={() => {
-                if (headerLogoIndex + 1 < brokerWatermarkCandidates.length) {
-                  setHeaderLogoAttempt({ signature: headerLogoSignature, index: headerLogoIndex + 1 });
-                }
-              }}
-              style={{ width: 14, height: 14, objectFit: 'contain', background: '#18181b', borderRadius: 2, padding: 1 }}
-            />
-            <span>{tr('Background image')} - RTX5</span>
+          <div
+            className="rtx-bg-image-dialog__title"
+            style={{ color: palette.headingText }}
+          >
+            {tr('Background image')} - {symbol}
           </div>
           <button
             type="button"
             className="rtx-bg-image-dialog__close"
             aria-label={tr('Close')}
             onClick={handleCancel}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: palette.closeButtonText,
-              cursor: 'pointer',
-              padding: 2,
-              borderRadius: 3,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
           >
-            <X size={14} />
+            <X size={15} />
           </button>
         </div>
 
         {/* Dialog Body */}
         <div style={{ padding: '14px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Large Header matching cTrader */}
-          <div
-            style={{
-              fontSize: 19,
-              fontWeight: 700,
-              color: palette.headingText,
-              lineHeight: '24px',
-              marginBottom: 4,
-            }}
-          >
-            {tr('Background image')} - {symbol}, {timeframe.toLowerCase()}
-          </div>
-
           {/* Row 1: None */}
           <div style={{ display: 'flex', alignItems: 'center', minHeight: 22 }}>
             <label
@@ -671,7 +615,7 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
               }}
               style={{
                 flex: 1,
-                accentColor: '#009245',
+                accentColor: palette.accent,
                 cursor: mode === 'none' ? 'default' : 'pointer',
                 opacity: mode === 'none' ? 0.45 : 1,
               }}
@@ -747,42 +691,20 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
           </label>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <div className="rtx-bg-image-dialog__actions">
             <button
               type="button"
-              className="rtx-bg-image-dialog__save"
+              className="rtx-bg-image-dialog__action rtx-bg-image-dialog__save"
               data-testid="chart-background-image-save"
               onClick={handleSave}
-              style={{
-                flex: 1,
-                height: 24,
-                background: '#009245',
-                border: '1px solid #009245',
-                borderRadius: 3,
-                color: '#ffffff',
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
             >
               {tr('Save')}
             </button>
             <button
               type="button"
-              className="rtx-bg-image-dialog__secondary"
+              className="rtx-bg-image-dialog__action rtx-bg-image-dialog__secondary rtx-bg-image-dialog__cancel"
               data-testid="chart-background-image-cancel"
               onClick={handleCancel}
-              style={{
-                flex: 1,
-                height: 24,
-                background: palette.secondaryBtnBg,
-                border: palette.secondaryBtnBorder,
-                borderRadius: 3,
-                color: palette.secondaryBtnText,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
             >
               {tr('Cancel')}
             </button>

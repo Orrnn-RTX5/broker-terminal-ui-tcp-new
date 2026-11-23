@@ -1,4 +1,8 @@
 import { type CSSProperties, type MouseEvent, type WheelEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  buildChartTheme,
+  isLightChartBackground,
+} from '../../features/trading-chart/presentation/chartTheme';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { formatBrokerServerDate, formatBrokerServerTime } from '../../services/brokerServerClock';
 import {
@@ -10,15 +14,29 @@ import {
 } from '../../services/keyboardShortcutManager';
 import {
   getChartDirectionalQuoteColors,
+  getEffectiveChartColors,
   useChartSettingsStore,
+  type ChartProperties,
 } from '../../store/useChartSettingsStore';
 import { type Tick, useMarketDataStore } from '../../store/useMarketDataStore';
+import { RTX_ADVANCED_VIEW_CHANGE_EVENT } from '../../utils/advancedViewRootClasses';
 import { getCanonicalTickTimestamp } from '../../utils/liveTickSemantics';
 import {
   loadMarketWatchTickChartOptions,
   saveMarketWatchTickChartOptions,
   type MarketWatchTickChartOptions,
 } from '../../utils/marketWatchView';
+import {
+  CHART_GRID_DASH_PATTERN_CSS_PX,
+  CHART_GRID_STROKE_CSS_PX,
+  FINE_CHART_GRID_CELL_SIZE_PX,
+  FINE_CHART_GRID_DASH_PATTERN_CSS_PX,
+  FINE_CHART_GRID_OPACITY,
+  FINE_CHART_GRID_STROKE_CSS_PX,
+  getFineGridHorizontalPositions,
+  getSquareGridLinePositions,
+  SQUARE_CHART_GRID_CELL_SIZE_PX,
+} from '../../utils/squareChartGridPrimitive';
 import { ContextMenu, type ContextMenuItemConfig } from '../ui/ContextMenu';
 import { Icon } from '../ui/Icon';
 import { readMarketWatchSymbolSpecification } from './marketWatchSymbolDetailsModel';
@@ -28,6 +46,7 @@ import {
   buildTickChartCrosshair,
   buildTickChartGeometry,
   MARKET_WATCH_TICK_CHART_LIMIT,
+  type TickChartGeometry,
   type TickChartPoint,
 } from './tickChartGeometry';
 import { useMarketWatchTickHistory } from './useMarketWatchTickHistory';
@@ -84,6 +103,95 @@ const readAxisFontSize = (): number => {
     : FALLBACK_SIZE.fontSize;
 };
 
+const readIsLightSkin = (): boolean => {
+  if (typeof document === 'undefined') return false;
+  const root = document.documentElement;
+  return root.classList.contains('rtx-skin-untitled-light') || root.classList.contains('theme-light');
+};
+
+const readThemeAppearanceSignature = (): string => {
+  if (typeof document === 'undefined') return '';
+  const root = document.documentElement;
+  return [
+    root.getAttribute('data-rtx-theme-configured') ?? '',
+    root.getAttribute('data-rtx-theme-preset') ?? '',
+    root.getAttribute('data-rtx-preset') ?? '',
+    root.getAttribute('data-rtx-contrast') ?? '',
+    root.style.getPropertyValue('--rtx-theme-chart-bg'),
+    root.style.getPropertyValue('--rtx-theme-chart-fg'),
+    root.style.getPropertyValue('--rtx-theme-chart-grid'),
+  ].join('|');
+};
+
+interface TickChartGridLayout {
+  bounds: { left: number; right: number; top: number; bottom: number };
+  horizontalPositions: number[];
+  verticalPositions: number[];
+  strokeWidth: number;
+  strokeOpacity?: number;
+  strokeDasharray?: string;
+  shapeRendering: 'crispEdges' | 'auto';
+}
+
+const buildTickChartGridLayout = (
+  geometry: TickChartGeometry,
+  gridType: ChartProperties['gridType'],
+  gridLineStyle: ChartProperties['gridLineStyle'],
+): TickChartGridLayout => {
+  const { plot } = geometry;
+  const plotWidth = plot.right - plot.left;
+  const plotHeight = plot.bottom - plot.top;
+  const bounds = {
+    left: plotWidth >= 2 ? Math.ceil(plot.left) : plot.left,
+    right: plotWidth >= 2 ? Math.floor(plot.right) : plot.right,
+    top: plotHeight >= 2 ? Math.ceil(plot.top) : plot.top,
+    bottom: plotHeight >= 2 ? Math.floor(plot.bottom) : plot.bottom,
+  };
+  const dashed = gridLineStyle !== 'solid';
+
+  if (gridType === 'scale') {
+    return {
+      bounds,
+      horizontalPositions: geometry.priceTicks.map(tick => tick.y),
+      verticalPositions: geometry.timeTicks.slice(1).map(tick => tick.x),
+      strokeWidth: 1,
+      strokeDasharray: dashed ? '2 2' : undefined,
+      shapeRendering: 'crispEdges',
+    };
+  }
+
+  if (gridType === 'square') {
+    return {
+      bounds,
+      horizontalPositions: getSquareGridLinePositions(plotHeight, SQUARE_CHART_GRID_CELL_SIZE_PX)
+        .map(offset => plot.top + offset),
+      verticalPositions: getSquareGridLinePositions(plotWidth, SQUARE_CHART_GRID_CELL_SIZE_PX)
+        .map(offset => plot.left + offset),
+      strokeWidth: CHART_GRID_STROKE_CSS_PX,
+      strokeDasharray: dashed
+        ? `${CHART_GRID_DASH_PATTERN_CSS_PX[0]} ${CHART_GRID_DASH_PATTERN_CSS_PX[1]}`
+        : undefined,
+      shapeRendering: 'auto',
+    };
+  }
+
+  // Fine ('mt5') grid matches TradingChart's bottom-anchored 32px dotted lattice.
+  return {
+    bounds,
+    horizontalPositions: getFineGridHorizontalPositions(plotHeight)
+      .filter(position => position < plotHeight - 1)
+      .map(position => plot.top + position),
+    verticalPositions: getSquareGridLinePositions(plotWidth, FINE_CHART_GRID_CELL_SIZE_PX)
+      .map(offset => plot.left + offset),
+    strokeWidth: FINE_CHART_GRID_STROKE_CSS_PX,
+    strokeOpacity: FINE_CHART_GRID_OPACITY,
+    strokeDasharray: dashed
+      ? `${FINE_CHART_GRID_DASH_PATTERN_CSS_PX[0]} ${FINE_CHART_GRID_DASH_PATTERN_CSS_PX[1]}`
+      : undefined,
+    shapeRendering: 'crispEdges',
+  };
+};
+
 const useChartSize = () => {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState(FALLBACK_SIZE);
@@ -127,15 +235,40 @@ export function MarketWatchTickChart({
   const sectionRef = useRef<HTMLElement | null>(null);
   const normalizedSymbol = normalizeSymbol(symbol);
   const [setCanvas, size] = useChartSize();
-  const [isLightSkin, setIsLightSkin] = useState(false);
+  const [isLightSkin, setIsLightSkin] = useState(readIsLightSkin);
+  const [themeAppearanceSignature, setThemeAppearanceSignature] = useState(readThemeAppearanceSignature);
   const chartCandleProperties = useChartSettingsStore((state) => (
-    (normalizedSymbol ? state.symbolProperties[normalizedSymbol] : undefined)
+    state.symbolProperties[symbol]
+    || (normalizedSymbol ? state.symbolProperties[normalizedSymbol] : undefined)
     || (state.activeColorSymbol ? state.symbolProperties[state.activeColorSymbol] : undefined)
     || state.globalProperties
   ));
   const { upColor, downColor } = getChartDirectionalQuoteColors(chartCandleProperties, {
     isAdvancedUntitledLight: isLightSkin,
   });
+  const chartColors = useMemo(
+    () => getEffectiveChartColors(chartCandleProperties, { isAdvancedUntitledLight: isLightSkin }),
+    [chartCandleProperties, isLightSkin, themeAppearanceSignature],
+  );
+  const useEnterpriseLightChartPalette = isLightSkin
+    && (chartCandleProperties.colorScheme !== 'Custom' || isLightChartBackground(chartColors.background));
+  const chartTheme = useMemo(
+    () => buildChartTheme(
+      chartColors,
+      true,
+      useEnterpriseLightChartPalette,
+      chartCandleProperties.gridLineStyle,
+      chartCandleProperties.gridType,
+      chartCandleProperties.colorScheme,
+    ),
+    [
+      chartCandleProperties.colorScheme,
+      chartCandleProperties.gridLineStyle,
+      chartCandleProperties.gridType,
+      chartColors,
+      useEnterpriseLightChartPalette,
+    ],
+  );
   const [options, setOptions] = useState<MarketWatchTickChartOptions>(() => loadMarketWatchTickChartOptions());
   const [scrollPause, setScrollPause] = useState<{
     symbol: string;
@@ -177,11 +310,37 @@ export function MarketWatchTickChart({
 
   useEffect(() => {
     const root = document.documentElement;
-    const update = () => setIsLightSkin(root.classList.contains('rtx-skin-untitled-light'));
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const syncAppearance = () => {
+      setIsLightSkin(readIsLightSkin());
+      setThemeAppearanceSignature(readThemeAppearanceSignature());
+    };
+    const handleAdvancedViewChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ isAdvancedUntitledLight?: boolean }>).detail;
+      if (typeof detail?.isAdvancedUntitledLight === 'boolean') {
+        setIsLightSkin(detail.isAdvancedUntitledLight);
+        setThemeAppearanceSignature(readThemeAppearanceSignature());
+        return;
+      }
+      syncAppearance();
+    };
+    syncAppearance();
+    const observer = new MutationObserver(syncAppearance);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: [
+        'class',
+        'style',
+        'data-rtx-theme-configured',
+        'data-rtx-theme-preset',
+        'data-rtx-preset',
+        'data-rtx-contrast',
+      ],
+    });
+    window.addEventListener(RTX_ADVANCED_VIEW_CHANGE_EVENT, handleAdvancedViewChange);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener(RTX_ADVANCED_VIEW_CHANGE_EVENT, handleAdvancedViewChange);
+    };
   }, []);
 
   const displayedPoints = useMemo(() => {
@@ -202,6 +361,15 @@ export function MarketWatchTickChart({
     formatDate: formatServerDate,
     formatTime: formatServerTime,
   }), [digits, displayedPoints, size]);
+  const gridLayout = useMemo(() => (
+    geometry
+      ? buildTickChartGridLayout(
+        geometry,
+        chartCandleProperties.gridType,
+        chartCandleProperties.gridLineStyle,
+      )
+      : null
+  ), [chartCandleProperties.gridLineStyle, chartCandleProperties.gridType, geometry]);
   const crosshair = useMemo(() => (
     options.crosshair && geometry
       ? buildTickChartCrosshair(geometry, pointer, {
@@ -452,6 +620,12 @@ export function MarketWatchTickChart({
       style={{
         '--rtx-tick-chart-bid': upColor,
         '--rtx-tick-chart-ask': downColor,
+        '--rtx-tick-chart-plot': chartTheme.background,
+        '--rtx-tick-chart-grid': chartTheme.gridHorizontal,
+        '--rtx-tick-chart-grid-vertical': chartTheme.gridVertical,
+        '--rtx-tick-chart-grid-horizontal': chartTheme.gridHorizontal,
+        '--rtx-tick-chart-text': chartTheme.axisText,
+        '--rtx-tick-chart-frame': chartTheme.axisText,
       } as CSSProperties}
     >
       <ContextMenu
@@ -498,13 +672,41 @@ export function MarketWatchTickChart({
                 height={geometry.plot.bottom - geometry.plot.top}
                 onMouseLeave={handleMouseLeave}
               />
-              {options.grid && (
-                <g className="rtx-market-tick-chart__grid" data-testid="market-tick-grid" aria-hidden="true">
-                  {geometry.priceTicks.map(tick => (
-                    <line key={`price-${tick.label}`} x1={geometry.plot.left} x2={geometry.plot.right} y1={tick.y} y2={tick.y} />
+              {options.grid && gridLayout && (
+                <g
+                  className="rtx-market-tick-chart__grid"
+                  data-testid="market-tick-grid"
+                  data-grid-type={chartCandleProperties.gridType}
+                  data-grid-style={chartCandleProperties.gridLineStyle}
+                  aria-hidden="true"
+                  strokeWidth={gridLayout.strokeWidth}
+                  strokeOpacity={gridLayout.strokeOpacity}
+                  strokeDasharray={gridLayout.strokeDasharray}
+                  shapeRendering={gridLayout.shapeRendering}
+                >
+                  {gridLayout.horizontalPositions.map(y => (
+                    <line
+                      key={`h-${y}`}
+                      className="rtx-market-tick-chart__grid-line rtx-market-tick-chart__grid-line--horizontal"
+                      data-axis="horizontal"
+                      stroke={chartTheme.gridHorizontal}
+                      x1={gridLayout.bounds.left}
+                      x2={gridLayout.bounds.right}
+                      y1={y}
+                      y2={y}
+                    />
                   ))}
-                  {geometry.timeTicks.slice(1).map(tick => (
-                    <line key={`time-${tick.x}`} x1={tick.x} x2={tick.x} y1={geometry.plot.top} y2={geometry.plot.bottom} />
+                  {gridLayout.verticalPositions.map(x => (
+                    <line
+                      key={`v-${x}`}
+                      className="rtx-market-tick-chart__grid-line rtx-market-tick-chart__grid-line--vertical"
+                      data-axis="vertical"
+                      stroke={chartTheme.gridVertical}
+                      x1={x}
+                      x2={x}
+                      y1={gridLayout.bounds.top}
+                      y2={gridLayout.bounds.bottom}
+                    />
                   ))}
                 </g>
               )}

@@ -1,8 +1,59 @@
+/* Shared professional surface, tighter spacing, and high-contrast warning callouts for action sheets. */
+.rtx-legacy-sheet {
+  border-radius: 10px;
+}
+
+.rtx-legacy-sheet .rtx-sheet-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgb(234 179 8 / 48%);
+  border-radius: 8px;
+  background: rgb(234 179 8 / 8%);
+  color: #ffffff;
+}
+
+.rtx-legacy-sheet .rtx-sheet-warning__icon {
+  color: #facc15;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.rtx-legacy-sheet .rtx-sheet-warning__title {
+  --rtx-type-size: 12px;
+  --rtx-type-weight: 600;
+  color: #ffffff;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.rtx-legacy-sheet .rtx-sheet-warning__body {
+  --rtx-type-size: 12px;
+  --rtx-type-weight: 400;
+  color: rgb(255 255 255 / 92%);
+  line-height: 1.45;
+}
+
 /* These older sheets share the terminal's light surfaces without restyling
    every utility-based dialog or the contents of printable chart pages. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-legacy-sheet {
   background: var(--rtx-light-elevated) !important;
   border-color: var(--rtx-light-border-strong) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-legacy-sheet .rtx-sheet-warning {
+  border-color: rgb(202 138 4 / 45%) !important;
+  background: #fffbeb !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-legacy-sheet .rtx-sheet-warning__icon {
+  color: #b45309 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-legacy-sheet :is(.rtx-sheet-warning__title, .rtx-sheet-warning__body) {
   color: var(--rtx-light-text) !important;
 }
 

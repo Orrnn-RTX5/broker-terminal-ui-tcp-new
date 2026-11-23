@@ -1,11 +1,11 @@
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { getAuthenticatedAccountName } from '../../utils/accountDisplayName';
 import { getBrokerSavedAccountTypes, resolveTradingAccountType, type TradingAccountType } from '../../services/tradingAccountType';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { createPortal } from 'react-dom';
-import { X, Search, ChevronRight, ArrowRight, Building2, Shield, Globe, CheckCircle2, Copy, Loader2, MousePointer2 } from 'lucide-react';
+import { X, Search, ChevronRight, ArrowRight, Building2, Shield, Globe, Check, CheckCircle2, Copy, Loader2, MousePointer2 } from 'lucide-react';
 import { tradeApi } from '../../api/trade';
 import { parseTokenExpiresAt } from '../../api/client';
 import { BROKER_DISCOVERY_URL, normalizeBrokerServerUrl, toLocalDevProxyUrl, updateDynamicUrls } from '../../config/api';
@@ -123,6 +123,8 @@ const DropdownBrokerLogo: React.FC<{ broker: BrokerServer; index: number }> = ({
 interface Props {
     isOpen: boolean;
     onClose: () => void;
+    forceDemoCreation?: boolean;
+    anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 type CreatedAccount = {
@@ -164,8 +166,7 @@ type CreatedAccountSummaryRow = {
     label: string;
     value: React.ReactNode;
     mono?: boolean;
-    color?: string;
-    size?: string;
+    primary?: boolean;
     small?: boolean;
 };
 
@@ -217,8 +218,11 @@ export const OpenAccountDialog: React.FC<Props> = (props) => {
         });
         return (
             <TradeAuthDialog
-                {...props}
-                initialMode={hasDemoAndRealAccounts ? 'login' : 'demo'}
+                isOpen={props.isOpen}
+                onClose={props.onClose}
+                initialMode={props.forceDemoCreation ? 'demo' : (hasDemoAndRealAccounts ? 'login' : 'demo')}
+                allowDemoCreation={props.forceDemoCreation}
+                anchorRef={props.anchorRef}
                 intent={null}
                 onAuthenticated={props.onClose}
             />
@@ -227,13 +231,41 @@ export const OpenAccountDialog: React.FC<Props> = (props) => {
     return <DesktopOpenAccountDialog {...props} />;
 };
 
-const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
+const pickPreferredBrokerId = (mapped: BrokerServer[], preferCurrentBroker: boolean): string => {
+    if (mapped.length === 0) return '';
+    if (!preferCurrentBroker) return String(mapped[0].id);
+
+    const runtimeConfig = getRuntimeBrokerConfiguration();
+    const readStorage = (key: string): string => {
+        if (typeof localStorage === 'undefined') return '';
+        try {
+            return String(localStorage.getItem(key) || '').trim();
+        } catch {
+            return '';
+        }
+    };
+    const storedBrokerId = (readStorage('broker_id') || readStorage('rtx_broker_id') || String(runtimeConfig.brokerId || '')).trim().toLowerCase();
+    const storedBrokerName = (readStorage('broker_name') || String(runtimeConfig.brokerName || '')).trim().toLowerCase();
+    const storedServerUrl = (readStorage('server_url') || readStorage('backend_url') || readStorage('rtx_broker_server') || String(runtimeConfig.apiHost || runtimeConfig.apiHostExt || ''))
+        .trim().replace(/\/+$/, '').toLowerCase();
+
+    const matched = (storedBrokerId && mapped.find(b => String(b.broker_id || '').trim().toLowerCase() === storedBrokerId))
+        || (storedBrokerName && mapped.find(b => String(b.broker_name || '').trim().toLowerCase() === storedBrokerName))
+        || (storedServerUrl && mapped.find(b => String(b.server_url || b.backend_url || b.server || '').trim().replace(/\/+$/, '').toLowerCase() === storedServerUrl))
+        || mapped[0];
+
+    return matched ? String(matched.id) : '';
+};
+
+const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoCreation = false, anchorRef }) => {
     const tr = useUiTranslation();
     const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
-    const [step, setStep] = useState(0);
+    const minStep = forceDemoCreation ? 2 : 0;
+    const [step, setStep] = useState(minStep);
+    const [anchoredLeft, setAnchoredLeft] = useState<number | null>(null);
     const [brokers, setBrokers] = useState<BrokerServer[]>(() => availableDirectoryBrokers(getCachedBrokerDirectory() || []));
     const [loadingBrokers, setLoadingBrokers] = useState(() => getCachedBrokerDirectory() === null);
-    const [selected, setSelected] = useState<string>(() => brokers[0] ? String(brokers[0].id) : '');
+    const [selected, setSelected] = useState<string>(() => pickPreferredBrokerId(brokers, forceDemoCreation));
     const [directoryError, setDirectoryError] = useState('');
     const [directoryAttempt, setDirectoryAttempt] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
@@ -255,23 +287,63 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [createError, setCreateError] = useState('');
     const [validationError, setValidationError] = useState('');
+    const [copiedField, setCopiedField] = useState<string | null>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
     const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
     const searchRef = useRef<HTMLInputElement>(null);
+    const firstNameRef = useRef<HTMLInputElement>(null);
     const existingPasswordInputRef = useRef<HTMLInputElement>(null);
     const closeDialog = () => {
+        setCopiedField(null);
         setExistingPassword('');
         setCreateError('');
         setValidationError('');
         onClose();
     };
-    useDialogFocusScope({ isOpen, dialogRef, onClose: closeDialog, initialFocusRef: searchRef });
+    const handleCopyCredential = (label: string, value: string) => {
+        void navigator.clipboard?.writeText(value);
+        setCopiedField(label);
+    };
+    useEffect(() => {
+        if (!copiedField) return undefined;
+        const timer = window.setTimeout(() => setCopiedField(null), 1600);
+        return () => window.clearTimeout(timer);
+    }, [copiedField]);
+    useDialogFocusScope({ isOpen, dialogRef, onClose: closeDialog, initialFocusRef: forceDemoCreation ? firstNameRef : searchRef });
+
+    useLayoutEffect(() => {
+        if (!isOpen || !anchorRef) {
+            setAnchoredLeft(null);
+            return undefined;
+        }
+        const updateAnchoredLeft = () => {
+            const anchorRect = anchorRef.current?.getBoundingClientRect();
+            if (!anchorRect || anchorRect.width <= 0) {
+                setAnchoredLeft(null);
+                return;
+            }
+            const dialogWidth = dialogRef.current?.getBoundingClientRect().width || 520;
+            const viewportWidth = window.innerWidth;
+            let nextLeft: number;
+            if (anchorRect.right + dialogWidth + 16 <= viewportWidth) {
+                nextLeft = Math.round(anchorRect.right);
+            } else if (anchorRect.left - dialogWidth >= 16) {
+                nextLeft = Math.round(anchorRect.left - dialogWidth);
+            } else {
+                nextLeft = Math.max(16, Math.round(viewportWidth - dialogWidth - 16));
+            }
+            setAnchoredLeft(nextLeft);
+        };
+        updateAnchoredLeft();
+        window.addEventListener('resize', updateAnchoredLeft);
+        return () => window.removeEventListener('resize', updateAnchoredLeft);
+    }, [anchorRef, isOpen, step]);
 
     useEffect(() => {
         if (!isOpen) return;
 
         let active = true;
-        setStep(0);
+        setStep(forceDemoCreation ? 2 : 0);
         setSearchQuery('');
         setAccountType('demo');
         setExistingLogin('');
@@ -290,7 +362,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         const applyDirectory = (rows: BrokerDiscoveryItem[]) => {
             const mapped = availableDirectoryBrokers(rows);
             setBrokers(mapped);
-            setSelected(mapped[0] ? String(mapped[0].id) : '');
+            setSelected(pickPreferredBrokerId(mapped, forceDemoCreation));
         };
         applyDirectory(cached || []);
         setLoadingBrokers(cached === null);
@@ -305,7 +377,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         return () => {
             active = false;
         };
-    }, [isOpen, directoryAttempt]);
+    }, [isOpen, directoryAttempt, forceDemoCreation]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -373,7 +445,8 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
               }
             : undefined,
     );
-    const effectiveAccountType: AccountType = hasDemoAndRealAccounts ? 'existing' : accountType;
+    const suppressAccountCreation = !forceDemoCreation && hasDemoAndRealAccounts;
+    const effectiveAccountType: AccountType = suppressAccountCreation ? 'existing' : accountType;
     const activeExistingBroker = existingBroker || (effectiveAccountType === 'existing' ? selectedBroker || null : null);
 
     const resolveSelectedBrokerRouting = (broker: BrokerServer | undefined = selectedBroker) => {
@@ -615,7 +688,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                 setValidationError('Please select a broker server.');
                 return;
             }
-            if (hasDemoAndRealAccounts) {
+            if (suppressAccountCreation) {
                 setAccountType('existing');
                 setExistingBroker(selectedBroker);
             }
@@ -697,7 +770,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         closeDialog();
     };
 
-    const handleBack = () => { if (step > 0) setStep(step - 1); };
+    const handleBack = () => { if (step > minStep) setStep(step - 1); };
 
     // ─── Step 0: Broker Selection ───────────────────────────────────────────────
     const renderStep0 = () => (
@@ -803,56 +876,59 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
     // ─── Step 1: Account Type ───────────────────────────────────────────────────
     const renderStep1 = () => (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-5">
-            <div className="flex flex-col gap-6 pt-2">
-                {!hasDemoAndRealAccounts && <>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                    <div className="flex items-center h-5">
+        <div className="rtx-open-account-dialog__step">
+            <div className="rtx-open-account-dialog__options">
+                {!suppressAccountCreation && <>
+                <label className="rtx-open-account-dialog__option group" data-selected={effectiveAccountType === 'demo'}>
+                    <div className="rtx-open-account-dialog__option-radio">
                         <input aria-label={tr("Demo account")} type="radio" checked={effectiveAccountType === 'demo'} onChange={() => { setAccountType('demo'); setValidationError(''); }} className="w-4 h-4 accent-indigo-500" />
                     </div>
-                    <div>
-                        <div className="text-[14px] leading-5 font-medium text-zinc-200 transition-colors group-hover:text-white">{tr("Open a demo account to trade virtual money without risk")}</div>
-                        <div className="rtx-reading-text mt-1 text-[16px] font-normal leading-6 text-zinc-500">{tr("A demo account allows you to learn trading on stock exchanges and test your strategies without risking real money.")}</div>
+                    <div className="rtx-open-account-dialog__option-copy">
+                        <div className="rtx-open-account-dialog__option-title">{tr("Open a demo account to trade virtual money without risk")}</div>
+                        <div className="rtx-open-account-dialog__option-desc">{tr("A demo account allows you to learn trading on stock exchanges and test your strategies without risking real money.")}</div>
                     </div>
                 </label>
 
-                <label className="flex items-start gap-3 cursor-pointer group" aria-disabled={!realAccountSupported}>
-                    <div className="flex items-center h-5">
+                <label className="rtx-open-account-dialog__option group" data-selected={effectiveAccountType === 'real'} aria-disabled={!realAccountSupported}>
+                    <div className="rtx-open-account-dialog__option-radio">
                         <input aria-label={tr("Real account")} type="radio" checked={effectiveAccountType === 'real'} disabled={!realAccountSupported} aria-describedby={!realAccountSupported ? 'rtx-real-account-unavailable-reason' : undefined} onChange={() => { setAccountType('real'); setValidationError(''); }} className="w-4 h-4 accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
                     </div>
-                    <div>
-                        <div className="text-[14px] leading-5 font-medium text-zinc-200 transition-colors group-hover:text-white">{tr("Open a real account for live trading")}</div>
-                        <div className="rtx-reading-text mt-1 text-[16px] font-normal leading-6 text-zinc-500">{tr("A real account requires additional proof of identity. You will need to provide copies of identification documents.")}</div>
+                    <div className="rtx-open-account-dialog__option-copy">
+                        <div className="rtx-open-account-dialog__option-title">{tr("Open a real account for live trading")}</div>
+                        <div className="rtx-open-account-dialog__option-desc">{tr("A real account requires additional proof of identity. You will need to provide copies of identification documents.")}</div>
                         {!realAccountSupported && (
-                            <div id="rtx-real-account-unavailable-reason" role="note" className="rtx-reading-text mt-2 text-[14px] font-normal leading-5 text-amber-400/90">
-                                {selectedBroker?.broker_name || tr('The selected broker')} — {tr(realAccountAvailability.reason)}
+                            <div id="rtx-real-account-unavailable-reason" role="note" className="rtx-open-account-dialog__warning rtx-open-account-dialog__warning--inline">
+                                <Shield className="rtx-open-account-dialog__warning-icon" aria-hidden="true" />
+                                <span className="rtx-open-account-dialog__warning-text">
+                                    {selectedBroker?.broker_name || tr('The selected broker')} — {tr(realAccountAvailability.reason)}
+                                </span>
                             </div>
                         )}
                     </div>
                 </label>
 
                 {realAccountSupported && realAccountAvailability.onboardingUrl && (
-                    <div className="pl-7">
+                    <div className="pl-2">
                         <a
                             href={realAccountAvailability.onboardingUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[14px] font-normal text-indigo-400 hover:text-indigo-300"
+                            className="text-[12.5px] font-medium text-indigo-400 hover:text-indigo-300"
                         >
                             {tr("Continue verification on the broker website")}
                         </a>
                     </div>
                 )}</>}
-                <label className="flex items-start gap-3 cursor-pointer group">
-                    <div className="flex items-center h-5">
+                <label className="rtx-open-account-dialog__option group" data-selected={effectiveAccountType === 'existing'}>
+                    <div className="rtx-open-account-dialog__option-radio">
                         <input aria-label={tr("Existing account")} type="radio" checked={effectiveAccountType === 'existing'} onChange={() => { setAccountType('existing'); setExistingBroker(selectedBroker || null); setValidationError(''); }} className="w-4 h-4 accent-indigo-500" />
                     </div>
-                    <div className="w-full">
-                        <div className="text-[14px] leading-5 font-medium text-zinc-200 transition-colors group-hover:text-white">{tr("Connect with an existing trade account")}</div>
+                    <div className="rtx-open-account-dialog__option-copy">
+                        <div className="rtx-open-account-dialog__option-title">{tr("Connect with an existing trade account")}</div>
                         {effectiveAccountType === 'existing' && (
-                            <div className="mt-3 flex flex-col gap-2">
-                                <div className="flex items-center gap-3">
-                                    <span className="w-16 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Login:")}</span>
+                            <div className="mt-2.5 flex flex-col gap-2">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-16 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Login:")}</span>
                                     <input
                                         aria-label={tr("Existing account ID")}
                                         inputMode="numeric"
@@ -867,12 +943,12 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                                                 existingPasswordInputRef.current?.focus();
                                             }
                                         }}
-                                        className="flex-1 rounded border border-zinc-700 bg-transparent px-2 py-1 text-[14px] font-normal text-white outline-none focus:border-indigo-500"
+                                        className="h-[32px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500"
                                         placeholder={tr("Account ID")}
                                     />
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <span className="w-16 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Password:")}</span>
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-16 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Password:")}</span>
                                     <input
                                         ref={existingPasswordInputRef}
                                         aria-label={tr("Existing account password")}
@@ -890,25 +966,25 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                                                 void handleNext();
                                             }
                                         }}
-                                        className="rtx-secret-input flex-1 rounded border border-zinc-700 bg-transparent px-2 py-1 text-[14px] font-normal text-white outline-none focus:border-indigo-500"
+                                        className="rtx-secret-input h-[32px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500"
                                         placeholder={tr("Password")}
                                     />
                                 </div>
                                 {/* Server dropdown with search */}
-                                <div className="flex items-start gap-3">
-                                    <span className="mt-1.5 w-16 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Server:")}</span>
+                                <div className="flex items-start gap-2.5">
+                                    <span className="mt-1.5 w-16 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Server:")}</span>
                                     <div className="flex-1 relative">
                                         <button
                                             type="button"
                                             onClick={() => setExistingServerDropOpen(o => !o)}
-                                            className="rtx-open-account-dialog__server-trigger flex h-[32px] w-full items-center justify-between gap-2 rounded border border-zinc-700 bg-[#1a1c23] px-2 text-left text-[14px] font-normal outline-none focus:border-indigo-500"
+                                            className="rtx-open-account-dialog__server-trigger flex h-[32px] w-full items-center justify-between gap-2 rounded-md border border-zinc-700 bg-[#1a1c23] px-2.5 text-left text-[13px] font-normal outline-none focus:border-indigo-500"
                                         >
                                             <div className="flex items-center gap-2 truncate flex-1">
                                                 {activeExistingBroker ? (
                                                     <>
                                                         <DropdownBrokerLogo broker={activeExistingBroker} index={0} />
                                                         <span className="truncate text-zinc-300">
-                                                            {activeExistingBroker.broker_name} <span className="font-mono text-[14px] font-normal text-zinc-600">({activeExistingBroker.broker_id})</span>
+                                                            {activeExistingBroker.broker_name} <span className="font-mono text-[12px] font-normal text-zinc-600">({activeExistingBroker.broker_id})</span>
                                                         </span>
                                                     </>
                                                 ) : (
@@ -918,7 +994,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                                             <ChevronRight className={`w-3 h-3 text-zinc-500 flex-shrink-0 transition-transform ${existingServerDropOpen ? 'rotate-90' : ''}`} />
                                         </button>
                                         {existingServerDropOpen && (
-                                            <div className="rtx-open-account-dialog__menu absolute z-50 left-0 right-0 top-full mt-1 bg-[#1e2030] border border-zinc-600/60 rounded shadow-xl max-h-[200px] flex flex-col">
+                                            <div className="rtx-open-account-dialog__menu absolute z-50 left-0 right-0 top-full mt-1 bg-[#1e2030] border border-zinc-600/60 rounded-md shadow-xl max-h-[200px] flex flex-col">
                                                 <div className="px-2 pt-2 pb-1 border-b border-zinc-700/50">
                                                     <input
                                                         autoFocus
@@ -926,7 +1002,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                                                         value={existingServerSearch}
                                                         onChange={e => setExistingServerSearch(e.target.value)}
                                                         placeholder={tr("Search broker or server…")}
-                                                        className="h-[24px] w-full rounded border border-zinc-600/40 bg-[#131520] px-2 text-[14px] font-normal text-zinc-200 outline-none placeholder:text-zinc-600"
+                                                        className="h-[26px] w-full rounded border border-zinc-600/40 bg-[#131520] px-2 text-[12.5px] font-normal text-zinc-200 outline-none placeholder:text-zinc-600"
                                                         onClick={e => e.stopPropagation()}
                                                     />
                                                 </div>
@@ -937,12 +1013,12 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                                                             type="button"
                                                             onClick={() => { setExistingBroker(b); setExistingServerDropOpen(false); setExistingServerSearch(''); }}
                                                             data-selected={existingBroker?.id === b.id}
-                                                            className={`rtx-open-account-dialog__broker flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] transition-colors hover:bg-zinc-700/60 ${existingBroker?.id === b.id ? 'bg-zinc-700/40 font-semibold text-white' : 'font-normal text-zinc-300'}`}
+                                                            className={`rtx-open-account-dialog__broker flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-zinc-700/60 ${existingBroker?.id === b.id ? 'bg-zinc-700/40 font-semibold text-white' : 'font-normal text-zinc-300'}`}
                                                         >
                                                             <DropdownBrokerLogo broker={b} index={idx} />
                                                             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                                                                 <span className="truncate">{b.broker_name}</span>
-                                                                <span className="truncate font-mono text-[14px] font-normal text-zinc-500">{b.broker_id}</span>
+                                                                <span className="truncate font-mono text-[11.5px] font-normal text-zinc-500">{b.broker_id}</span>
                                                             </div>
                                                         </button>
                                                     ))}
@@ -972,6 +1048,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                     <label className="rtx-account-field" key={field}>
                         <span>{tr(label)}{field === 'phone' && <small>{tr("Optional")}</small>}</span>
                         <input
+                            ref={field === 'firstName' ? firstNameRef : undefined}
                             aria-label={tr(label)}
                             autoComplete={autoComplete}
                             type={type}
@@ -1037,41 +1114,44 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     // verification notice (its Next guides back instead of closing); a
     // config-supported real type collects details through the shared forms.
     const renderStep2 = () => accountType === 'real' && !realAccountSupported ? (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-6">
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-5">
-                <div className="rtx-section-title mb-3 flex items-center gap-2 text-[16px] leading-6 font-semibold text-amber-300">
-                    <Shield className="h-4 w-4" />
-                    {tr("Identity verification is required")}</div>
-                <p className="rtx-reading-text text-[16px] font-normal leading-6 text-zinc-300">
-                    {selectedBroker?.broker_name || 'The selected broker'} {tr(" must complete identity checks and approve a live trading agreement before opening a real account.")}</p>
-                <p className="mt-3 rtx-reading-text text-[16px] font-normal leading-6 text-zinc-500">
-                    {tr("This terminal will not create or fund a real account automatically. Contact the broker through its verified customer-support or onboarding channel.")}</p>
+        <div className="rtx-open-account-dialog__complete">
+            <div className="rtx-open-account-dialog__warning rtx-open-account-dialog__warning--stacked">
+                <div className="rtx-open-account-dialog__warning-heading">
+                    <Shield className="rtx-open-account-dialog__warning-icon" aria-hidden="true" />
+                    <span className="rtx-section-title rtx-open-account-dialog__warning-title">
+                        {tr("Identity verification is required")}
+                    </span>
+                </div>
+                <p className="rtx-open-account-dialog__warning-text">
+                    {selectedBroker?.broker_name || 'The selected broker'} {tr(" must complete identity checks and approve a live trading agreement before opening a real account.")}
+                </p>
+                <p className="rtx-open-account-dialog__warning-subtext">
+                    {tr("This terminal will not create or fund a real account automatically. Contact the broker through its verified customer-support or onboarding channel.")}
+                </p>
             </div>
         </div>
     ) : isDesktopShell ? renderDesktopDetails() : (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-5">
-            <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                    <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("First name:")}</span>
-                    <input aria-label={tr("First name")} autoComplete="given-name" type="text" value={formData.firstName} onChange={e => setFormData(s => ({ ...s, firstName: e.target.value }))} className="flex-1 rounded border border-indigo-500 bg-transparent px-2 py-1.5 text-[14px] font-normal text-white outline-none" />
+        <div className="rtx-open-account-dialog__step">
+            <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-2.5">
+                    <span className="w-24 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("First name:")}</span>
+                    <input ref={firstNameRef} aria-label={tr("First name")} autoComplete="given-name" type="text" value={formData.firstName} onChange={e => setFormData(s => ({ ...s, firstName: e.target.value }))} className="h-[34px] flex-1 rounded-md border border-indigo-500 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none" />
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Last name:")}</span>
-                    <input aria-label={tr("Last name")} autoComplete="family-name" type="text" value={formData.lastName} onChange={e => setFormData(s => ({ ...s, lastName: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-transparent px-2 py-1.5 text-[14px] font-normal text-white outline-none focus:border-indigo-500" />
+                <div className="flex items-center gap-2.5">
+                    <span className="w-24 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Last name:")}</span>
+                    <input aria-label={tr("Last name")} autoComplete="family-name" type="text" value={formData.lastName} onChange={e => setFormData(s => ({ ...s, lastName: e.target.value }))} className="h-[34px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500" />
                 </div>
-                <div className="h-2" />
-                <div className="flex items-center gap-2">
-                    <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Email:")}</span>
-                    <input aria-label={tr("Email")} autoComplete="email" type="email" value={formData.email} onChange={e => setFormData(s => ({ ...s, email: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-transparent px-2 py-1.5 text-[14px] font-normal text-white outline-none focus:border-indigo-500" />
+                <div className="flex items-center gap-2.5">
+                    <span className="w-24 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Email:")}</span>
+                    <input aria-label={tr("Email")} autoComplete="email" type="email" value={formData.email} onChange={e => setFormData(s => ({ ...s, email: e.target.value }))} className="h-[34px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500" />
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Mobile Phone:")}</span>
-                    <input aria-label={tr("Mobile phone")} autoComplete="tel" type="tel" value={formData.phone} onChange={e => setFormData(s => ({ ...s, phone: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-transparent px-2 py-1.5 text-[14px] font-normal text-white outline-none focus:border-indigo-500" />
+                <div className="flex items-center gap-2.5">
+                    <span className="w-24 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Mobile Phone:")}</span>
+                    <input aria-label={tr("Mobile phone")} autoComplete="tel" type="tel" value={formData.phone} onChange={e => setFormData(s => ({ ...s, phone: e.target.value }))} className="h-[34px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500" />
                 </div>
-                <div className="h-2" />
-                <div className="flex items-center gap-2 w-1/2 pr-2 mt-2">
-                    <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Country:")}</span>
-                    <select aria-label={tr("Country")} value={formData.country} onChange={e => setFormData(s => ({ ...s, country: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-[#1a1c23] px-2 py-1.5 text-[14px] font-normal text-zinc-300 outline-none">
+                <div className="flex items-center gap-2.5">
+                    <span className="w-24 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Country:")}</span>
+                    <select aria-label={tr("Country")} value={formData.country} onChange={e => setFormData(s => ({ ...s, country: e.target.value }))} className="h-[34px] flex-1 rounded-md border border-zinc-700 bg-[#1a1c23] px-2.5 text-[13px] font-normal text-zinc-300 outline-none">
                         <option value="US">{tr("United States (US)")}</option>
                         <option value="IN">{tr("India (IN)")}</option>
                     </select>
@@ -1082,35 +1162,34 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
     // ─── Step 3: Account Settings ───────────────────────────────────────────────
     const renderStep3 = () => isDesktopShell ? renderDesktopSettings() : (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-5">
+        <div className="rtx-open-account-dialog__step">
             <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 flex-1">
-                        <span className="w-24 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Currency:")}</span>
-                        <select aria-label={tr("Currency")} value={formData.currency} onChange={e => setFormData(s => ({ ...s, currency: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-[#1a1c23] px-2 py-1.5 text-[14px] font-normal text-zinc-300 outline-none">
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-center gap-2">
+                        <span className="w-20 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Currency:")}</span>
+                        <select aria-label={tr("Currency")} value={formData.currency} onChange={e => setFormData(s => ({ ...s, currency: e.target.value }))} className="h-[34px] flex-1 min-w-0 rounded-md border border-zinc-700 bg-[#1a1c23] px-2.5 text-[13px] font-normal text-zinc-300 outline-none">
                             <option value="USD">{tr("USD")}</option>
                             <option value="EUR">{tr("EUR")}</option>
                         </select>
                     </div>
-                    <div className="flex items-center gap-2 flex-1">
-                        <span className="w-16 flex-shrink-0 text-right text-[14px] leading-5 font-medium text-zinc-400">{tr("Leverage:")}</span>
-                        <select aria-label={tr("Leverage")} value={formData.leverage} onChange={e => setFormData(s => ({ ...s, leverage: e.target.value }))} className="flex-1 rounded border border-zinc-700 bg-[#1a1c23] px-2 py-1.5 text-[14px] font-normal text-zinc-300 outline-none">
+                    <div className="flex items-center gap-2">
+                        <span className="w-16 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Leverage:")}</span>
+                        <select aria-label={tr("Leverage")} value={formData.leverage} onChange={e => setFormData(s => ({ ...s, leverage: e.target.value }))} className="h-[34px] flex-1 min-w-0 rounded-md border border-zinc-700 bg-[#1a1c23] px-2.5 text-[13px] font-normal text-zinc-300 outline-none">
                             <option value="100">1:100</option>
                             <option value="200">1:200</option>
                             <option value="500">1:500</option>
                         </select>
                     </div>
                 </div>
-                <div className="h-4" />
-                <div className="flex items-start gap-2 pl-[104px]">
-                    <input aria-label={tr("Accept account terms")} type="checkbox" className="mt-0.5 accent-indigo-500 w-3 h-3" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} />
-                    <div>
-                        <span className="block text-[14px] font-normal text-zinc-300">{tr("I agree with the terms and conditions for opening an account and the data protection policy")}</span>
-                        {termsUrl && <a href={termsUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[14px] font-normal text-indigo-400 hover:text-indigo-300">{tr("Terms and data protection policy")}</a>}
-                    </div>
+                <div className="rtx-account-consent rtx-account-consent--inline">
+                    <label>
+                        <input aria-label={tr("Accept account terms")} type="checkbox" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} />
+                        <span>{tr("I agree with the terms and conditions for opening an account and the data protection policy")}</span>
+                    </label>
+                    {termsUrl && <a href={termsUrl} target="_blank" rel="noopener noreferrer">{tr("Terms and data protection policy")}</a>}
                 </div>
                 {createError && (
-                    <div role="alert" className="mt-2 rounded border border-red-500/20 bg-red-500/10 p-2 pl-[104px] text-[14px] font-normal text-red-400">
+                    <div role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12.5px] font-normal text-red-400">
                         {tr(createError)}
                     </div>
                 )}
@@ -1127,14 +1206,21 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         const createdType = createdAccountType ?? 'demo';
         const createdTypeMismatch = accountType === 'real' && createdType !== 'real';
         return (
-            <div className="flex-1 overflow-y-auto flex flex-col p-6 items-center">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4 border border-emerald-500/20">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+            <div className="rtx-open-account-dialog__complete">
+                <div className="rtx-open-account-dialog__complete-header">
+                    <div className="rtx-open-account-dialog__complete-icon" aria-hidden="true">
+                        <CheckCircle2 />
+                    </div>
+                    <div className="rtx-open-account-dialog__complete-copy">
+                        <h3 className="rtx-section-title rtx-open-account-dialog__complete-title">{tr("Registration Complete")}</h3>
+                        <p className="rtx-open-account-dialog__complete-subtitle">
+                            {createdType === 'real' ? tr("Your real account has been successfully created.") : tr("Your demo account has been successfully created.")}{' '}
+                            {tr("Save any credentials returned by the broker.")}
+                        </p>
+                    </div>
                 </div>
-                <h3 className="rtx-section-title text-white font-semibold text-[16px] leading-6 mb-1">{tr("Registration Complete")}</h3>
-                <p className="mb-6 text-center text-[14px] font-normal text-zinc-400">{createdType === 'real' ? tr("Your real account has been successfully created.") : tr("Your demo account has been successfully created.")}<br />{tr("Save any credentials returned by the broker.")}</p>
                 {createdTypeMismatch && (
-                    <p role="alert" className="mb-4 text-center text-[14px] font-normal text-red-400">
+                    <p role="alert" className="rtx-open-account-dialog__mismatch">
                         {tr("The broker did not create a real account for this request.")}
                     </p>
                 )}
@@ -1143,38 +1229,44 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                         href={realAccountAvailability.onboardingUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mb-4 text-[14px] font-normal text-indigo-400 hover:text-indigo-300"
+                        className="rtx-open-account-dialog__onboarding-link"
                     >
                         {tr("Continue verification on the broker website")}
                     </a>
                 )}
-                <div className="rtx-open-account-dialog__surface w-full bg-[#1a1c23] border border-zinc-700/50 rounded-xl p-5 flex flex-col gap-3">
+                <div className="rtx-open-account-dialog__surface rtx-open-account-dialog__summary">
                     {[
-                        { label: 'Login (Account)', value: createdAccount.login, mono: true, color: 'text-emerald-400', size: 'text-[16px]' },
+                        { label: 'Login (Account)', value: createdAccount.login, mono: true, primary: true },
                         createdAccount.master_password && { label: 'Master Password', value: createdAccount.master_password, mono: true },
                         createdAccount.investor_password && { label: 'Investor Password', value: createdAccount.investor_password, mono: true },
                         createdAccount.api_key && { label: 'API Key', value: createdAccount.api_key, mono: true, small: true },
                         { label: 'Broker / Server', value: selectedBroker?.broker_name || createdAccount.broker_id || 'Broker' },
                         createdAccount.group && { label: 'Group', value: createdAccount.group },
-                        createdAccount.balance !== undefined && { label: 'Balance', value: `${createdAccount.balance} ${createdAccount.currency || formData.currency}`, color: 'text-emerald-400' },
+                        createdAccount.balance !== undefined && { label: 'Balance', value: `${createdAccount.balance} ${createdAccount.currency || formData.currency}` },
                         { label: 'Leverage', value: `1:${createdAccount.leverage || formData.leverage}` },
                     ].filter(isSummaryRow).map((row) => (
-                        <div key={row.label} className="flex justify-between items-center pb-3 border-b border-zinc-800/80 last:border-0 last:pb-0">
-                            <span className="text-[14px] font-normal uppercase tracking-wider text-zinc-500">{tr(row.label)}</span>
-                            <div className="flex items-center gap-2">
-                                <span className={`${row.color || 'text-zinc-200'} ${row.mono ? 'font-mono' : ''} ${row.size || 'text-[14px]'} ${row.small ? 'max-w-[200px] truncate' : ''} font-normal`}>{String(row.value)}</span>
+                        <div key={row.label} className="rtx-open-account-dialog__summary-row">
+                            <span className="rtx-open-account-dialog__summary-label">{tr(row.label)}</span>
+                            <div className="rtx-open-account-dialog__summary-value-wrap">
+                                <span
+                                    className={`rtx-open-account-dialog__summary-value${row.mono ? ' rtx-open-account-dialog__summary-value--mono' : ''}${row.primary ? ' rtx-open-account-dialog__summary-value--primary' : ''}${row.small ? ' rtx-open-account-dialog__summary-value--truncate' : ''}`}
+                                >
+                                    {String(row.value)}
+                                </span>
                                 {row.mono && (
-                                    <button onClick={() => navigator.clipboard.writeText(String(row.value))} className="text-zinc-500 hover:text-white transition-colors">
-                                        <Copy className="w-3.5 h-3.5" />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopyCredential(row.label, String(row.value))}
+                                        className={`rtx-open-account-dialog__copy-btn${copiedField === row.label ? ' is-copied' : ''}`}
+                                        aria-label={`${tr('Copy')} ${tr(row.label)}`}
+                                        title={copiedField === row.label ? tr('Copied') : tr('Copy')}
+                                    >
+                                        {copiedField === row.label ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                                     </button>
                                 )}
                             </div>
                         </div>
                     ))}
-                </div>
-                <div className="mt-5 flex w-full items-start gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3 text-center text-[14px] font-normal leading-relaxed text-yellow-500/90">
-                    <Shield className="w-4 h-4 flex-shrink-0 mt-0.5 opacity-80" />
-                    <span className="text-left">{tr("Keep these credentials private. You can save your password on this device when logging in.")}</span>
                 </div>
             </div>
         );
@@ -1190,11 +1282,13 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     };
 
     const header = getHeader();
-    const desktopSteps = effectiveAccountType === 'existing'
-        ? ['Broker', 'Account type']
-        : accountType === 'real' && !realAccountSupported ? ['Broker', 'Account type', 'Verification']
-            : ['Broker', 'Account type', 'Details', 'Settings'];
-    const isStepValid = step === 0 ? Boolean(selectedBroker) && !loadingBrokers : true;
+    const desktopSteps = forceDemoCreation
+        ? ['Details', 'Settings']
+        : effectiveAccountType === 'existing'
+            ? ['Broker', 'Account type']
+            : accountType === 'real' && !realAccountSupported ? ['Broker', 'Account type', 'Verification']
+                : ['Broker', 'Account type', 'Details', 'Settings'];
+    const isStepValid = (step === 0 || (forceDemoCreation && step === 3)) ? Boolean(selectedBroker) && !loadingBrokers : true;
     const actionLabel = isCreating
         ? effectiveAccountType === 'existing' ? 'Connecting...' : 'Creating...'
         : step === 1 && effectiveAccountType === 'existing' ? 'Connect'
@@ -1205,7 +1299,8 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
     return createPortal(
         <div
-            className="rtx-open-account-backdrop fixed inset-0 z-[9999] flex items-center justify-center"
+            className={`rtx-open-account-backdrop fixed inset-0 z-[9999] flex items-center ${anchoredLeft !== null ? 'justify-start' : 'justify-center'}`}
+            style={anchoredLeft !== null ? { justifyContent: 'flex-start', paddingLeft: anchoredLeft } : undefined}
             onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) closeDialog(); }}
             onMouseDown={e => e.stopPropagation()}
             onTouchStart={e => e.stopPropagation()}
@@ -1246,12 +1341,15 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
                 {isDesktopShell && step < 4 && (
                     <ol className="rtx-account-progress" aria-label={tr("Account setup progress")}>
-                        {desktopSteps.map((label, index) => (
-                            <li key={label} aria-current={index === step ? 'step' : undefined} data-complete={index < step}>
-                                <span className="rtx-account-progress__number" aria-hidden="true">{index < step ? <CheckCircle2 /> : index + 1}</span>
-                                <span>{tr(label)}</span>
-                            </li>
-                        ))}
+                        {desktopSteps.map((label, index) => {
+                            const absoluteStep = index + minStep;
+                            return (
+                                <li key={label} aria-current={absoluteStep === step ? 'step' : undefined} data-complete={absoluteStep < step}>
+                                    <span className="rtx-account-progress__number" aria-hidden="true">{absoluteStep < step ? <CheckCircle2 /> : index + 1}</span>
+                                    <span>{tr(label)}</span>
+                                </li>
+                            );
+                        })}
                     </ol>
                 )}
 
@@ -1265,8 +1363,9 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                 {isDesktopShell ? (
                     <div className="rtx-account-footer">
                         {validationError && validationError !== 'Select a country from the list.' && <p role="alert" className="rtx-account-error">{tr(validationError)}</p>}
+                        {!validationError && forceDemoCreation && directoryError && <p role="alert" className="rtx-account-error">{tr(directoryError)}</p>}
                         <div className="rtx-account-footer__actions">
-                            {step > 0 && step < 4
+                            {step > minStep && step < 4
                                 ? <button type="button" disabled={isCreating} onClick={handleBack}>{tr("Back")}</button>
                                 : <span />}
                             <div>
@@ -1281,23 +1380,21 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                     </div>
                 ) : <div className="rtx-open-account-dialog__footer">
                     <div className="rtx-open-account-dialog__footer-hint">
-                        {validationError ? <span role="alert" className="text-red-400">{tr(validationError)}</span> : (
+                        {(validationError || (forceDemoCreation && directoryError)) ? <span role="alert" className="text-red-400">{tr(validationError || directoryError)}</span> : (
                             step === 0 ? <span className="rtx-open-account-dialog__shortcut"><MousePointer2 aria-hidden="true" />{tr("Double-click to proceed immediately")}</span> : null
                         )}
                     </div>
                     <div className="rtx-open-account-dialog__footer-actions">
-                        {step > 0 && step < 4 && (
+                        {step > minStep && step < 4 && (
                             <button
+                                type="button"
                                 onClick={handleBack}
-                                className="rounded-lg px-5 py-2 text-[14px] leading-5 font-medium text-zinc-300 transition-all hover:text-white hover:brightness-110"
-                                style={{ background: '#232733', border: '1px solid #323845' }}
                             >
                                 {tr("< Back")}</button>
                         )}
                         <button
+                            type="button"
                             onClick={closeDialog}
-                            className="ml-1 rounded-lg px-5 py-2 text-[14px] leading-5 font-medium text-zinc-300 transition-all hover:text-white hover:brightness-110"
-                            style={{ background: '#232733', border: '1px solid #323845' }}
                         >
                             {tr("Cancel")}</button>
                         <button

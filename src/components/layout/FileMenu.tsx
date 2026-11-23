@@ -130,10 +130,12 @@ export const FileMenu: React.FC<FileMenuProps> = ({
     const [showPrintSetupDialog, setShowPrintSetupDialog] = useState(false);
     const [showPrintPreviewDialog, setShowPrintPreviewDialog] = useState(false);
     const [showExitDialog, setShowExitDialog] = useState(false);
-    const [showOpenAccountDialog, setShowOpenAccountDialog] = useState(false);
+    const [openAccountDialogMode, setOpenAccountDialogMode] = useState<'default' | 'demo' | null>(null);
+    const showOpenAccountDialog = openAccountDialogMode !== null;
     const [openDeletedOpen, setOpenDeletedOpen] = useState(false);
     const [profilesOpen, setProfilesOpen] = useState(false);
     const [deleteSubmenuOpen, setDeleteSubmenuOpen] = useState(false);
+    const fileMenuRef = useRef<HTMLDivElement>(null);
     const openDeletedAnchor = useRef<HTMLDivElement>(null);
     const openDeletedSubmenuRef = useRef<HTMLDivElement>(null);
     const profilesAnchor = useRef<HTMLDivElement>(null);
@@ -595,7 +597,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
 
     return (
         <>
-            {!shortcutsOnly && <div className="rtx-file-menu rtx-menu-surface min-w-[268px] py-1">
+            {!shortcutsOnly && <div ref={fileMenuRef} className="rtx-file-menu rtx-menu-surface min-w-[268px] py-1">
                 {(accountId || onLogout) && (
                     <>
                         <div
@@ -1079,7 +1081,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                     <button
                         data-file-menu-item="open-account"
                         onMouseEnter={closeFileSubmenus}
-                        onClick={() => setShowOpenAccountDialog(true)}
+                        onClick={() => setOpenAccountDialogMode('default')}
                         className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
                         title={tr("Register new trading account")}
                     >
@@ -1089,6 +1091,28 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         <span className="flex-1">{t('menu.file.openAccount')}</span>
                     </button>
                 )}
+
+                {/* Create a Demo Account */}
+                <button
+                    data-file-menu-item="create-demo-account"
+                    aria-expanded={openAccountDialogMode === 'demo'}
+                    onMouseEnter={closeFileSubmenus}
+                    onClick={() => {
+                        onInteractPin?.();
+                        setOpenAccountDialogMode('demo');
+                    }}
+                    className={`w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left cursor-default group ${
+                        openAccountDialogMode === 'demo'
+                            ? 'bg-[#2a2e39] [.rtx-advanced-view_&]:bg-[#f3f4f6] text-white [.rtx-advanced-view_&]:text-[#111827]'
+                            : 'text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827]'
+                    }`}
+                    title={tr("Open a new demo trading account")}
+                >
+                    <div className="w-4 flex items-center justify-center">
+                        <Icon name="user-plus" size="sm" className="text-emerald-400" />
+                    </div>
+                    <span className="flex-1">{tr("Create a Demo Account")}</span>
+                </button>
 
                 {/* Login to Trade Account */}
                 <button
@@ -1107,17 +1131,17 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                     <span className="flex-1">{t('menu.file.loginTrade')}</span>
                 </button>
 
-                {/* TCP Server (:4443) */}
+                {/* Access Server */}
                 <button
                     onMouseEnter={closeFileSubmenus}
                     onClick={handleOpenTcpServerDialog}
                     className="w-full flex min-h-[30px] items-center gap-3 px-2 py-1.5 text-[14px] font-normal rounded-sm text-left text-zinc-300 [.rtx-advanced-view_&]:text-[#374151] hover:bg-[#2a2e39] [.rtx-advanced-view_&]:hover:bg-[#f3f4f6] hover:text-white [.rtx-advanced-view_&]:hover:text-[#111827] cursor-default group"
-                    title="Configure Broker TCP Access Server (:4443)"
+                    title="Configure Broker Access Server"
                 >
                     <div className="w-4 flex items-center justify-center">
                         <Icon name="server" size="sm" className="text-emerald-400" />
                     </div>
-                    <span className="flex-1">TCP Server (:4443)...</span>
+                    <span className="flex-1">Access Server...</span>
                     <span className="rtx-menu-row__shortcut">Alt+Shift+T</span>
                 </button>
 
@@ -1270,7 +1294,9 @@ export const FileMenu: React.FC<FileMenuProps> = ({
             <RetainedLazyFeature active={showOpenAccountDialog}>
             <OpenAccountDialog
                 isOpen={showOpenAccountDialog}
-                onClose={() => setShowOpenAccountDialog(false)}
+                forceDemoCreation={openAccountDialogMode === 'demo'}
+                anchorRef={openAccountDialogMode === 'demo' ? fileMenuRef : undefined}
+                onClose={() => setOpenAccountDialogMode(null)}
             />
             </RetainedLazyFeature>
         </>

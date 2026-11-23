@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildOrderTicketSymbolOptions,
+  DEFAULT_MARKET_WATCH_MAX_SYMBOLS,
   filterSymbolsExactlyInUniverse,
   isAccountSymbolUniverseActive,
   mergeAccountCatalogWithPublic,
@@ -75,8 +76,9 @@ describe('selectAccountDefaultMarketWatchSymbols', () => {
     expect(selectAccountDefaultMarketWatchSymbols(catalog)).toEqual(['US30', 'GBPUSD', 'XAUUSD', 'EURUSD']);
   });
 
-  it('returns the complete catalogue above 50 symbols, in backend order and category mix', () => {
+  it('caps large account catalogues to 7 symbols by default, prioritizing matching core symbols without suffix guessing', () => {
     const catalog = [
+      { symbol: 'AAVEUSD', category: 'crypto' },
       { symbol: 'GBPUSD', category: 'forex' },
       ...Array.from({ length: 60 }, (_, index) => ({
         symbol: `PAIR${index}`,
@@ -87,10 +89,40 @@ describe('selectAccountDefaultMarketWatchSymbols', () => {
     ];
     expect(catalog.length).toBeGreaterThan(50);
 
-    expect(selectAccountDefaultMarketWatchSymbols(catalog)).toEqual(catalog.map((item) => item.symbol));
+    const selected = selectAccountDefaultMarketWatchSymbols(catalog);
+    expect(selected).toHaveLength(DEFAULT_MARKET_WATCH_MAX_SYMBOLS);
+    expect(selected).toEqual(['GBPUSD', 'AAVEUSD', 'PAIR0', 'PAIR1', 'PAIR2', 'PAIR3', 'PAIR4']);
   });
 
-  it('de-duplicates repeated symbols while keeping first-seen backend order', () => {
+  it('picks at most 7 flagship core symbols when all 12 core symbols exist in a large account catalogue', () => {
+    const catalog = [
+      { symbol: 'AAVEUSD' },
+      { symbol: 'AUS200' },
+      { symbol: 'BTCUSD' },
+      { symbol: 'DE40' },
+      { symbol: 'ETHUSD' },
+      { symbol: 'EURUSD' },
+      { symbol: 'GBPUSD' },
+      { symbol: 'US30' },
+      { symbol: 'US500' },
+      { symbol: 'USDJPY' },
+      { symbol: 'USTEC' },
+      { symbol: 'XAUUSD' },
+      { symbol: 'XBRUSD' },
+    ];
+
+    expect(selectAccountDefaultMarketWatchSymbols(catalog)).toEqual([
+      'EURUSD',
+      'GBPUSD',
+      'USDJPY',
+      'XAUUSD',
+      'BTCUSD',
+      'ETHUSD',
+      'USTEC',
+    ]);
+  });
+
+  it('de-duplicates repeated symbols while capping at 7 unique symbols', () => {
     const catalog = [
       { symbol: 'GBPUSD' },
       ...Array.from({ length: 55 }, (_, index) => ({ symbol: `PAIR${index}` })),
@@ -100,26 +132,28 @@ describe('selectAccountDefaultMarketWatchSymbols', () => {
     ];
     const selected = selectAccountDefaultMarketWatchSymbols(catalog);
 
-    expect(selected).toHaveLength(58);
-    expect(selected[0]).toBe('GBPUSD');
-    expect(selected.slice(-2)).toEqual(['EURUSD', '0001.HK']);
+    expect(selected).toHaveLength(7);
+    expect(selected).toEqual(['EURUSD', 'GBPUSD', 'PAIR0', 'PAIR1', 'PAIR2', 'PAIR3', 'PAIR4']);
     expect(new Set(selected).size).toBe(selected.length);
   });
 
-  it('ignores metadata sources and the legacy limit argument', () => {
+  it('honors an explicit maxSymbols limit and falls back to backend order when no core symbols exist', () => {
     const catalog = Array.from({ length: 60 }, (_, index) => ({
       symbol: `SYM${index}`,
       category: index % 2 === 0 ? 'forex' : 'crypto',
     }));
     const metadata = catalog.map((item, index) => ({ ...item, bid: index }));
 
+    expect(selectAccountDefaultMarketWatchSymbols(catalog, metadata))
+      .toEqual(['SYM0', 'SYM1', 'SYM2', 'SYM3', 'SYM4', 'SYM5', 'SYM6']);
     expect(selectAccountDefaultMarketWatchSymbols(catalog, metadata, 2))
-      .toEqual(catalog.map((item) => item.symbol));
+      .toEqual(['SYM0', 'SYM1']);
   });
 
-  it('returns an empty selection for an empty catalogue', () => {
+  it('returns an empty selection for an empty catalogue or zero limit', () => {
     expect(selectAccountDefaultMarketWatchSymbols([])).toEqual([]);
     expect(selectAccountDefaultMarketWatchSymbols([], [], 0)).toEqual([]);
+    expect(selectAccountDefaultMarketWatchSymbols([{ symbol: 'EURUSD' }], [], 0)).toEqual([]);
   });
 });
 

@@ -337,6 +337,12 @@ describe('OpenAccountDialog account flows', () => {
         expect(mocks.createAccount.mock.calls[0][0]).not.toHaveProperty('master_pass');
         expect(mocks.createAccount.mock.calls[0][0]).not.toHaveProperty('investor_pass');
         expect(await screen.findByText('Registration Complete')).toBeInTheDocument();
+        expect(document.querySelector('.rtx-open-account-dialog__complete-header')).not.toBeNull();
+        expect(document.querySelector('.rtx-open-account-dialog__summary')).not.toBeNull();
+        expect(document.querySelector('.rtx-open-account-dialog__summary-value--highlight')).toBeNull();
+        expect(
+            screen.queryByText('Keep these credentials private. You can save your password on this device when logging in.'),
+        ).not.toBeInTheDocument();
         expect(mocks.login).not.toHaveBeenCalled();
     });
 
@@ -468,5 +474,67 @@ describe('OpenAccountDialog account flows', () => {
 
         await waitFor(() => expect(mocks.login).toHaveBeenCalledTimes(1));
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens directly on Demo Account Details with the active broker pre-selected when forceDemoCreation is true', async () => {
+        localStorage.setItem('broker_id', 'broker-two');
+        mocks.createAccount.mockResolvedValue({
+            login: 900123,
+            broker_id: 'broker-two',
+            balance: 10000,
+            currency: 'USD',
+            leverage: 100,
+        });
+        render(<OpenAccountDialog isOpen forceDemoCreation onClose={vi.fn()} />);
+
+        await waitFor(() => expect(screen.getByText('Open an Account: Broker Two')).toBeInTheDocument());
+        expect(screen.getByText('Demo Account Details')).toBeInTheDocument();
+        expect(screen.getByLabelText('First name')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Back/ })).not.toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Ada' } });
+        fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Lovelace' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ada@example.com' } });
+        fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+
+        expect(screen.getByText('Demo Account Settings')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Back/ })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByLabelText('Accept account terms'));
+        fireEvent.click(screen.getByRole('button', { name: 'Create Demo Account' }));
+
+        await waitFor(() => expect(mocks.createAccount).toHaveBeenCalledTimes(1));
+        expect(mocks.createAccount).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'Ada Lovelace', email: 'ada@example.com' }),
+            { baseUrl: 'https://two-market.example/api/v2', skipDynamicUrl: true },
+        );
+        expect(await screen.findByText('Registration Complete')).toBeInTheDocument();
+    });
+
+    it('anchors the demo dialog directly beside the FileMenu right edge when anchorRef is provided', async () => {
+        const originalInnerWidth = window.innerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+        const anchorEl = document.createElement('div');
+        anchorEl.getBoundingClientRect = () => ({
+            left: 260,
+            right: 528,
+            top: 120,
+            bottom: 700,
+            width: 268,
+            height: 580,
+            x: 260,
+            y: 120,
+            toJSON: () => ({}),
+        });
+        const anchorRef = { current: anchorEl };
+        try {
+            render(<OpenAccountDialog isOpen forceDemoCreation anchorRef={anchorRef} onClose={vi.fn()} />);
+            const backdrop = document.body.querySelector<HTMLElement>('.rtx-open-account-backdrop');
+            expect(backdrop).not.toBeNull();
+            expect(backdrop?.style.justifyContent).toBe('flex-start');
+            expect(backdrop?.style.paddingLeft).toBe('528px');
+        } finally {
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+        }
     });
 });

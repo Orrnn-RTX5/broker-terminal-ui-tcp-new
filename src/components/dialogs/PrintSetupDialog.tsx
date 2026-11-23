@@ -124,7 +124,7 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header */}
-            <div className="rtx-legacy-sheet__header flex items-center justify-between px-4 py-3 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0" {...dragHandleProps}>
+            <div className="rtx-legacy-sheet__header flex items-center justify-between px-4 py-2.5 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0" {...dragHandleProps}>
                 <div className="flex items-center gap-2">
                     <Icon name="settings" size="md" className="text-blue-400 [.rtx-advanced-view_&]:text-indigo-600" />
                     <h2 id={`${fieldId}-title`} className="text-sm font-semibold text-zinc-100 [.rtx-advanced-view_&]:text-gray-900">{tr("Print Setup")}</h2>
@@ -139,13 +139,13 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
             </div>
 
             {/* Content */}
-            <div className="rtx-legacy-sheet__body p-4 space-y-4 overflow-y-auto min-h-0">
+            <div className="rtx-legacy-sheet__body p-3.5 space-y-3 overflow-y-auto min-h-0">
                 {/* Page Setup */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                     <h3 className={sectionTitleClass}>
                         {tr("Page Setup")}</h3>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
                         <div>
                             <label htmlFor={`${fieldId}-orientation`} className={labelClass}>{tr("Orientation")}</label>
                             <select
@@ -177,11 +177,11 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
                 </div>
 
                 {/* Margins */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                     <h3 className={sectionTitleClass}>
                         {tr("Margins (mm)")}</h3>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2.5">
                         <div>
                             <label htmlFor={`${fieldId}-top`} className={labelClass}>{tr("Top")}</label>
                             <input
@@ -237,11 +237,11 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
                 </div>
 
                 {/* Print Options */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                     <h3 className={sectionTitleClass}>
                         {tr("Print Options")}</h3>
 
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input
                                 type="checkbox"
@@ -339,7 +339,7 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
 
                 {/* Save Preferences */}
                 {accountScope && (
-                  <div className="pt-4 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200">
+                  <div className="pt-2.5 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -354,7 +354,7 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-3 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0" style={{ background: 'var(--bg-tertiary)' }}>
+            <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-2.5 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 shrink-0" style={{ background: 'var(--bg-tertiary)' }}>
                 <button
                     ref={cancelRef}
                     onClick={onCancel}

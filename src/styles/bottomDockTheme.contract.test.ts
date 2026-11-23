@@ -62,10 +62,13 @@ describe('bottom dock dark surface contract', () => {
     expect(indexCss).toMatch(/\.rtx-exposure-account-bar \{[\s\S]*background: var\(--bg-tertiary\);/);
     expect(exposureSource).toContain('Balance:');
     expect(indexCss).toMatch(
-      /\.rtx-trade-table tbody tr\.rtx-trade-row td \{[^}]*border-bottom: 1px solid var\(--border-secondary\) !important;/,
+      /\.rtx-trade-table tbody tr\.rtx-trade-row td \{[^}]*border-bottom: 1px solid color-mix\(in srgb, var\(--border-secondary\) 35%, transparent\) !important;/,
     );
     expect(indexCss).toMatch(
-      /\.rtx-trade-table tbody tr\.rtx-trade-row td \{[^}]*border-right: none !important;/,
+      /\.rtx-trade-table tbody tr\.rtx-trade-row td \{[^}]*border-right: 1px solid color-mix\(in srgb, var\(--border-secondary\) 35%, transparent\) !important;/,
+    );
+    expect(indexCss).toMatch(
+      /\.rtx-trade-table tbody tr\.rtx-trade-row td:last-child \{[^}]*border-right: none !important;/,
     );
   });
 
@@ -86,20 +89,30 @@ describe('bottom dock dark surface contract', () => {
     expect(indexCss).toMatch(/\.navigator-tree-item__label \{[^}]*color: var\(--text-primary\) !important;/);
   });
 
-  it('enforces horizontal row dividers without vertical column borders from Trade to Historical Data', () => {
+  it('enforces horizontal row dividers and subtle light vertical column dividers across bottom-dock tables', () => {
     const historySource = readSource('src/features/bottom-dock/history/HistoryTab.tsx');
     const toolboxSource = readSource('src/features/bottom-dock/toolbox/ToolboxTab.tsx');
     const historyDownloaderCss = readSource('src/styles/history-downloader.css');
     const lightCss = readSource('src/styles/enterprise-light.css');
+    const mt5SurfacesCss = readSource('src/styles/mt5-toolbox-surfaces.css');
 
     expect(historySource).not.toContain('border-r border-zinc-800');
     expect(exposureSource).not.toContain('border-r border-zinc-800/80');
     expect(toolboxSource).toContain('rtx-toolbox-row');
     expect(indexCss).toMatch(
-      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\)[\s\S]*?border-left: none !important;[\s\S]*?border-right: none !important;[\s\S]*?border-bottom: 1px solid var\(--border-secondary\) !important;/,
+      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\)[\s\S]*?border-left: none !important;[\s\S]*?border-right: 1px solid color-mix\(in srgb, var\(--border-secondary\) 35%, transparent\) !important;[\s\S]*?border-bottom: 1px solid color-mix\(in srgb, var\(--border-secondary\) 35%, transparent\) !important;/,
+    );
+    expect(indexCss).toMatch(
+      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\) :is\(thead th, tbody td:not\(\.rtx-journal-spacer-cell\)\):last-child,[\s\S]*?border-right: none !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\) :is\(thead th, tbody tr:not\(\.rtx-history-spacer-row\):not\(\.rtx-journal-spacer-row\):not\(\[data-rtx-spacer\]\) td:not\(\.rtx-journal-spacer-cell\)\) \{[^}]*border-bottom: 1px solid color-mix\(in srgb, var\(--border-primary\) 35%, transparent\) !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table:not\(\[data-grid='false'\]\), \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\) :is\(thead th, tbody td:not\(\.rtx-journal-spacer-cell\)\):not\(:last-child\) \{[^}]*border-right: 1px solid color-mix\(in srgb, var\(--border-primary\) 35%, transparent\) !important;/,
     );
     expect(lightCss).toMatch(
-      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\)[\s\S]*?border-left: none !important;[\s\S]*?border-right: none !important;[\s\S]*?border-bottom: 1px solid var\(--rtx-light-line-border, #64748b\) !important;/,
+      /\.rtx-bottom-dock :is\(\.rtx-trade-table, \.rtx-history-table, \.rtx-exposure-tab table, \.rtx-pending-orders-table, \.rtx-journal-table\)[\s\S]*?border-left: none !important;[\s\S]*?border-right: 1px solid color-mix\(in srgb, var\(--rtx-light-line-border, #64748b\) 22%, transparent\) !important;[\s\S]*?border-bottom: 1px solid color-mix\(in srgb, var\(--rtx-light-line-border, #64748b\) 22%, transparent\) !important;/,
     );
     expect(historyDownloaderCss).toMatch(/\.rtx-history-downloader__metrics > div \{[^}]*border-left: none;/);
     expect(historyDownloaderCss).toMatch(/\.rtx-history-symbol-row \{[^}]*border-left: none;[^}]*border-right: none;[^}]*border-bottom: 1px solid var\(--history-border\);/);

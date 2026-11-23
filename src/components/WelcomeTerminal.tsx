@@ -630,7 +630,7 @@ export function WelcomeTerminal({
         localStorage.removeItem('rtx_saved_password');
     }, []);
 
-    // Re-sync broker directory whenever user changes TCP (:4443) endpoint via modal / Alt+Shift+T
+    // Re-sync broker directory whenever user changes server endpoint via modal / Alt+Shift+T
     useEffect(() => {
         const onTcpStatus = (event: Event) => {
             const detail = (event as CustomEvent<{ target_tcp?: string; broker_id?: string; broker_name?: string; connected?: boolean }>).detail;
@@ -1316,7 +1316,7 @@ export function WelcomeTerminal({
                                         <button
                                             type="button"
                                             onClick={openTcpEndpointDialog}
-                                            title="Configure Broker TCP Access Server (:4443) — Alt+Shift+T"
+                                            title="Configure Broker Access Server — Alt+Shift+T"
                                             style={{
                                                 padding: '3px 8px',
                                                 borderRadius: 5,
@@ -1329,7 +1329,7 @@ export function WelcomeTerminal({
                                                 whiteSpace: 'nowrap',
                                             }}
                                         >
-                                            TCP (:4443)
+                                            Server
                                         </button>
                                     )}
                                 </div>
@@ -1595,7 +1595,7 @@ export function WelcomeTerminal({
                                     </div>
                                 ) : healthStatus === 'offline' && (
                                     <div className="rtx-inline-status is-offline" role="status">
-                                        {tr("Broker TCP Server (:4443) unreachable")}
+                                        {tr("Broker server unreachable")}
                                         {isDesktopBrokerSelection && selectedBroker && (
                                             <button type="button" className="rtx-broker-retry" disabled={loading} onClick={() => void runHealthCheck(selectedBroker.server_url!, selectedBroker)}>
                                                 {tr("Retry")}

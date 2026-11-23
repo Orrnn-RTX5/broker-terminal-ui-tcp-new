@@ -3,6 +3,11 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { markQuoteFeedActivity, clearQuoteFeedActivity } from '../../../store/quoteFeedActivity';
 import { useTradingChartTradeLevelDrag } from './useTradingChartTradeLevelDrag';
+import {
+  bindTradeLevelHoverTarget,
+  createEntryTradeControlBar,
+  createTradeLevelControlBar,
+} from '../../../utils/chartTradeControls';
 import { commitBrokerAccountSessionScope } from '../../../services/brokerSession';
 import {
   registerDailyChangePriceModes,
@@ -894,5 +899,150 @@ describe('drag release sends only the painted level', () => {
     log.stop();
     expect(modifyPosition).not.toHaveBeenCalled();
     expect(log.messages).toEqual(['Price moved, drag again']);
+  });
+});
+
+describe('trade-level tooltip removal and click/drag dismissal', () => {
+  it.each(['SL', 'TP'] as const)('never renders the floating %s tooltip card and dismisses hover feedback on line click/drag', (role) => {
+    registerCatalogDigits('XAUUSD', 2);
+    const h = harness(role, 0);
+    h.bar.remove();
+
+    const controlBar = createTradeLevelControlBar({
+      tradeKey: h.trade.key,
+      role,
+      side: 'BUY',
+      label: role,
+      pips: role === 'SL' ? -50 : 50,
+      money: role === 'SL' ? -50 : 50,
+      isLightSurface: false,
+      leftInset: 10,
+      onRemove: vi.fn(),
+      hoverDetails: {
+        entryPrice: h.trade.entryPrice,
+        levelPrice: role === 'SL' ? h.trade.sl : h.trade.tp,
+        digits: 2,
+        tickSize: 0.01,
+      },
+    });
+
+    const hitArea = document.createElement('div');
+    hitArea.className = 'rtx-trade-level-hit-area';
+    hitArea.dataset.tradeKey = h.trade.key;
+    hitArea.dataset.role = role;
+    h.wrapper.append(controlBar, hitArea);
+    bindTradeLevelHoverTarget(controlBar, hitArea);
+
+    expect(controlBar.querySelector('.rtx-trade-level-tooltip')).toBeNull();
+    expect(controlBar.querySelector('[role="tooltip"]')).toBeNull();
+
+    const handle = controlBar.querySelector<HTMLElement>('.rtx-trade-level-hover-handle')!;
+    const y = role === 'SL' ? 150 : 50;
+
+    hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 120, clientY: y }));
+    expect(handle.style.display).toBe('block');
+
+    h.send('pointerdown', y, hitArea);
+    expect(handle.style.display).toBe('none');
+    h.send('pointerup', y);
+    expect(handle.style.display).toBe('none');
+
+    hitArea.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 122, clientY: y }));
+    expect(handle.style.display).toBe('none');
+
+    hitArea.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 125, clientY: y }));
+    expect(handle.style.display).toBe('block');
+  });
+
+  it('hides the ENTRY tooltip on line click/drag and keeps it hidden until the pointer leaves', () => {
+    registerCatalogDigits('XAUUSD', 2);
+    const h = harness('ENTRY', 0);
+    h.bar.remove();
+
+    const controlBar = createEntryTradeControlBar({
+      tradeKey: h.trade.key,
+      ticket: 987,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      volume: 0.1,
+      isLightSurface: false,
+      leftInset: 10,
+      plainLabel: true,
+      hoverDetails: { ticketLabel: '#987', entryPriceLabel: '900.00' },
+    }).root;
+
+    const hitArea = document.createElement('div');
+    hitArea.className = 'rtx-trade-level-hit-area';
+    hitArea.dataset.tradeKey = h.trade.key;
+    hitArea.dataset.role = 'ENTRY';
+    h.wrapper.append(controlBar, hitArea);
+    bindTradeLevelHoverTarget(controlBar, hitArea);
+
+    const tooltip = controlBar.querySelector<HTMLElement>('.rtx-trade-level-tooltip')!;
+    expect(tooltip.style.display).toBe('none');
+
+    hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 120, clientY: 100 }));
+    expect(tooltip.style.display).toBe('block');
+
+    h.send('pointerdown', 100, hitArea);
+    expect(tooltip.style.display).toBe('none');
+    h.send('pointerup', 100);
+    expect(tooltip.style.display).toBe('none');
+
+    hitArea.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 122, clientY: 100 }));
+    expect(tooltip.style.display).toBe('none');
+
+    hitArea.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 125, clientY: 100 }));
+    expect(tooltip.style.display).toBe('block');
+
+    h.send('pointerdown', 100, hitArea);
+    expect(tooltip.style.display).toBe('none');
+    h.send('pointermove', 110);
+    expect(tooltip.style.display).toBe('none');
+    h.send('pointerup', 110);
+    expect(tooltip.style.display).toBe('none');
+  });
+
+  it('does not block hovering a sibling TP line after clicking the SL line', () => {
+    registerCatalogDigits('XAUUSD', 2);
+    const h = harness('SL', 0);
+    h.bar.remove();
+
+    const makeLevel = (role: 'SL' | 'TP', levelPrice: number) => {
+      const bar = createTradeLevelControlBar({
+        tradeKey: h.trade.key,
+        role,
+        side: 'BUY',
+        label: role,
+        pips: role === 'SL' ? -50 : 50,
+        money: role === 'SL' ? -50 : 50,
+        isLightSurface: false,
+        leftInset: 10,
+        onRemove: vi.fn(),
+        hoverDetails: { entryPrice: h.trade.entryPrice, levelPrice, digits: 2, tickSize: 0.01 },
+      });
+      const hitArea = document.createElement('div');
+      hitArea.className = 'rtx-trade-level-hit-area';
+      hitArea.dataset.tradeKey = h.trade.key;
+      hitArea.dataset.role = role;
+      h.wrapper.append(bar, hitArea);
+      bindTradeLevelHoverTarget(bar, hitArea);
+      return { bar, hitArea, handle: bar.querySelector<HTMLElement>('.rtx-trade-level-hover-handle')! };
+    };
+
+    const sl = makeLevel('SL', h.trade.sl);
+    const tp = makeLevel('TP', h.trade.tp);
+
+    sl.hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    expect(sl.handle.style.display).toBe('block');
+
+    h.send('pointerdown', 150, sl.hitArea);
+    h.send('pointerup', 150);
+    expect(sl.handle.style.display).toBe('none');
+
+    tp.hitArea.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    expect(tp.handle.style.display).toBe('block');
   });
 });

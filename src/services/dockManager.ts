@@ -1028,6 +1028,37 @@ export class DockManager {
   }
 
   /**
+   * Atomically update two adjacent siblings in a split container without
+   * intermediate ratio-normalization drift.
+   */
+  updateSplitPairSizes(
+    parentId: string,
+    firstChildId: string,
+    firstRatio: number,
+    secondChildId: string,
+    secondRatio: number,
+  ): void {
+    if (!Number.isFinite(firstRatio) || !Number.isFinite(secondRatio)) return;
+    const layout = this.getLayout();
+    const parent = this.findContainer(layout.root, parentId);
+    if (!parent || parent.type !== 'split') return;
+
+    const firstChild = parent.children.find((child) => child.id === firstChildId);
+    const secondChild = parent.children.find((child) => child.id === secondChildId);
+    if (!firstChild || !secondChild) return;
+
+    const minRatio = 0.05;
+    const combined = Math.max(minRatio * 2, firstRatio + secondRatio);
+    const clampedFirst = Math.max(minRatio, Math.min(combined - minRatio, firstRatio));
+    const clampedSecond = Math.max(minRatio, combined - clampedFirst);
+
+    firstChild.ratio = clampedFirst;
+    secondChild.ratio = clampedSecond;
+    this.normalizeRatios(parent);
+    this.setLayout(layout, true);
+  }
+
+  /**
    * Set active tab
    */
   setActiveTab(tabContainerId: string, panelId: string): void {

@@ -590,6 +590,7 @@ const JournalLogTable = React.memo(function JournalLogTable({
         scrollTop: 0,
         height: JOURNAL_FALLBACK_VIEWPORT_HEIGHT,
     });
+    const [selectedLogKey, setSelectedLogKey] = useState<string | null>(null);
 
     useLayoutEffect(() => {
         const element = scrollViewportRef.current;
@@ -740,12 +741,16 @@ const JournalLogTable = React.memo(function JournalLogTable({
                     )}
                     {visibleLogs.map((log, visibleIndex) => {
                         const absoluteIndex = virtualWindow.startIndex + visibleIndex;
+                        const rowKey = getJournalLogKey(log, absoluteIndex);
                         return (
                             <tr
-                                key={getJournalLogKey(log, absoluteIndex)}
+                                key={rowKey}
                                 ref={visibleIndex === 0 ? setFirstRowElement : undefined}
                                 data-testid="journal-rendered-row"
+                                data-row-parity={absoluteIndex % 2 === 0 ? 'odd' : 'even'}
+                                aria-selected={selectedLogKey === rowKey}
                                 aria-rowindex={absoluteIndex + 2}
+                                onClick={() => setSelectedLogKey(rowKey)}
                                 className="rtx-journal-row h-[30px] bg-[#131316] transition-colors hover:bg-[#202126]"
                             >
                                 <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap">
@@ -1088,7 +1093,7 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
         >
 
             {/* ── Toolbar ─────────────────────────────────────────────────── */}
-            <div className={`rtx-journal-toolbar ${showAdvancedFilters ? 'rtx-journal-toolbar--expanded' : ''} flex h-[31px] min-h-[31px] items-center gap-2 border-b border-zinc-700 bg-[#191a1e] px-1.5 py-1 shrink-0 select-none text-[12px] font-normal text-zinc-300 tabular-nums`}>
+            <div className={`rtx-journal-toolbar rtx-trade-view-bar ${showAdvancedFilters ? 'rtx-journal-toolbar--expanded' : ''}`} style={{ gap: '8px', paddingLeft: '6px', paddingRight: '6px' }}>
 
                 {/* Type filter */}
                 <div className="rtx-journal-advanced-control flex items-center gap-1.5 shrink-0">
@@ -1121,17 +1126,15 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
                 </div>
 
                 {/* Time range pills */}
-                <div className="rtx-journal-periods flex items-center gap-1 shrink-0">
+                <div className="rtx-journal-periods flex items-center shrink-0" role="tablist" aria-label="Journal time filters">
                     {TIME_RANGES.map(t => (
                         <button
                             key={tr(t.label)}
                             type="button"
-                            aria-pressed={timeRange === t.hours}
+                            role="tab"
+                            aria-selected={timeRange === t.hours}
                             onClick={() => setTimeRange(t.hours)}
-                            className={`rtx-journal-control rtx-journal-time-btn h-[22px] min-w-[42px] border border-transparent px-2 py-0 text-[12px] font-normal transition-colors ${timeRange === t.hours
-                                ? 'bg-zinc-700/70 text-white'
-                                : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
-                                }`}
+                            className="rtx-journal-control rtx-journal-time-btn rtx-trade-subtab-btn"
                         >
                             {tr(t.label)}
                         </button>

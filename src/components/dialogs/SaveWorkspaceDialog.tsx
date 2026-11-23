@@ -150,7 +150,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-3 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg" {...dragHandleProps}>
+                <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-2.5 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg" {...dragHandleProps}>
                     <div className="flex items-center gap-2">
                         <Icon name="save" size="md" className="text-blue-400 [.rtx-advanced-view_&]:text-indigo-600" />
                         <h2 id={titleId} className="text-sm font-semibold text-zinc-100 [.rtx-advanced-view_&]:text-gray-900">
@@ -167,13 +167,13 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                 </div>
 
                 {/* Content */}
-                <div className="rtx-legacy-sheet__body p-4 space-y-4 min-h-0 overflow-y-auto">
+                <div className="rtx-legacy-sheet__body p-3.5 space-y-2.5 min-h-0 overflow-y-auto">
                     {error && (
-                        <div role="alert" className="flex items-start gap-3 p-3 bg-rose-500/10 [.rtx-advanced-view_&]:bg-rose-50 border border-rose-500/30 [.rtx-advanced-view_&]:border-rose-200 rounded">
-                            <Icon name="alert-triangle" size="lg" className="text-rose-400 [.rtx-advanced-view_&]:text-rose-600 flex-shrink-0 mt-0.5" />
-                            <div className="text-xs space-y-2">
-                                <p className="text-rose-200 [.rtx-advanced-view_&]:text-rose-800 font-medium">{tr("Error")}</p>
-                                <p className="text-zinc-300 [.rtx-advanced-view_&]:text-rose-700">{tr(error)}</p>
+                        <div role="alert" className="flex items-start gap-2.5 p-2.5 bg-rose-500/10 [.rtx-advanced-view_&]:bg-rose-50 border border-rose-500/35 [.rtx-advanced-view_&]:border-rose-200 rounded-md">
+                            <Icon name="alert-triangle" size="md" className="text-rose-400 [.rtx-advanced-view_&]:text-rose-600 flex-shrink-0 mt-0.5" />
+                            <div className="text-xs space-y-0.5">
+                                <p className="text-white [.rtx-advanced-view_&]:text-rose-800 font-medium">{tr("Error")}</p>
+                                <p className="text-white/90 [.rtx-advanced-view_&]:text-rose-700">{tr(error)}</p>
                             </div>
                         </div>
                     )}
@@ -184,7 +184,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                                 {tr("Enter a name for your workspace configuration. This will save your current layout, charts, and settings.")}</p>
 
                             <div>
-                                <label htmlFor="workspace-name" className="block text-xs text-zinc-400 [.rtx-advanced-view_&]:text-gray-600 mb-2">
+                                <label htmlFor="workspace-name" className="block text-xs text-zinc-400 [.rtx-advanced-view_&]:text-gray-600 mb-1.5">
                                     {tr("Workspace Name")}</label>
                                 <input
                                     ref={nameRef}
@@ -192,7 +192,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                                     type="text"
                                     value={workspaceName}
                                     onChange={(e) => setWorkspaceName(e.target.value)}
-                                    className="w-full bg-[#252528] [.rtx-advanced-view_&]:bg-white border border-zinc-700 [.rtx-advanced-view_&]:border-gray-300 rounded px-3 py-2 text-sm text-zinc-100 [.rtx-advanced-view_&]:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 [.rtx-advanced-view_&]:focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
+                                    className="w-full bg-[#252528] [.rtx-advanced-view_&]:bg-white border border-zinc-700 [.rtx-advanced-view_&]:border-gray-300 rounded-md px-3 py-1.5 text-sm text-zinc-100 [.rtx-advanced-view_&]:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 [.rtx-advanced-view_&]:focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                                     placeholder={tr("Enter workspace name")}
                                     disabled={isSaving}
                                     onKeyDown={(e) => {
@@ -202,12 +202,12 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                             </div>
                         </>
                     ) : (
-                        <div className="flex items-start gap-3 p-3 bg-amber-500/10 [.rtx-advanced-view_&]:bg-amber-50 border border-amber-500/30 [.rtx-advanced-view_&]:border-amber-200 rounded">
-                            <Icon name="alert-triangle" size="lg" className="text-amber-400 [.rtx-advanced-view_&]:text-amber-600 flex-shrink-0 mt-0.5" />
-                            <div className="text-xs space-y-2">
-                                <p className="text-amber-200 [.rtx-advanced-view_&]:text-amber-800 font-medium">
+                        <div className="rtx-sheet-warning">
+                            <Icon name="alert-triangle" size="md" className="rtx-sheet-warning__icon" />
+                            <div className="text-xs space-y-1">
+                                <p className="rtx-sheet-warning__title">
                                     {tr("Workspace \"")}{workspaceName}{tr("\" already exists")}</p>
-                                <p className="text-zinc-300 [.rtx-advanced-view_&]:text-amber-700">
+                                <p className="rtx-sheet-warning__body">
                                     {tr("Do you want to overwrite the existing workspace with your current configuration?")}</p>
                             </div>
                         </div>
@@ -215,7 +215,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
                 </div>
 
                 {/* Footer */}
-                <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-3 shrink-0 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#252528] [.rtx-advanced-view_&]:bg-gray-50 rounded-b-lg">
+                <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-2.5 shrink-0 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#252528] [.rtx-advanced-view_&]:bg-gray-50 rounded-b-lg">
                     {!showOverwriteWarning ? (
                         <>
                             <button

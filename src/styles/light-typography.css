@@ -4,14 +4,14 @@
    preference. A readable 13/14/15px scale keeps regular body text clear;
    medium controls and semibold headings provide restrained emphasis. */
 html:root.rtx-skin-untitled-light {
-  --rtx-ui-font-size: 14px;
+  --rtx-ui-font-size: 12px;
   --rtx-light-type-body: var(--rtx-ui-font-size);
-  --rtx-light-type-caption: max(12px, calc(var(--rtx-ui-font-size) - 1px));
-  --rtx-light-type-section: calc(var(--rtx-ui-font-size) + 2px);
-  --rtx-light-type-title: calc(var(--rtx-ui-font-size) + 4px);
-  --rtx-light-weight-body: 400;
-  --rtx-light-weight-control: 500;
-  --rtx-light-weight-heading: 600;
+  --rtx-light-type-caption: var(--rtx-ui-font-size);
+  --rtx-light-type-section: var(--rtx-ui-font-size);
+  --rtx-light-type-title: var(--rtx-ui-font-size);
+  --rtx-light-weight-body: 300;
+  --rtx-light-weight-control: 300;
+  --rtx-light-weight-heading: 300;
   --rtx-font-weight-body: var(--rtx-light-weight-body);
   --rtx-font-weight-control: var(--rtx-light-weight-control);
   --rtx-font-weight-heading: var(--rtx-light-weight-heading);
@@ -20,11 +20,11 @@ html:root.rtx-skin-untitled-light {
 }
 
 html:root.rtx-skin-untitled-light.rtx-advanced-font-small {
-  --rtx-ui-font-size: 13px;
+  --rtx-ui-font-size: 11px;
 }
 
 html:root.rtx-skin-untitled-light.rtx-advanced-font-large {
-  --rtx-ui-font-size: 15px;
+  --rtx-ui-font-size: 13px;
 }
 
 /* Shared controls, navigation and table data use the same base size. Explicit
@@ -89,11 +89,11 @@ html:root.rtx-skin-untitled-light :is(
 
 html:root.rtx-skin-untitled-light :is(
   [role='tab'][aria-selected='true'],
-  .rtx-trade-subtab-btn[aria-pressed='true'],
+  .rtx-trade-subtab-btn[aria-selected='true'],
   .rtx-pending-bulk-btn,
   .rtx-pending-row-btn,
-  .rtx-history-time-btn[aria-pressed='true'],
-  .rtx-journal-time-btn[aria-pressed='true']
+  .rtx-history-time-btn[aria-selected='true'],
+  .rtx-journal-time-btn[aria-selected='true']
 ) {
   --rtx-type-weight: var(--rtx-light-weight-control);
 }
@@ -105,14 +105,12 @@ html:root.rtx-skin-untitled-light :is(
   --rtx-type-size: var(--rtx-light-type-caption);
 }
 
-/* Market Watch's desktop geometry previously fixed every label at 12px/400.
-   Use the same roles as Trade/History and let rows fit the selected size. */
+/* Match MT5 desktop Market Watch uniform 9pt (12px) regular typography across
+   Symbol, Bid, Ask, Daily Change, and numeric columns, scaling up for Large. */
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :is(
   .rtx-market-watch__title-clock, .rtx-market-watch__title-clock span,
   .rtx-market-watch__title-clock time,
-  .rtx-market-watch__grid th, .rtx-market-watch__grid td,
-  .rtx-market-watch__grid span, .rtx-market-watch__search-bar .mw-input,
-  .rtx-market-watch__symbol-count, .rtx-market-watch__view-tabs button
+  .rtx-market-watch__view-tabs button
 ) {
   --rtx-type-size: var(--rtx-light-type-body);
   --rtx-type-weight: var(--rtx-light-weight-body);
@@ -120,9 +118,22 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :i
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :is(
-  .rtx-market-watch__grid th, .rtx-market-watch__grid th span,
-  .rtx-market-watch__view-tabs button[aria-selected='true']
+  .rtx-market-watch__grid th, .rtx-market-watch__grid td,
+  .rtx-market-watch__grid span
 ) {
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
+  --rtx-type-weight: var(--rtx-light-weight-body);
+  line-height: 20px !important;
+}
+
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :is(
+  .rtx-market-watch__grid th, .rtx-market-watch__grid th span
+) {
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
+  --rtx-type-weight: var(--rtx-light-weight-control);
+}
+
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button[aria-selected='true'] {
   --rtx-type-size: var(--rtx-light-type-caption);
   --rtx-type-weight: var(--rtx-light-weight-heading);
 }
@@ -131,25 +142,32 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
   .rtx-market-watch__symbol,
   .rtx-market-watch__price .price-big
 ) {
-  --rtx-type-size: max(13px, calc(var(--rtx-ui-font-size) - 1px));
-  --rtx-type-weight: var(--rtx-light-weight-body);
+  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
+  --rtx-type-weight: 300;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid :is(
   .rtx-market-watch__price,
+  .rtx-market-watch__price span,
   .rtx-market-watch__price .price-display,
   .rtx-market-watch__price .price-small,
   .rtx-market-watch__price .price-pip,
+  .rtx-market-watch__last-close,
   .rtx-market-watch__last-close span
 ) {
-  --rtx-type-size: max(13px, calc(var(--rtx-ui-font-size) - 1px));
-  --rtx-type-weight: var(--rtx-light-weight-body);
+  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
+  --rtx-type-weight: 300;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily,
-html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily span {
-  --rtx-type-size: max(11px, calc(var(--rtx-ui-font-size) - 3px));
-  --rtx-type-weight: var(--rtx-light-weight-body);
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily span,
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily-price,
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily-price span {
+  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
+  --rtx-type-weight: 300;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :is(
@@ -158,7 +176,11 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :i
   --rtx-type-weight: var(--rtx-light-weight-heading);
 }
 
-html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid :is(tr, th, td),
+html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid :is(tr, th, td) {
+  height: calc(max(12px, calc(var(--rtx-ui-font-size) - 2px)) + 9px);
+  min-height: calc(max(12px, calc(var(--rtx-ui-font-size) - 2px)) + 9px);
+}
+
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button:not([aria-selected='true']) {
   height: calc(var(--rtx-ui-line-height) + 5px);
   min-height: calc(var(--rtx-ui-line-height) + 5px);
@@ -193,7 +215,7 @@ html:root.rtx-skin-untitled-light .rtx-journal-table thead th:first-child {
 /* Secondary information uses one readable caption role, never ad-hoc 10/11px. */
 html:root.rtx-skin-untitled-light :is(
   .rtx-status-bar, .rtx-context-menu__shortcut,
-  .rtx-market-watch__symbol-count, .rtx-order-dialog__chart-meta,
+  .rtx-order-dialog__chart-meta,
   .rtx-order-dialog__chart-quotes, .rtx-order-dialog__margin,
   .rtx-bug-report-subtitle,
   .rtx-export-sheet__eyebrow, .rtx-export-sheet__facts dt,
@@ -376,7 +398,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light [data-dock-panel-component='
 }
 
 /* Paint the top separator behind the tabs. The selected tab covers that line
-   to join the shared panel above, with a quiet outline on the other sides. */
+   to join the shared panel above, with an MT5 #a0a0a0 outline on the other sides. */
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs {
   --rtx-light-ui-font-size: var(--rtx-light-toolbox-tab-size);
   --rtx-light-ui-font-weight: var(--rtx-light-weight-body);
@@ -388,9 +410,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs {
   flex-shrink: 0;
   flex-wrap: nowrap;
   gap: 0;
-  padding: 0 4px 5px 4px !important;
+  padding: 0 4px 4px 4px !important;
   border: 0 !important;
-  background: #f0f2f5 !important;
+  background: var(--rtx-toolbox-tabs, #f0f0f0) !important;
   box-shadow: none !important;
 }
 
@@ -402,7 +424,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs::befo
   right: 0;
   z-index: 1;
   height: 1px;
-  background: var(--rtx-light-line-border, #64748b);
+  background: var(--rtx-toolbox-border-tab, #a0a0a0);
   pointer-events: none;
 }
 
@@ -447,12 +469,12 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs :is(
 )::after {
   content: '';
   position: absolute;
-  top: 4px;
+  top: 5px;
   right: 0;
-  bottom: 4px;
+  bottom: 5px;
   width: 1px;
-  background: var(--rtx-light-line-border, #64748b);
-  opacity: 0.45;
+  background: var(--rtx-toolbox-tab-divider, #c0c0c0);
+  opacity: 1;
   pointer-events: none;
 }
 
@@ -461,26 +483,24 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs:has(.
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
-  background: var(--rtx-light-hover) !important;
-  color: var(--rtx-light-text) !important;
+  background: #e4e4e4 !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
   z-index: 2;
   margin-top: 0 !important;
   height: 100% !important;
-  background: var(--rtx-light-elevated) !important;
-  border: 1px solid var(--rtx-light-line-border, #64748b) !important;
+  background: var(--rtx-toolbox-row, #ffffff) !important;
+  border: 1px solid var(--rtx-toolbox-border-tab, #a0a0a0) !important;
   border-top: 0 !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):active {
   z-index: 2;
   margin-top: 0 !important;
   height: 100% !important;
-  background: var(--rtx-light-elevated) !important;
-  border: 1px solid var(--rtx-light-line-border, #64748b) !important;
-  border-top: 0 !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:focus-visible {
@@ -808,27 +828,27 @@ html:root.rtx-skin-untitled-light :is(
 }
 
 html:root.rtx-skin-untitled-light .rtx-bulk-close-dialog__stat-label {
-  --rtx-type-size: 11px;
-  --rtx-type-weight: 500;
+  --rtx-type-size: var(--rtx-light-type-body);
+  --rtx-type-weight: var(--rtx-light-weight-body);
   line-height: 14px !important;
   letter-spacing: 0.05em;
 }
 
 html:root.rtx-skin-untitled-light .rtx-bulk-close-dialog__stat-value {
-  --rtx-type-size: 16px;
-  --rtx-type-weight: 600;
-  line-height: 22px !important;
+  --rtx-type-size: var(--rtx-light-type-body);
+  --rtx-type-weight: var(--rtx-light-weight-body);
+  line-height: 20px !important;
 }
 
 html:root.rtx-skin-untitled-light .rtx-bulk-close-dialog__breakdown-item {
-  --rtx-type-size: 12px;
-  --rtx-type-weight: 600;
+  --rtx-type-size: var(--rtx-light-type-body);
+  --rtx-type-weight: var(--rtx-light-weight-body);
   line-height: 18px !important;
 }
 
 html:root.rtx-skin-untitled-light .rtx-action-feedback__title {
-  --rtx-type-size: 12.5px;
-  --rtx-type-weight: 500;
+  --rtx-type-size: var(--rtx-light-type-body);
+  --rtx-type-weight: var(--rtx-light-weight-body);
   line-height: 18px !important;
 }
 

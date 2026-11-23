@@ -164,7 +164,8 @@ describe('TopToolbar primary command cluster', () => {
     expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s+\.rtx-toolbar-command-cluster\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?justify-content:\s*flex-start;/);
     expect(themeCss).toMatch(/\.rtx-main-toolbar:not\(\.rtx-desktop-main-toolbar\)\s*\{[\s\S]*?justify-content:\s*flex-start;/);
     expect(themeCss).toMatch(/\.rtx-toolbar-brand-slot\s*\{[\s\S]*?width:\s*var\(--rtx-web-left-rail-width,\s*38px\);/);
-    expect(themeCss).toMatch(/\.rtx-toolbar-brand\s*\{[\s\S]*?height:\s*28px;[\s\S]*?width:\s*28px;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-brand\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?height:\s*28px;[\s\S]*?width:\s*28px;/);
+    expect(themeCss).toMatch(/\.rtx-application-menu__brand-logo\s*\{[\s\S]*?background-color:\s*transparent;/);
 
     const laptopQueryIdx = themeCss.indexOf('@media (max-width: 1720px), (max-height: 920px)');
     const fullHdQueryIdx = themeCss.indexOf('@media (min-width: 1721px) and (max-width: 2199px)');

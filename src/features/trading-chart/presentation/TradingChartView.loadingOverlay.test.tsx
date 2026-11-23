@@ -203,4 +203,24 @@ describe('TradingChartView loading overlay stacking order', () => {
     rerender(<TradingChartView {...buildViewProps('hidden')} />);
     expect(container.querySelector('[data-rtx-chart-loading]')).toBeNull();
   });
+
+  it.each([
+    { label: 'light', isAdvancedUntitledLight: true },
+    { label: 'dark', isAdvancedUntitledLight: false },
+  ])('renders OHLC values with medium weight and no value background pill in $label mode', ({ isAdvancedUntitledLight }) => {
+    const props = {
+      ...buildViewProps('hidden'),
+      isAdvancedUntitledLight,
+    };
+    const { container } = render(<TradingChartView {...props} />);
+    const values = Array.from(container.querySelectorAll<HTMLElement>('.rtx-chart-hud .rtx-chart-hud__ohlc-value'));
+
+    expect(values).toHaveLength(4);
+    for (const value of values) {
+      expect(value.style.fontWeight).toBe('500');
+      expect(value.style.backgroundColor).toBe('transparent');
+      expect(value.style.padding).toBe('');
+      expect(value.style.borderRadius).toBe('');
+    }
+  });
 });

@@ -197,27 +197,75 @@ export const filterSymbolsExactlyInUniverse = (
   return symbols.filter((symbol) => allowed.has(normalizeSymbolName(symbol)));
 };
 
+/** Maximum number of symbols shown in Market Watch by default. */
+export const DEFAULT_MARKET_WATCH_MAX_SYMBOLS = 7;
+
 /**
- * Default Market Watch rows for a logged-in account: always the complete
- * account catalogue in backend order. Members are resolved with
- * `getUniqueSymbolNames`, which de-duplicates repeated names without alias or
- * suffix rewriting and preserves first-seen order; no curated subset, category
- * re-grouping or group-level default is applied (the instrument payload exposes
- * no group Market Watch default field).
+ * Flagship MT5 default Market Watch symbols — 100% live IC Markets cServer instruments.
+ */
+export const CORE_MARKET_WATCH_SYMBOLS = [
+  'EURUSD',
+  'GBPUSD',
+  'USDJPY',
+  'XAUUSD',
+  'BTCUSD',
+  'ETHUSD',
+  'USTEC',
+  'US500',
+  'US30',
+  'AUS200',
+  'DE40',
+  'XBRUSD',
+] as const;
+
+/**
+ * Default Market Watch rows for a logged-in account, capped to
+ * `DEFAULT_MARKET_WATCH_MAX_SYMBOLS` (7) symbols by default.
  *
- * The trailing arguments are accepted only for compatibility with the shared
- * Market Watch model call site and never change the returned symbols.
+ * Every returned symbol belongs strictly to the account catalogue (resolved via
+ * `getUniqueSymbolNames` without suffix guessing). Catalogues with at most the
+ * limit keep their full backend order; larger catalogues prioritize matching
+ * flagship core symbols first and fill any remaining slots up to the limit in
+ * backend order.
  */
 export const selectAccountDefaultMarketWatchSymbols = (
   accountCatalog: readonly unknown[],
   metadataSources?: readonly unknown[],
-  fullCatalogLimit?: number,
+  maxSymbols: number = DEFAULT_MARKET_WATCH_MAX_SYMBOLS,
 ): string[] => {
-  // Retained only so existing callers keep their arity; neither argument may
-  // shrink or reorder the account catalogue.
   void metadataSources;
-  void fullCatalogLimit;
-  return getUniqueSymbolNames([...accountCatalog]);
+  const limit = Number.isFinite(maxSymbols)
+    ? Math.max(0, Math.floor(maxSymbols))
+    : DEFAULT_MARKET_WATCH_MAX_SYMBOLS;
+  if (limit === 0) return [];
+
+  const uniqueCatalog = getUniqueSymbolNames([...accountCatalog]);
+  if (uniqueCatalog.length <= limit) return uniqueCatalog;
+
+  const catalogSet = new Set(uniqueCatalog);
+  const selected: string[] = [];
+  const selectedSet = new Set<string>();
+
+  for (const symbol of CORE_MARKET_WATCH_SYMBOLS) {
+    if (selected.length >= limit) break;
+    const resolved = catalogSet.has(symbol)
+      ? symbol
+      : (symbol === 'EURUSD' && catalogSet.has('EUROUSD') ? 'EUROUSD' : undefined);
+    if (resolved && !selectedSet.has(resolved)) {
+      selected.push(resolved);
+      selectedSet.add(resolved);
+    }
+  }
+
+  for (const symbol of uniqueCatalog) {
+    if (selected.length >= limit) break;
+    if (!selectedSet.has(symbol)) {
+      selected.push(symbol);
+      selectedSet.add(symbol);
+    }
+  }
+
+  return selected;
 };
 
 export interface ChartEligibleSymbolInput {

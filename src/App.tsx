@@ -757,8 +757,12 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     return () => { unsub1(); unsub2(); };
   }, [commitSelectedTimeframe]);
 
-  // Order Panel State
-  const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  // Order Panel State (scoped to the active auth/account session so login, logout,
+  // or account switching can never show or leave the New Order dialog open by default).
+  const currentOrderPanelSessionKey = `${isAuthenticated ? 'auth' : 'guest'}:${accountId}`;
+  const [orderPanelStateOpen, setOrderPanelOpen] = useState(false);
+  const [orderPanelSessionKey, setOrderPanelSessionKey] = useState('');
+  const orderPanelOpen = orderPanelStateOpen && orderPanelSessionKey === currentOrderPanelSessionKey;
   const [orderPanelSymbol, setOrderPanelSymbol] = useState('');
   const [orderPanelPrice, setOrderPanelPrice] = useState({ bid: 0, ask: 0 });
   const [tradeAuthOpen, setTradeAuthOpen] = useState(false);
@@ -807,14 +811,11 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const handleTradeAuthenticated = useCallback((nextAccountId: string) => {
     completeTradingAuthentication(nextAccountId, pendingTradeIntent, {
       login: handleLoginSuccess,
-      closeDialog: () => setTradeAuthOpen(false),
-      clearIntent: () => setPendingTradeIntent(null),
-      openOrderDraft: (intent) => {
-        localStorage.setItem('lastLotSize', String(intent.volume));
-        setOrderPanelSymbol(intent.symbol);
-        setOrderPanelPrice({ bid: intent.bid || 0, ask: intent.ask || 0 });
-        setOrderPanelOpen(true);
+      closeDialog: () => {
+        setTradeAuthOpen(false);
+        setTradeAuthInitialMode('choice');
       },
+      clearIntent: () => setPendingTradeIntent(null),
     });
   }, [handleLoginSuccess, pendingTradeIntent]);
 
@@ -2148,9 +2149,10 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
             ? { orderType: sidePrefix ? `${sidePrefix} Limit` : 'Limit Order', ...draftSideField, ...draftPriceField }
             : (draftSide ? { ...draftSideField } : null),
     );
+    setOrderPanelSessionKey(currentOrderPanelSessionKey);
     setOrderPanelOpen(true);
     return true;
-  }, [getAllowedSymbol, getChartEligibleSymbol, selectedSymbol, timeframe]);
+  }, [currentOrderPanelSessionKey, getAllowedSymbol, getChartEligibleSymbol, selectedSymbol, timeframe]);
 
   // Keyboard shortcut handlers
   const handleOpenOrderPanel = useCallback((symbol: string, price: { bid: number; ask: number }) => {

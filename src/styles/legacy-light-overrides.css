@@ -999,21 +999,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-footer .text-zinc-400 
   color: #94a3b8 !important;
 }
 
-/* Time ranges */
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-time-btn:hover {
-  background: #F3E5F5 !important;
-  color: #101828 !important;
-}
-
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-time-btn.bg-zinc-600 {
-  background: #7E57C2 !important;
-  color: #ffffff !important;
-}
-
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-time-btn[aria-pressed="true"] {
-  background: #7E57C2 !important;
-  color: #ffffff !important;
-}
+/* Time ranges — now handled by rtx-trade-subtab-btn styles */
 
 /* Market Watch: keep the dark terminal's compact mono rhythm in the light skin */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-market-watch__symbol {
@@ -1133,7 +1119,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .navigator-panel__body {
 html.rtx-advanced-view.rtx-skin-untitled-light .navigator-tree-item__row {
   padding: 4px 6px !important;
   border-radius: 6px !important;
-  margin-bottom: 2px !important;
+  margin-bottom: 0 !important;
   transition: all 0.2s ease !important;
   outline: none !important;
   box-shadow: none !important;
@@ -1773,7 +1759,12 @@ html.rtx-advanced-view.rtx-skin-untitled-light tr.rtx-trade-row:not(.rtx-trade-r
 html.rtx-advanced-view.rtx-skin-untitled-light tr.rtx-trade-row td,
 html.rtx-desktop-shell-active tr.rtx-trade-row td {
   line-height: 19.5px !important;
-  border-bottom: 1px solid var(--rtx-light-border-strong, #d1d5db) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
+  border-right: 1px solid color-mix(in srgb, var(--rtx-light-line-border, #64748b) 22%, transparent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light tr.rtx-trade-row td:last-child,
+html.rtx-desktop-shell-active tr.rtx-trade-row td:last-child {
   border-right: none !important;
 }
 

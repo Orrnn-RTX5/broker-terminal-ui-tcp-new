@@ -117,6 +117,7 @@ type TradeTableRowProps = Pick<TradeTableProps,
   | 'visibleOptionalColumnCount'
 > & {
   position: ToolboxTradePosition;
+  rowParity: 'odd' | 'even';
   tr: ReturnType<typeof useUiTranslation>;
   modifyPositionLabel: string;
   contextMenuLabel: string;
@@ -132,6 +133,7 @@ const zeroSnapshot = () => 0;
 
 const TradeTableRow = memo(function TradeTableRow({
   position,
+  rowParity,
   tr,
   modifyPositionLabel,
   contextMenuLabel,
@@ -340,6 +342,7 @@ const TradeTableRow = memo(function TradeTableRow({
     <tr
       title={rowComment}
       data-placement-state={isPendingPlacement ? placementState : undefined}
+      data-row-parity={rowParity}
       aria-selected={isSelected}
       className={`rtx-trade-row h-[30px] ${isSelected ? 'rtx-trade-row--selected' : ''} transition-colors group cursor-default`}
       onClick={() => {
@@ -976,11 +979,13 @@ const TradeTableBody = memo(function TradeTableBody({
           </tr>
         )}
         {slice.map((rawPosition, sliceIndex) => {
+          const absoluteIndex = sliceFrom + sliceIndex;
           const position = applyLiveQuoteToPosition(rawPosition, tradeOverrides?.[rawPosition?.id], liveRowCache);
           return (
             <TradeTableRow
-              key={position.id ?? sliceFrom + sliceIndex}
+              key={position.id ?? absoluteIndex}
               position={position}
+              rowParity={absoluteIndex % 2 === 0 ? 'odd' : 'even'}
               tr={tr}
               modifyPositionLabel={modifyPositionLabel}
               contextMenuLabel={contextMenuLabel}

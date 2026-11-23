@@ -1052,20 +1052,22 @@ ${rows}
             className="rtx-trade-tab h-full cursor-default flex flex-col relative bg-[#131316] overflow-hidden"
             onContextMenu={(event) => handleTradeContextMenu(event)}
         >
-            <div className="rtx-trade-view-bar flex min-h-[28px] items-center gap-1 border-b border-zinc-800/80 px-2 py-0.5 pr-7">
+            <div className="rtx-trade-view-bar" role="tablist" aria-label="Trade views">
                 <button
                     type="button"
+                    role="tab"
+                    aria-selected={tradeView === 'positions'}
                     onClick={() => setTradeView('positions')}
-                    aria-pressed={tradeView === 'positions'}
-                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${tradeView === 'positions' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    className="rtx-trade-subtab-btn"
                 >
                     {tr('Positions')}
                 </button>
                 <button
                     type="button"
+                    role="tab"
+                    aria-selected={tradeView === 'pending'}
                     onClick={() => setTradeView('pending')}
-                    aria-pressed={tradeView === 'pending'}
-                    className={`rtx-trade-subtab-btn text-xs px-2 py-0.5 rounded ${tradeView === 'pending' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    className="rtx-trade-subtab-btn"
                 >
                     {tr('Pending Orders')}{pendingCount > 0 ? ` (${pendingCount})` : ''}
                 </button>

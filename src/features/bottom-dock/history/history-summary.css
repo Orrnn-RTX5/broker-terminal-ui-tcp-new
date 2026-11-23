@@ -116,26 +116,28 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-history-table .rt
 }
 
 html:root.rtx-skin-untitled-light .rtx-history-summary-bar {
-  background: var(--rtx-light-panel-header, var(--bg-quaternary, #f1f5f9)) !important;
-  border-top-color: var(--rtx-light-line-border, #64748b) !important;
+  background: var(--rtx-toolbox-summary, #c8c8c8) !important;
+  border-top-color: var(--rtx-toolbox-border-header, #b0b0b0) !important;
   box-shadow: none !important;
 }
 
+html:root.rtx-skin-untitled-light .rtx-history-summary-bar .rtx-history-summary-table,
+html:root.rtx-skin-untitled-light .rtx-history-summary-bar .rtx-history-table__foot,
 html:root.rtx-skin-untitled-light .rtx-history-summary-row,
 html:root.rtx-skin-untitled-light .rtx-history-table .rtx-history-summary-row > td {
   background: transparent !important;
   border-top: 0 !important;
   box-shadow: none !important;
-  color: var(--rtx-light-price, var(--rtx-light-text, #0f172a));
+  color: var(--rtx-toolbox-text, #000000);
 }
 
 html:root.rtx-skin-untitled-light .rtx-history-summary-label,
 html:root.rtx-skin-untitled-light .rtx-history-summary-status {
-  color: var(--rtx-light-text-secondary, #475569) !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root.rtx-skin-untitled-light .rtx-history-summary-value:not(.text-profit):not(.text-loss) {
-  color: var(--rtx-light-price, var(--rtx-light-text, #0f172a)) !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root .rtx-bottom-dock .rtx-history-summary-row :is(td.text-profit, .text-profit) {

@@ -91,6 +91,10 @@ describe('TradeTable row windowing', () => {
     const view = render(<TradeTable {...createProps(makeList(30))} />);
     expect(renderedRowCount(view.container)).toBe(30);
     expect(view.container.querySelector('[data-rtx-spacer]')).toBeNull();
+    const rows = Array.from(view.container.querySelectorAll('tbody tr.rtx-trade-row'));
+    expect(rows[0]).toHaveAttribute('data-row-parity', 'odd');
+    expect(rows[1]).toHaveAttribute('data-row-parity', 'even');
+    expect(rows[2]).toHaveAttribute('data-row-parity', 'odd');
   });
 
   it('windowing virtualizes 100 open positions above the 40-row threshold', () => {
@@ -118,6 +122,15 @@ describe('TradeTable row windowing', () => {
     const rows = Array.from(view.container.querySelectorAll('tbody tr.rtx-trade-row'));
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.length).toBeLessThan(80);
+    // Spacer rows never carry row parity, and real rows keep strict alternating parity while scrolled.
+    const spacers = Array.from(view.container.querySelectorAll('tbody tr[data-rtx-spacer]'));
+    expect(spacers.length).toBeGreaterThan(0);
+    for (const spacer of spacers) {
+      expect(spacer).not.toHaveAttribute('data-row-parity');
+    }
+    for (let index = 1; index < rows.length; index += 1) {
+      expect(rows[index].getAttribute('data-row-parity')).not.toBe(rows[index - 1].getAttribute('data-row-parity'));
+    }
     // Row 600 of a list whose ticket 1999 is first is ticket 1399.
     expect(rows.some((row) => row.textContent?.includes('1399'))).toBe(true);
     expect(rows.some((row) => row.textContent?.includes('1999'))).toBe(false);

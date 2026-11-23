@@ -31,6 +31,7 @@ import { readTradeValidationQuote } from '../../../services/tradeValidationQuote
 import { readRegisteredSymbolPriceSpec, readRegisteredSymbolStopsLevel } from '../../../services/dailyChangePriceModeRegistry';
 import {
   bindChartUiTranslation,
+  dismissTradeLevelHoverTooltips,
   dispatchChartPositionModify,
   estimateTradeLevelMoney,
   formatMoneyLabel,
@@ -249,6 +250,14 @@ export const useTradingChartTradeLevelDrag = ({
         try { node.style.visibility = ''; } catch { /* node may be detached */ }
       });
       hiddenDragControlBars = [];
+    };
+
+    const dismissActiveLevelTooltips = (options?: Parameters<typeof dismissTradeLevelHoverTooltips>[1]) => {
+      dismissTradeLevelHoverTooltips(interactionRoot, options);
+      const overlayHost = overlayRef.current?.parentElement ?? overlayRef.current;
+      if (overlayHost && overlayHost !== interactionRoot) {
+        dismissTradeLevelHoverTooltips(overlayHost, options);
+      }
     };
     let capturedPointerElement: HTMLElement | null = null;
     let capturedPointerId: number | null = null;
@@ -546,6 +555,7 @@ export const useTradingChartTradeLevelDrag = ({
       if (!closestTrade && activeToolRef.current !== null) return;
 
       if (closestTrade) {
+        dismissActiveLevelTooltips({ tradeKey: closestTrade.key, role: grabbedType });
         e.preventDefault();
         e.stopPropagation();
         if (blockPendingTradeLevelChange(closestTrade)) return;
@@ -828,6 +838,9 @@ export const useTradingChartTradeLevelDrag = ({
       if (capturedPointerId !== null && e.pointerId !== capturedPointerId) return;
       e.preventDefault();
       e.stopPropagation();
+      const finishedTradeKey = dragState.tradeObj.key;
+      const finishedRole = dragState.grabbedType;
+      let finishedDidDrag = dragState.didDrag;
 
       try {
         if (seriesRef.current) {
@@ -836,6 +849,7 @@ export const useTradingChartTradeLevelDrag = ({
           const { tradeObj, grabbedType, entryAnchorY, pointerDownY } = dragState;
 
           const didLevelDrag = hasChartTradeLevelGestureDragged(pointerDownY, y, dragState.didDrag);
+          finishedDidDrag = didLevelDrag;
           const isLevelClick = grabbedType !== 'ENTRY' && !didLevelDrag;
 
           if (isLevelClick) {
@@ -1107,6 +1121,11 @@ export const useTradingChartTradeLevelDrag = ({
         dragBadgeOverlay = null;
         dragState = null;
         restoreDraggedLevelControls();
+        dismissActiveLevelTooltips(
+          finishedDidDrag
+            ? { tradeKey: finishedTradeKey, role: finishedRole, pointer: { x: e.clientX, y: e.clientY } }
+            : { tradeKey: finishedTradeKey, role: finishedRole },
+        );
         releasePointerCapture();
         endDragCursor();
 
@@ -1122,6 +1141,8 @@ export const useTradingChartTradeLevelDrag = ({
     const handlePointerCancel = (event?: PointerEvent) => {
       if (event && dragState && event.pointerId !== dragState.pointerId) return;
       if (!dragState && !dragLineOverlay && !dragBadgeOverlay) return;
+      const cancelledTradeKey = dragState?.tradeObj.key;
+      const cancelledRole = dragState?.grabbedType;
       if (dragLineOverlay) dragLineOverlay.remove();
       if (dragBadgeOverlay) dragBadgeOverlay.remove();
       dragZoneOverlay?.remove();
@@ -1131,6 +1152,15 @@ export const useTradingChartTradeLevelDrag = ({
       dragState = null;
       lastLevelClick = null;
       restoreDraggedLevelControls();
+      dismissActiveLevelTooltips(
+        cancelledTradeKey && cancelledRole
+          ? {
+              tradeKey: cancelledTradeKey,
+              role: cancelledRole,
+              ...(event ? { pointer: { x: event.clientX, y: event.clientY } } : {}),
+            }
+          : undefined,
+      );
       releasePointerCapture();
       endDragCursor();
       if (chartRef.current) {

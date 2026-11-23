@@ -68,16 +68,15 @@ export interface TradingAuthenticationCompletionActions {
   login: (accountId: string) => void;
   closeDialog: () => void;
   clearIntent: () => void;
-  openOrderDraft: (intent: TradingOrderAuthIntent) => void;
+  openOrderDraft?: (intent: TradingOrderAuthIntent) => void;
 }
 
 export const completeTradingAuthentication = (
   accountId: string,
-  intent: TradingAuthIntent | null,
+  _intent: TradingAuthIntent | null,
   actions: TradingAuthenticationCompletionActions,
 ): void => {
   actions.login(accountId);
   actions.closeDialog();
-  if (intent && intent.kind !== 'mutation') actions.openOrderDraft(intent);
   actions.clearIntent();
 };

@@ -420,27 +420,23 @@ return (
             {chartSettings.showOHLC && (
               <span style={{ display: (loadingPhase === 'connecting' || loadingPhase === 'receiving') && !retainedPublicChartSurface ? 'none' : 'contents' }}>
                 <span style={{ fontWeight: 'var(--rtx-font-weight-body, 400)', color: '#475467' }}>
-                  O: <span ref={ohlcOpenRef} style={{
-                    fontWeight: 'var(--rtx-font-weight-body, 400)', color: 'var(--rtx-light-price)',
-                    background: 'rgba(29, 41, 57, 0.06)', padding: '1px 6px', borderRadius: '3px'
+                  O: <span ref={ohlcOpenRef} className="rtx-chart-hud__ohlc-value" style={{
+                    fontWeight: 500, color: 'var(--rtx-light-price)', background: 'transparent'
                   }}>0.00000</span>
                 </span>
                 <span style={{ fontWeight: 'var(--rtx-font-weight-body, 400)', color: '#475467' }}>
-                  H: <span ref={ohlcHighRef} style={{
-                    fontWeight: 'var(--rtx-font-weight-body, 400)', color: hudQuoteColors.upColor,
-                    background: 'rgba(37, 99, 235, 0.10)', padding: '1px 6px', borderRadius: '3px'
+                  H: <span ref={ohlcHighRef} className="rtx-chart-hud__ohlc-value" style={{
+                    fontWeight: 500, color: hudQuoteColors.upColor, background: 'transparent'
                   }}>0.00000</span>
                 </span>
                 <span style={{ fontWeight: 'var(--rtx-font-weight-body, 400)', color: '#475467' }}>
-                  L: <span ref={ohlcLowRef} style={{
-                    fontWeight: 'var(--rtx-font-weight-body, 400)', color: hudQuoteColors.downColor,
-                    background: 'rgba(220, 38, 38, 0.10)', padding: '1px 6px', borderRadius: '3px'
+                  L: <span ref={ohlcLowRef} className="rtx-chart-hud__ohlc-value" style={{
+                    fontWeight: 500, color: hudQuoteColors.downColor, background: 'transparent'
                   }}>0.00000</span>
                 </span>
                 <span style={{ fontWeight: 'var(--rtx-font-weight-body, 400)', color: '#475467' }}>
-                  C: <span ref={ohlcCloseRef} style={{
-                    fontWeight: 'var(--rtx-font-weight-body, 400)', color: 'var(--rtx-light-price)',
-                    background: 'rgba(29, 41, 57, 0.06)', padding: '1px 6px', borderRadius: '3px'
+                  C: <span ref={ohlcCloseRef} className="rtx-chart-hud__ohlc-value" style={{
+                    fontWeight: 500, color: 'var(--rtx-light-price)', background: 'transparent'
                   }}>0.00000</span>
                 </span>
               </span>
@@ -459,10 +455,10 @@ return (
             )}
             {chartSettings.showOHLC && (
               <span style={{ display: (loadingPhase === 'connecting' || loadingPhase === 'receiving') && !retainedPublicChartSurface ? 'none' : 'contents' }}>
-                <span>O: <span ref={ohlcOpenRef} style={{ color: chartTheme.text }}>0.00000</span></span>
-                <span>H: <span ref={ohlcHighRef} style={{ color: hudQuoteColors.upColor }}>0.00000</span></span>
-                <span>L: <span ref={ohlcLowRef} style={{ color: hudQuoteColors.downColor }}>0.00000</span></span>
-                <span>C: <span ref={ohlcCloseRef} style={{ color: chartTheme.text }}>0.00000</span></span>
+                <span>O: <span ref={ohlcOpenRef} className="rtx-chart-hud__ohlc-value" style={{ fontWeight: 500, color: chartTheme.text, background: 'transparent' }}>0.00000</span></span>
+                <span>H: <span ref={ohlcHighRef} className="rtx-chart-hud__ohlc-value" style={{ fontWeight: 500, color: hudQuoteColors.upColor, background: 'transparent' }}>0.00000</span></span>
+                <span>L: <span ref={ohlcLowRef} className="rtx-chart-hud__ohlc-value" style={{ fontWeight: 500, color: hudQuoteColors.downColor, background: 'transparent' }}>0.00000</span></span>
+                <span>C: <span ref={ohlcCloseRef} className="rtx-chart-hud__ohlc-value" style={{ fontWeight: 500, color: chartTheme.text, background: 'transparent' }}>0.00000</span></span>
               </span>
             )}
           </div>

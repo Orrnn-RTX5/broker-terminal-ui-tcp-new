@@ -11,7 +11,7 @@ import {
   getTradingChartShiftRightOffset,
 } from '../../../utils/chartTimeFormat';
 import { useChartZoomStore } from '../../../store/useChartZoomStore';
-import { computeAdaptiveVisibleBars } from './chartRuntime';
+import { computeAdaptiveVisibleBars, TARGET_BAR_PX } from './chartRuntime';
 
 interface UseTradingChartViewportResetOptions {
   chartRef: MutableRefObject<IChartApi | null>;
@@ -68,8 +68,18 @@ export function useTradingChartViewportReset({
     const rightOffset = getTradingChartShiftRightOffset(activeTimeframe, chartSettingsRef.current.chartShift);
     const liveRange = { from: initialRange.from, to: totalBars - 1 + rightOffset };
     const timeScale = chart.timeScale();
+    // Position the chart at the computed logical range first, then override
+    // barSpacing to exactly TARGET_BAR_PX. setVisibleLogicalRange recalculates
+    // barSpacing to fit the range, so the override must come after it. This
+    // ensures the candle density is always the same on initial load, Reset
+    // Layout, and viewport reset.
     timeScale.setVisibleLogicalRange(liveRange);
-    rememberVisibleLogicalRange(liveRange);
+    timeScale.applyOptions({ barSpacing: TARGET_BAR_PX });
+    // The barSpacing override may shift the visible range by ±1 bar. Read back
+    // the actual range so callers remember the real viewport, not the pre-
+    // override approximation.
+    const settledRange = timeScale.getVisibleLogicalRange?.() as LogicalRangeLike | null;
+    rememberVisibleLogicalRange(settledRange ?? liveRange);
 
     // Capture a fresh zoom baseline after the new range settles on the chart.
     useChartZoomStore.getState().clearContext(contextId);

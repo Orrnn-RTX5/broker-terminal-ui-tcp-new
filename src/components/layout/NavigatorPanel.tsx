@@ -1119,10 +1119,10 @@ function TreeItem({
 
             {/* Horizontal connector line */}
             <div
-                className="navigator-tree-item__line absolute left-[5px]"
+                className={`navigator-tree-item__line navigator-tree-item__line--horizontal${!isExpandable ? ' navigator-tree-item__line--leaf' : ''} pointer-events-none absolute left-[5px] z-[1]`}
                 style={{
                     top: '15px',
-                    width: '8px',
+                    width: isExpandable ? '8px' : '26px',
                     borderTop: '1px solid var(--navigator-tree-line, #555)',
                 }}
             />

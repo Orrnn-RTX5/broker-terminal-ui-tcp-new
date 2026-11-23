@@ -24,7 +24,11 @@ const catalogApiMock = vi.hoisted(() => ({
     getSymbols: vi.fn(async (): Promise<Array<Record<string, string>>> => []),
 }));
 const appStoreMock = vi.hoisted(() => ({
-    selectedSymbol: 'EURUSD', timeframe: '5m', isAuthenticated: false, logout: vi.fn(),
+    selectedSymbol: 'EURUSD',
+    timeframe: '5m',
+    isAuthenticated: false,
+    savedAccounts: [] as Array<Record<string, unknown>>,
+    logout: vi.fn(),
 }));
 const workspaceProfilesMock = vi.hoisted(() => ({
     listWorkspaceProfiles: vi.fn(() => [] as Array<Record<string, string>>),
@@ -170,8 +174,8 @@ vi.mock('../dialogs/ExitConfirmDialog', () => ({
 }));
 
 vi.mock('../dialogs/OpenAccountDialog', () => ({
-    OpenAccountDialog: ({ isOpen, onClose }: any) => isOpen ? (
-        <div data-testid="open-account-dialog">
+    OpenAccountDialog: ({ isOpen, forceDemoCreation, onClose }: any) => isOpen ? (
+        <div data-testid="open-account-dialog" data-force-demo={forceDemoCreation ? 'true' : 'false'}>
             <span>Open Account</span>
             <button onClick={onClose}>Close Open Account</button>
         </div>
@@ -192,6 +196,7 @@ describe('FileMenu Component', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         appStoreMock.isAuthenticated = false;
+        appStoreMock.savedAccounts = [];
         catalogApiMock.getSymbols.mockResolvedValue([]);
         savePictureDialogMock.props = [];
         clearActiveChartSources();
@@ -698,6 +703,27 @@ describe('FileMenu Component', () => {
 
             await waitFor(() => {
                 expect(screen.getByTestId('save-workspace-dialog')).toBeInTheDocument();
+            });
+        });
+
+        it('keeps Create a Demo Account visible and opens the demo dialog even when both demo and real accounts exist', async () => {
+            appStoreMock.isAuthenticated = true;
+            appStoreMock.savedAccounts = [
+                { login: 200034, name: 'Live', server: 'Orrnn', accountType: 'real', isLive: true },
+                { login: 200039, name: 'Demo', server: 'Orrnn', accountType: 'demo', isLive: false },
+            ];
+            render(<FileMenu {...mockHandlers} accountId="200039" />);
+
+            expect(screen.queryByText('Open an Account')).not.toBeInTheDocument();
+            const createDemoBtn = screen.getByText('Create a Demo Account').closest('button')!;
+            expect(createDemoBtn).not.toBeDisabled();
+
+            fireEvent.click(createDemoBtn);
+
+            await waitFor(() => {
+                const dialog = screen.getByTestId('open-account-dialog');
+                expect(dialog).toBeInTheDocument();
+                expect(dialog).toHaveAttribute('data-force-demo', 'true');
             });
         });
 

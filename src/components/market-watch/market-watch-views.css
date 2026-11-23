@@ -2,11 +2,13 @@
   --rtx-tick-chart-bid: #0060ff;
   --rtx-tick-chart-ask: #ff6060;
   --rtx-tick-chart-last: #22c55e;
-  --rtx-tick-chart-plot: var(--bg-secondary, #1f1f1f);
-  --rtx-tick-chart-grid: var(--border-primary, #454545);
-  --rtx-tick-chart-frame: var(--text-primary, #ffffff);
+  --rtx-tick-chart-plot: #000000;
+  --rtx-tick-chart-grid: #778899;
+  --rtx-tick-chart-grid-vertical: var(--rtx-tick-chart-grid);
+  --rtx-tick-chart-grid-horizontal: var(--rtx-tick-chart-grid);
+  --rtx-tick-chart-frame: rgba(255, 255, 255, 0.72);
   --rtx-tick-chart-separator: var(--text-tertiary, #696969);
-  --rtx-tick-chart-text: var(--text-primary, #e2e2e8);
+  --rtx-tick-chart-text: rgba(255, 255, 255, 0.72);
   --rtx-tick-chart-tag-text: var(--bg-secondary, #1f1f1f);
   --rtx-tick-chart-crosshair: var(--text-secondary, #696969);
   --rtx-tick-chart-crosshair-text: var(--bg-secondary, #1f1f1f);
@@ -27,11 +29,13 @@ html.theme-light .rtx-market-tick-chart {
   --rtx-tick-chart-bid: var(--rtx-light-quote-up, #1d4ed8);
   --rtx-tick-chart-ask: var(--rtx-light-quote-down, #b91c1c);
   --rtx-tick-chart-last: var(--color-profit, #15803d);
-  --rtx-tick-chart-plot: var(--rtx-light-chart, var(--rtx-light-panel, #ffffff));
-  --rtx-tick-chart-grid: var(--rtx-light-border, #d0d5dd);
-  --rtx-tick-chart-frame: var(--rtx-light-text, #101828);
+  --rtx-tick-chart-plot: var(--rtx-light-chart, #fafbfc);
+  --rtx-tick-chart-grid: rgba(71, 85, 105, 0.6);
+  --rtx-tick-chart-grid-vertical: var(--rtx-tick-chart-grid);
+  --rtx-tick-chart-grid-horizontal: var(--rtx-tick-chart-grid);
+  --rtx-tick-chart-frame: #334155;
   --rtx-tick-chart-separator: var(--rtx-light-border-strong, #98a2b3);
-  --rtx-tick-chart-text: var(--rtx-light-text, #101828);
+  --rtx-tick-chart-text: #334155;
   --rtx-tick-chart-tag-text: #ffffff;
   --rtx-tick-chart-crosshair: var(--rtx-light-text-muted, #667085);
   --rtx-tick-chart-crosshair-text: #ffffff;
@@ -81,9 +85,15 @@ html.theme-light .rtx-market-tick-chart {
 }
 
 .rtx-market-tick-chart__grid line {
-  stroke: var(--rtx-tick-chart-grid);
-  stroke-dasharray: 3 3;
-  shape-rendering: crispEdges;
+  stroke-linecap: butt;
+}
+
+.rtx-market-tick-chart__grid-line--horizontal {
+  stroke: var(--rtx-tick-chart-grid-horizontal, var(--rtx-tick-chart-grid));
+}
+
+.rtx-market-tick-chart__grid-line--vertical {
+  stroke: var(--rtx-tick-chart-grid-vertical, var(--rtx-tick-chart-grid));
 }
 
 .rtx-market-tick-chart__separators line {
@@ -207,8 +217,8 @@ html.theme-light .rtx-market-tick-chart {
 
 .rtx-market-watch-details {
   --rtx-market-details-text: var(--text-primary, #e2e2e8);
-  --rtx-market-details-up: #4597ff;
-  --rtx-market-details-down: #ff5858;
+  --rtx-market-details-up: #1e95fe;
+  --rtx-market-details-down: #fe6e6e;
   --rtx-market-details-symbol-hover: #ff0000;
   --rtx-market-details-rise: #4ade80;
   --rtx-market-details-fall: #f87171;
@@ -226,13 +236,13 @@ html.theme-light .rtx-market-tick-chart {
 html.rtx-skin-untitled-light .rtx-market-watch-details,
 html.theme-light .rtx-market-watch-details {
   --rtx-market-details-text: var(--rtx-light-text, #101828);
-  --rtx-market-details-up: var(--rtx-light-quote-up, #1d4ed8);
-  --rtx-market-details-down: var(--rtx-light-quote-down, #b91c1c);
+  --rtx-market-details-up: var(--mw-desktop-quote-up, #0000ff);
+  --rtx-market-details-down: var(--mw-desktop-quote-down, #ff0000);
   --rtx-market-details-symbol-hover: #ff0000;
   --rtx-market-details-rise: var(--color-profit, #15803d);
   --rtx-market-details-fall: var(--color-loss, #b91c1c);
   --rtx-market-details-border: #e6ecf2;
-  --rtx-market-details-row-odd: #f8fafc;
+  --rtx-market-details-row-odd: #ebebeb;
   background: #ffffff;
   color-scheme: light;
 }

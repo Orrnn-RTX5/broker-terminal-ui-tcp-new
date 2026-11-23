@@ -907,6 +907,22 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
         execute: () => revealMenuBarPath('trading-accounts', 'File', []),
       },
       {
+        id: 'file-create-demo-account',
+        title: 'Create a Demo Account',
+        category: 'menus',
+        categoryLabel: 'Trading accounts',
+        description: 'Open a new demo trading account with virtual funds',
+        keywords: ['create a demo account', 'create demo account', 'demo account', 'new demo account', 'practice account', 'trading accounts'],
+        locations: [
+          {
+            path: 'Menu Bar → Trading accounts → Create a Demo Account',
+            prepare: () => revealMenuBarPath('trading-accounts', 'File', []),
+            findElements: () => findFileMenuElements('create-demo-account'),
+          },
+        ],
+        execute: () => revealMenuBarPath('trading-accounts', 'File', []),
+      },
+      {
         id: 'file-open-deleted',
         title: 'Open Deleted',
         category: 'menus',
@@ -3039,6 +3055,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
                     fileMenuItemAttr === 'print-setup' ||
                     fileMenuItemAttr === 'print-preview' ||
                     fileMenuItemAttr === 'open-account' ||
+                    fileMenuItemAttr === 'create-demo-account' ||
                     fileMenuItemAttr === 'exit' ||
                     Boolean(currentTarget.closest('.rtx-file-submenu'));
                   currentTarget.click();
@@ -3069,6 +3086,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
                       fileMenuItemAttr === 'print-setup' ||
                       fileMenuItemAttr === 'print-preview' ||
                       fileMenuItemAttr === 'open-account' ||
+                      fileMenuItemAttr === 'create-demo-account' ||
                       fileMenuItemAttr === 'exit' ||
                       Boolean(directTarget.closest('.rtx-file-submenu'));
                     directTarget.click();

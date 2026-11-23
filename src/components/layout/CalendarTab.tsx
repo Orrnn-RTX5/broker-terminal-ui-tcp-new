@@ -199,11 +199,12 @@ export function CalendarTab() {
                                 <tr className="rtx-calendar-date">
                                     <td colSpan={8}>{dateLabel}</td>
                                 </tr>
-                                {groupEvents.map((e) => (
+                                {groupEvents.map((e, rowIndex) => (
                                     <tr
                                         key={e.id}
                                         onClick={() => setSelectedEventId(e.id)}
                                         className="rtx-calendar-row"
+                                        data-row-parity={rowIndex % 2 === 0 ? 'odd' : 'even'}
                                         data-selected={selectedEventId === e.id || undefined}
                                         data-priority={e.priority}
                                     >

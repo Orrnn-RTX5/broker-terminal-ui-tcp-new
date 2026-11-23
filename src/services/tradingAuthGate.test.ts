@@ -46,14 +46,15 @@ describe('tradingAuthGate', () => {
     window.removeEventListener(TRADING_AUTH_REQUEST_EVENT, listener);
   });
 
-  it('reopens a captured order draft only after authentication', () => {
+  it('completes authentication without automatically opening the order dialog', () => {
     const actions = {
       login: vi.fn(), closeDialog: vi.fn(), clearIntent: vi.fn(), openOrderDraft: vi.fn(),
     };
     const intent = { source: 'quick-trade' as const, side: 'BUY' as const, symbol: 'EURUSD', volume: 0.1 };
     completeTradingAuthentication('123456', intent, actions);
     expect(actions.login).toHaveBeenCalledWith('123456');
-    expect(actions.openOrderDraft).toHaveBeenCalledWith(intent);
+    expect(actions.closeDialog).toHaveBeenCalledOnce();
+    expect(actions.openOrderDraft).not.toHaveBeenCalled();
     expect(actions.clearIntent).toHaveBeenCalledOnce();
   });
 });

@@ -183,11 +183,11 @@ function ServerTab() {
             </div>
             <div className="options-field"><label htmlFor="options-password">{tr('Password')}</label><div className="options-input-action"><input id="options-password" className="options-control" value="••••••••" readOnly /><button className="options-button options-button--secondary" disabled>{tr('Change')}</button></div><p className="options-field-hint">{tr('Password changes are not available in this window.')}</p></div>
             <div className="options-field">
-                <label htmlFor="options-tcp-server">TCP Access Server (:4443)</label>
+                <label htmlFor="options-tcp-server">Access Server</label>
                 <div className="options-input-action">
                     <input id="options-tcp-server" className="options-control" value={displayServer} readOnly />
                     <button type="button" className="options-button options-button--secondary" onClick={openTcpDialog}>
-                        TCP Server (:4443)...
+                        Access Server...
                     </button>
                 </div>
             </div>

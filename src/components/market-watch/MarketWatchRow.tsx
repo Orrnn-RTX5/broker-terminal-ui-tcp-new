@@ -273,6 +273,8 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
             '--rtx-quote-down': quoteDownColor,
             '--rtx-light-quote-up': quoteUpColor,
             '--rtx-light-quote-down': quoteDownColor,
+            '--mw-desktop-quote-up': quoteUpColor,
+            '--mw-desktop-quote-down': quoteDownColor,
             '--color-profit': quoteUpColor,
             '--color-loss': quoteDownColor,
           } : {}),
@@ -416,7 +418,10 @@ const MarketWatchRowImpl: FC<MarketWatchRowProps> = ({
         )}
         {columns.includes('dailyChangePrice') && (
           <td title={dailyTitle} data-status={resolvedDisplayMetadata.daily?.status} data-field="daily-change-price" style={{ padding: '3px 4px', textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: dailyAmount === null || dailyAmount === 0 ? 'var(--text-primary)' : dailyAmount > 0 ? quoteUpColor : quoteDownColor, opacity: 1 }}>
-            <span style={{ opacity: isLive && resolvedDisplayMetadata.daily?.status !== 'stale' ? 1 : 0.72 }}>
+            <span
+              className={`rtx-market-watch__daily-price${dailyAmount !== null && dailyAmount > 0 ? ' rtx-market-watch__daily--up' : ''}${dailyAmount !== null && dailyAmount < 0 ? ' rtx-market-watch__daily--down' : ''}`}
+              style={{ opacity: isLive && resolvedDisplayMetadata.daily?.status !== 'stale' ? 1 : 0.72 }}
+            >
               {formatDailyChange(dailyAmount, effectiveDailyDigits)}
             </span>
           </td>

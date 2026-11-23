@@ -466,17 +466,93 @@ export interface EntryTradeControlBarHandles {
 }
 
 let tradeLevelTooltipId = 0;
-const tradeLevelHoverBindings = new WeakMap<HTMLElement, { show: (event?: Event) => void; hide: () => void }>();
+interface TradeLevelHoverBinding {
+  show: (event?: Event) => void;
+  hide: () => void;
+  dismiss: () => void;
+  isHovered: () => boolean;
+}
+const tradeLevelHoverBindings = new WeakMap<HTMLElement, TradeLevelHoverBinding>();
+const tradeLevelHoverTargets = new WeakMap<HTMLElement, Set<HTMLElement>>();
 
 /** Share the label's feedback with its full-width, draggable price line. */
 export const bindTradeLevelHoverTarget = (label: HTMLElement, target: HTMLElement): void => {
   const binding = tradeLevelHoverBindings.get(label);
   if (!binding) return;
+  let targets = tradeLevelHoverTargets.get(label);
+  if (!targets) {
+    targets = new Set<HTMLElement>();
+    tradeLevelHoverTargets.set(label, targets);
+  }
+  targets.add(target);
   target.removeAttribute('title');
   target.addEventListener('mouseenter', binding.show);
   target.addEventListener('mousemove', binding.show);
   target.addEventListener('mouseleave', binding.hide);
-  target.addEventListener('pointerdown', binding.hide);
+  target.addEventListener('pointerdown', binding.dismiss);
+  target.addEventListener('mousedown', binding.dismiss);
+  target.addEventListener('click', binding.dismiss);
+};
+
+export interface DismissTradeLevelTooltipsOptions {
+  tradeKey?: string;
+  role?: 'ENTRY' | 'SL' | 'TP';
+  /** When supplied, only suppress hover on the matching line if the pointer is still over it. */
+  pointer?: { x: number; y: number };
+}
+
+const isPointInsideElement = (element: HTMLElement, point: { x: number; y: number }): boolean => {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0
+    && rect.height > 0
+    && point.x >= rect.left
+    && point.x <= rect.right
+    && point.y >= rect.top
+    && point.y <= rect.bottom;
+};
+
+/**
+ * Dismiss active trade-level hover tooltips inside `host`. The clicked/dragged
+ * line's tooltip is suppressed until the pointer leaves that line so clicking
+ * or dropping a trade line never leaves the tooltip card open or flashes it
+ * back on minor cursor movement.
+ */
+export const dismissTradeLevelHoverTooltips = (
+  host: ParentNode | null | undefined,
+  options?: DismissTradeLevelTooltipsOptions,
+): void => {
+  if (!host) return;
+  host.querySelectorAll<HTMLElement>('.rtx-trade-controls').forEach((node) => {
+    const binding = tradeLevelHoverBindings.get(node);
+    if (!binding) return;
+    const matchesTarget = Boolean(
+      options?.tradeKey
+      && options?.role
+      && node.dataset.tradeKey === options.tradeKey
+      && node.dataset.role === options.role,
+    );
+    if (matchesTarget) {
+      if (options?.pointer) {
+        const pointer = options.pointer;
+        const targets = tradeLevelHoverTargets.get(node);
+        const pointerOnTarget = isPointInsideElement(node, pointer)
+          || (targets ? Array.from(targets).some((target) => isPointInsideElement(target, pointer)) : false);
+        if (pointerOnTarget || binding.isHovered()) {
+          binding.dismiss();
+        } else {
+          binding.hide();
+        }
+      } else {
+        binding.dismiss();
+      }
+      return;
+    }
+    if (!options?.tradeKey) {
+      binding.dismiss();
+    } else {
+      binding.hide();
+    }
+  });
 };
 
 /**
@@ -862,6 +938,8 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       hintIcon.style.color = accentColor;
     };
 
+    let hoverSuppressed = false;
+    let isHovered = false;
     const hideTooltip = () => {
       activeCustomHint = null;
       activeAnchorEl = null;
@@ -870,6 +948,16 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       tooltip.style.display = 'none';
       root.style.zIndex = '22';
       options.onHoverChange?.(false);
+    };
+    const clearHoverSuppressionAndHide = () => {
+      isHovered = false;
+      hoverSuppressed = false;
+      hideTooltip();
+    };
+    const dismissTooltip = () => {
+      hoverSuppressed = true;
+      hideTooltip();
+      if (document.activeElement === root) root.blur();
     };
     const positionTooltip = (event?: Event) => {
       const bottomArrowColor = isCompactTooltip ? compactTooltipBg : tooltipFooterBg;
@@ -919,6 +1007,11 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       customHint?: string,
       mode?: { compact?: boolean; accentColor?: string; anchorEl?: HTMLElement | null },
     ) => {
+      if (event && event.type !== 'focusin') {
+        isHovered = true;
+        if (hoverSuppressed) return;
+        if (event instanceof MouseEvent && event.buttons !== 0) return;
+      }
       activeCustomHint = customHint ?? null;
       activeAnchorEl = mode?.anchorEl ?? null;
       applyTooltipMode(Boolean(mode?.compact), mode?.accentColor ?? plainSideColor);
@@ -942,7 +1035,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     });
     volumeChip.addEventListener('mouseenter', showVolumeTooltip);
     volumeChip.addEventListener('mousemove', showVolumeTooltip);
-    volumeChip.addEventListener('mouseleave', hideTooltip);
+    volumeChip.addEventListener('mouseleave', clearHoverSuppressionAndHide);
 
     const showMoneyTooltip = (e: Event) => showTooltip(e, getMoneyHint(), {
       compact: true,
@@ -951,7 +1044,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     });
     money.chip.addEventListener('mouseenter', showMoneyTooltip);
     money.chip.addEventListener('mousemove', showMoneyTooltip);
-    money.chip.addEventListener('mouseleave', hideTooltip);
+    money.chip.addEventListener('mouseleave', clearHoverSuppressionAndHide);
 
     for (const btn of Array.from(root.querySelectorAll<HTMLElement>('.rtx-trade-control-btn'))) {
       const showBtnTooltip = (e: Event) => showTooltip(
@@ -961,7 +1054,7 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
       );
       btn.addEventListener('mouseenter', showBtnTooltip);
       btn.addEventListener('mousemove', showBtnTooltip);
-      btn.addEventListener('mouseleave', hideTooltip);
+      btn.addEventListener('mouseleave', clearHoverSuppressionAndHide);
     }
     const handleDockChipHover = (e: Event) => {
       const dockChip = (e.target as Element | null)?.closest?.('.rtx-trade-dock-chip') as HTMLElement | null;
@@ -982,19 +1075,23 @@ export const createEntryTradeControlBar = (options: EntryTradeControlBarOptions)
     root.addEventListener('mouseout', (e) => {
       const dockChip = (e.target as Element | null)?.closest?.('.rtx-trade-dock-chip') as HTMLElement | null;
       if (dockChip && !dockChip.contains((e as MouseEvent).relatedTarget as Node | null)) {
-        hideTooltip();
+        clearHoverSuppressionAndHide();
       }
     });
-    root.addEventListener('mouseleave', hideTooltip);
+    root.addEventListener('mouseleave', clearHoverSuppressionAndHide);
     root.addEventListener('focusin', (event) => {
       if (event.target === root) showTooltip(event, getVolumeHint(), { compact: true, accentColor: plainSideColor, anchorEl: volumeChip });
     });
-    root.addEventListener('focusout', hideTooltip);
-    root.addEventListener('pointerdown', hideTooltip);
-    root.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); });
+    root.addEventListener('focusout', clearHoverSuppressionAndHide);
+    root.addEventListener('pointerdown', dismissTooltip);
+    root.addEventListener('mousedown', dismissTooltip);
+    root.addEventListener('click', dismissTooltip);
+    root.addEventListener('keydown', event => { if (event.key === 'Escape') dismissTooltip(); });
     tradeLevelHoverBindings.set(root, {
       show: (event) => showTooltip(event, getVolumeHint(), { compact: true, accentColor: plainSideColor, anchorEl: volumeChip }),
-      hide: hideTooltip,
+      hide: clearHoverSuppressionAndHide,
+      dismiss: dismissTooltip,
+      isHovered: () => isHovered,
     });
   }
 
@@ -1139,108 +1236,52 @@ export const createTradeLevelControlBar = (options: TradeLevelControlBarOptions)
     handle.className = 'rtx-trade-level-hover-handle';
     handle.style.cssText = 'position:absolute;right:-12px;top:50%;width:6px;height:6px;transform:translateY(-50%);border:1px solid #5b9bff;border-radius:50%;background:#91baff;box-shadow:0 0 0 3px rgba(91,155,255,0.16);pointer-events:none;display:none;';
     root.appendChild(handle);
-    const { entryPrice, levelPrice, digits, tickSize } = options.hoverDetails;
-    const change = side === 'SELL' ? entryPrice - levelPrice : levelPrice - entryPrice;
-    const percent = entryPrice > 0 ? change / entryPrice * 100 : 0;
-    const ticks = tickSize > 0 ? change / tickSize : 0;
-    const signed = (value: number, decimals: number) => {
-      const rounded = Number(value.toFixed(decimals));
-      return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
-    };
-    const tooltipBg = isLightSurface ? '#ffffff' : '#111622';
-    const tooltipFooterBg = isLightSurface ? '#f8fafc' : '#161c2a';
-    const tooltipBorder = isLightSurface ? 'rgba(15, 23, 42, 0.14)' : 'rgba(148, 163, 184, 0.24)';
-    const tooltipDivider = isLightSurface ? 'rgba(15, 23, 42, 0.08)' : 'rgba(148, 163, 184, 0.14)';
-    const tooltipPrimaryColor = isLightSurface ? '#0f172a' : '#f8fafc';
-    const tooltipSecondaryColor = isLightSurface ? '#475569' : '#94a3b8';
-    const tooltipShadow = isLightSurface
-      ? '0 12px 28px -4px rgba(15, 23, 42, 0.15), 0 4px 10px -2px rgba(15, 23, 42, 0.08)'
-      : '0 12px 28px -4px rgba(0, 0, 0, 0.72), 0 4px 10px -2px rgba(0, 0, 0, 0.45)';
-    const tooltip = document.createElement('span');
-    tooltip.className = 'rtx-trade-level-tooltip';
-    tooltip.id = `rtx-level-tooltip-${++tradeLevelTooltipId}`;
-    tooltip.setAttribute('role', 'tooltip');
-    Object.assign(tooltip.style, {
-      position: 'absolute', bottom: 'calc(100% + 9px)', left: '0', display: 'none',
-      width: 'max-content', minWidth: '188px', maxWidth: '280px', padding: '0', borderRadius: '6px',
-      backgroundColor: tooltipBg, color: tooltipPrimaryColor,
-      border: `1px solid ${tooltipBorder}`, borderTop: `2px solid ${levelAccent}`,
-      fontFamily: 'var(--rtx-ui-font-family, "Segoe UI", Tahoma, Arial, sans-serif)',
-      fontSize: '11.5px', fontWeight: '500', lineHeight: '16px', fontVariantNumeric: 'tabular-nums',
-      whiteSpace: 'normal', pointerEvents: 'none', textAlign: 'left', boxShadow: tooltipShadow,
-      zIndex: '120',
-    });
-    const summary = document.createElement('span');
-    const price = document.createElement('span');
-    summary.style.cssText = `display:block;padding:6px 10px 5px;font-weight:600;color:${tooltipPrimaryColor};letter-spacing:0.01em;border-bottom:1px solid ${tooltipDivider};`;
-    price.style.cssText = `display:block;padding:5px 10px;font-size:11px;font-weight:500;color:${tooltipSecondaryColor};background:${tooltipFooterBg};border-bottom-left-radius:5px;border-bottom-right-radius:5px;`;
-    const arrow = document.createElement('span');
-    arrow.style.cssText = `position:absolute;top:100%;left:18px;border:5px solid transparent;border-top-color:${tooltipFooterBg};`;
-    tooltip.append(summary, price, arrow);
-    root.appendChild(tooltip);
     root.style.overflow = 'visible';
     root.tabIndex = 0;
     root.removeAttribute('title');
-    root.setAttribute('aria-describedby', tooltip.id);
-    bindChartUiTranslation(tooltip, () => {
-      summary.textContent = `${tr(role === 'SL' ? 'Stop loss' : 'Take profit')} ${signed(percent, 2)}%  ${signed(ticks, 0)} ${tr('ticks')}`;
-      price.textContent = `${tr('Price')} ${levelPrice.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
-    });
-    const hideTooltip = () => {
-      tooltip.style.display = 'none';
+    let hoverSuppressed = false;
+    let isHovered = false;
+    const hideHoverFeedback = () => {
       handle.style.display = 'none';
       root.style.borderStyle = 'dotted';
       root.style.zIndex = '21';
       options.onHoverChange?.(false);
     };
-    const showTooltip = (event?: Event) => {
-      tooltip.style.display = 'block';
+    const clearHoverSuppressionAndHide = () => {
+      isHovered = false;
+      hoverSuppressed = false;
+      hideHoverFeedback();
+    };
+    const dismissHoverFeedback = () => {
+      hoverSuppressed = true;
+      hideHoverFeedback();
+      if (document.activeElement === root) root.blur();
+    };
+    const showHoverFeedback = (event?: Event) => {
+      if (event && event.type !== 'focusin') {
+        isHovered = true;
+        if (hoverSuppressed) return;
+        if (event instanceof MouseEvent && event.buttons !== 0) return;
+      }
       handle.style.display = 'block';
       root.style.borderStyle = 'solid';
       root.style.zIndex = '100';
       options.onHoverChange?.(true);
-      tooltip.style.left = '0';
-      tooltip.style.bottom = 'calc(100% + 9px)';
-      tooltip.style.top = 'auto';
-      arrow.style.left = '18px';
-      arrow.style.top = '100%';
-      arrow.style.bottom = 'auto';
-      arrow.style.borderColor = 'transparent';
-      arrow.style.borderTopColor = tooltipFooterBg;
-      const bounds = root.parentElement?.getBoundingClientRect();
-      const rootRect = root.getBoundingClientRect();
-      const rect = tooltip.getBoundingClientRect();
-      if (event instanceof MouseEvent && Number.isFinite(event.clientX) && event.clientX > 0 && bounds && rect.width > 0 && rootRect.width > 0) {
-        const desiredLeftInHost = Math.min(
-          Math.max(8, event.clientX - bounds.left - rect.width / 2),
-          Math.max(8, bounds.width - rect.width - 8),
-        );
-        const relativeLeft = desiredLeftInHost - (rootRect.left - bounds.left);
-        tooltip.style.left = `${Math.round(relativeLeft)}px`;
-        const arrowLeft = Math.min(
-          Math.max(12, event.clientX - (rootRect.left + relativeLeft) - 5),
-          Math.max(12, rect.width - 18),
-        );
-        arrow.style.left = `${Math.round(arrowLeft)}px`;
-      } else if (bounds && rect.right > bounds.right - 8) {
-        tooltip.style.left = `${Math.min(0, bounds.right - 8 - rect.right)}px`;
-      }
-      if (bounds && rect.top < bounds.top + 4) {
-        tooltip.style.bottom = 'auto';
-        tooltip.style.top = 'calc(100% + 9px)';
-        arrow.style.top = 'auto';
-        arrow.style.bottom = '100%';
-        arrow.style.borderTopColor = 'transparent';
-        arrow.style.borderBottomColor = levelAccent;
-      }
     };
-    root.addEventListener('mouseenter', showTooltip);
-    root.addEventListener('mouseleave', hideTooltip);
-    root.addEventListener('focusin', showTooltip);
-    root.addEventListener('focusout', hideTooltip);
-    root.addEventListener('pointerdown', hideTooltip);
-    root.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); });
-    tradeLevelHoverBindings.set(root, { show: showTooltip, hide: hideTooltip });
+    root.addEventListener('mouseenter', showHoverFeedback);
+    root.addEventListener('mouseleave', clearHoverSuppressionAndHide);
+    root.addEventListener('focusin', showHoverFeedback);
+    root.addEventListener('focusout', clearHoverSuppressionAndHide);
+    root.addEventListener('pointerdown', dismissHoverFeedback);
+    root.addEventListener('mousedown', dismissHoverFeedback);
+    root.addEventListener('click', dismissHoverFeedback);
+    root.addEventListener('keydown', event => { if (event.key === 'Escape') dismissHoverFeedback(); });
+    tradeLevelHoverBindings.set(root, {
+      show: showHoverFeedback,
+      hide: clearHoverSuppressionAndHide,
+      dismiss: dismissHoverFeedback,
+      isHovered: () => isHovered,
+    });
   }
   return root;
 };

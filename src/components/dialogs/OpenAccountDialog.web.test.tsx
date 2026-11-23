@@ -66,4 +66,21 @@ describe('web Open an Account', () => {
     else expect(link).toBeNull();
     expect(registerRuntimeBrokerDemoAccount).not.toHaveBeenCalled();
   });
+
+  it('opens the demo creation form when forceDemoCreation is true even if both demo and real accounts exist', async () => {
+    useAppStore.setState({
+      isAuthenticated: true,
+      accountId: '200039',
+      savedAccounts: [
+        { login: 200034, name: 'Live', server: 'Orrnn', brokerId: 'Orrnn', accountType: 'real', isLive: true, lastUsed: 1 },
+        { login: 200039, name: 'Demo', server: 'Orrnn', brokerId: 'Orrnn', accountType: 'demo', isLive: false, lastUsed: 2 },
+      ],
+    });
+    const onClose = vi.fn();
+    render(<OpenAccountDialog isOpen forceDemoCreation onClose={onClose} />);
+    expect(screen.getByRole('heading', { name: 'Create demo account' })).toBeInTheDocument();
+    expect(await screen.findByText('Orrnn')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

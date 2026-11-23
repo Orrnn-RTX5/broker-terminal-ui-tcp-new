@@ -73,6 +73,7 @@ export const MarketWatchGrid = ({
   showRows = true,
   translate,
 }: MarketWatchGridProps) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
   const [isLightSkin, setIsLightSkin] = useState(false);
@@ -101,13 +102,13 @@ export const MarketWatchGrid = ({
   }, [setMarketWatchViewportRef]);
 
   useEffect(() => {
-    const ownerDocument = viewportRef.current?.ownerDocument;
+    const ownerDocument = containerRef.current?.ownerDocument;
     if (!ownerDocument) return;
     const releaseRowFocus = (event: PointerEvent) => {
       const focused = ownerDocument.activeElement;
       if (!(focused instanceof HTMLElement)
         || !focused.classList.contains('rtx-market-watch__row')
-        || !viewportRef.current?.contains(focused)
+        || !containerRef.current?.contains(focused)
         || !(event.target instanceof Node)
         || focused.contains(event.target)) return;
       // Canvas tools can prevent the normal pointer focus transfer. Release
@@ -128,7 +129,7 @@ export const MarketWatchGrid = ({
   }, []);
 
   useLayoutEffect(() => {
-    const element = viewportRef.current;
+    const element = containerRef.current;
     if (!element) return;
     const readWidth = () => {
       // Measure outer border-box width (offsetWidth) rather than contentRect so
@@ -197,18 +198,30 @@ export const MarketWatchGrid = ({
 
   return (
     <div
-      ref={bindViewport}
+      ref={containerRef}
       style={{
         flex: 1,
-        overflowY: 'auto',
-        overflowX: marketWatchOptions.autoArrange ? 'hidden' : 'auto',
         minWidth: 0,
-        display: showRows ? 'block' : 'flex',
+        minHeight: 0,
+        display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden',
       }}
-      className="rtx-market-watch__table mw-scrollbar"
+      className="rtx-market-watch__table"
     >
-      {showRows && (rows.length === 0 ? (
+      {showRows && (
+        <div
+          ref={bindViewport}
+          style={{
+            flex: '0 1 auto',
+            overflowY: 'auto',
+            overflowX: marketWatchOptions.autoArrange ? 'hidden' : 'auto',
+            minWidth: 0,
+            minHeight: 0,
+          }}
+          className="rtx-market-watch__table-scroll mw-scrollbar"
+        >
+          {rows.length === 0 ? (
         isSymbolListLoading ? (
           <div
             className="rtx-market-watch__loading-skeleton"
@@ -332,7 +345,7 @@ export const MarketWatchGrid = ({
           className={`rtx-market-watch__grid${marketWatchOptions.showGrid ? ' rtx-market-watch__grid--lines' : ''}`}
           data-wide={panelWidth >= 320 ? 'true' : undefined}
           style={{
-            width: marketWatchOptions.autoArrange ? '100%' : Math.max(panelWidth || 999, tableMinimumWidth),
+            width: '100%',
             minWidth: marketWatchOptions.autoArrange ? 0 : tableMinimumWidth,
             borderCollapse: 'collapse',
             tableLayout: 'fixed',
@@ -454,7 +467,9 @@ export const MarketWatchGrid = ({
             ))}
           </tbody>
         </table>
-      ))}
+      )}
+        </div>
+      )}
       {(!showRows || (!isSymbolListLoading && (rows.length > 0 || quoteEligibleSymbols.length > 0))) && footer}
     </div>
   );

@@ -62,6 +62,47 @@ describe('MarketWatchPanel logged-in account symbol universe', () => {
     demandedSymbols().forEach((symbol) => expect(['US30', 'GBPUSD', 'XAUUSD', 'EURUSD']).toContain(symbol));
   });
 
+  it('shows at most 7 symbols by default for a large logged-in account catalogue', () => {
+    const largeCatalog = [
+      'AUDUSD', 'AUS200', 'BTCUSD', 'DE40', 'ETHUSD', 'EURUSD', 'GBPUSD',
+      'NZDUSD', 'US30', 'US500', 'USDCAD', 'USDJPY', 'USTEC', 'XAUUSD', 'XBRUSD',
+    ];
+    marketHooks.accountCatalogStatus = 'loaded';
+    marketHooks.activeSymbols = largeCatalog;
+    setMarketCatalog(largeCatalog);
+
+    const { container } = render(
+      <MarketWatchPanel allSymbols={largeCatalog} selectedSymbol="EURUSD" onSymbolSelect={vi.fn()} />,
+    );
+
+    const rendered = getRenderedRowSymbols(container);
+    expect(rendered).toHaveLength(7);
+    expect(rendered).toEqual(['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'BTCUSD', 'ETHUSD', 'USTEC']);
+    expect(marketHooks.useLiveQuotes).toHaveBeenCalledWith(rendered);
+  });
+
+  it('shows at most 7 symbols by default for a large guest catalogue', () => {
+    act(() => {
+      useAppStore.setState({ isAuthenticated: false });
+    });
+    const largeCatalog = [
+      'AUDUSD', 'AUS200', 'BTCUSD', 'DE40', 'ETHUSD', 'EURUSD', 'GBPUSD',
+      'NZDUSD', 'US30', 'US500', 'USDCAD', 'USDJPY', 'USTEC', 'XAUUSD', 'XBRUSD', 'AAPL',
+    ];
+    marketHooks.accountCatalogStatus = 'none';
+    marketHooks.activeSymbols = largeCatalog;
+    setMarketCatalog(largeCatalog);
+
+    const { container } = render(
+      <MarketWatchPanel allSymbols={largeCatalog} selectedSymbol="EURUSD" onSymbolSelect={vi.fn()} />,
+    );
+
+    const rendered = getRenderedRowSymbols(container);
+    expect(rendered).toHaveLength(7);
+    expect(rendered).toEqual(['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'BTCUSD', 'ETHUSD', 'USTEC']);
+    expect(marketHooks.useLiveQuotes).toHaveBeenCalledWith(rendered);
+  });
+
   it('filters saved watchlist rows outside the account catalogue without deleting them', () => {
     marketHooks.accountCatalogStatus = 'loaded';
     setMarketCatalog(['EURUSD', 'XAUUSD']);

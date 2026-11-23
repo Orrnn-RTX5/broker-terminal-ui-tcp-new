@@ -38,6 +38,8 @@ interface TradeAuthDialogProps {
   onClose: () => void;
   onAuthenticated: (accountId: string) => void;
   initialMode?: 'choice' | 'demo' | 'login';
+  allowDemoCreation?: boolean;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 type DialogMode = 'choice' | 'login' | 'demo';
@@ -114,9 +116,10 @@ function DesktopTradeAuthDialog(props: TradeAuthDialogProps) {
 }
 
 function TradeAuthFlow({
-  isOpen, intent, onClose, onAuthenticated, initialMode = 'choice', brokerPolicy, desktopBroker = null, desktop,
+  isOpen, intent, onClose, onAuthenticated, initialMode = 'choice', allowDemoCreation = false, anchorRef, brokerPolicy, desktopBroker = null, desktop,
 }: TradeAuthFlowProps) {
   const [mode, setMode] = useState<DialogMode>(initialMode);
+  const [anchoredLeft, setAnchoredLeft] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -140,7 +143,7 @@ function TradeAuthFlow({
   // The desktop terminal serves every directory broker from one local address
   // and bookmarks untyped logins as real, so saved accounts cannot tell there
   // whether this broker's choice is still needed: it always shows the choice.
-  const { hasDemoAndRealAccounts } = desktop
+  const { hasDemoAndRealAccounts } = (desktop || allowDemoCreation)
     ? { hasDemoAndRealAccounts: false }
     : getBrokerSavedAccountTypes(storeState?.savedAccounts, {
       brokerId: brokerId || configuration.brokerId,
@@ -189,6 +192,34 @@ function TradeAuthFlow({
   }, [isOpen, effectiveInitialMode]);
 
   useLayoutEffect(() => {
+    if (!isOpen || !anchorRef) {
+      setAnchoredLeft(null);
+      return undefined;
+    }
+    const updateAnchoredLeft = () => {
+      const anchorRect = anchorRef.current?.getBoundingClientRect();
+      if (!anchorRect || anchorRect.width <= 0) {
+        setAnchoredLeft(null);
+        return;
+      }
+      const dialogWidth = dialogRef.current?.getBoundingClientRect().width || 440;
+      const viewportWidth = window.innerWidth;
+      let nextLeft: number;
+      if (anchorRect.right + dialogWidth + 16 <= viewportWidth) {
+        nextLeft = Math.round(anchorRect.right);
+      } else if (anchorRect.left - dialogWidth >= 16) {
+        nextLeft = Math.round(anchorRect.left - dialogWidth);
+      } else {
+        nextLeft = Math.max(16, Math.round(viewportWidth - dialogWidth - 16));
+      }
+      setAnchoredLeft(nextLeft);
+    };
+    updateAnchoredLeft();
+    window.addEventListener('resize', updateAnchoredLeft);
+    return () => window.removeEventListener('resize', updateAnchoredLeft);
+  }, [anchorRef, isOpen, mode]);
+
+  useLayoutEffect(() => {
     if (!isOpen || brokerPolicyError) {
       demoRequestGenerationRef.current += 1;
       if (brokerPolicyError) {
@@ -212,8 +243,12 @@ function TradeAuthFlow({
   const leaveDemo = useCallback(() => {
     demoRequestGenerationRef.current += 1;
     setSubmitting(false);
+    if (allowDemoCreation && initialMode === 'demo') {
+      onClose();
+      return;
+    }
     setMode('choice');
-  }, []);
+  }, [allowDemoCreation, initialMode, onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -451,7 +486,10 @@ function TradeAuthFlow({
   const isDemo = mode === 'demo';
 
   return createPortal(
-    <div className="rtx-auth-backdrop">
+    <div
+      className="rtx-auth-backdrop"
+      style={anchoredLeft !== null ? { justifyContent: 'flex-start', paddingLeft: anchoredLeft } : undefined}
+    >
       <button
         type="button"
         className="rtx-auth-backdrop__dismiss"
@@ -562,7 +600,7 @@ function TradeAuthFlow({
                     <span className="rtx-auth-order-note-text">
                       {isMutationIntent
                         ? 'This action will not run automatically after login. Review your account data, then choose it again.'
-                        : 'This order will not be sent automatically. The ticket reopens after login so you can confirm it.'}
+                        : 'This order will not be sent automatically. Review your account after login, then place it again.'}
                     </span>
                   </div>
                 </div>
@@ -751,7 +789,7 @@ function TradeAuthFlow({
 
             <div className="rtx-auth-dialog__footer">
               <button type="button" onClick={leaveDemo} className="rtx-auth-button" data-variant="ghost">
-                Back
+                {allowDemoCreation && initialMode === 'demo' ? tr('Cancel') : 'Back'}
               </button>
               <button
                 type="submit"

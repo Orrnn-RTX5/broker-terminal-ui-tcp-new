@@ -156,7 +156,7 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
           </button>
         </div>
 
-        <div className="rtx-save-picture-body space-y-4">
+        <div className="rtx-save-picture-body space-y-2.5">
           <div className="rtx-save-picture-preview">
             {preview ? (
               <img src={preview} alt={tr("Chart preview")} className="max-h-full max-w-full object-contain" />

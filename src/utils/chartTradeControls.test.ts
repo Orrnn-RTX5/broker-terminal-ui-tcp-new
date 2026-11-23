@@ -570,7 +570,7 @@ describe('createTradeLevelControlBar', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('shares hover feedback with the price line without triggering removal', () => {
+  it('shares hover feedback with the price line without rendering a floating tooltip card or triggering removal', () => {
     const onHoverChange = vi.fn();
     const onRemove = vi.fn();
     const bar = createTradeLevelControlBar({
@@ -581,13 +581,12 @@ describe('createTradeLevelControlBar', () => {
     const line = document.createElement('div');
     document.body.append(bar, line);
     bindTradeLevelHoverTarget(bar, line);
+    expect(bar.querySelector('[role="tooltip"]')).toBeNull();
     line.dispatchEvent(new MouseEvent('mouseenter'));
-    expect(bar.querySelector<HTMLElement>('[role="tooltip"]')!.style.display).toBe('block');
     expect(bar.querySelector<HTMLElement>('.rtx-trade-level-hover-handle')!.style.display).toBe('block');
     expect(bar.style.borderStyle).toBe('solid');
     expect(onHoverChange).toHaveBeenLastCalledWith(true);
     line.dispatchEvent(new MouseEvent('mouseleave'));
-    expect(bar.querySelector<HTMLElement>('[role="tooltip"]')!.style.display).toBe('none');
     expect(bar.querySelector<HTMLElement>('.rtx-trade-level-hover-handle')!.style.display).toBe('none');
     expect(bar.style.borderStyle).toBe('dotted');
     expect(onHoverChange).toHaveBeenLastCalledWith(false);
@@ -595,11 +594,11 @@ describe('createTradeLevelControlBar', () => {
   });
 
   it.each([
-    ['BUY', 'SL', 81155, 'Stop loss -0.08%  -66 ticks'],
-    ['BUY', 'TP', 81299, 'Take profit +0.10%  +78 ticks'],
-    ['SELL', 'SL', 81299, 'Stop loss -0.10%  -78 ticks'],
-    ['SELL', 'TP', 81155, 'Take profit +0.08%  +66 ticks'],
-  ] as const)('shows %s %s hover details and hides them when dragging', (side, role, levelPrice, expected) => {
+    ['BUY', 'SL', 81155],
+    ['BUY', 'TP', 81299],
+    ['SELL', 'SL', 81299],
+    ['SELL', 'TP', 81155],
+  ] as const)('omits the %s %s floating tooltip card and keeps hover handle feedback clean on drag/escape', (side, role, levelPrice) => {
     const onRemove = vi.fn();
     const bar = createTradeLevelControlBar({
       tradeKey: 'trade:987', role, side, label: role, pips: 0, money: 0,
@@ -608,20 +607,20 @@ describe('createTradeLevelControlBar', () => {
       hoverDetails: { entryPrice: 81221, levelPrice, digits: 0, tickSize: 1 },
     });
     document.body.appendChild(bar);
-    const tooltip = bar.querySelector<HTMLElement>('[role="tooltip"]')!;
-    expect(tooltip.style.display).toBe('none');
+    const handle = bar.querySelector<HTMLElement>('.rtx-trade-level-hover-handle')!;
+    expect(bar.querySelector('[role="tooltip"]')).toBeNull();
+    expect(bar.querySelector('.rtx-trade-level-tooltip')).toBeNull();
     expect(bar.hasAttribute('title')).toBe(false);
-    expect(bar.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(bar.hasAttribute('aria-describedby')).toBe(false);
+    expect(handle.style.display).toBe('none');
     bar.dispatchEvent(new MouseEvent('mouseenter'));
-    expect(tooltip.style.display).toBe('block');
-    expect(tooltip.children[0].textContent).toBe(expected);
-    expect(tooltip.children[1].textContent).toBe(`Price ${levelPrice.toLocaleString()}`);
+    expect(handle.style.display).toBe('block');
     bar.dispatchEvent(new Event('pointerdown'));
-    expect(tooltip.style.display).toBe('none');
+    expect(handle.style.display).toBe('none');
     bar.dispatchEvent(new FocusEvent('focusin'));
-    expect(tooltip.style.display).toBe('block');
+    expect(handle.style.display).toBe('block');
     bar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(tooltip.style.display).toBe('none');
+    expect(handle.style.display).toBe('none');
     expect(onRemove).not.toHaveBeenCalled();
   });
 

@@ -86,7 +86,7 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-3 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg" {...dragHandleProps}>
+        <div className="rtx-legacy-sheet__header flex items-center justify-between gap-2 px-4 py-2.5 shrink-0 border-b border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#131316] [.rtx-advanced-view_&]:bg-gray-50 rounded-t-lg" {...dragHandleProps}>
           <div className="flex items-center gap-2">
             <Icon name="alert-triangle" size="md" className="text-amber-400 [.rtx-advanced-view_&]:text-amber-500" />
             <h2 id={titleId} className="text-sm font-semibold text-zinc-100 [.rtx-advanced-view_&]:text-gray-900">{tr("Confirm Exit")}</h2>
@@ -101,32 +101,32 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
         </div>
 
         {/* Content */}
-        <div className="rtx-legacy-sheet__body p-4 space-y-4 min-h-0 overflow-y-auto">
+        <div className="rtx-legacy-sheet__body p-3.5 space-y-2.5 min-h-0 overflow-y-auto">
           {/* Warning Message */}
-          <div className="flex items-start gap-3 p-3 bg-amber-500/10 [.rtx-advanced-view_&]:bg-amber-50 border border-amber-500/30 [.rtx-advanced-view_&]:border-amber-200 rounded">
-            <Icon name="alert-triangle" size="lg" className="text-amber-400 [.rtx-advanced-view_&]:text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="text-xs space-y-1">
-              <p className="text-amber-200 [.rtx-advanced-view_&]:text-amber-800 font-medium">
+          <div className="rtx-sheet-warning">
+            <Icon name="alert-triangle" size="md" className="rtx-sheet-warning__icon" />
+            <div className="text-xs space-y-0.5">
+              <p className="rtx-sheet-warning__title">
                 {tr("You have unsaved changes that will be lost if you exit now.")}</p>
-              <p className="text-zinc-300 [.rtx-advanced-view_&]:text-amber-700">
+              <p className="rtx-sheet-warning__body">
                 {tr("Please review the items below and choose how to proceed.")}</p>
             </div>
           </div>
 
           {/* Unsaved Items List */}
           {hasChanges && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-zinc-400 [.rtx-advanced-view_&]:text-gray-600 mb-2">{tr("Unsaved Items:")}</p>
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-zinc-400 [.rtx-advanced-view_&]:text-gray-600 mb-1">{tr("Unsaved Items:")}</p>
 
               {changes.hasWorkspaceChanges && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded-md">
                   <div className="w-2 h-2 rounded-full bg-zinc-400 [.rtx-advanced-view_&]:bg-gray-400" />
                   <span className="text-xs text-zinc-300 [.rtx-advanced-view_&]:text-gray-700">{tr("Workspace layout has been modified")}</span>
                 </div>
               )}
 
               {changes.hasOpenTrades && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded-md">
                   <div className="w-2 h-2 rounded-full bg-green-500 [.rtx-advanced-view_&]:bg-emerald-500" />
                   <span className="text-xs text-zinc-300 [.rtx-advanced-view_&]:text-gray-700">
                     {changes.openTradesCount} {changes.openTradesCount === 1 ? tr('open position') : tr('open positions')}
@@ -135,7 +135,7 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
               )}
 
               {changes.hasDraftOrders && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-zinc-800/50 [.rtx-advanced-view_&]:bg-gray-100 rounded-md">
                   <div className="w-2 h-2 rounded-full bg-yellow-500 [.rtx-advanced-view_&]:bg-amber-500" />
                   <span className="text-xs text-zinc-300 [.rtx-advanced-view_&]:text-gray-700">
                     {changes.draftOrdersCount} {changes.draftOrdersCount === 1 ? tr('pending order') : tr('pending orders')}
@@ -147,7 +147,7 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
 
           {/* Save Workspace Option */}
           {changes.hasWorkspaceChanges && (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -164,7 +164,7 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
 
           {/* Don't Ask Again Option */}
           <div className="pt-2 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200">
-            <label className="flex items-center gap-2 cursor-pointer mt-2">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={dontAskAgain}
@@ -177,16 +177,16 @@ export const ExitConfirmDialog: React.FC<ExitConfirmDialogProps> = ({
 
           {/* Warning for Open Trades */}
           {changes.hasOpenTrades && (
-            <div className="flex items-start gap-2 p-2 bg-red-500/10 [.rtx-advanced-view_&]:bg-red-50 border border-red-500/30 [.rtx-advanced-view_&]:border-red-200 rounded mt-4">
+            <div className="flex items-start gap-2 p-2.5 bg-red-500/10 [.rtx-advanced-view_&]:bg-red-50 border border-red-500/35 [.rtx-advanced-view_&]:border-red-200 rounded-md">
               <Icon name="alert-triangle" size="sm" className="text-red-400 [.rtx-advanced-view_&]:text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-red-200 [.rtx-advanced-view_&]:text-red-800">
+              <p className="text-xs text-white [.rtx-advanced-view_&]:text-red-800">
                 {tr("Warning: Your open positions will remain active after exit. Make sure to monitor them or close them before exiting.")}</p>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-3 shrink-0 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#252528] [.rtx-advanced-view_&]:bg-gray-50 rounded-b-lg">
+        <div className="rtx-legacy-sheet__footer flex flex-wrap items-center justify-end gap-2 px-4 py-2.5 shrink-0 border-t border-zinc-700 [.rtx-advanced-view_&]:border-gray-200 bg-[#252528] [.rtx-advanced-view_&]:bg-gray-50 rounded-b-lg">
           <button
             ref={cancelRef}
             onClick={onCancel}
