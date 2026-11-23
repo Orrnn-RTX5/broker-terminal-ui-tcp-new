@@ -11,6 +11,9 @@ import { mapBrokerError } from '../api/brokerApi';
 import { useAppStore } from '../store/useAppStore';
 import { accountMetricProvided } from '../services/accountMetrics';
 import { protectionLevelViolation } from './tradeLevelDrag';
+// dealing begin
+import { DEALING_OUTCOME_PENDING_CODE, DEALING_OUTCOME_PENDING_MESSAGE } from '../services/dealing/dealingRuntimeHooks';
+// dealing end
 
 const URL_LIKE_RE = /\b(?:wss?|https?):\/\/\S+/gi;
 const HOST_PORT_RE = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
@@ -318,6 +321,9 @@ const isTooManyOrdersRefusal = (err: unknown): boolean => {
 
 export const formatOrderError = (err: unknown): string => {
   if (isTooManyOrdersRefusal(err)) return TOO_MANY_ORDERS_MESSAGE;
+  // dealing begin
+  if (isRecord(err) && err.code === DEALING_OUTCOME_PENDING_CODE) return DEALING_OUTCOME_PENDING_MESSAGE;
+  // dealing end
 
   if (isRecord(err) && err.preserveBackendOrderError === true) {
     const code = readString(err.code);

@@ -23,6 +23,11 @@ export const DEALING_WIRE_CLIENT_CAP_V1 = 0x0000_0001;
 export const DEALING_WIRE_RESP_TAG_DEALING_ENABLED = 0x2a;
 export const DEALING_WIRE_TRADE_EVENT_KIND = 7;
 
+/** Neutral outcome for a dealing-queued order with no dealer result by its deadline (never a failure claim). */
+export const DEALING_OUTCOME_PENDING_CODE = 'DEALING_OUTCOME_PENDING';
+export const DEALING_OUTCOME_PENDING_MESSAGE =
+  'Your order is still being processed by the dealer. Check Positions for the result and do not place it again.';
+
 /**
  * Enabled: as of this release the `web-terminal-server` bridge (`binary_order_bridge.go` +
  * `rtx5-tcp-protocol`) passes TLV extras and Actions 9/10/11. TLV `0x16` is still sent only after

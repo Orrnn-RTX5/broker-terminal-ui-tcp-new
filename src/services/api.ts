@@ -198,6 +198,9 @@ import {
   type BinaryTcpOrderParams,
   type DecodedBinaryOrderResp,
 } from './binaryTcpOrderClient';
+// dealing begin
+import { dealingOrderHooks, DEALING_OUTCOME_PENDING_CODE } from './dealing/dealingRuntimeHooks';
+// dealing end
 
 export const FAST_CHANNEL_NOT_CONFIGURED_MESSAGE = 'Fast order channel is not configured for this Terminal';
 export const FAST_CHANNEL_UNAVAILABLE_MESSAGE = 'Fast order channel unavailable - order not sent, try again';
@@ -1357,6 +1360,19 @@ export const positionsApi = {
         }
       }
 
+// dealing begin
+      // A dealing-queued close (ClosePosition is one of the two actions the gateway can queue, see
+      // ram_mt5_engine.go dealing hook / dealing_engine_hook.go tryDealingPreABookLocked) is awaited through the
+      // dealing store, never the 30 s order-command poll. The synthetic filled response replaces `resp`.
+      if (resp.status === 202 && dealingOrderHooks.ingestOrderResp !== null) {
+        const dealingFill = await (await import('./dealing/dealingOutcomeWaiter')).awaitDealingQueuedOrderOutcome({
+          clientOrderId: resp.clientOrderId || clientOrderId,
+          submittedAtMs: binarySubmittedAtMs,
+          accountLogin,
+        });
+        if (dealingFill !== null) resp = dealingFill;
+      }
+// dealing end
       const effectiveClientOrderId = resp.clientOrderId || clientOrderId;
       const timing = formatBinaryExecTiming(resp.execMicros);
       let closedTicket = resp.positionTicket > 0 ? resp.positionTicket : numericTicket;
@@ -2178,6 +2194,19 @@ export const ordersApi = {
           }
         }
 
+// dealing begin
+        // A dealing-queued 202 is awaited through the dealing store (request id), never the 30 s order-command poll.
+        const dealingFill = resp.status === 202 && dealingOrderHooks.ingestOrderResp !== null
+          ? await (await import('./dealing/dealingOutcomeWaiter')).awaitDealingQueuedOrderOutcome({
+            clientOrderId: resp.clientOrderId || clientOrderId,
+            submittedAtMs: binarySubmittedAtMs,
+            accountLogin,
+          })
+          : null;
+        if (dealingFill !== null) {
+          result = mapBinaryRespToPosition(dealingFill, { accountLogin, symbol, side, volume, sl, tp });
+        } else
+// dealing end
         if (resp.status === 202 || (resp.positionTicket <= 0 && resp.orderTicket <= 0)) {
           const settled = await settleBinaryOrderCommand({
             clientOrderId: resp.clientOrderId || clientOrderId,
@@ -2251,6 +2280,10 @@ export const ordersApi = {
           binaryFilledAtMs = readBinaryErrorTerminalAtMs(rawError, enqueueStartedAtMs);
           error = toBinaryTcpApiError(rawError, effectiveClientOrderId);
         }
+// dealing begin
+        // Neutral "still with the dealer" outcome: not terminal, so it is not recorded as failed.
+        if ((error as { code?: unknown } | null)?.code === DEALING_OUTCOME_PENDING_CODE) throw error;
+// dealing end
         const { terminalStatus, errorCode, errorMessage } = extractTerminalErrorInfo(error);
         recordPlacementTerminal(terminalStatus, {
           code: errorCode,
