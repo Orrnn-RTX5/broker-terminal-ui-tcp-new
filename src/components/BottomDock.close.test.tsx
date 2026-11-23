@@ -40,6 +40,7 @@ vi.mock('../features/bottom-dock/exposure/ExposureTab', () => ({ ExposureTab: ()
 vi.mock('../features/bottom-dock/toolbox/ToolboxTab', () => ({ ToolboxTab: () => null }));
 vi.mock('./HistoryDownloader', () => ({ HistoryDownloader: () => null }));
 vi.mock('./layout/JournalTab', () => ({ JournalTab: () => null }));
+vi.mock('./layout/NewsTab', () => ({ NewsTab: () => null }));
 
 const TAB_LABELS = [
     'Trade',
@@ -57,6 +58,7 @@ const TAB_LABELS = [
 describe('Toolbox header close control', () => {
     beforeEach(() => {
         localStorage.clear();
+        sessionStorage.clear();
         toolboxMocks.refresh.mockClear();
     });
 
@@ -120,7 +122,7 @@ describe('Toolbox header close control', () => {
             expect(onClose).toHaveBeenCalledTimes(sectionsClosed);
         }
 
-        expect(sectionsClosed).toBe(6);
+        expect(sectionsClosed).toBe(7);
         expect(openSpy).toHaveBeenCalledWith('https://orrnn.com', '_blank', 'noopener,noreferrer');
         expect(onCloseBulk).not.toHaveBeenCalled();
         expect(onClosePosition).not.toHaveBeenCalled();
@@ -128,7 +130,7 @@ describe('Toolbox header close control', () => {
         expect(onCancelOrder).not.toHaveBeenCalled();
     });
 
-    it('removes Historical Data, Articles, Code Base, and Experts, opens orrnn.com on Company click, and keeps News/Mailbox/Calendar/Alerts locked', () => {
+    it('removes Historical Data, Articles, Code Base, and Experts, opens orrnn.com on Company click, and unlocks News while Mailbox/Calendar/Alerts stay locked', () => {
         const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
         render(
             <BottomDock
@@ -143,7 +145,6 @@ describe('Toolbox header close control', () => {
         }
 
         const lockedTabs = [
-            'News',
             'Mailbox',
             'Calendar',
             'Alerts',
@@ -158,6 +159,7 @@ describe('Toolbox header close control', () => {
             fireEvent.click(tab);
         }
 
+        expect(screen.getByRole('button', { name: /^News/ })).toBeEnabled();
         const companyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
         expect(companyTab).toBeEnabled();
         fireEvent.click(companyTab);

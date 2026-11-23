@@ -60,6 +60,7 @@ export const toggleFloatToolboxDockPanel = (): void => {
 };
 
 const CalendarTab = lazy(() => import('./layout/CalendarTab').then(module => ({ default: module.CalendarTab })));
+const NewsTab = lazy(() => import('./layout/NewsTab').then(module => ({ default: module.NewsTab })));
 const journalTabFeature = createPreloadableFeature(() => import('./layout/JournalTab').then(module => ({ default: module.JournalTab })));
 const JournalTab = journalTabFeature.Component;
 const historyFeature = createPreloadableFeature(() => import('../features/bottom-dock/history/HistoryTab').then(module => ({ default: module.HistoryTab })));
@@ -68,6 +69,7 @@ const MemoToolboxTab = memo(ToolboxTab);
 const MemoExposureTab = memo(ExposureTab);
 const MemoHistoryTab = memo(historyFeature.Component);
 const MemoCalendarTab = memo(CalendarTab);
+const MemoNewsTab = memo(NewsTab);
 const MemoJournalTab = memo(JournalTab);
 
 const HIDDEN_TAB_ROWS: never[] = [];
@@ -93,7 +95,7 @@ const TABS: { id: TabType; locked?: boolean }[] = [
   { id: 'History' },
   { id: 'Exposure' },
   { id: 'Toolbox' },
-  { id: 'News', locked: true },
+  { id: 'News' },
   { id: 'Mailbox', locked: true },
   { id: 'Calendar', locked: true },
   { id: 'Company' },
@@ -413,8 +415,16 @@ export function BottomDock({
                     <RetainedLazyFeature active={activeTab === 'Journal'}><MemoJournalTab /></RetainedLazyFeature>
                 </div>
 
+                <div
+                    className="h-full min-h-0"
+                    hidden={activeTab !== 'News'}
+                    aria-hidden={activeTab !== 'News'}
+                >
+                    <RetainedLazyFeature active={activeTab === 'News'}><MemoNewsTab active={activeTab === 'News'} /></RetainedLazyFeature>
+                </div>
+
                 {/* Placeholder Tabs */}
-                {['News', 'Mailbox', 'Alerts'].includes(activeTab) && (
+                {['Mailbox', 'Alerts'].includes(activeTab) && (
                     <PlaceholderTab title={activeTab} />
                 )}
             </div>
