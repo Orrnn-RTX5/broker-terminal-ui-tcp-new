@@ -70,6 +70,26 @@ const LOCAL_TRADING_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_NOT_SELECTED: 'no trading account is selected. Please sign in again.',
   INVALID_LOGIN: 'the trading account login is invalid. Please sign in again.',
   UNAUTHORIZED: 'your session is no longer authorized. Please sign in again.',
+
+  // dealing begin
+  DEALER_REJECTED: 'order rejected by dealer.',
+  DEALER_TIMEOUT: 'dealing request timed out.',
+  TIMEOUT_REJECTED: 'dealing request timed out.',
+  INSUFFICIENT_LIQUIDITY: 'insufficient liquidity for the requested volume.',
+  RISK_LIMIT: 'order exceeds risk or exposure limits.',
+  TOXIC_FLOW: 'order rejected by dealing policy.',
+  ROBOT_REJECTED: 'order rejected by dealing policy.',
+  NO_DEALER: 'no dealer is available to handle this request.',
+  DEALING_NOT_ENABLED: 'dealing is not enabled on this server.',
+  MARGIN_RECHECK_FAILED: 'insufficient free margin at execution confirmation.',
+  CLIENT_DECLINED: 'requote was declined.',
+  REQUOTE_DECLINED: 'requote was declined.',
+  REQUOTE_EXPIRED: 'requote window expired.',
+  GATEWAY_LOST: 'dealing request was cancelled after a gateway interruption.',
+  LEGACY_MIGRATION: 'dealing request was cancelled cleanly during system upgrade.',
+  DEALING_ALREADY_RESOLVED: 'this dealing request has already been resolved.',
+  CUSTOM: 'order rejected by dealer.',
+  // dealing end
 };
 
 const TRADER_EXPLAINED_REJECTION_CODES = new Set([
@@ -110,6 +130,28 @@ const TRADER_EXPLAINED_REJECTION_CODES = new Set([
   'CLOSE_ONLY',
   'LONG_ONLY',
   'SHORT_ONLY',
+
+  // dealing begin
+  'DEALER_REJECTED',
+  'DEALER_TIMEOUT',
+  'TIMEOUT_REJECTED',
+  'INVALID_PRICE',
+  'INSUFFICIENT_LIQUIDITY',
+  'RISK_LIMIT',
+  'TOXIC_FLOW',
+  'ROBOT_REJECTED',
+  'NO_DEALER',
+  'DEALING_NOT_ENABLED',
+  'MARGIN_RECHECK_FAILED',
+  'CLIENT_DECLINED',
+  'REQUOTE_DECLINED',
+  'REQUOTE_EXPIRED',
+  'GATEWAY_LOST',
+  'LEGACY_MIGRATION',
+  'DEALING_ALREADY_RESOLVED',
+  'REQUOTE',
+  'CUSTOM',
+  // dealing end
 ]);
 
 const formatMappedFailure = (mappedCode: string): string => {

@@ -1,0 +1,346 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Terminal Dealing UI — Status Chip & Requote Dialog Styles
+ * White-label neutral: uses theme CSS custom properties exclusively.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes rtx-dealing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Inline Dealing Status Chip ─── */
+
+.rtx-dealing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-dealing-chip--in_dealing,
+.rtx-dealing-chip--accepting,
+.rtx-dealing-chip--declining {
+  border-color: var(--color-info-dim, var(--border-secondary));
+  color: var(--text-primary);
+}
+
+.rtx-dealing-chip--requoted {
+  border-color: var(--color-warning-dim, var(--border-secondary));
+  color: var(--color-warning, var(--text-primary));
+}
+
+.rtx-dealing-chip--filled {
+  border-color: var(--color-profit-dim, var(--border-secondary));
+  color: var(--color-profit, var(--text-primary));
+}
+
+.rtx-dealing-chip--rejected,
+.rtx-dealing-chip--expired,
+.rtx-dealing-chip--cancelled {
+  border-color: var(--color-loss-dim, var(--border-secondary));
+  color: var(--color-loss, var(--text-primary));
+}
+
+.rtx-dealing-chip[data-dealing-synthetic='true'] {
+  border-color: var(--color-info-dim, var(--border-secondary));
+  color: var(--text-primary);
+}
+
+.rtx-dealing-chip__spinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  animation: rtx-dealing-spin 0.85s linear infinite;
+}
+
+.rtx-dealing-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rtx-dealing-chip__countdown {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rtx-dealing-chip__spinner {
+    animation: none;
+  }
+}
+
+/* ─── Requote Modal Dialog ─── */
+
+.rtx-requote-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop, 1040);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg-primary) 74%, transparent);
+}
+
+html.rtx-skin-untitled-light .rtx-requote-backdrop,
+html.theme-light .rtx-requote-backdrop,
+.theme-light .rtx-requote-backdrop {
+  background: color-mix(in srgb, var(--text-primary) 34%, transparent);
+}
+
+.rtx-requote-dialog {
+  position: relative;
+  z-index: var(--z-modal, 1050);
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  border-radius: var(--radius-xl, 12px);
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xl);
+  user-select: none;
+}
+
+.rtx-requote-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.rtx-requote-dialog__title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rtx-requote-dialog__title {
+  margin: 0;
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rtx-requote-dialog__symbol-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-quaternary);
+  color: var(--text-primary);
+  font-size: var(--text-2xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rtx-requote-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.rtx-requote-dialog__subtitle {
+  margin: 0;
+  font-size: var(--text-xs, 12px);
+  color: var(--text-secondary);
+}
+
+.rtx-requote-dialog__meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rtx-requote-dialog__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+}
+
+.rtx-requote-dialog__stat-label {
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-secondary);
+}
+
+.rtx-requote-dialog__stat-value {
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-requote-dialog__side--buy {
+  color: var(--color-profit);
+}
+
+.rtx-requote-dialog__side--sell {
+  color: var(--color-loss);
+}
+
+.rtx-requote-dialog__quotes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rtx-requote-dialog__quote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+}
+
+.rtx-requote-dialog__quote-card--active {
+  border-color: var(--color-warning, var(--border-tertiary));
+}
+
+.rtx-requote-dialog__quote-label {
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-secondary);
+}
+
+.rtx-requote-dialog__quote-price {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg, 16px);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-requote-dialog__requested-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-tertiary);
+  font-size: var(--text-xs, 12px);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-requote-dialog__countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rtx-requote-dialog__countdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs, 12px);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rtx-requote-dialog__countdown-track {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--bg-quaternary);
+  overflow: hidden;
+}
+
+.rtx-requote-dialog__countdown-bar {
+  height: 100%;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-warning, var(--color-info));
+  transition: width 100ms linear;
+}
+
+.rtx-requote-dialog__expired {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-loss-dim, var(--border-secondary));
+  color: var(--color-loss);
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+}
+
+.rtx-requote-dialog__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-primary);
+}
+
+.rtx-requote-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 18px;
+  border-radius: var(--radius-md, 6px);
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rtx-requote-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rtx-requote-dialog__btn--decline {
+  border: 1px solid var(--border-secondary);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.rtx-requote-dialog__btn--decline:hover:not(:disabled) {
+  background: var(--bg-quaternary);
+}
+
+.rtx-requote-dialog__btn--accept {
+  border: 1px solid var(--color-profit-dim, var(--border-secondary));
+  background: var(--color-profit);
+  color: var(--text-inverse);
+}
+
+.rtx-requote-dialog button:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .rtx-requote-dialog__meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -601,6 +601,19 @@ func (s *WebTerminalServer) serveBinaryOrderWS(w http.ResponseWriter, r *http.Re
 
 		if len(msg) >= wsOrderModeBMinLen {
 			n16 := int(binary.LittleEndian.Uint16(msg[132:134]))
+			// dealing begin
+			if hasExtras && len(msg) == wsOrderModeBMinLen {
+				action := hdr128[1]
+				releaseWSFrameBuf(pooledPtr)
+				_ = writeWSErrorResp(reqID, rtx5tcp.BinaryOrderFastResp{
+					Action:    action,
+					Status:    rtx5tcp.BinaryOrderStatusBadRequest,
+					ErrorCode: "INVALID_BINARY_ORDER",
+					Message:   rtx5tcp.ErrInvalidBinaryOrderReq.Error(),
+				})
+				continue
+			}
+			// dealing end
 			if hasExtras && (len(msg) == wsOrderModeBMinLen+n16 || (n16 > 0 && msg[wsOrderModeBMinLen] < 0x20)) {
 				handleTokenlessHeader(reqID, hdr128, msg[wsOrderModeALen:], pooledPtr)
 				continue

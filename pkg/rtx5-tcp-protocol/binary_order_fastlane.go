@@ -74,6 +74,11 @@ const (
 	BinaryOrderActionCancelPending  uint8 = 6
 	BinaryOrderActionCloseBulk      uint8 = 7
 	BinaryOrderActionCloseBy        uint8 = 8
+	// dealing begin
+	BinaryOrderActionRequoteAccept  uint8 = 9
+	BinaryOrderActionRequoteDecline uint8 = 10
+	BinaryOrderActionDealingSync    uint8 = 11
+	// dealing end
 
 	// Bulk Close Filter SubTypes (OrderSubType when Action == BinaryOrderActionCloseBulk)
 	BinaryCloseBulkAll      uint8 = 0
@@ -390,6 +395,35 @@ func (r BinaryOrderFastReq) Validate() error {
 			return ErrInvalidBinaryOrderReq
 		}
 		return nil
+
+	// dealing begin
+	case BinaryOrderActionRequoteAccept:
+		if r.AccountLogin <= 0 || r.Ticket != 0 || r.Expiration != 0 ||
+			r.Side > BinaryOrderSideSell ||
+			(r.Flags&BinaryOrderFlagHasExtras) == 0 ||
+			r.Price <= 0 {
+			return ErrInvalidBinaryOrderReq
+		}
+		return nil
+
+	case BinaryOrderActionRequoteDecline:
+		if r.AccountLogin <= 0 || r.Ticket != 0 || r.Expiration != 0 ||
+			r.Side > BinaryOrderSideSell ||
+			(r.Flags&BinaryOrderFlagHasExtras) == 0 ||
+			r.Price != 0 {
+			return ErrInvalidBinaryOrderReq
+		}
+		return nil
+
+	case BinaryOrderActionDealingSync:
+		if r.AccountLogin <= 0 || r.Ticket != 0 || r.Expiration != 0 ||
+			r.Side != BinaryOrderSideNone ||
+			r.Volume != 0 || r.Price != 0 || r.StopLimitPrice != 0 ||
+			r.SL != 0 || r.TP != 0 || r.Symbol[0] != 0 {
+			return ErrInvalidBinaryOrderReq
+		}
+		return nil
+	// dealing end
 
 	default:
 		return ErrInvalidBinaryOrderReq

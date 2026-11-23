@@ -27,6 +27,14 @@ import {
   syncBinaryOrderAuthToken,
 } from './binaryTcpOrderClient';
 import { getAccessToken, getAccountLogin, onSessionChange } from './brokerSession';
+// dealing begin
+import {
+  DEALING_WIRE_TRADE_EVENT_KIND,
+  dispatchDealingTradeEventHook,
+  notifyDealingAccountSubscribedHook,
+  notifyDealingStreamDisconnectedHook,
+} from './dealing/dealingRuntimeHooks';
+// dealing end
 
 const MAX_BINARY_ORDER_STREAM_DEFER_MS = 250;
 const MAX_CONSECUTIVE_STREAM_DEFER_MS = 200;
@@ -272,6 +280,11 @@ export function decodeBinaryTradeEvent(payload: Uint8Array): DecodedBinaryTradeE
 
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const eventKind = payload[1];
+  // dealing begin
+  if (eventKind === DEALING_WIRE_TRADE_EVENT_KIND) {
+    return null;
+  }
+  // dealing end
   const accountLogin = Number(view.getBigInt64(2, true));
   const timestampMs = Number(view.getBigInt64(10, true));
   const channelLen = view.getUint16(18, true);
@@ -624,6 +637,11 @@ class BinaryTcpMarketStream {
         if (this.accountSubSeq !== seq) return;
         this.inFlightAccountKey = null;
         this.boundAccountKey = resp.ok ? nextKey : null;
+        // dealing begin
+        if (resp.ok && accountLogin > 0) {
+          notifyDealingAccountSubscribedHook(accountLogin, effectiveToken);
+        }
+        // dealing end
       })
       .catch(() => {
         if (this.accountSubSeq !== seq) return;
@@ -799,6 +817,11 @@ class BinaryTcpMarketStream {
     this.stateListeners.forEach((cb) => {
       try { cb(next); } catch { /* ignore */ }
     });
+    // dealing begin
+    if (!next) {
+      notifyDealingStreamDisconnectedHook();
+    }
+    // dealing end
   }
 
   private scheduleReconnect(): void {
@@ -1133,11 +1156,32 @@ class BinaryTcpMarketStream {
     this.deferredTradeEvents.push(ev);
   }
 
+  // dealing begin
+  private resolveActiveDealingLogin(): number {
+    const key = this.boundAccountKey ?? this.inFlightAccountKey;
+    if (key) {
+      const colon = key.indexOf(':');
+      if (colon > 0) {
+        const parsed = parsePositiveFiniteInt(key.slice(0, colon));
+        if (parsed > 0) return parsed;
+      }
+    }
+    const token = (getAccessToken() ?? '').trim();
+    return resolveActiveAccountLogin(undefined, token);
+  }
+  // dealing end
+
   private decodeTradeEventFrame(
     buf: Uint8Array,
     payloadOffset: number,
     payloadLen: number,
   ): void {
+    // dealing begin
+    if (buf[payloadOffset + 1] === DEALING_WIRE_TRADE_EVENT_KIND && buf[payloadOffset] === 1) {
+      dispatchDealingTradeEventHook(buf, payloadOffset, payloadLen, this.resolveActiveDealingLogin());
+      return;
+    }
+    // dealing end
     if (this.tradeEventListeners.size === 0) return;
     const decoded = decodeBinaryTradeEvent(buf.subarray(payloadOffset, payloadOffset + payloadLen));
     if (!decoded) return;

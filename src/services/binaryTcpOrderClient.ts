@@ -13,6 +13,20 @@
 
 import { isDesktopBackendTarget } from '../config/backendTarget.js';
 import { getAccessToken, onSessionChange } from './brokerSession';
+// dealing begin
+import {
+  DEALING_WIRE_ACTION_REQUOTE_ACCEPT,
+  DEALING_WIRE_ACTION_REQUOTE_DECLINE,
+  DEALING_WIRE_ACTION_SYNC,
+  DEALING_WIRE_CLIENT_CAP_V1,
+  DEALING_WIRE_EXTRA_TAG_CLIENT_CAPS,
+  DEALING_WIRE_EXTRA_TAG_REQUEST_UUID,
+  DEALING_WIRE_EXTRA_TAG_REQUOTE_UUID,
+  dealingOrderHooks,
+  resetDealingCapabilityState,
+  type DealingRawFrameTransport,
+} from './dealing/dealingRuntimeHooks';
+// dealing end
 
 // ─── Wire Codec Version & Sizes ──────────────────────────────────────────────
 
@@ -44,6 +58,15 @@ export const BINARY_ORDER_ACTION_MODIFY_PENDING = 5;
 export const BINARY_ORDER_ACTION_CANCEL_PENDING = 6;
 export const BINARY_ORDER_ACTION_CLOSE_BULK = 7;
 export const BINARY_ORDER_ACTION_CLOSE_BY = 8;
+// dealing begin
+export const BINARY_ORDER_ACTION_REQUOTE_ACCEPT = DEALING_WIRE_ACTION_REQUOTE_ACCEPT;
+export const BINARY_ORDER_ACTION_REQUOTE_DECLINE = DEALING_WIRE_ACTION_REQUOTE_DECLINE;
+export const BINARY_ORDER_ACTION_DEALING_SYNC = DEALING_WIRE_ACTION_SYNC;
+export const BINARY_ORDER_EXTRA_TAG_DEALING_REQUEST_UUID = DEALING_WIRE_EXTRA_TAG_REQUEST_UUID;
+export const BINARY_ORDER_EXTRA_TAG_DEALING_REQUOTE_UUID = DEALING_WIRE_EXTRA_TAG_REQUOTE_UUID;
+export const BINARY_ORDER_EXTRA_TAG_CLIENT_CAPS = DEALING_WIRE_EXTRA_TAG_CLIENT_CAPS;
+export const BINARY_ORDER_CLIENT_CAP_DEALING_V1 = DEALING_WIRE_CLIENT_CAP_V1;
+// dealing end
 
 export const BINARY_ORDER_BULK_MODE_ALL = 0;
 export const BINARY_ORDER_BULK_MODE_WINNERS = 1;
@@ -766,6 +789,9 @@ function scheduleBinaryOrderWsReconnect(): void {
 }
 
 function failAllInFlightWsOrdersOnClose(reason: string): void {
+// dealing begin
+  dealingOrderHooks.failAllRawWsOrders?.(reason);
+// dealing end
   if (wsInFlightOrders.size === 0) return;
   const entries = Array.from(wsInFlightOrders.values());
   wsInFlightOrders.clear();
@@ -857,6 +883,9 @@ export function ensureBinaryOrderWebSocket(): WebSocket | null {
     if (reqId === 0) return;
 
     const pending = wsInFlightOrders.get(reqId);
+// dealing begin
+    if (!pending && dealingOrderHooks.resolveRawWsOrder?.(reqId, raw)) return;
+// dealing end
     if (!pending) return;
     wsInFlightOrders.delete(reqId);
 
@@ -913,6 +942,21 @@ export function ensureBinaryOrderWebSocket(): WebSocket | null {
     pending.releaseActiveSlot();
 
     const effectiveClientOrderId = decoded.clientOrderId || pending.validated.clientOrderId;
+// dealing begin
+    if (
+      dealingOrderHooks.ingestOrderResp !== null
+      && (lastDecodedRespHasDealingTlv || decoded.status === 202 || decoded.action === 9 || decoded.action === 10)
+    ) {
+      dealingOrderHooks.ingestOrderResp(
+        raw,
+        WS_REQ_ID_SIZE,
+        decoded,
+        pending.validated,
+        effectiveClientOrderId,
+        lastDecodedRespMsgEnd,
+      );
+    }
+// dealing end
 
     if (decoded.status < 200 || decoded.status >= 300) {
       const retryable = decoded.status >= 502;
@@ -987,6 +1031,9 @@ export function prewarmBinaryOrderSocket(): void {
 
 /** Test-only helper to tear down persistent WebSocket state cleanly between unit test cases. */
 export function __resetBinaryOrderWsForTests(): void {
+// dealing begin
+  resetDealingCapabilityState();
+// dealing end
   clearWsReconnectTimer();
   wsReconnectAttempt = 0;
   wsSyncedAuthToken = null;
@@ -1846,10 +1893,19 @@ export function encodeBinaryOrderWsModeBFrame(
   );
 }
 
+// dealing begin
+let lastDecodedRespHasDealingTlv = false;
+let lastDecodedRespMsgEnd = RESP_HEADER_SIZE;
+// dealing end
+
 /**
  * Decodes a Little-Endian binary order response (`RESP_HEADER_SIZE = 136` + `[errCodeLen:u16][errorCode][msgLen:u16][message]`).
  */
 export function decodeBinaryOrderResp(input: ArrayBuffer | Uint8Array): DecodedBinaryOrderResp {
+// dealing begin
+  lastDecodedRespHasDealingTlv = false;
+  lastDecodedRespMsgEnd = RESP_HEADER_SIZE;
+// dealing end
   const bytes = input instanceof Uint8Array
     ? input
     : new Uint8Array(input);
@@ -1939,6 +1995,35 @@ export function decodeBinaryOrderResp(input: ArrayBuffer | Uint8Array): DecodedB
     if (msgLen > 0) {
       message = utf8Decoder.decode(bytes.subarray(msgStart, msgEnd));
     }
+// dealing begin
+    lastDecodedRespMsgEnd = msgEnd;
+    if (bytes.byteLength > msgEnd) {
+      let tlvPos = msgEnd;
+      while (tlvPos + 2 <= bytes.byteLength) {
+        const tag = bytes[tlvPos];
+        const tlvLen = bytes[tlvPos + 1];
+        tlvPos += 2;
+        if (tlvPos + tlvLen > bytes.byteLength) break;
+        if (tag >= 0x24 && tag <= 0x2a) {
+          lastDecodedRespHasDealingTlv = true;
+          break;
+        }
+        if (tag === 0x20 && tlvLen === 4) {
+          const rc = (
+            bytes[tlvPos]
+            | (bytes[tlvPos + 1] << 8)
+            | (bytes[tlvPos + 2] << 16)
+            | (bytes[tlvPos + 3] << 24)
+          ) >>> 0;
+          if (rc === 10004 || rc === 10008) {
+            lastDecodedRespHasDealingTlv = true;
+            break;
+          }
+        }
+        tlvPos += tlvLen;
+      }
+    }
+// dealing end
   }
 
   return {
@@ -2074,6 +2159,17 @@ function sendBinaryTcpOrderOverOpenWs(
     wsInFlightOrders.set(reqId, pendingEntry);
 
     try {
+// dealing begin
+      if (useFast132Frame && dealingOrderHooks.wireGateOpen && dealingOrderHooks.tryPrepareFastWsModeAWithCaps !== null) {
+        const fastCaps = dealingOrderHooks.tryPrepareFastWsModeAWithCaps(reqId, validated.extrasBytes);
+        if (fastCaps !== null) {
+          packValidatedBinaryOrderHeader(fastCaps.packet, fastCaps.view, WS_REQ_ID_SIZE, validated);
+          pendingEntry.sentAtPerfMs = perfNow();
+          socket.send(fastCaps.packet);
+          return;
+        }
+      }
+// dealing end
       if (useFast132Frame) {
         if (validated.extrasBytes.byteLength === 0) {
           // Ultra-fast 132-byte 0-alloc, 0-JWT-copy frame using pre-allocated scratch buffer.
@@ -2265,6 +2361,21 @@ async function sendBinaryTcpOrderViaHttp(
     decoded.completedAtPerfMs = completedAtPerfMs;
   }
   const effectiveClientOrderId = decoded.clientOrderId || clientOrderId;
+// dealing begin
+  if (
+    dealingOrderHooks.ingestOrderResp !== null
+    && (lastDecodedRespHasDealingTlv || decoded.status === 202 || decoded.action === 9 || decoded.action === 10)
+  ) {
+    dealingOrderHooks.ingestOrderResp(
+      responseBuffer,
+      0,
+      decoded,
+      validated,
+      effectiveClientOrderId,
+      lastDecodedRespMsgEnd,
+    );
+  }
+// dealing end
 
   if (decoded.status < 200 || decoded.status >= 300) {
     const retryable = decoded.status >= 502;
@@ -2298,6 +2409,11 @@ export async function sendBinaryTcpOrder(
   params: BinaryTcpOrderParams,
 ): Promise<DecodedBinaryOrderResp> {
   const validated = validateBinaryOrderReq(params);
+// dealing begin
+  if (dealingOrderHooks.wireGateOpen) {
+    dealingOrderHooks.applyClientCaps?.(validated);
+  }
+// dealing end
 
   const timeoutMs = params.timeoutMs !== undefined && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
     ? Math.trunc(params.timeoutMs)
@@ -2354,6 +2470,29 @@ export async function closeByPositionsBinaryTcp(params: {
     timeoutMs: params.timeoutMs,
   });
 }
+
+// dealing begin
+const dealingRawFrameTransport: DealingRawFrameTransport = {
+  isEnabled: isBinaryTcpOrderEnabled,
+  getAccessToken: () => String(getAccessToken() ?? '').trim(),
+  getOpenWebSocket: () => (binaryOrderWs && binaryOrderWs.readyState === WS_OPEN_STATE ? binaryOrderWs : null),
+  ensureWebSocket: ensureBinaryOrderWebSocket,
+  allocateWsReqId,
+  acquireActiveSlot: acquireActiveBinaryOrderSlot,
+  resolveHttpEndpoint: resolveBinaryOrderEndpoint,
+  fallbackHttpEndpoint: BINARY_ORDER_ENDPOINT,
+  markFastEndpointUnreachable: () => {
+    fastOrderEndpointUnreachable = true;
+  },
+  defaultTimeoutMs: DEFAULT_BINARY_ORDER_TIMEOUT_MS,
+  createOrderError: (message, options) => new BinaryTcpOrderError(message, options),
+};
+
+/** Exposes the persistent WS/HTTP raw frame fast-lane adapter for lazy dealing modules. */
+export function getBinaryOrderRawFrameTransport(): DealingRawFrameTransport {
+  return dealingRawFrameTransport;
+}
+// dealing end
 
 /**
  * Binds (or unbinds when `accountLogin <= 0`) the active trading account on the local Go

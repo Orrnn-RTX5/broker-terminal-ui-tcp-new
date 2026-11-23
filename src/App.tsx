@@ -202,6 +202,13 @@ import { LazyLastSymbolPanel, LazyAccountPanel,
   LazySymbolsDialog, useTerminalFeatureWarmup } from './startup/terminalFeatures';
 
 const TradeAuthDialog = lazy(() => import('./components/TradeAuthDialog').then(module => ({ default: module.TradeAuthDialog })));
+// dealing begin
+const LazyDealingShellHost = lazy(() =>
+  import('./components/dealing/DealingShellHost').then((module) => ({
+    default: module.DealingShellHost,
+  })),
+);
+// dealing end
 
 const toSettingsChartType = (chartType: ChartType) => {
   if (chartType === 'bar') return 'Bar' as const;
@@ -2544,6 +2551,18 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
               store-backed dialog via confirmBulkCloseForSession. */}
           <BulkCloseConfirmDialog />
 
+          {/* dealing begin */}
+          {isAuthenticated && (
+            <ErrorBoundary label="Dealing" fallback={null}>
+              <Suspense fallback={null}>
+                <LazyDealingShellHost
+                  accountId={accountId}
+                  getAccountLogin={getLiveTradingLogin}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* dealing end */}
           {/* One Click Trading Disclaimer / Terms & Conditions sheet */}
           <OneClickDisclaimerDialog globalHost />
 

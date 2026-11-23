@@ -1,0 +1,59 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Terminal Dealing Shell Host — Floating Status Chip Tray & Neutral Notice Banner
+ * Uses theme CSS custom properties exclusively (white-label neutral).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.rtx-dealing-status-tray {
+  position: fixed;
+  right: 14px;
+  bottom: 34px;
+  z-index: var(--z-toast, 1060);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(360px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.rtx-dealing-status-tray > .rtx-dealing-chip,
+.rtx-dealing-status-tray > .rtx-dealing-unreconciled-banner {
+  pointer-events: auto;
+  box-shadow: var(--shadow-md, var(--shadow-xl));
+}
+
+.rtx-dealing-unreconciled-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.rtx-dealing-unreconciled-banner__symbol {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rtx-dealing-unreconciled-banner__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-xs, 12px);
+  line-height: 1;
+}
+
+.rtx-dealing-unreconciled-banner__dismiss:hover {
+  color: var(--text-primary);
+}
