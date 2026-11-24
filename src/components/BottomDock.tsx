@@ -60,6 +60,7 @@ export const toggleFloatToolboxDockPanel = (): void => {
 };
 
 const CalendarTab = lazy(() => import('./layout/CalendarTab').then(module => ({ default: module.CalendarTab })));
+const CompanyTab = lazy(() => import('./layout/CompanyTab').then(module => ({ default: module.CompanyTab })));
 const NewsTab = lazy(() => import('./layout/NewsTab').then(module => ({ default: module.NewsTab })));
 const journalTabFeature = createPreloadableFeature(() => import('./layout/JournalTab').then(module => ({ default: module.JournalTab })));
 const JournalTab = journalTabFeature.Component;
@@ -69,6 +70,7 @@ const MemoToolboxTab = memo(ToolboxTab);
 const MemoExposureTab = memo(ExposureTab);
 const MemoHistoryTab = memo(historyFeature.Component);
 const MemoCalendarTab = memo(CalendarTab);
+const MemoCompanyTab = memo(CompanyTab);
 const MemoNewsTab = memo(NewsTab);
 const MemoJournalTab = memo(JournalTab);
 
@@ -297,6 +299,7 @@ export function BottomDock({
     return (
         <div
             className="rtx-bottom-dock flex-1 bg-[#131316] border-t border-zinc-700 flex flex-col relative font-sans text-[12px] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.2)] select-none min-h-0"
+            data-resizing={isResizing || undefined}
             style={{ height: height !== undefined ? (typeof height === 'number' ? `${height}px` : height) : '100%', width: '100%', zIndex: 30 }}
         >
             {/* Resize Handle */}
@@ -336,7 +339,7 @@ export function BottomDock({
                 onDoubleClick={(e) => {
                     const target = e.target as HTMLElement | null;
                     if (!target || target.closest('button, input, select, textarea, a, [role="button"], tbody')) return;
-                    if (!target.closest('.rtx-trade-tab > div:first-child, .rtx-history-toolbar, .rtx-journal-toolbar, .history-downloader__header, thead')) return;
+                    if (!target.closest('.rtx-trade-tab > div:first-child, .rtx-history-toolbar, .rtx-journal-toolbar, .rtx-news-toolbar, .rtx-company-toolbar, .history-downloader__header, thead, [data-dock-inner-header="true"]')) return;
                     e.preventDefault();
                     e.stopPropagation();
                     if (onFloat) onFloat();
@@ -423,6 +426,14 @@ export function BottomDock({
                     <RetainedLazyFeature active={activeTab === 'News'}><MemoNewsTab active={activeTab === 'News'} /></RetainedLazyFeature>
                 </div>
 
+                <div
+                    className="h-full min-h-0"
+                    hidden={activeTab !== 'Company'}
+                    aria-hidden={activeTab !== 'Company'}
+                >
+                    <RetainedLazyFeature active={activeTab === 'Company'}><MemoCompanyTab active={activeTab === 'Company'} /></RetainedLazyFeature>
+                </div>
+
                 {/* Placeholder Tabs */}
                 {['Mailbox', 'Alerts'].includes(activeTab) && (
                     <PlaceholderTab title={activeTab} />
@@ -430,7 +441,10 @@ export function BottomDock({
             </div>
 
             {/* Bottom Tabs */}
-            <div className="rtx-bottom-dock__tabs relative flex h-[30px] min-h-[30px] max-h-[30px] flex-nowrap items-stretch overflow-x-hidden overflow-y-visible bg-[#080c18] border-t border-zinc-700/80 select-none p-0">
+            <div
+                className="rtx-bottom-dock__tabs relative flex h-[30px] min-h-[30px] max-h-[30px] flex-nowrap items-stretch overflow-x-hidden overflow-y-visible bg-[#080c18] border-t border-zinc-700/80 select-none p-0"
+                data-dock-inner-header="true"
+            >
                 <div className="rtx-bottom-dock__tab-content flex h-full min-w-0 items-stretch overflow-x-hidden overflow-y-visible">
                 <div className="rtx-dock-tab-scroller flex h-full min-w-0 flex-nowrap items-stretch overflow-x-auto overflow-y-visible">
                     {TABS.map((tab) => {
@@ -441,6 +455,7 @@ export function BottomDock({
                             <button
                                 key={tab.id}
                                 type="button"
+                                data-dock-drag-handle={unavailableReason ? undefined : 'true'}
                                 disabled={Boolean(unavailableReason)}
                                 aria-disabled={unavailableReason ? true : undefined}
                                 title={tr(unavailableReason || TAB_HOVER_COMMENTS[tab.id])}
@@ -456,10 +471,6 @@ export function BottomDock({
                                 }}
                                 onClick={() => {
                                     if (unavailableReason) return;
-                                    if (tab.id === 'Company') {
-                                        window.open('https://orrnn.com', '_blank', 'noopener,noreferrer');
-                                        return;
-                                    }
                                     setActiveTab(tab.id);
                                 }}
                                 className={`rtx-dock-tab inline-flex h-full items-center justify-center gap-1 px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative

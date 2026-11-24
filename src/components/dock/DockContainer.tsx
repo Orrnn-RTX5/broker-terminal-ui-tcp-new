@@ -41,6 +41,19 @@ const dockIntent = {
 
 const CHART_FOCUS_COMPONENTS = new Set(['Chart', 'EmptyChartArea']);
 const HEADERLESS_DOCK_COMPONENTS = new Set(['EmptyChartArea', 'MarketWatch', 'Terminal']);
+const NON_DRAG_INTERACTIVE_SELECTOR = 'button:not([role="tab"]):not([data-dock-drag-handle="true"]), input, select, textarea, a, [role="button"], [contenteditable="true"]';
+
+const suppressNextClickAfterDrag = () => {
+  const onClickCapture = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.removeEventListener('click', onClickCapture, true);
+  };
+  window.addEventListener('click', onClickCapture, true);
+  window.setTimeout(() => {
+    window.removeEventListener('click', onClickCapture, true);
+  }, 400);
+};
 
 const showsDockPanelHeader = (component: string): boolean => !HEADERLESS_DOCK_COMPONENTS.has(component);
 
@@ -320,7 +333,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
   // Handle panel drag start
   const handlePanelDragStart = useCallback((panel: DockPanelConfig, isFloating: boolean) => (e: React.MouseEvent | React.TouchEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button:not([role="tab"])')) return;
+    if (target.closest(NON_DRAG_INTERACTIVE_SELECTOR)) return;
 
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
@@ -432,27 +445,30 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
       // Check if it was just a click rather than a drag
       if (dragDistance < 5) {
         cancelDrag();
-      } else if (dockIntent.targetPanelId && dockIntent.direction) {
-        // Delegate docking routing (panel vs workspace edge) to the store
-        endDrag(dockIntent.targetPanelId, dockIntent.direction as any);
-      } else if (dragInfo.isFloating) {
-        // Keep floating, update position
-        let newX = e.clientX - 200;
-        let newY = e.clientY - 50;
-        newX = Math.max(20, Math.min(newX, window.innerWidth - 200));
-        newY = Math.max(20, Math.min(newY, window.innerHeight - 200));
-        void newX; void newY;
-        endDrag();
       } else {
-        // Float the panel
-        let newX = e.clientX - 200;
-        let newY = e.clientY - 50;
-        newX = Math.max(20, Math.min(newX, window.innerWidth - 200));
-        newY = Math.max(20, Math.min(newY, window.innerHeight - 200));
-        const floatX = Math.max(8, Math.min(e.clientX - dockIntent.grabOffsetX, window.innerWidth - 160));
-        const floatY = Math.max(8, Math.min(e.clientY - dockIntent.grabOffsetY, window.innerHeight - 120));
-        floatPanel(dragInfo.panelId, { x: floatX, y: floatY });
-        cancelDrag();
+        suppressNextClickAfterDrag();
+        if (dockIntent.targetPanelId && dockIntent.direction) {
+          // Delegate docking routing (panel vs workspace edge) to the store
+          endDrag(dockIntent.targetPanelId, dockIntent.direction as any);
+        } else if (dragInfo.isFloating) {
+          // Keep floating, update position
+          let newX = e.clientX - 200;
+          let newY = e.clientY - 50;
+          newX = Math.max(20, Math.min(newX, window.innerWidth - 200));
+          newY = Math.max(20, Math.min(newY, window.innerHeight - 200));
+          void newX; void newY;
+          endDrag();
+        } else {
+          // Float the panel
+          let newX = e.clientX - 200;
+          let newY = e.clientY - 50;
+          newX = Math.max(20, Math.min(newX, window.innerWidth - 200));
+          newY = Math.max(20, Math.min(newY, window.innerHeight - 200));
+          const floatX = Math.max(8, Math.min(e.clientX - dockIntent.grabOffsetX, window.innerWidth - 160));
+          const floatY = Math.max(8, Math.min(e.clientY - dockIntent.grabOffsetY, window.innerHeight - 120));
+          floatPanel(dragInfo.panelId, { x: floatX, y: floatY });
+          cancelDrag();
+        }
       }
       if (false) {
         endDrag();
@@ -471,14 +487,28 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
       }
     };
 
+    const handleBlur = () => {
+      cancelDrag();
+      dockIntent.targetPanelId = null;
+      dockIntent.direction = null;
+    };
+
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    document.documentElement.setAttribute('data-dock-dragging', 'true');
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
+      document.body.style.userSelect = prevUserSelect;
+      document.documentElement.removeAttribute('data-dock-dragging');
     };
   }, [isRoot, dragState, endDrag, cancelDrag, floatPanel, dockPanel, updateFloatingPosition]);
 
@@ -1058,12 +1088,13 @@ const FloatingPanelsContent: React.FC<{
 
   // Floating drag
   const handleFloatingDrag = (floating: any, panel: DockPanelConfig) => (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     const startMX = e.clientX, startMY = e.clientY;
     const startPX = floating.position?.x ?? 100;
     const startPY = floating.position?.y ?? 100;
 
     const target = e.target as HTMLElement | null;
-    if (target?.closest('button:not([role="tab"])')) return;
+    if (target?.closest(NON_DRAG_INTERACTIVE_SELECTOR)) return;
     let dragStarted = false;
     const onMove = (me: MouseEvent) => {
       const dx = me.clientX - startMX;

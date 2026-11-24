@@ -64,14 +64,16 @@ describe('NewsTab extra', () => {
         expect(open).not.toHaveBeenCalled();
     });
 
-    it('renders html/script in title and body as inert text', async () => {
-        fetchMock.mockResolvedValue([mk({ title: '<img src=x onerror=alert(1)>', body: '<script>window.__pwn=1</script><a href="javascript:1">x</a>' })]);
+    it('strips html/script in title and body into safe inert text', async () => {
+        fetchMock.mockResolvedValue([mk({ title: '<img src=x onerror=alert(1)>Safe title', body: '<script>window.__pwn=1</script><a href="javascript:1">x</a>' })]);
         const { container } = render(<NewsTab />);
         await flush();
         expect(container.querySelector('img')).toBeNull();
+        expect(screen.getByText('Safe title')).toBeInTheDocument();
         fireEvent.click(screen.getAllByRole('row')[1]);
         const body = screen.getByTestId('news-article-body');
-        expect(body.textContent).toContain('<script>');
+        expect(body.textContent).toBe('x');
+        expect(body.textContent).not.toContain('<script>');
         expect(body.querySelector('script, a')).toBeNull();
         expect((window as unknown as { __pwn?: number }).__pwn).toBeUndefined();
     });

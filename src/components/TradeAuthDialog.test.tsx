@@ -343,4 +343,57 @@ describe('TradeAuthDialog', () => {
       tokenExpiresAt: null,
     });
   });
+
+  it('toggles visibility and copies values for both demo password fields', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(
+        <TradeAuthDialog
+          isOpen
+          initialMode="demo"
+          intent={null}
+          onClose={vi.fn()}
+          onAuthenticated={vi.fn()}
+        />,
+      );
+
+      const passwordInput = screen.getByLabelText(/^password$/i);
+      const confirmInput = screen.getByLabelText(/confirm password/i);
+      expect(passwordInput).toHaveClass('rtx-secret-input');
+      expect(confirmInput).toHaveClass('rtx-secret-input');
+
+      const showButtons = screen.getAllByRole('button', { name: 'Show password' });
+      const copyButtons = screen.getAllByRole('button', { name: 'Copy Password' });
+      expect(showButtons).toHaveLength(2);
+      expect(copyButtons).toHaveLength(2);
+      expect(copyButtons[0]).toBeDisabled();
+      expect(copyButtons[1]).toBeDisabled();
+
+      fireEvent.change(passwordInput, { target: { value: 'DemoPass1' } });
+      fireEvent.change(confirmInput, { target: { value: 'DemoPass2' } });
+      expect(copyButtons[0]).toBeEnabled();
+      expect(copyButtons[1]).toBeEnabled();
+
+      fireEvent.click(showButtons[0]);
+      expect(passwordInput).not.toHaveClass('rtx-secret-input');
+      expect(confirmInput).toHaveClass('rtx-secret-input');
+
+      fireEvent.click(showButtons[1]);
+      expect(confirmInput).not.toHaveClass('rtx-secret-input');
+
+      fireEvent.click(copyButtons[0]);
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('DemoPass1'));
+
+      fireEvent.click(copyButtons[1]);
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('DemoPass2'));
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
 });

@@ -7,7 +7,7 @@ vi.mock('../api/client', async () => {
   return { ...actual, apiClient: { ...actual.apiClient, get: getMock } };
 });
 
-import { fetchNews, mapNewsError, normalizeNewsResponse, NewsServiceError, sanitizeNewsUrl } from './newsService';
+import { fetchNews, formatNewsText, mapNewsError, normalizeNewsResponse, NewsServiceError, sanitizeNewsUrl } from './newsService';
 
 const item = (over: Record<string, unknown> = {}) => ({
   id: 1, title: 'Hello', body: 'b', source: 'Src', category: 'Forex', currency: 'usd',
@@ -40,6 +40,31 @@ describe('normalizeNewsResponse', () => {
     expect(sanitizeNewsUrl('http://a.com/x')).toBe('http://a.com/x');
     expect(sanitizeNewsUrl('data:text/html,1')).toBeNull();
     expect(sanitizeNewsUrl(5)).toBeNull();
+  });
+  it('converts RSS HTML markup and entities into clean plain text without losing structure', () => {
+    const htmlBody = '<ul><li>Germany November Ifo business climate index 90.6 vs 90.5 expected</li><li>Prior 90.2; revised to 90.1</li></ul><p style="text-align: justify" class="text-align-justify">Well, at least Germany is giving the euro something to smile about.</p><p>Of note, Ifo says that the&nbsp;improved situation goes&nbsp;hand in hand.</p>';
+    const [n] = normalizeNewsResponse({
+      items: [item({ title: 'Fed&apos;s Powell &amp; <b>ECB</b> outlook', body: htmlBody })],
+    });
+    expect(n.title).toBe("Fed's Powell & ECB outlook");
+    expect(n.body).toBe(
+      '• Germany November Ifo business climate index 90.6 vs 90.5 expected\n'
+      + '• Prior 90.2; revised to 90.1\n\n'
+      + 'Well, at least Germany is giving the euro something to smile about.\n\n'
+      + 'Of note, Ifo says that the improved situation goes hand in hand.',
+    );
+    expect(formatNewsText('EUR/USD < 1.10\nUSD/JPY > 150')).toBe('EUR/USD < 1.10\nUSD/JPY > 150');
+    expect(formatNewsText('&lt;p&gt;Double &amp;nbsp; encoded&lt;/p&gt;')).toBe('Double encoded');
+    expect(formatNewsText('<script>alert(1)</script><style>body{}</style><p>Safe <b>text</b></p>')).toBe('Safe text');
+    expect(formatNewsText('<ol><li>First</li><li>Second</li></ol>')).toBe('1. First\n2. Second');
+
+    vi.stubGlobal('DOMParser', undefined);
+    try {
+      expect(formatNewsText(htmlBody)).toBe(n.body);
+      expect(formatNewsText('<script>alert(1)</script><p>Safe &amp; clean&nbsp;copy</p>')).toBe('Safe & clean copy');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

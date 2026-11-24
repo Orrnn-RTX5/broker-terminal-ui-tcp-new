@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore';
-import { OrderPanelDialog } from './OrderPanelDialog';
+import { formatPendingOrderBadgeLabel, OrderPanelDialog } from './OrderPanelDialog';
 import { tradeApi } from '../api/trade';
 
 vi.mock('../hooks/useSymbolMarketStatus', () => ({
@@ -740,6 +740,140 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
 
       expect(drawnTexts).toContain('4173.23');
       expect(drawnTexts).not.toContain('4173.77');
+    } finally {
+      getContextSpy.mockRestore();
+      rafSpy.mockRestore();
+      cancelRafSpy.mockRestore();
+    }
+  });
+
+  it('formats pending order chart badges without duplicating side and switches timeframes cleanly', () => {
+    expect(formatPendingOrderBadgeLabel('SELL', 'SELL_LIMIT', 0.01)).toBe('SELL LIMIT 0.01');
+    expect(formatPendingOrderBadgeLabel('BUY', 'BUY_STOP_LIMIT', 0.25)).toBe('BUY STOP LIMIT 0.25');
+    expect(formatPendingOrderBadgeLabel('SELL', 'LIMIT', 0.1)).toBe('SELL LIMIT 0.1');
+
+    const drawnCalls: Array<{ text: string; x: number; y: number }> = [];
+    const mockCtx = {
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
+      fillText: vi.fn((text: string, x: number, y: number) => {
+        drawnCalls.push({ text: String(text), x, y });
+      }),
+      font: '',
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter',
+      globalAlpha: 1,
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    };
+
+    useAppStore.getState().setPositions([
+      {
+        id: 101,
+        ticket: 101,
+        symbol: 'XAUUSD',
+        side: 'SELL',
+        volume: 0.01,
+        openPrice: 4173.25,
+        currentPrice: 4173.23,
+        profit: 0.2,
+        sl: 0,
+        tp: 0,
+        openTime: Date.now() - 60_000,
+      } as any,
+      {
+        id: 102,
+        ticket: 102,
+        symbol: 'XAUUSD',
+        side: 'SELL',
+        volume: 0.01,
+        openPrice: 4173.24,
+        currentPrice: 4173.23,
+        profit: 0.1,
+        sl: 0,
+        tp: 0,
+        openTime: Date.now() - 30_000,
+      } as any,
+    ]);
+    useAppStore.getState().setOrders([
+      {
+        id: 'o1',
+        symbol: 'XAUUSD',
+        side: 'SELL',
+        type: 'SELL_LIMIT',
+        volume: 0.01,
+        price: 4173.50,
+        status: 'PENDING',
+      } as any,
+    ]);
+
+    const getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      mockCtx as unknown as CanvasRenderingContext2D,
+    );
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+    const cancelRafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+    try {
+      const { container } = render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      // Pending order bar uses main-chart style strip without duplicating side (TP SL SELL LIMIT 0.01 ×)
+      const pendingBar = container.querySelector<HTMLElement>('[data-order-chart-bar-id="ord-o1"]');
+      expect(pendingBar).not.toBeNull();
+      expect(pendingBar?.textContent).toContain('TP');
+      expect(pendingBar?.textContent).toContain('SL');
+      expect(pendingBar?.textContent).toContain('SELL LIMIT');
+      expect(pendingBar?.textContent).toContain('0.01');
+      expect(pendingBar?.textContent).not.toContain('SELL SELL LIMIT');
+
+      // Open position bars use main-chart style strip (TP SL SELL 0.01 +0.20 ×) and stay vertically separated
+      const posBar1 = container.querySelector<HTMLElement>('[data-order-chart-bar-id="pos-101"]');
+      const posBar2 = container.querySelector<HTMLElement>('[data-order-chart-bar-id="pos-102"]');
+      expect(posBar1).not.toBeNull();
+      expect(posBar2).not.toBeNull();
+      expect(posBar1?.textContent).toContain('TP');
+      expect(posBar1?.textContent).toContain('SL');
+      expect(posBar1?.textContent).toContain('SELL');
+      expect(posBar1?.textContent).toContain('0.01');
+      expect(posBar1?.textContent).toContain('+0.20');
+      expect(posBar1?.querySelector('.rtx-order-dialog__trade-bar-close')).not.toBeNull();
+      const top1 = Number.parseFloat(posBar1?.style.top || '0');
+      const top2 = Number.parseFloat(posBar2?.style.top || '0');
+      expect(Math.abs(top1 - top2)).toBeGreaterThanOrEqual(20);
+
+      // Timeframe buttons switch HUD symbol/timeframe label cleanly
+      const hudSymbol = container.querySelector('.rtx-order-dialog__chart-hud-symbol');
+      expect(hudSymbol?.textContent).toBe('XAUUSD, M1');
+      fireEvent.click(screen.getByTestId('order-mini-chart-tf-M5'));
+      expect(hudSymbol?.textContent).toBe('XAUUSD, M5');
+      expect(screen.getByTestId('order-mini-chart-tf-M5').getAttribute('aria-pressed')).toBe('true');
     } finally {
       getContextSpy.mockRestore();
       rafSpy.mockRestore();

@@ -936,39 +936,45 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symb
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button:not(:disabled) {
-  color: #ffffff;
+  color: #ffffff !important;
   filter: none;
   box-shadow: none;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--buy:not(:disabled) {
-  background: var(--rtx-light-buy);
-  border-color: var(--rtx-light-buy);
+  background: var(--rtx-light-buy, #2563eb) !important;
+  border-color: var(--rtx-light-buy, #2563eb) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--sell:not(:disabled) {
-  background: var(--rtx-light-sell);
-  border-color: var(--rtx-light-sell);
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--buy:hover:not(:disabled) {
-  background: var(--rtx-light-buy-hover);
-  border-color: var(--rtx-light-buy-hover);
+  background: var(--rtx-light-buy-hover, #1d4ed8) !important;
+  border-color: var(--rtx-light-buy-hover, #1d4ed8) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--sell:hover:not(:disabled) {
-  background: var(--rtx-light-sell-hover);
-  border-color: var(--rtx-light-sell-hover);
+  background: var(--rtx-light-sell-hover, #b91c1c) !important;
+  border-color: var(--rtx-light-sell-hover, #b91c1c) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--buy:active:not(:disabled) {
-  background: var(--rtx-light-buy-pressed);
-  border-color: var(--rtx-light-buy-pressed);
+  background: var(--rtx-light-buy-pressed, #1e40af) !important;
+  border-color: var(--rtx-light-buy-pressed, #1e40af) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel .last-symbol-trade-button--sell:active:not(:disabled) {
-  background: var(--rtx-light-sell-pressed);
-  border-color: var(--rtx-light-sell-pressed);
+  background: var(--rtx-light-sell-pressed, #991b1b) !important;
+  border-color: var(--rtx-light-sell-pressed, #991b1b) !important;
+  color: #ffffff !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-last-symbol-panel :is(button, input):focus-visible,

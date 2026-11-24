@@ -5,6 +5,7 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import {
     deriveSymbolCurrencies,
     fetchNews,
+    formatNewsText,
     NEWS_READ_STORAGE_KEY,
     NEWS_REFRESH_INTERVAL_MS,
     type NewsErrorKind,
@@ -51,24 +52,6 @@ function saveReadIds(ids: string[]): void {
     } catch {
         // Storage can be unavailable or full; read state then only lasts for this session.
     }
-}
-
-function openArticle(url: string): void {
-    if (typeof window === 'undefined') return;
-    // Re-check the scheme at the point of use; only absolute http(s) links may open.
-    try {
-        const protocol = new URL(url).protocol;
-        if (protocol !== 'http:' && protocol !== 'https:') return;
-    } catch {
-        return;
-    }
-    // Desktop shells that expose openExternal use it; otherwise window.open is the real path.
-    const openExternal = (window as { electron?: { shell?: { openExternal?: unknown } } }).electron?.shell?.openExternal;
-    if (typeof openExternal === 'function') {
-        void (openExternal as (target: string) => unknown)(url);
-        return;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 const formatNewsTime = (timestampMs: number): string => (
@@ -162,6 +145,16 @@ export function NewsTab({ active = true }: NewsTabProps) {
         [items, selectedId],
     );
 
+    const selectedTitle = useMemo(
+        () => (selectedItem ? formatNewsText(selectedItem.title, { singleLine: true }) : ''),
+        [selectedItem],
+    );
+
+    const selectedBody = useMemo(
+        () => (selectedItem ? formatNewsText(selectedItem.body) : ''),
+        [selectedItem],
+    );
+
     const openItem = useCallback((item: NewsItem) => {
         setSelectedId(item.id);
         const key = String(item.id);
@@ -191,7 +184,7 @@ export function NewsTab({ active = true }: NewsTabProps) {
 
     return (
         <div className="rtx-news-tab" data-testid="news-tab">
-            <div className="rtx-news-toolbar">
+            <div className="rtx-news-toolbar" data-dock-inner-header="true">
                 <select
                     className="rtx-news-select"
                     aria-label={tr('News scope')}
@@ -237,6 +230,7 @@ export function NewsTab({ active = true }: NewsTabProps) {
                         <tbody>
                             {visibleItems.map((item) => {
                                 const unread = !readIds.has(String(item.id));
+                                const cleanTitle = formatNewsText(item.title, { singleLine: true });
                                 return (
                                     <tr
                                         key={item.id}
@@ -254,13 +248,13 @@ export function NewsTab({ active = true }: NewsTabProps) {
                                             }
                                         }}
                                     >
-                                        <td className="rtx-news-subject" title={item.title}>
+                                        <td className="rtx-news-subject" title={cleanTitle}>
                                             {item.priority >= 1 ? (
                                                 <span className="rtx-news-important" title={tr('Important')} aria-label={tr('Important')}>
-                                                    <Icon name="alert-triangle" size="xs" />
+                                                    <Icon name="star" size="xs" />
                                                 </span>
                                             ) : null}
-                                            <span>{item.title}</span>
+                                            <span>{cleanTitle}</span>
                                         </td>
                                         <td className="rtx-news-col--source">{item.source}</td>
                                         <td className="rtx-news-col--category">{capitalize(item.category)}</td>
@@ -273,9 +267,9 @@ export function NewsTab({ active = true }: NewsTabProps) {
                     {stateMessage ? <div className="rtx-news-state" role="status">{stateMessage}</div> : null}
                 </div>
                 {selectedItem ? (
-                    <aside className="rtx-news-reader" aria-label={selectedItem.title}>
+                    <aside className="rtx-news-reader" aria-label={selectedTitle}>
                         <div className="rtx-news-reader__head">
-                            <h3 className="rtx-news-reader__title">{selectedItem.title}</h3>
+                            <h3 className="rtx-news-reader__title">{selectedTitle}</h3>
                             <button
                                 type="button"
                                 className="rtx-news-refresh"
@@ -291,14 +285,7 @@ export function NewsTab({ active = true }: NewsTabProps) {
                                 .filter(Boolean)
                                 .join(' · ')}
                         </div>
-                        <div className="rtx-news-reader__text" data-testid="news-article-body">{selectedItem.body}</div>
-                        <button
-                            type="button"
-                            className="rtx-news-open"
-                            onClick={() => openArticle(selectedItem.url)}
-                        >
-                            {tr('Open article')}
-                        </button>
+                        <div className="rtx-news-reader__text" data-testid="news-article-body">{selectedBody}</div>
                     </aside>
                 ) : null}
             </div>

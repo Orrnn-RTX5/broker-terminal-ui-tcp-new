@@ -528,21 +528,23 @@ html:root .rtx-bug-report-success h3 { --rtx-type-size: 18px; --rtx-type-weight:
 
 /* Solid actions need explicit light-theme text: the generic button rule must
    not put muted dark text over the action fill. */
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send {
-  background: var(--rtx-light-accent);
-  border-color: var(--rtx-light-accent);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send:not(:disabled) {
+  background: var(--rtx-light-accent, #2457a7) !important;
+  border-color: var(--rtx-light-accent, #2457a7) !important;
   color: #ffffff !important;
   filter: none;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send:hover:not(:disabled) {
-  background: var(--rtx-light-accent-strong);
-  border-color: var(--rtx-light-accent-strong);
+  background: var(--rtx-light-accent-strong, #1e4788) !important;
+  border-color: var(--rtx-light-accent-strong, #1e4788) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send:active:not(:disabled) {
-  background: var(--rtx-light-accent-pressed);
-  border-color: var(--rtx-light-accent-pressed);
+  background: var(--rtx-light-accent-pressed, #173768) !important;
+  border-color: var(--rtx-light-accent-pressed, #173768) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send:focus-visible {
@@ -551,9 +553,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bug-report-dialog .rtx-bug-report-send:disabled {
-  background: var(--rtx-light-panel-subtle);
-  border-color: var(--rtx-light-border-strong);
-  color: var(--rtx-light-text-muted) !important;
+  background: var(--rtx-light-panel-subtle, #f1f4f8) !important;
+  border-color: var(--rtx-light-border-strong, #9eacbd) !important;
+  color: var(--rtx-light-text-muted, #475569) !important;
   opacity: 1;
   cursor: not-allowed;
 }

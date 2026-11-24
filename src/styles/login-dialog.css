@@ -322,18 +322,28 @@
   }
 
   .rtx-login-select,
-  .rtx-login-server-input,
-  .rtx-login-password-input {
+  .rtx-login-server-input {
     padding-inline-end: 40px;
     appearance: none;
   }
 
-  .rtx-login-password-toggle {
+  .rtx-login-password-input {
+    padding-inline-end: 74px;
+    appearance: none;
+  }
+
+  .rtx-login-password-actions {
     position: absolute;
     inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .rtx-login-password-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -353,13 +363,17 @@
     color: var(--login-text) !important;
   }
 
+  .rtx-login-password-toggle.is-copied {
+    color: var(--login-online) !important;
+  }
+
   .rtx-login-password-toggle:focus-visible {
     outline: 2px solid var(--login-focus);
     outline-offset: -1px;
   }
 
   .rtx-login-password-toggle:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 

@@ -397,27 +397,51 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action,
   .rtx-toolbar-icon-button,
   .rtx-advanced-grid-button,
   .rtx-period-separator-toggle,
-  .rtx-trade-history-overlay-button):is(:hover, :focus-visible) {
-  background: var(--rtx-light-hover) !important;
-  border-color: var(--rtx-light-border-strong) !important;
+  .rtx-trade-history-overlay-button):is(:focus, :focus-visible, :active) {
+  background: transparent !important;
+  border-color: transparent !important;
   color: var(--rtx-light-text) !important;
   box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action,
+  .rtx-toolbar-icon-button,
+  .rtx-advanced-grid-button,
+  .rtx-period-separator-toggle,
+  .rtx-trade-history-overlay-button):hover {
+  background: var(--rtx-light-hover) !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action[aria-pressed="true"],
   .rtx-toolbar-icon-button[aria-pressed="true"],
   .rtx-toolbar-icon-button[aria-checked="true"],
   .rtx-trade-history-overlay-button[aria-expanded="true"],
-  .rtx-advanced-grid-button[aria-expanded="true"]) {
+  .rtx-advanced-grid-button[aria-expanded="true"]),
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action[aria-pressed="true"],
+  .rtx-toolbar-icon-button[aria-pressed="true"],
+  .rtx-toolbar-icon-button[aria-checked="true"],
+  .rtx-trade-history-overlay-button[aria-expanded="true"],
+  .rtx-advanced-grid-button[aria-expanded="true"]):is(:hover, :focus, :focus-visible, :active) {
   background: var(--rtx-light-accent-soft) !important;
-  border-color: var(--rtx-light-accent-border) !important;
+  border-color: transparent !important;
   color: var(--rtx-light-accent-strong) !important;
-  box-shadow: inset 0 -2px 0 var(--rtx-light-accent) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[role="radio"][aria-checked="true"] {
-  border-radius: 3px;
+  border-color: transparent !important;
+  border-radius: 4px;
   box-shadow: none !important;
+  outline: none !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[aria-pressed="true"],
@@ -426,24 +450,48 @@ html.rtx-desktop-shell-active .rtx-toolbar-icon-button[aria-pressed="true"],
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-period-separator-toggle[aria-pressed="true"],
 html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed="true"],
 .rtx-period-separator-toggle[aria-pressed="true"] {
-  border-radius: 3px !important;
+  border-radius: 4px !important;
   box-shadow: none !important;
 }
 
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-icon-button[aria-pressed="true"],
+  .rtx-period-separator-toggle[aria-pressed="true"]) {
+  border-color: transparent !important;
+  outline: none !important;
+}
+
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option {
+  border-color: transparent !important;
   color: var(--rtx-light-text) !important;
+  outline: none !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option:is(:hover, :focus-visible) {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option:is(:focus, :focus-visible, :active) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option:hover {
   background: var(--rtx-light-hover) !important;
-  border-color: var(--rtx-light-border-strong) !important;
+  border-color: transparent !important;
   color: var(--rtx-light-text) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option[aria-checked="true"] {
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option[aria-checked="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-timeframe-strip .rtx-timeframe-option[aria-checked="true"]:is(:hover, :focus, :focus-visible, :active) {
   background: var(--rtx-light-accent-soft) !important;
-  border-color: var(--rtx-light-accent-border) !important;
+  border-color: transparent !important;
   color: var(--rtx-light-accent-strong) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-symbol-badge {
@@ -1406,6 +1454,21 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-field__hint {
   color: var(--rtx-light-text-muted) !important;
 }
 
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-password-btn {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--rtx-light-text-muted) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-password-btn:hover:not(:disabled) {
+  background: var(--rtx-light-hover) !important;
+  color: var(--rtx-light-text) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-password-btn.is-copied {
+  color: var(--color-profit) !important;
+}
+
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-alert {
   background: rgba(185, 28, 28, 0.08) !important;
   border-color: rgba(185, 28, 28, 0.3) !important;
@@ -1833,16 +1896,16 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-sep {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--all {
-  background: #fef2f2 !important;
-  border: 1px solid #fca5a5 !important;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
   color: #b91c1c !important;
-  box-shadow: 0 1px 2px rgba(185, 28, 28, 0.05) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn--all:not(:disabled):hover {
-  background: var(--rtx-light-sell, #dc2626) !important;
-  border-color: var(--rtx-light-sell, #dc2626) !important;
-  color: #ffffff !important;
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #991b1b !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-bulk-btn:disabled {
@@ -1867,16 +1930,16 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--modify:not(
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel {
-  background: #fef2f2 !important;
-  border: 1px solid #fecaca !important;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
   color: #b91c1c !important;
   box-shadow: none !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-pending-row-btn--cancel:not(:disabled):hover {
-  background: var(--rtx-light-sell, #dc2626) !important;
-  border-color: var(--rtx-light-sell, #dc2626) !important;
-  color: #ffffff !important;
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #991b1b !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-bg-image-dialog__save {

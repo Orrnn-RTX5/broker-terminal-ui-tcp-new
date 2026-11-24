@@ -5,7 +5,8 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { createPortal } from 'react-dom';
-import { X, Search, ChevronRight, ArrowRight, Building2, Shield, Globe, Check, CheckCircle2, Copy, Loader2, MousePointer2 } from 'lucide-react';
+import { X, Search, ChevronRight, ArrowRight, Building2, Shield, Globe, Check, CheckCircle2, Copy, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import { tradeApi } from '../../api/trade';
 import { parseTokenExpiresAt } from '../../api/client';
 import { BROKER_DISCOVERY_URL, normalizeBrokerServerUrl, toLocalDevProxyUrl, updateDynamicUrls } from '../../config/api';
@@ -274,6 +275,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
     // "Connect existing" sub-form state
     const [existingLogin, setExistingLogin] = useState('');
     const [existingPassword, setExistingPassword] = useState('');
+    const [showExistingPassword, setShowExistingPassword] = useState(false);
     const [existingServerSearch, setExistingServerSearch] = useState('');
     const [existingServerDropOpen, setExistingServerDropOpen] = useState(false);
     const [existingBroker, setExistingBroker] = useState<BrokerServer | null>(null);
@@ -296,14 +298,17 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
     const closeDialog = () => {
         setCopiedField(null);
         setExistingPassword('');
+        setShowExistingPassword(false);
         setCreateError('');
         setValidationError('');
         onClose();
     };
-    const handleCopyCredential = (label: string, value: string) => {
-        void navigator.clipboard?.writeText(value);
-        setCopiedField(label);
+    const handleCopyCredential = async (label: string, value: string) => {
+        if (!value) return;
+        const ok = await copyTextToClipboard(value);
+        if (ok) setCopiedField(label);
     };
+    const existingPasswordCopied = Boolean(existingPassword) && copiedField === 'existing-password';
     useEffect(() => {
         if (!copiedField) return undefined;
         const timer = window.setTimeout(() => setCopiedField(null), 1600);
@@ -348,6 +353,8 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
         setAccountType('demo');
         setExistingLogin('');
         setExistingPassword('');
+        setShowExistingPassword(false);
+        setCopiedField(null);
         setExistingServerSearch('');
         setExistingServerDropOpen(false);
         setExistingBroker(null);
@@ -949,26 +956,53 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                                 </div>
                                 <div className="flex items-center gap-2.5">
                                     <span className="w-16 flex-shrink-0 text-right text-[12.5px] leading-5 font-medium text-zinc-400">{tr("Password:")}</span>
-                                    <input
-                                        ref={existingPasswordInputRef}
-                                        aria-label={tr("Existing account password")}
-                                        autoComplete="off"
-                                        spellCheck={false}
-                                        autoCorrect="off"
-                                        autoCapitalize="none"
-                                        enterKeyHint="go"
-                                        type="text"
-                                        value={existingPassword}
-                                        onChange={e => setExistingPassword(e.target.value)}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isCreating) {
-                                                e.preventDefault();
-                                                void handleNext();
-                                            }
-                                        }}
-                                        className="rtx-secret-input h-[32px] flex-1 rounded-md border border-zinc-700 bg-transparent px-2.5 text-[13px] font-normal text-white outline-none focus:border-indigo-500"
-                                        placeholder={tr("Password")}
-                                    />
+                                    <div className="rtx-open-account-dialog__password-wrap">
+                                        <input
+                                            ref={existingPasswordInputRef}
+                                            aria-label={tr("Existing account password")}
+                                            autoComplete="off"
+                                            spellCheck={false}
+                                            autoCorrect="off"
+                                            autoCapitalize="none"
+                                            enterKeyHint="go"
+                                            type="text"
+                                            value={existingPassword}
+                                            onChange={e => setExistingPassword(e.target.value)}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && !e.nativeEvent.isComposing && !isCreating) {
+                                                    e.preventDefault();
+                                                    void handleNext();
+                                                }
+                                            }}
+                                            className={`${showExistingPassword ? '' : 'rtx-secret-input '}rtx-open-account-dialog__password-input h-[32px] w-full rounded-md border border-zinc-700 bg-transparent pl-2.5 pr-[58px] text-[13px] font-normal text-white outline-none focus:border-indigo-500`}
+                                            placeholder={tr("Password")}
+                                        />
+                                        <div className="rtx-open-account-dialog__password-actions">
+                                            <button
+                                                type="button"
+                                                className="rtx-open-account-dialog__password-btn"
+                                                aria-label={showExistingPassword ? tr("Hide password") : tr("Show password")}
+                                                aria-pressed={showExistingPassword}
+                                                title={showExistingPassword ? tr("Hide password") : tr("Show password")}
+                                                disabled={isCreating}
+                                                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                                onClick={e => { e.preventDefault(); e.stopPropagation(); setShowExistingPassword(current => !current); }}
+                                            >
+                                                {showExistingPassword ? <EyeOff className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`rtx-open-account-dialog__password-btn${existingPasswordCopied ? ' is-copied' : ''}`}
+                                                aria-label={existingPasswordCopied ? tr("Copied") : `${tr("Copy")} ${tr("Password")}`}
+                                                title={existingPasswordCopied ? tr("Copied") : tr("Copy")}
+                                                disabled={isCreating || !existingPassword}
+                                                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                                onClick={e => { e.preventDefault(); e.stopPropagation(); void handleCopyCredential('existing-password', existingPassword); }}
+                                            >
+                                                {existingPasswordCopied ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 {/* Server dropdown with search */}
                                 <div className="flex items-start gap-2.5">
@@ -1256,7 +1290,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                                 {row.mono && (
                                     <button
                                         type="button"
-                                        onClick={() => handleCopyCredential(row.label, String(row.value))}
+                                        onClick={() => { void handleCopyCredential(row.label, String(row.value)); }}
                                         className={`rtx-open-account-dialog__copy-btn${copiedField === row.label ? ' is-copied' : ''}`}
                                         aria-label={`${tr('Copy')} ${tr(row.label)}`}
                                         title={copiedField === row.label ? tr('Copied') : tr('Copy')}
@@ -1380,9 +1414,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                     </div>
                 ) : <div className="rtx-open-account-dialog__footer">
                     <div className="rtx-open-account-dialog__footer-hint">
-                        {(validationError || (forceDemoCreation && directoryError)) ? <span role="alert" className="text-red-400">{tr(validationError || directoryError)}</span> : (
-                            step === 0 ? <span className="rtx-open-account-dialog__shortcut"><MousePointer2 aria-hidden="true" />{tr("Double-click to proceed immediately")}</span> : null
-                        )}
+                        {(validationError || (forceDemoCreation && directoryError)) ? <span role="alert" className="text-red-400">{tr(validationError || directoryError)}</span> : null}
                     </div>
                     <div className="rtx-open-account-dialog__footer-actions">
                         {step > minStep && step < 4 && (

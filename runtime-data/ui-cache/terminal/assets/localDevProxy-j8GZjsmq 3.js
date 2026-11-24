@@ -1,1 +1,0 @@
-var e=`/__broker_api`,t=`/__broker_discovery`,n=()=>!1,r=(t,r=e)=>{let i=String(t||``).trim();if(!i||!n())return i;try{let e=new URL(i);if(e.protocol!==`http:`&&e.protocol!==`https:`)return i;let t=e.pathname===`/`?``:e.pathname;return`${r}/${encodeURIComponent(e.origin)}${t}${e.search}${e.hash}`}catch{return i}};export{r as i,t as n,n as r,e as t};

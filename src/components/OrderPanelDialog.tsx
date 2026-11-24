@@ -13,8 +13,10 @@ import {
   getEffectiveChartColors,
   selectChartPropertiesForQuote,
   useChartSettingsStore,
+  type ChartProperties,
 } from '../store/useChartSettingsStore';
-import { candleAggregationService } from '../services/candleAggregationService';
+import { buildChartTheme } from '../features/trading-chart/presentation/chartTheme';
+import { candleAggregationService, type OHLCV } from '../services/candleAggregationService';
 import { useSymbolMarketStatus } from '../hooks/useSymbolMarketStatus';
 import { useLiveOrderBook } from '../hooks/useLiveMarketData';
 import {
@@ -25,6 +27,17 @@ import {
 import { formatSpreadDisplayWithUnit } from '../utils/spread';
 import { RTX_ADVANCED_VIEW_CHANGE_EVENT } from '../utils/advancedViewRootClasses';
 import { tradeApi } from '../api/trade';
+import api from '../services/api';
+import { getCommittedBrokerAccountSessionScope, getCommittedBrokerAccountSessionScopeKey } from '../services/brokerSession';
+import { getLivePositionProfit } from '../services/livePositionMetrics';
+import {
+  CHART_POSITION_MODIFY_EVENT,
+  DARK_CHART_TRADE_COLORS,
+  LIGHT_CHART_TRADE_COLORS,
+  dispatchChartPositionAction,
+  formatMoneyLabel,
+  formatVolumeLots,
+} from '../utils/chartTradeControls';
 import { getStoredAccountLogin } from '../api/tradeGateway';
 import { buildOrderTicketSymbolOptions } from '../utils/accountSymbolUniverse';
 import { resolveSymbolDescription } from '../utils/symbolDescription';
@@ -338,37 +351,225 @@ function readStoredLotSize(): unknown {
   }
 }
 
-type TickChartColors = {
-  background: string;
-  foreground: string;
-  grid: string;
-  barUp?: string;
-  barDown?: string;
-  bullCandle?: string;
-  bearCandle?: string;
-  lineChart?: string;
-  bidPriceLine?: string;
-  askPriceLine?: string;
-  stopLevels?: string;
-};
+type TickChartColors = ChartProperties['colors'];
 
 type TickPoint = { time: number; bid: number; ask: number };
 
-const formatTickTimeShort = (time: number, includeSeconds = false): string => {
-  const date = new Date(time);
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  if (!includeSeconds) return `${hh}:${mm}`;
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+type MiniChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1';
+const MINI_CHART_TIMEFRAMES: readonly MiniChartTimeframe[] = ['M1', 'M5', 'M15', 'H1'];
+const MINI_CHART_TIMEFRAME_SECONDS: Record<MiniChartTimeframe, number> = {
+  M1: 60,
+  M5: 300,
+  M15: 900,
+  H1: 3600,
 };
 
-const formatTickDate = (time: number): string => {
-  const date = new Date(time);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+const formatMiniChartAxisTime = (timeMs: number, mode: 'date-year' | 'date-time' | 'time'): string => {
+  const date = new Date(timeMs);
   const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}.${mm}.${dd}`;
+  const mon = SHORT_MONTHS[date.getMonth()] ?? '';
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  if (mode === 'date-year') return `${dd} ${mon} ${date.getFullYear()}`;
+  if (mode === 'date-time') return `${dd} ${mon} ${hh}:${mm}`;
+  return `${hh}:${mm}`;
+};
+
+export const formatPendingOrderBadgeLabel = (
+  side: string | undefined,
+  type: string | undefined,
+  volume: number | undefined,
+): string => {
+  const normalizedType = String(type ?? '')
+    .trim()
+    .replace(/_+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+  const normalizedSide = String(side ?? '').trim().toUpperCase();
+  const typeAlreadyIncludesSide =
+    normalizedType === 'BUY'
+    || normalizedType === 'SELL'
+    || normalizedType.startsWith('BUY ')
+    || normalizedType.startsWith('SELL ');
+  const prefix = typeAlreadyIncludesSide
+    ? normalizedType
+    : [normalizedSide, normalizedType].filter(Boolean).join(' ');
+  const volPart = typeof volume === 'number' && Number.isFinite(volume) && volume > 0
+    ? String(volume)
+    : '';
+  return `${prefix}${volPart ? ` ${volPart}` : ''}`.trim();
+};
+
+const aggregateM1CandlesToTimeframe = (
+  m1Candles: readonly OHLCV[],
+  timeframe: MiniChartTimeframe,
+): OHLCV[] => {
+  const bucketSec = MINI_CHART_TIMEFRAME_SECONDS[timeframe];
+  if (timeframe === 'M1' || m1Candles.length === 0) {
+    return m1Candles.map((c) => ({ ...c }));
+  }
+  const buckets: OHLCV[] = [];
+  for (const candle of m1Candles) {
+    const bucketTime = Math.floor(candle.time / bucketSec) * bucketSec;
+    const last = buckets[buckets.length - 1];
+    if (last && last.time === bucketTime) {
+      last.high = Math.max(last.high, candle.high);
+      last.low = Math.min(last.low, candle.low);
+      last.close = candle.close;
+      last.volume = (last.volume || 0) + (candle.volume || 0);
+    } else {
+      buckets.push({
+        time: bucketTime,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume || 0,
+      });
+    }
+  }
+  return buckets;
+};
+
+const computeNicePriceTicks = (
+  minPrice: number,
+  maxPrice: number,
+  targetCount: number,
+  minStep: number | null,
+): number[] => {
+  const span = maxPrice - minPrice;
+  if (!(span > 0) || targetCount <= 0) return [];
+  const rawStep = span / Math.max(2, targetCount);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const normalized = rawStep / magnitude;
+  let niceFactor = 1;
+  if (normalized <= 1.2) niceFactor = 1;
+  else if (normalized <= 2.2) niceFactor = 2;
+  else if (normalized <= 3.2) niceFactor = 2.5;
+  else if (normalized <= 6) niceFactor = 5;
+  else niceFactor = 10;
+  let step = niceFactor * magnitude;
+  if (minStep !== null && Number.isFinite(minStep) && minStep > 0 && step < minStep) {
+    step = minStep;
+  }
+  const start = Math.ceil(minPrice / step) * step;
+  const ticks: number[] = [];
+  const maxIterations = 24;
+  for (let i = 0; i < maxIterations; i += 1) {
+    const value = start + i * step;
+    if (value > maxPrice - step * 0.08) break;
+    if (value >= minPrice + step * 0.08) {
+      ticks.push(stripFloatPrecisionNoise(value));
+    }
+  }
+  return ticks;
+};
+
+interface VerticalSlotItem {
+  rawY: number;
+  priority: number;
+}
+
+const resolveVerticalTagSlots = <T extends VerticalSlotItem>(
+  items: readonly T[],
+  minY: number,
+  maxY: number,
+  minGap: number,
+): Array<T & { resolvedY: number }> => {
+  if (items.length === 0 || maxY < minY) return [];
+  const capacity = Math.max(1, Math.floor((maxY - minY) / Math.max(1, minGap)) + 1);
+  // Keep highest-priority items first if the plot cannot physically fit every badge without overlap
+  const kept = items.length > capacity
+    ? [...items]
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, capacity)
+    : [...items];
+
+  const sorted = kept
+    .map((item) => ({
+      ...item,
+      resolvedY: Math.max(minY, Math.min(maxY, item.rawY)),
+    }))
+    .sort((a, b) => (a.rawY === b.rawY ? b.priority - a.priority : a.rawY - b.rawY));
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const minAllowed = sorted[i - 1].resolvedY + minGap;
+    if (sorted[i].resolvedY < minAllowed) {
+      sorted[i].resolvedY = minAllowed;
+    }
+  }
+
+  const overflow = sorted[sorted.length - 1].resolvedY - maxY;
+  if (overflow > 0) {
+    sorted[sorted.length - 1].resolvedY = maxY;
+    for (let i = sorted.length - 2; i >= 0; i -= 1) {
+      const maxAllowed = sorted[i + 1].resolvedY - minGap;
+      if (sorted[i].resolvedY > maxAllowed) {
+        sorted[i].resolvedY = maxAllowed;
+      }
+    }
+  }
+
+  for (const item of sorted) {
+    item.resolvedY = Math.max(minY, Math.min(maxY, item.resolvedY));
+  }
+
+  return sorted;
+};
+
+const drawCrispPillRect = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  fillStyle?: string,
+  strokeStyle?: string,
+) => {
+  const canRound = radius > 0 && typeof ctx.quadraticCurveTo === 'function';
+  if (!canRound) {
+    if (fillStyle) {
+      ctx.fillStyle = fillStyle;
+      ctx.fillRect(x, y, w, h);
+    }
+    if (strokeStyle) {
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1));
+    }
+    return;
+  }
+
+  const r = Math.min(radius, w / 2, h / 2);
+  const bx = x + 0.5;
+  const by = y + 0.5;
+  const bw = Math.max(0, w - 1);
+  const bh = Math.max(0, h - 1);
+
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bw - r, by);
+  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+  ctx.lineTo(bx + bw, by + bh - r);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+  ctx.lineTo(bx + r, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+  ctx.lineTo(bx, by + r);
+  ctx.quadraticCurveTo(bx, by, bx + r, by);
+  ctx.closePath();
+
+  if (fillStyle) {
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+  }
+  if (strokeStyle) {
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 };
 
 type MiniChartDisplayType = 'bar' | 'candlestick' | 'line' | 'dot' | 'area' | 'hlc';
@@ -456,6 +657,35 @@ function MiniChartTypeIcon({ type }: { type: MiniChartDisplayType }) {
 }
 
 // ─── Enterprise MT5 Tick & Candlestick Chart ──────────────────────
+interface MiniChartTradeBarItem {
+  id: string;
+  price: number;
+  kind: 'position' | 'pending' | 'sl' | 'tp' | 'draft';
+  side: 'BUY' | 'SELL' | 'NEUTRAL';
+  ticket?: number;
+  parentKind?: 'position' | 'pending';
+  typeLabel: string;
+  volumeLabel?: string;
+  pnlValue?: number | null;
+  showTpChip?: boolean;
+  showSlChip?: boolean;
+  canClose?: boolean;
+  accentColorLight: string;
+  accentColorDark: string;
+  priority: number;
+}
+
+const formatDraftOrderTypeLabel = (orderType: OrderType | undefined, sideHint: 'buy' | 'sell' | null | undefined): string => {
+  if (!orderType || orderType === 'Market Execution') return 'PRICE';
+  const upper = orderType.trim().toUpperCase();
+  if (upper.startsWith('BUY ') || upper.startsWith('SELL ')) return upper;
+  const sidePrefix = sideHint === 'sell' ? 'SELL' : 'BUY';
+  if (upper.startsWith('LIMIT')) return `${sidePrefix} LIMIT`;
+  if (upper.startsWith('STOP LIMIT')) return `${sidePrefix} STOP LIMIT`;
+  if (upper.startsWith('STOP')) return `${sidePrefix} STOP`;
+  return upper;
+};
+
 function MiniTickChart({
   symbol,
   bid,
@@ -463,9 +693,14 @@ function MiniTickChart({
   digits,
   priceStep,
   chartColors,
+  chartSettings,
+  isAdvancedUntitledLight,
   orderPrice,
   stopLossPrice,
   takeProfitPrice,
+  volumeText,
+  sideHint,
+  orderType,
 }: {
   symbol: string;
   bid: number;
@@ -475,22 +710,57 @@ function MiniTickChart({
   /** Broker tick size or 10^-digits; null = unknown. */
   priceStep: number | null;
   chartColors: TickChartColors;
+  chartSettings: ChartProperties;
+  isAdvancedUntitledLight: boolean;
   orderPrice?: number;
   stopLossPrice?: number;
   takeProfitPrice?: number;
   volumeText?: string;
   sideHint?: 'buy' | 'sell' | null;
+  orderType?: OrderType;
 }) {
   const tr = useUiTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayLayerRef = useRef<HTMLDivElement>(null);
   const chartTypeMenuRef = useRef<HTMLDivElement>(null);
   const tickHistoryRef = useRef<TickPoint[]>([]);
   const frameRef = useRef<number | null>(null);
+  const hoverPosRef = useRef<{ x: number; y: number } | null>(null);
+  const scheduleDrawRef = useRef<() => void>(() => undefined);
+  const ohlcOpenRef = useRef<HTMLSpanElement>(null);
+  const ohlcHighRef = useRef<HTMLSpanElement>(null);
+  const ohlcLowRef = useRef<HTMLSpanElement>(null);
+  const ohlcCloseRef = useRef<HTMLSpanElement>(null);
   const [miniChartType, setMiniChartType] = useState<MiniChartDisplayType>('candlestick');
+  const [activeTimeframe, setActiveTimeframe] = useState<MiniChartTimeframe>('M1');
   const [isChartTypeMenuOpen, setIsChartTypeMenuOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const showPriceLines = true;
   const chartShift = true;
+
+  const chartTheme = useMemo(
+    () => buildChartTheme(
+      chartColors,
+      chartSettings.showGrid,
+      isAdvancedUntitledLight,
+      chartSettings.gridLineStyle,
+      chartSettings.gridType,
+      chartSettings.colorScheme,
+    ),
+    [
+      chartColors,
+      chartSettings.colorScheme,
+      chartSettings.gridLineStyle,
+      chartSettings.gridType,
+      chartSettings.showGrid,
+      isAdvancedUntitledLight,
+    ],
+  );
+
+  const hudQuoteColors = useMemo(
+    () => getChartDirectionalQuoteColors(chartSettings, { isAdvancedUntitledLight }),
+    [chartSettings, isAdvancedUntitledLight],
+  );
 
   useEffect(() => {
     if (!isChartTypeMenuOpen) return undefined;
@@ -528,8 +798,251 @@ function MiniTickChart({
     [allOrders, normalizedTargetSymbol],
   );
 
+  // Unified main-chart-style trade & pending-order floating bar descriptors
+  const tradeBarItems = useMemo<MiniChartTradeBarItem[]>(() => {
+    const items: MiniChartTradeBarItem[] = [];
+
+    symbolPositions.forEach((pos, idx) => {
+      const entryPrice = Number(pos.openPrice ?? pos.open_price ?? pos.price_open ?? 0);
+      const isBuy = String(pos.side ?? '').toUpperCase() === 'BUY';
+      const vol = Number(pos.volume ?? pos.quantity ?? 0);
+      const ticket = Number(pos.id);
+      const hasTicket = Number.isSafeInteger(ticket) && ticket > 0;
+      const livePnl = getLivePositionProfit(pos);
+      const rawProfit = livePnl !== null && Number.isFinite(livePnl)
+        ? livePnl
+        : (Number.isFinite(Number(pos.profit)) ? Number(pos.profit) : null);
+      const hasSl = Number.isFinite(pos.sl) && pos.sl > 0;
+      const hasTp = Number.isFinite(pos.tp) && pos.tp > 0;
+
+      if (Number.isFinite(entryPrice) && entryPrice > 0) {
+        items.push({
+          id: `pos-${pos.id ?? idx}`,
+          price: entryPrice,
+          kind: 'position',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          typeLabel: isBuy ? 'BUY' : 'SELL',
+          volumeLabel: vol > 0 ? formatVolumeLots(vol) : undefined,
+          pnlValue: rawProfit,
+          showTpChip: !hasTp,
+          showSlChip: !hasSl,
+          canClose: hasTicket,
+          accentColorLight: isBuy ? LIGHT_CHART_TRADE_COLORS.buy : LIGHT_CHART_TRADE_COLORS.sell,
+          accentColorDark: isBuy ? DARK_CHART_TRADE_COLORS.buy : DARK_CHART_TRADE_COLORS.sell,
+          priority: 50,
+        });
+      }
+      if (hasSl) {
+        items.push({
+          id: `pos-sl-${pos.id ?? idx}`,
+          price: pos.sl,
+          kind: 'sl',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          parentKind: 'position',
+          typeLabel: 'SL',
+          volumeLabel: formatDialogPrice(pos.sl, digits),
+          canClose: false,
+          accentColorLight: LIGHT_CHART_TRADE_COLORS.sl,
+          accentColorDark: DARK_CHART_TRADE_COLORS.sl,
+          priority: 40,
+        });
+      }
+      if (hasTp) {
+        items.push({
+          id: `pos-tp-${pos.id ?? idx}`,
+          price: pos.tp,
+          kind: 'tp',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          parentKind: 'position',
+          typeLabel: 'TP',
+          volumeLabel: formatDialogPrice(pos.tp, digits),
+          canClose: false,
+          accentColorLight: LIGHT_CHART_TRADE_COLORS.tp,
+          accentColorDark: DARK_CHART_TRADE_COLORS.tp,
+          priority: 40,
+        });
+      }
+    });
+
+    symbolPendingOrders.forEach((ord, idx) => {
+      const isBuy = String(ord.side ?? '').toUpperCase() === 'BUY';
+      const ticket = Number(ord.id);
+      const hasTicket = Number.isSafeInteger(ticket) && ticket > 0;
+      const hasSl = typeof ord.sl === 'number' && Number.isFinite(ord.sl) && ord.sl > 0;
+      const hasTp = typeof ord.tp === 'number' && Number.isFinite(ord.tp) && ord.tp > 0;
+      const typeOnlyLabel = formatPendingOrderBadgeLabel(ord.side, ord.type, undefined);
+
+      if (Number.isFinite(ord.price) && ord.price > 0) {
+        items.push({
+          id: `ord-${ord.id ?? idx}`,
+          price: ord.price,
+          kind: 'pending',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          typeLabel: typeOnlyLabel || (isBuy ? 'BUY LIMIT' : 'SELL LIMIT'),
+          volumeLabel: Number.isFinite(ord.volume) && ord.volume > 0 ? formatVolumeLots(ord.volume) : undefined,
+          showTpChip: !hasTp,
+          showSlChip: !hasSl,
+          canClose: hasTicket,
+          accentColorLight: isBuy ? LIGHT_CHART_TRADE_COLORS.pendingBuy : LIGHT_CHART_TRADE_COLORS.pendingSell,
+          accentColorDark: isBuy ? DARK_CHART_TRADE_COLORS.pendingBuy : DARK_CHART_TRADE_COLORS.pendingSell,
+          priority: 55,
+        });
+      }
+      if (hasSl && typeof ord.sl === 'number') {
+        items.push({
+          id: `ord-sl-${ord.id ?? idx}`,
+          price: ord.sl,
+          kind: 'sl',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          parentKind: 'pending',
+          typeLabel: 'SL',
+          volumeLabel: formatDialogPrice(ord.sl, digits),
+          canClose: false,
+          accentColorLight: LIGHT_CHART_TRADE_COLORS.sl,
+          accentColorDark: DARK_CHART_TRADE_COLORS.sl,
+          priority: 42,
+        });
+      }
+      if (hasTp && typeof ord.tp === 'number') {
+        items.push({
+          id: `ord-tp-${ord.id ?? idx}`,
+          price: ord.tp,
+          kind: 'tp',
+          side: isBuy ? 'BUY' : 'SELL',
+          ticket: hasTicket ? ticket : undefined,
+          parentKind: 'pending',
+          typeLabel: 'TP',
+          volumeLabel: formatDialogPrice(ord.tp, digits),
+          canClose: false,
+          accentColorLight: LIGHT_CHART_TRADE_COLORS.tp,
+          accentColorDark: DARK_CHART_TRADE_COLORS.tp,
+          priority: 42,
+        });
+      }
+    });
+
+    if (typeof orderPrice === 'number' && Number.isFinite(orderPrice) && orderPrice > 0) {
+      const draftSide: 'BUY' | 'SELL' =
+        orderType?.toLowerCase().startsWith('sell')
+          ? 'SELL'
+          : orderType?.toLowerCase().startsWith('buy')
+            ? 'BUY'
+            : (sideHint === 'sell' ? 'SELL' : 'BUY');
+      const parsedVol = Number.parseFloat(volumeText ?? '');
+      items.push({
+        id: 'draft-price',
+        price: orderPrice,
+        kind: 'draft',
+        side: draftSide,
+        typeLabel: formatDraftOrderTypeLabel(orderType, sideHint),
+        volumeLabel: Number.isFinite(parsedVol) && parsedVol > 0 ? formatVolumeLots(parsedVol) : undefined,
+        showTpChip: !(typeof takeProfitPrice === 'number' && takeProfitPrice > 0),
+        showSlChip: !(typeof stopLossPrice === 'number' && stopLossPrice > 0),
+        canClose: false,
+        accentColorLight: draftSide === 'BUY' ? LIGHT_CHART_TRADE_COLORS.pendingBuy : LIGHT_CHART_TRADE_COLORS.pendingSell,
+        accentColorDark: draftSide === 'BUY' ? DARK_CHART_TRADE_COLORS.pendingBuy : DARK_CHART_TRADE_COLORS.pendingSell,
+        priority: 80,
+      });
+    }
+    if (typeof stopLossPrice === 'number' && Number.isFinite(stopLossPrice) && stopLossPrice > 0) {
+      items.push({
+        id: 'draft-sl',
+        price: stopLossPrice,
+        kind: 'sl',
+        side: 'NEUTRAL',
+        typeLabel: 'SL',
+        volumeLabel: formatDialogPrice(stopLossPrice, digits),
+        canClose: false,
+        accentColorLight: LIGHT_CHART_TRADE_COLORS.sl,
+        accentColorDark: DARK_CHART_TRADE_COLORS.sl,
+        priority: 75,
+      });
+    }
+    if (typeof takeProfitPrice === 'number' && Number.isFinite(takeProfitPrice) && takeProfitPrice > 0) {
+      items.push({
+        id: 'draft-tp',
+        price: takeProfitPrice,
+        kind: 'tp',
+        side: 'NEUTRAL',
+        typeLabel: 'TP',
+        volumeLabel: formatDialogPrice(takeProfitPrice, digits),
+        canClose: false,
+        accentColorLight: LIGHT_CHART_TRADE_COLORS.tp,
+        accentColorDark: DARK_CHART_TRADE_COLORS.tp,
+        priority: 75,
+      });
+    }
+
+    return items;
+  }, [
+    bid,
+    ask,
+    digits,
+    orderPrice,
+    orderType,
+    sideHint,
+    stopLossPrice,
+    symbolPendingOrders,
+    symbolPositions,
+    takeProfitPrice,
+    volumeText,
+  ]);
+
+  const handleOpenModifyForBar = useCallback((item: MiniChartTradeBarItem, role?: 'TP' | 'SL') => {
+    if (item.kind === 'draft') {
+      const targetId = role === 'TP' ? `${symbol}-tp` : `${symbol}-sl`;
+      const input = document.querySelector<HTMLInputElement>(
+        role === 'TP' ? 'input[id$="take-profit"]' : 'input[id$="stop-loss"]',
+      );
+      if (input) {
+        input.focus();
+      } else {
+        void targetId;
+      }
+      return;
+    }
+    if (!item.ticket) return;
+    const sessionScope = getCommittedBrokerAccountSessionScopeKey(
+      getCommittedBrokerAccountSessionScope(),
+    );
+    const kind = item.kind === 'pending' || item.parentKind === 'pending' ? 'pending-order' : 'position';
+    window.dispatchEvent(new CustomEvent(CHART_POSITION_MODIFY_EVENT, {
+      detail: { ticket: item.ticket, symbol, sessionScope, kind },
+    }));
+  }, [symbol]);
+
+  const handleCloseOrCancelBar = useCallback((item: MiniChartTradeBarItem) => {
+    if (!item.ticket) return;
+    if (item.kind === 'pending') {
+      void api.orders.cancelOrder(String(item.ticket))
+        .then(() => {
+          const loginId = Number.parseInt(String(useAppStore.getState().accountId ?? ''), 10);
+          if (Number.isFinite(loginId) && loginId > 0) {
+            return api.orders.getPendingOrders(loginId).then((orders) => {
+              useAppStore.getState().setOrders(orders as any);
+            });
+          }
+        })
+        .catch((err) => {
+          window.dispatchEvent(new CustomEvent('rtx:order-feedback', {
+            detail: { message: formatOrderError(err), type: 'error' },
+          }));
+        });
+      return;
+    }
+    if (item.kind === 'position') {
+      dispatchChartPositionAction({ action: 'close', ticket: item.ticket, symbol });
+    }
+  }, [symbol]);
+
   useEffect(() => {
     tickHistoryRef.current = [];
+    hoverPosRef.current = null;
   }, [symbol]);
 
   useEffect(() => {
@@ -547,7 +1060,7 @@ function MiniTickChart({
       retained.push(nextTick);
     }
 
-    tickHistoryRef.current = retained.slice(-180);
+    tickHistoryRef.current = retained.slice(-240);
   }, [bid, ask]);
 
   useEffect(() => {
@@ -559,10 +1072,24 @@ function MiniTickChart({
       return value || fallback;
     };
 
+    const updateOhlcHud = (bar: { open: number; high: number; low: number; close: number } | null) => {
+      if (!bar) {
+        if (ohlcOpenRef.current) ohlcOpenRef.current.textContent = '—';
+        if (ohlcHighRef.current) ohlcHighRef.current.textContent = '—';
+        if (ohlcLowRef.current) ohlcLowRef.current.textContent = '—';
+        if (ohlcCloseRef.current) ohlcCloseRef.current.textContent = '—';
+        return;
+      }
+      if (ohlcOpenRef.current) ohlcOpenRef.current.textContent = formatDialogPrice(bar.open, digits);
+      if (ohlcHighRef.current) ohlcHighRef.current.textContent = formatDialogPrice(bar.high, digits);
+      if (ohlcLowRef.current) ohlcLowRef.current.textContent = formatDialogPrice(bar.low, digits);
+      if (ohlcCloseRef.current) ohlcCloseRef.current.textContent = formatDialogPrice(bar.close, digits);
+    };
+
     const draw = () => {
       const isCompactViewport = window.innerWidth <= 1720 || window.innerHeight <= 920;
-      const cssWidth = Math.max(isCompactViewport ? 160 : 260, Math.round(canvas.clientWidth || (isCompactViewport ? 202 : 323)));
-      const cssHeight = Math.max(isCompactViewport ? 180 : 240, Math.round(canvas.clientHeight || (isCompactViewport ? 310 : 371)));
+      const cssWidth = Math.max(isCompactViewport ? 280 : 380, Math.round(canvas.clientWidth || (isCompactViewport ? 460 : 540)));
+      const cssHeight = Math.max(isCompactViewport ? 220 : 280, Math.round(canvas.clientHeight || (isCompactViewport ? 350 : 450)));
       const pixelRatio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
       const backingWidth = Math.round(cssWidth * pixelRatio);
       const backingHeight = Math.round(cssHeight * pixelRatio);
@@ -576,110 +1103,88 @@ function MiniTickChart({
       if (!ctx) return;
       ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
-      // Exact trading chart color palette from useChartSettingsStore
-      const candleUpBody = chartColors.bullCandle || chartColors.barUp || '#089981';
-      const candleDownBody = chartColors.bearCandle || chartColors.barDown || '#F23645';
-      const candleUpBorder = chartColors.barUp || candleUpBody;
-      const candleDownBorder = chartColors.barDown || candleDownBody;
+      const isLightSkin =
+        isAdvancedUntitledLight
+        || document.documentElement.classList.contains('rtx-skin-untitled-light')
+        || document.documentElement.classList.contains('theme-light');
+
+      // Exact trading chart color palette from buildChartTheme / useChartSettingsStore
+      const candleUpBody = chartTheme.candleUp || chartColors.bullCandle || chartColors.barUp || '#2563eb';
+      const candleDownBody = chartTheme.candleDown || chartColors.bearCandle || chartColors.barDown || '#dc2626';
+      const candleUpBorder = chartTheme.barUp || candleUpBody;
+      const candleDownBorder = chartTheme.barDown || candleDownBody;
 
       const palette = {
-        background: chartColors.background || readCssValue('--bg-primary', '#000000'),
-        foreground: chartColors.foreground || readCssValue('--text-secondary', '#ffffff'),
+        background: chartTheme.background || chartColors.background || readCssValue('--bg-primary', isLightSkin ? '#ffffff' : '#000000'),
+        foreground: chartTheme.text || chartColors.foreground || readCssValue('--text-secondary', isLightSkin ? '#0f172a' : '#ffffff'),
         grid: chartColors.grid || readCssValue('--border-primary', 'rgba(255,255,255,0.12)'),
-        axisSurface: chartColors.background || readCssValue('--order-chart-axis-surface', '#000000'),
+        axisSurface: chartTheme.background || readCssValue('--order-chart-axis-surface', isLightSkin ? '#ffffff' : '#090d14'),
         axis: readCssValue('color', '#a1a1aa'),
         bid: chartColors.bidPriceLine || readCssValue('--order-bid', '#778899'),
         ask: chartColors.askPriceLine || readCssValue('--order-ask', '#F23645'),
-        stopLevel: chartColors.stopLevels || '#F23645',
+        stopLevel: chartColors.stopLevels || '#dc2626',
         tagText: readCssValue('--order-tag-text', '#fff'),
         monoFont: readCssValue('--font-mono', 'Tahoma, Segoe UI, Consolas, monospace'),
       };
 
-      const tokenSize = Number.parseFloat(readCssValue('--rtx-ui-font-size', isCompactViewport ? '9.5' : '11'));
-      const fontSize = isCompactViewport
-        ? 9.5
-        : (Number.isFinite(tokenSize) && tokenSize > 0 ? Math.min(11.5, Math.max(11, tokenSize)) : 11.5);
-      const fontFamily = document.documentElement.classList.contains('rtx-skin-untitled-light')
-        ? readCssValue('--font-sans', palette.monoFont)
+      const fontSize = isCompactViewport ? 10 : 11;
+      const badgeFontSize = isCompactViewport ? 9.5 : 10.5;
+      const fontFamily = isLightSkin
+        ? '"Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif'
         : palette.monoFont;
       const bodyFont = `500 ${fontSize}px ${fontFamily}`;
-      const controlFont = `600 ${fontSize}px ${fontFamily}`;
+      const controlFont = `600 ${badgeFontSize}px ${fontFamily}`;
       ctx.font = controlFont;
 
       const width = cssWidth;
       const height = cssHeight;
-      const left = 4;
+      const left = 0;
       const samplePrice = Math.max(Math.abs(bid), Math.abs(ask), 100);
       const right = Math.max(
-        isCompactViewport ? 56 : 68,
-        Math.ceil(ctx.measureText(formatDialogPrice(samplePrice, digits)).width) + (isCompactViewport ? 15 : 20),
+        isCompactViewport ? 62 : 70,
+        Math.ceil(ctx.measureText(formatDialogPrice(samplePrice, digits)).width) + 18,
       );
-      const tagHeight = isCompactViewport ? 13 : 17;
-      const top = 6;
-      const bottom = isCompactViewport ? 17 : 22;
-      const plotWidth = Math.max(80, width - left - right);
-      const plotHeight = Math.max(80, height - top - bottom);
+      const tagHeight = isCompactViewport ? 16 : 18;
+      const top = 22; // Clean headroom for top-left OHLC HUD matching TradingChart
+      const bottom = isCompactViewport ? 22 : 24;
+      const plotWidth = Math.max(120, width - left - right);
+      const plotHeight = Math.max(100, height - top - bottom);
       const plotRight = left + plotWidth;
       const plotBottom = top + plotHeight;
 
+      // Pure main-chart canvas surface
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = palette.axisSurface;
-      ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = palette.background;
-      ctx.fillRect(left, top, plotWidth, plotHeight);
-
-      // Dashed trading chart grid (8 rows x 7 columns)
-      const gridRows = 8;
-      const gridCols = 7;
-      ctx.strokeStyle = palette.grid;
-      ctx.globalAlpha = 0.65;
-      ctx.lineWidth = 0.25;
-      if (typeof ctx.setLineDash === 'function') ctx.setLineDash([1, 2]);
-      for (let r = 1; r < gridRows; r += 1) {
-        const y = Math.round(top + (r / gridRows) * plotHeight) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(plotRight, y);
-        ctx.stroke();
-      }
-      for (let c = 1; c < gridCols; c += 1) {
-        const x = Math.round(left + (c / gridCols) * plotWidth) + 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, plotBottom);
-        ctx.stroke();
-      }
-      if (typeof ctx.setLineDash === 'function') ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-
-      // Outer plot border & right price scale separator line (matching TradingChart)
-      ctx.strokeStyle = palette.grid;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(left + 0.5, top + 0.5, plotWidth - 1, plotHeight - 1);
-      ctx.beginPath();
-      ctx.moveTo(plotRight + 0.5, top);
-      ctx.lineTo(plotRight + 0.5, plotBottom);
-      ctx.strokeStyle = palette.foreground;
-      ctx.globalAlpha = 0.28;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.fillRect(0, 0, width, height);
 
       const fullHistory = tickHistoryRef.current;
-      const visibleCount = Math.max(10, Math.round(90 / Math.max(0.5, zoomLevel)));
+      const visibleCount = Math.max(14, Math.round(120 / Math.max(0.5, zoomLevel)));
       const history = fullHistory.slice(-visibleCount);
 
-      // Read live M1 candles from candleAggregationService (same source as TradingChart)
-      const maxCandleBars = Math.min(36, Math.max(12, Math.round(28 / Math.max(0.5, zoomLevel))));
-      const aggregatedM1 = candleAggregationService.getCandles(symbol, 'M1', true, false);
-      const liveM1Candles = aggregatedM1.slice(-maxCandleBars).map((c) => ({ ...c }));
-      if (liveM1Candles.length > 0 && bid > 0) {
-        const lastBar = liveM1Candles[liveM1Candles.length - 1];
+      // Compute dynamic visible candle count to match TradingChart proportions (~8.5px/bar at 1x zoom)
+      const rightShiftPx = chartShift ? Math.min(54, Math.max(24, Math.round(plotWidth * 0.09))) : 6;
+      const usablePlotWidth = Math.max(60, plotWidth - rightShiftPx);
+      const targetBarPitch = Math.max(4.5, Math.min(20, 8.5 * Math.max(0.5, zoomLevel)));
+      const maxCandleBars = Math.max(16, Math.min(110, Math.floor(usablePlotWidth / targetBarPitch)));
+
+      // Read live candles from candleAggregationService (same source as main TradingChart)
+      let aggregatedCandles = candleAggregationService.getCandles(symbol, activeTimeframe, true, false);
+      if (aggregatedCandles.length < 2 && activeTimeframe !== 'M1') {
+        const m1Source = candleAggregationService.getCandles(symbol, 'M1', true, false);
+        if (m1Source.length >= 2) {
+          aggregatedCandles = aggregateM1CandlesToTimeframe(m1Source, activeTimeframe);
+        }
+      }
+      const liveCandles: OHLCV[] = aggregatedCandles.slice(-maxCandleBars).map((c) => ({ ...c }));
+      if (liveCandles.length > 0 && bid > 0) {
+        const lastBar = liveCandles[liveCandles.length - 1];
         lastBar.close = bid;
         lastBar.high = Math.max(lastBar.high, bid);
         lastBar.low = Math.min(lastBar.low, bid);
       }
 
-      if (history.length === 0 && liveM1Candles.length === 0 && (bid <= 0 || ask <= 0)) {
+      if (history.length === 0 && liveCandles.length === 0 && (bid <= 0 || ask <= 0)) {
+        updateOhlcHud(null);
         ctx.fillStyle = palette.axis;
         ctx.font = bodyFont;
         ctx.textAlign = 'center';
@@ -695,13 +1200,13 @@ function MiniTickChart({
         ? [{ ...seedHistory[0], time: seedHistory[0].time - 1_000 }, seedHistory[0]]
         : seedHistory;
 
-      // Build fallback real tick candles when historical M1 candles aren't in candleAggregationService yet
-      const candlesToDraw = liveM1Candles.length >= 2
-        ? liveM1Candles
+      // Build fallback tick candles when historical candles are not yet in candleAggregationService
+      const candlesToDraw: OHLCV[] = liveCandles.length >= 2
+        ? liveCandles
         : (() => {
-            const bucketCount = Math.min(18, Math.max(1, plotHistory.length));
+            const bucketCount = Math.min(24, Math.max(1, plotHistory.length));
             const chunkSize = Math.max(1, Math.ceil(plotHistory.length / bucketCount));
-            const bars: Array<{ time: number; open: number; high: number; low: number; close: number }> = [];
+            const bars: OHLCV[] = [];
             for (let i = 0; i < plotHistory.length; i += chunkSize) {
               const slice = plotHistory.slice(i, i + chunkSize);
               if (slice.length === 0) continue;
@@ -722,11 +1227,29 @@ function MiniTickChart({
                 high,
                 low,
                 close,
+                volume: 0,
               });
             }
             return bars;
           })();
 
+      // Detect whether volume histogram should be displayed (matching main TradingChart bottom volume band)
+      const showVolumeOverlay = chartSettings.showTickVolumes !== false || chartSettings.showRealVolumes;
+      let maxVolume = 0;
+      if (showVolumeOverlay && liveCandles.length >= 2) {
+        for (const bar of candlesToDraw) {
+          if (Number.isFinite(bar.volume) && bar.volume > maxVolume) {
+            maxVolume = bar.volume;
+          }
+        }
+      }
+      const hasVolumeBars = maxVolume > 0;
+      const volumeBandHeight = hasVolumeBars ? Math.min(54, Math.max(28, Math.round(plotHeight * 0.17))) : 0;
+      const pricePlotTop = top + 6;
+      const pricePlotBottom = plotBottom - volumeBandHeight - (hasVolumeBars ? 8 : 6);
+      const pricePlotHeight = Math.max(60, pricePlotBottom - pricePlotTop);
+
+      // Compute price scale bounds across visible candles + active trades/orders/draft levels
       let minPrice = Number.POSITIVE_INFINITY;
       let maxPrice = Number.NEGATIVE_INFINITY;
       for (const bar of candlesToDraw) {
@@ -776,7 +1299,7 @@ function MiniTickChart({
         minPrice = midpoint - minimumRange / 2;
         maxPrice = midpoint + minimumRange / 2;
       }
-      const padding = Math.max((maxPrice - minPrice) * 0.12, (brokerStep ?? 0) * 2);
+      const padding = Math.max((maxPrice - minPrice) * 0.1, (brokerStep ?? 0) * 2);
       minPrice -= padding;
       maxPrice += padding;
       if (!(maxPrice - minPrice > 0)) {
@@ -786,140 +1309,122 @@ function MiniTickChart({
       }
       const totalRange = maxPrice - minPrice;
 
-      const timeStart = liveM1Candles.length >= 2
-        ? liveM1Candles[0].time * 1000
+      const barCount = Math.max(1, candlesToDraw.length);
+      const slotPitch = usablePlotWidth / Math.max(barCount, 12);
+      const barStartX = left + Math.max(4, usablePlotWidth - barCount * slotPitch);
+      const candleCenterX = (index: number) =>
+        barCount === 1
+          ? left + usablePlotWidth * 0.5
+          : barStartX + (index + 0.5) * slotPitch;
+
+      const timeStart = liveCandles.length >= 2
+        ? liveCandles[0].time * 1000
         : plotHistory[0].time;
-      const timeEnd = liveM1Candles.length >= 2
-        ? liveM1Candles[liveM1Candles.length - 1].time * 1000
+      const timeEnd = liveCandles.length >= 2
+        ? liveCandles[liveCandles.length - 1].time * 1000
         : plotHistory[plotHistory.length - 1].time;
       const timeRange = Math.max(timeEnd - timeStart, 1_000);
-      const usablePlotWidth = chartShift ? plotWidth * 0.88 : plotWidth;
       const xOf = (time: number) => left + ((time - timeStart) / timeRange) * usablePlotWidth;
-      const yOf = (price: number) => top + plotHeight - ((price - minPrice) / totalRange) * plotHeight;
+      const yOf = (price: number) => pricePlotTop + pricePlotHeight - ((price - minPrice) / totalRange) * pricePlotHeight;
+      const priceOfY = (y: number) => maxPrice - ((y - pricePlotTop) / pricePlotHeight) * totalRange;
 
-      const isLightSkin = document.documentElement.classList.contains('rtx-skin-untitled-light');
-      const scaleLabelColor = isLightSkin ? '#1e293b' : '#f1f5f9';
-      const scaleTickColor = isLightSkin ? '#64748b' : '#94a3b8';
+      // Compute clean main-chart nice price ticks & time ticks
+      const targetPriceTickCount = Math.max(4, Math.min(8, Math.floor(pricePlotHeight / 42)));
+      const priceTicks = computeNicePriceTicks(minPrice, maxPrice, targetPriceTickCount, brokerStep);
 
-      // Track occupied vertical slots on the right price scale so tags and static labels never overlap
-      const occupiedTagYs: number[] = [];
-      const clampTagY = (rawY: number) => Math.max(top + tagHeight / 2, Math.min(plotBottom - tagHeight / 2, rawY));
-
-      // Pre-compute single live price tag Y position (Bid, falling back to Ask)
-      const lastTick = plotHistory[plotHistory.length - 1];
-      const livePrice = lastTick
-        ? (lastTick.bid > 0 ? lastTick.bid : (lastTick.ask > 0 ? lastTick.ask : 0))
-        : 0;
-      let resolvedLivePriceTagY: number | null = null;
-      if (showPriceLines && livePrice > 0) {
-        resolvedLivePriceTagY = clampTagY(yOf(livePrice));
-        occupiedTagYs.push(resolvedLivePriceTagY);
+      const minTimeTickSpacing = isCompactViewport ? 72 : 84;
+      const timeTicks: Array<{ x: number; timeMs: number; isFirst?: boolean }> = [];
+      if (liveCandles.length >= 2) {
+        const maxTimeTicks = Math.max(2, Math.floor(plotWidth / minTimeTickSpacing));
+        const stepIdx = Math.max(1, Math.ceil(barCount / maxTimeTicks));
+        for (let idx = 0; idx < barCount; idx += stepIdx) {
+          const x = candleCenterX(idx);
+          if (x < left + 26 || x > plotRight - 26) continue;
+          if (timeTicks.length > 0 && x - timeTicks[timeTicks.length - 1].x < minTimeTickSpacing * 0.85) continue;
+          timeTicks.push({ x, timeMs: candlesToDraw[idx].time * 1000, isFirst: timeTicks.length === 0 });
+        }
+      } else {
+        const cols = Math.max(3, Math.min(6, Math.floor(plotWidth / minTimeTickSpacing)));
+        for (let c = 1; c < cols; c += 1) {
+          const x = left + (c / cols) * plotWidth;
+          const t = timeStart + (c / cols) * timeRange;
+          timeTicks.push({ x, timeMs: t, isFirst: c === 1 });
+        }
       }
 
-      const registerOccupiedLevel = (priceVal: number | undefined) => {
-        if (typeof priceVal !== 'number' || !Number.isFinite(priceVal) || priceVal <= 0) return;
-        const rawY = yOf(priceVal);
-        if (rawY < top - 4 || rawY > plotBottom + 4) return;
-        occupiedTagYs.push(clampTagY(rawY));
-      };
-      for (const pos of symbolPositions) {
-        registerOccupiedLevel(Number(pos.openPrice ?? pos.open_price ?? pos.price_open ?? 0));
-        registerOccupiedLevel(pos.sl);
-        registerOccupiedLevel(pos.tp);
-      }
-      for (const ord of symbolPendingOrders) {
-        registerOccupiedLevel(ord.price);
-        registerOccupiedLevel(ord.sl);
-        registerOccupiedLevel(ord.tp);
-      }
-      registerOccupiedLevel(orderPrice);
-      registerOccupiedLevel(stopLossPrice);
-      registerOccupiedLevel(takeProfitPrice);
-
-      // Right-side price scale surface & separator line
-      ctx.fillStyle = isLightSkin
-        ? (palette.axisSurface || '#f1f5f9')
-        : '#090d14';
-      ctx.fillRect(plotRight + 1, top, right - 1, plotHeight);
-      ctx.beginPath();
-      ctx.moveTo(plotRight + 0.5, top);
-      ctx.lineTo(plotRight + 0.5, plotBottom);
-      ctx.strokeStyle = scaleTickColor;
-      ctx.globalAlpha = 0.55;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-
-      // Right-side price scale labels & tick marks (skipping slots occupied by active price tags)
-      ctx.font = bodyFont;
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      for (let r = 0; r <= gridRows; r += 1) {
-        const price = maxPrice - (r / gridRows) * totalRange;
-        const y = Math.round(top + (r / gridRows) * plotHeight) + 0.5;
-        const collidesWithActiveTag = occupiedTagYs.some((tagY) => Math.abs(y - tagY) < tagHeight * 0.88);
-        if (collidesWithActiveTag) continue;
-
-        ctx.beginPath();
-        ctx.moveTo(plotRight + 0.5, y);
-        ctx.lineTo(plotRight + 5, y);
-        ctx.strokeStyle = scaleTickColor;
-        ctx.globalAlpha = 0.7;
+      // Draw crisp main-chart dotted square/scale grid
+      if (chartSettings.showGrid !== false) {
+        const gridStroke = isLightSkin
+          ? 'rgba(100, 116, 139, 0.24)'
+          : (chartTheme.gridHorizontal || 'rgba(148, 163, 184, 0.16)');
+        const isSolidGrid = chartSettings.gridLineStyle === 'solid';
+        ctx.save();
+        ctx.strokeStyle = gridStroke;
         ctx.lineWidth = 1;
-        ctx.stroke();
+        ctx.globalAlpha = isLightSkin ? (isSolidGrid ? 0.55 : 0.82) : (isSolidGrid ? 0.45 : 0.7);
+        if (!isSolidGrid && typeof ctx.setLineDash === 'function') {
+          ctx.setLineDash([1, 2]);
+        }
 
-        ctx.fillStyle = scaleLabelColor;
-        ctx.globalAlpha = 0.96;
-        const scaleDigits = digits ?? inferObservedPriceDigits(null, [minPrice, maxPrice, bid, ask]);
-        const labelText = scaleDigits !== null ? price.toFixed(scaleDigits) : formatDialogPrice(Number(price.toPrecision(6)), digits);
-        ctx.fillText(labelText, plotRight + 7, y);
+        // Horizontal gridlines aligned to nice price ticks
+        const hYs = priceTicks.length >= 2
+          ? priceTicks.map((p) => Math.round(yOf(p)) + 0.5)
+          : Array.from({ length: 6 }, (_, i) => Math.round(top + ((i + 1) / 7) * plotHeight) + 0.5);
+        for (const y of hYs) {
+          if (y <= top || y >= plotBottom) continue;
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(plotRight, y);
+          ctx.stroke();
+        }
+
+        // Vertical gridlines aligned to time ticks (plus crisp square sub-lines)
+        const vXs = timeTicks.length >= 2
+          ? timeTicks.map((tk) => Math.round(tk.x) + 0.5)
+          : Array.from({ length: 6 }, (_, i) => Math.round(left + ((i + 1) / 7) * plotWidth) + 0.5);
+        for (const x of vXs) {
+          if (x <= left || x >= plotRight) continue;
+          ctx.beginPath();
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, plotBottom);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
-      ctx.globalAlpha = 1;
 
-      // Bottom time axis labels (with horizontal overlap protection)
-      ctx.font = bodyFont;
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = scaleLabelColor;
-      ctx.globalAlpha = 0.9;
-      const startDateLabel = formatTickDate(timeStart);
-      const endTimeLabel = formatTickTimeShort(timeEnd, true);
-      const minCenterX = left + Math.ceil(ctx.measureText(startDateLabel).width) + 22;
-      const maxCenterX = plotRight - Math.ceil(ctx.measureText(endTimeLabel).width) - 22;
-      const minTimeGap = Math.ceil(ctx.measureText('00:00').width) + 14;
-      let lastTimeCenterX = -Infinity;
-
-      ctx.textAlign = 'left';
-      ctx.fillText(startDateLabel, left, height - 5);
-      for (let c = 2; c < gridCols; c += 1) {
-        const t = timeStart + (c / gridCols) * timeRange;
-        const x = left + (c / gridCols) * plotWidth;
-        if (x < minCenterX || x > maxCenterX || x - lastTimeCenterX < minTimeGap) continue;
-        ctx.textAlign = 'center';
-        ctx.fillText(formatTickTimeShort(t, false), x, height - 5);
-        lastTimeCenterX = x;
-      }
-      ctx.textAlign = 'right';
-      ctx.fillText(endTimeLabel, plotRight, height - 5);
-      ctx.globalAlpha = 1;
-
-      const barCount = Math.max(1, candlesToDraw.length);
-      const slotWidth = usablePlotWidth / Math.max(barCount, 12);
-      const candleWidth = Math.max(3, Math.min(11, Math.floor(slotWidth * 0.68)));
+      const candleWidth = Math.max(3, Math.min(11, Math.floor(slotPitch * 0.66)));
       const halfTickArm = Math.max(2, Math.floor(candleWidth / 2));
 
+      // Draw subtle bottom volume histogram matching main TradingChart (50% opacity directional bars)
+      if (hasVolumeBars && volumeBandHeight > 4) {
+        const volWidth = Math.max(2, Math.min(candleWidth + 1, Math.floor(slotPitch * 0.72)));
+        for (let index = 0; index < candlesToDraw.length; index += 1) {
+          const bar = candlesToDraw[index];
+          if (!(bar.volume > 0)) continue;
+          const cx = Math.round(candleCenterX(index)) + 0.5;
+          const isBull = bar.close >= bar.open;
+          const barH = Math.max(2, Math.round((bar.volume / maxVolume) * (volumeBandHeight - 2)));
+          const barLeft = Math.round(cx - volWidth / 2);
+          const barTop = plotBottom - barH;
+          ctx.fillStyle = isBull
+            ? (chartTheme.volumeUp || 'rgba(37, 99, 235, 0.45)')
+            : (chartTheme.volumeDown || 'rgba(220, 38, 38, 0.45)');
+          ctx.fillRect(barLeft, barTop, volWidth, barH);
+        }
+      }
+
+      // Draw primary price series (Candlestick, Bar, HLC, Line, Area, Dot)
       if (miniChartType === 'candlestick') {
         candlesToDraw.forEach((bar, index) => {
-          const cx = barCount === 1
-            ? Math.round(left + usablePlotWidth * 0.5) + 0.5
-            : Math.round(left + ((index + 0.5) / barCount) * usablePlotWidth) + 0.5;
+          const cx = Math.round(candleCenterX(index)) + 0.5;
           const isBull = bar.close >= bar.open;
           const bodyColor = isBull ? candleUpBody : candleDownBody;
           const borderColor = isBull ? candleUpBorder : candleDownBorder;
 
-          const yHigh = Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.high)));
-          const yLow = Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.low)));
-          const yOpen = Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.open)));
-          const yClose = Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.close)));
+          const yHigh = Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.high)));
+          const yLow = Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.low)));
+          const yOpen = Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.open)));
+          const yClose = Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.close)));
 
           ctx.beginPath();
           ctx.moveTo(cx, yHigh);
@@ -929,11 +1434,11 @@ function MiniTickChart({
           ctx.stroke();
 
           const bodyTop = Math.round(Math.min(yOpen, yClose));
-          const bodyHeight = Math.max(2, Math.round(Math.abs(yClose - yOpen)));
+          const bodyHeight = Math.max(1.5, Math.round(Math.abs(yClose - yOpen)));
           const bodyLeft = Math.round(cx - candleWidth / 2);
           ctx.fillStyle = bodyColor;
           ctx.fillRect(bodyLeft, bodyTop, candleWidth, bodyHeight);
-          if (candleWidth >= 4) {
+          if (candleWidth >= 4 && bodyHeight >= 2) {
             ctx.strokeStyle = borderColor;
             ctx.lineWidth = 1;
             ctx.strokeRect(bodyLeft + 0.5, bodyTop + 0.5, candleWidth - 1, Math.max(1, bodyHeight - 1));
@@ -941,16 +1446,14 @@ function MiniTickChart({
         });
       } else if (miniChartType === 'bar' || miniChartType === 'hlc') {
         candlesToDraw.forEach((bar, index) => {
-          const cx = barCount === 1
-            ? Math.round(left + usablePlotWidth * 0.5) + 0.5
-            : Math.round(left + ((index + 0.5) / barCount) * usablePlotWidth) + 0.5;
+          const cx = Math.round(candleCenterX(index)) + 0.5;
           const isBull = bar.close >= bar.open;
           const strokeColor = isBull ? candleUpBorder : candleDownBorder;
 
-          const yHigh = Math.round(Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.high)))) + 0.5;
-          const yLow = Math.round(Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.low)))) + 0.5;
-          const yOpen = Math.round(Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.open)))) + 0.5;
-          const yClose = Math.round(Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.close)))) + 0.5;
+          const yHigh = Math.round(Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.high)))) + 0.5;
+          const yLow = Math.round(Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.low)))) + 0.5;
+          const yOpen = Math.round(Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.open)))) + 0.5;
+          const yClose = Math.round(Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.close)))) + 0.5;
 
           ctx.beginPath();
           ctx.moveTo(cx, yHigh);
@@ -962,23 +1465,21 @@ function MiniTickChart({
           ctx.moveTo(cx, yClose);
           ctx.lineTo(cx + halfTickArm, yClose);
           ctx.strokeStyle = strokeColor;
-          ctx.lineWidth = 1.2;
+          ctx.lineWidth = 1.25;
           ctx.stroke();
         });
       } else if (miniChartType === 'line' || miniChartType === 'area' || miniChartType === 'dot') {
         const points = candlesToDraw.length >= 2
           ? candlesToDraw.map((bar, index) => ({
-              x: barCount === 1
-                ? left + usablePlotWidth * 0.5
-                : left + ((index + 0.5) / barCount) * usablePlotWidth,
-              y: Math.max(top + 2, Math.min(plotBottom - 2, yOf(bar.close))),
+              x: candleCenterX(index),
+              y: Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(bar.close))),
             }))
           : plotHistory.map((tick) => ({
               x: xOf(tick.time),
-              y: Math.max(top + 2, Math.min(plotBottom - 2, yOf(tick.bid > 0 ? tick.bid : tick.ask))),
+              y: Math.max(top + 2, Math.min(pricePlotBottom + 2, yOf(tick.bid > 0 ? tick.bid : tick.ask))),
             }));
 
-        const lineStroke = chartColors.lineChart || '#3b82f6';
+        const lineStroke = chartTheme.line || chartColors.lineChart || '#2563eb';
         if (points.length > 0) {
           if (miniChartType === 'area' && points.length >= 2) {
             ctx.save();
@@ -991,7 +1492,7 @@ function MiniTickChart({
             ctx.lineTo(points[0].x, plotBottom);
             ctx.closePath();
             ctx.fillStyle = lineStroke;
-            ctx.globalAlpha = 0.22;
+            ctx.globalAlpha = isLightSkin ? 0.14 : 0.24;
             ctx.fill();
             ctx.restore();
           }
@@ -1005,7 +1506,7 @@ function MiniTickChart({
             ctx.strokeStyle = lineStroke;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 1.6;
             ctx.stroke();
           }
 
@@ -1020,8 +1521,8 @@ function MiniTickChart({
         }
       }
 
-      // When in tick-only mode (no historical M1 bars) on candlestick/bar/hlc, overlay a single live price trace
-      if (liveM1Candles.length < 2 && (miniChartType === 'candlestick' || miniChartType === 'bar' || miniChartType === 'hlc')) {
+      // Tick-only fallback trace when no historical candles exist yet
+      if (liveCandles.length < 2 && (miniChartType === 'candlestick' || miniChartType === 'bar' || miniChartType === 'hlc')) {
         const bgNormForTrace = palette.background.trim().toLowerCase();
         const isInvisibleForTrace = (c: string) => {
           const n = c.trim().toLowerCase();
@@ -1054,133 +1555,77 @@ function MiniTickChart({
         }
       }
 
-      // Helper to draw a high-contrast right-side price scale tag
-      const drawPriceAxisTag = (
-        priceVal: number,
-        bg: string,
-        textColor = '#ffffff',
-        overrideTagY?: number | null,
-      ) => {
-        if (!Number.isFinite(priceVal) || priceVal <= 0) return;
-        const rawY = yOf(priceVal);
-        const lineY = Math.round(Math.max(top, Math.min(plotBottom, rawY))) + 0.5;
-        const clampedY = overrideTagY ?? clampTagY(rawY);
-        const tagTop = Math.round(clampedY - tagHeight / 2);
-        const tagWidth = right - 3;
+      // Collect all trade/order/draft levels + live price for guaranteed zero-overlap layout
+      interface LevelOverlaySpec {
+        id: string;
+        price: number;
+        rawY: number;
+        badgeLabel: string;
+        accentColor: string;
+        textColorLight: string;
+        textColorDark: string;
+        dashed: boolean;
+        priority: number;
+        isLive?: boolean;
+        solidBg?: string;
+        solidText?: string;
+      }
 
-        // Connector tick from lineY to tag center if separated
-        ctx.beginPath();
-        ctx.moveTo(plotRight, lineY);
-        ctx.lineTo(plotRight + 3, clampedY);
-        ctx.strokeStyle = bg;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+      const levelSpecs: LevelOverlaySpec[] = [];
 
-        // Tag pill background + subtle top/bottom border for crisp legibility
-        ctx.fillStyle = bg;
-        ctx.fillRect(plotRight + 2, tagTop, tagWidth, tagHeight);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(plotRight + 2.5, tagTop + 0.5, tagWidth - 1, tagHeight - 1);
-
-        ctx.fillStyle = textColor;
-        ctx.font = controlFont;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(formatDialogPrice(priceVal, digits), plotRight + 7, clampedY + 0.5);
-      };
-
-      // Helper to draw horizontal level line + left badge + right price scale tag (for trades & order levels)
-      const drawTradeOrOrderLine = (
-        levelPrice: number | undefined,
+      const pushLevel = (
+        id: string,
+        priceVal: number | undefined,
         badgeLabel: string,
-        lineColor: string,
-        tagBg: string,
+        accentColor: string,
+        textColorLight: string,
+        textColorDark: string,
+        priority: number,
         dashed = true,
       ) => {
-        if (typeof levelPrice !== 'number' || !Number.isFinite(levelPrice) || levelPrice <= 0) return;
-        const rawY = yOf(levelPrice);
+        if (typeof priceVal !== 'number' || !Number.isFinite(priceVal) || priceVal <= 0) return;
+        const rawY = yOf(priceVal);
         if (rawY < top - 4 || rawY > plotBottom + 4) return;
-        const clampedY = Math.round(clampTagY(rawY)) + 0.5;
-
-        ctx.save();
-        if (dashed && typeof ctx.setLineDash === 'function') {
-          ctx.setLineDash([4, 3]);
-        }
-        ctx.beginPath();
-        ctx.moveTo(left, clampedY);
-        ctx.lineTo(plotRight, clampedY);
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-
-        if (badgeLabel) {
-          ctx.font = controlFont;
-          const labelPad = isCompactViewport ? 8 : 10;
-          const labelWidth = Math.ceil(ctx.measureText(badgeLabel).width) + labelPad;
-          const boxH = isCompactViewport ? 13 : 15;
-          const boxX = left + 4;
-          const boxY = Math.round(clampedY - boxH / 2);
-          ctx.fillStyle = tagBg;
-          ctx.fillRect(boxX, boxY, labelWidth, boxH);
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(badgeLabel, boxX + (isCompactViewport ? 4 : 5), clampedY);
-        }
-
-        drawPriceAxisTag(levelPrice, tagBg, '#ffffff');
+        levelSpecs.push({
+          id,
+          price: priceVal,
+          rawY,
+          badgeLabel,
+          accentColor,
+          textColorLight,
+          textColorDark,
+          dashed,
+          priority,
+        });
       };
 
-      // Draw active open positions on this symbol (same as main TradingChart)
-      for (const pos of symbolPositions) {
-        const entryPrice = Number(pos.openPrice ?? pos.open_price ?? pos.price_open ?? 0);
-        const isBuy = String(pos.side ?? '').toUpperCase() === 'BUY';
-        const vol = Number(pos.volume ?? pos.quantity ?? 0);
-        const tradeColor = isBuy ? '#2563eb' : '#dc2626';
-        const sideText = isBuy ? 'BUY' : 'SELL';
-        drawTradeOrOrderLine(
-          entryPrice,
-          `${sideText} ${vol > 0 ? vol : ''}`.trim(),
-          tradeColor,
-          tradeColor,
-          true,
+      for (const item of tradeBarItems) {
+        const lineAccent = isLightSkin ? item.accentColorLight : item.accentColorDark;
+        const lineColor = item.kind === 'sl'
+          ? (isLightSkin ? '#d97706' : '#fbbf24')
+          : item.kind === 'tp'
+            ? (isLightSkin ? '#059669' : '#4ade80')
+            : item.side === 'BUY'
+              ? '#2563eb'
+              : '#dc2626';
+        pushLevel(
+          item.id,
+          item.price,
+          item.typeLabel,
+          lineColor,
+          lineAccent,
+          item.accentColorDark,
+          item.priority,
         );
-        if (Number.isFinite(pos.sl) && pos.sl > 0) {
-          drawTradeOrOrderLine(pos.sl, `SL`, palette.stopLevel, '#b91c1c', true);
-        }
-        if (Number.isFinite(pos.tp) && pos.tp > 0) {
-          drawTradeOrOrderLine(pos.tp, `TP`, '#22c55e', '#15803d', true);
-        }
       }
 
-      // Draw active pending orders on this symbol
-      for (const ord of symbolPendingOrders) {
-        const isBuy = String(ord.side ?? '').toUpperCase() === 'BUY';
-        const tradeColor = isBuy ? '#2563eb' : '#dc2626';
-        const typeLabel = `${ord.side} ${ord.type}`.replace('_', ' ');
-        drawTradeOrOrderLine(
-          ord.price,
-          `${typeLabel} ${ord.volume}`,
-          tradeColor,
-          tradeColor,
-          true,
-        );
-        if (typeof ord.sl === 'number' && Number.isFinite(ord.sl) && ord.sl > 0) {
-          drawTradeOrOrderLine(ord.sl, 'SL', palette.stopLevel, '#b91c1c', true);
-        }
-        if (typeof ord.tp === 'number' && Number.isFinite(ord.tp) && ord.tp > 0) {
-          drawTradeOrOrderLine(ord.tp, 'TP', '#22c55e', '#15803d', true);
-        }
-      }
+      // Single live price line (Bid, falling back to Ask) — matches TradingChart & contract test
+      const lastTick = plotHistory[plotHistory.length - 1];
+      const livePrice = lastTick
+        ? (lastTick.bid > 0 ? lastTick.bid : (lastTick.ask > 0 ? lastTick.ask : 0))
+        : 0;
 
-      // Draw draft order levels (Price, SL, TP) when entered in the dialog
-      drawTradeOrOrderLine(orderPrice, 'Price', '#9ca3af', '#4b5563', true);
-      drawTradeOrOrderLine(stopLossPrice, 'SL', palette.stopLevel, '#b91c1c', true);
-      drawTradeOrOrderLine(takeProfitPrice, 'TP', '#2563eb', '#1d4ed8', true);
-
-      // Draw a single live price line and right-side price scale tag last so it stays on top
+      let liveLevelSpec: LevelOverlaySpec | null = null;
       if (showPriceLines && livePrice > 0) {
         const bgNorm = palette.background.trim().toLowerCase();
         const isInvisibleOnPlot = (c: string) => {
@@ -1213,14 +1658,303 @@ function MiniTickChart({
           : (isLiveUp ? visibleUpColor : visibleDownColor);
         const liveTagText = getReadableTagText(liveLineColor);
 
-        ctx.lineWidth = 1;
-        const y = Math.round(Math.max(top, Math.min(plotBottom, yOf(livePrice)))) + 0.5;
+        liveLevelSpec = {
+          id: 'live-bid',
+          price: livePrice,
+          rawY: Math.max(top, Math.min(plotBottom, yOf(livePrice))),
+          badgeLabel: '',
+          accentColor: liveLineColor,
+          textColorLight: liveTagText,
+          textColorDark: liveTagText,
+          dashed: false,
+          priority: 100,
+          isLive: true,
+          solidBg: liveLineColor,
+          solidText: liveTagText,
+        };
+      }
+
+      // Resolve non-overlapping vertical slots independently for left floating trade strips and right axis pills
+      const tagMinY = top + tagHeight / 2 + 2;
+      const tagMaxY = plotBottom - tagHeight / 2 - 2;
+      const leftBarMinGap = isCompactViewport ? 21 : 22;
+      const resolvedLeftBadges = resolveVerticalTagSlots(
+        levelSpecs.filter((item) => Boolean(item.badgeLabel)),
+        tagMinY,
+        tagMaxY,
+        leftBarMinGap,
+      );
+      const rightTagCandidates = liveLevelSpec ? [...levelSpecs, liveLevelSpec] : [...levelSpecs];
+      const resolvedRightTags = resolveVerticalTagSlots(
+        rightTagCandidates,
+        tagMinY,
+        tagMaxY,
+        tagHeight + 2,
+      );
+
+      // Check hover crosshair position
+      const hover = hoverPosRef.current;
+      const isHoveringPlot =
+        hover !== null
+        && hover.x >= left
+        && hover.x <= plotRight
+        && hover.y >= top
+        && hover.y <= plotBottom;
+
+      let hoveredCandleIndex: number | null = null;
+      let hoveredPrice: number | null = null;
+      if (isHoveringPlot && hover) {
+        hoveredPrice = priceOfY(hover.y);
+        if (candlesToDraw.length > 0) {
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          for (let i = 0; i < candlesToDraw.length; i += 1) {
+            const dist = Math.abs(candleCenterX(i) - hover.x);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestIdx = i;
+            }
+          }
+          hoveredCandleIndex = bestIdx;
+        }
+      }
+
+      // Sync top-left OHLC HUD to hovered candle (or live latest candle when not hovering)
+      const activeHudCandle =
+        hoveredCandleIndex !== null
+          ? candlesToDraw[hoveredCandleIndex]
+          : candlesToDraw[candlesToDraw.length - 1] ?? null;
+      updateOhlcHud(activeHudCandle);
+
+      // Draw trade/order dashed horizontal lines across plot
+      for (const spec of levelSpecs) {
+        const lineY = Math.round(Math.max(top, Math.min(plotBottom, spec.rawY))) + 0.5;
+        ctx.save();
+        if (spec.dashed && typeof ctx.setLineDash === 'function') {
+          ctx.setLineDash([4, 3]);
+        }
         ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(plotRight, y);
-        ctx.strokeStyle = liveLineColor;
+        ctx.moveTo(left, lineY);
+        ctx.lineTo(plotRight, lineY);
+        ctx.strokeStyle = spec.accentColor;
+        ctx.globalAlpha = 0.85;
+        ctx.lineWidth = 1;
         ctx.stroke();
-        drawPriceAxisTag(livePrice, liveLineColor, liveTagText, resolvedLivePriceTagY);
+        ctx.restore();
+      }
+
+      // Draw live Bid horizontal price line across plot
+      if (liveLevelSpec) {
+        const liveLineY = Math.round(liveLevelSpec.rawY) + 0.5;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(left, liveLineY);
+        ctx.lineTo(plotRight, liveLineY);
+        ctx.strokeStyle = liveLevelSpec.accentColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Position interactive main-chart-style DOM floating strips with zero overlap
+      // and draw subtle elbow connectors whenever a strip is shifted off its exact price line
+      const overlayLayer = overlayLayerRef.current;
+      if (overlayLayer) {
+        const barNodes = overlayLayer.querySelectorAll<HTMLElement>('[data-order-chart-bar-id]');
+        barNodes.forEach((node) => {
+          node.style.display = 'none';
+        });
+      }
+      for (const badge of resolvedLeftBadges) {
+        const lineY = Math.round(Math.max(top, Math.min(plotBottom, badge.rawY))) + 0.5;
+        const centerY = Math.round(badge.resolvedY);
+        if (Math.abs(centerY - lineY) >= 2) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(left + 1, lineY);
+          ctx.lineTo(left + 7, centerY);
+          ctx.strokeStyle = badge.accentColor;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
+        }
+        if (overlayLayer) {
+          const barNode = overlayLayer.querySelector<HTMLElement>(`[data-order-chart-bar-id="${badge.id}"]`);
+          if (barNode) {
+            barNode.style.top = `${centerY}px`;
+            barNode.style.display = 'inline-flex';
+          }
+        }
+      }
+
+      // Draw interactive crosshair lines inside plot (before axes so axis pills sit cleanly on top)
+      if (isHoveringPlot && hover) {
+        const crossX = hoveredCandleIndex !== null
+          ? Math.round(candleCenterX(hoveredCandleIndex)) + 0.5
+          : Math.round(hover.x) + 0.5;
+        const crossY = Math.round(hover.y) + 0.5;
+        ctx.save();
+        ctx.strokeStyle = isLightSkin ? 'rgba(71, 85, 105, 0.55)' : (chartTheme.crosshair || 'rgba(148, 163, 184, 0.55)');
+        ctx.lineWidth = 1;
+        if (typeof ctx.setLineDash === 'function') ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(crossX, top);
+        ctx.lineTo(crossX, plotBottom);
+        ctx.moveTo(left, crossY);
+        ctx.lineTo(plotRight, crossY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Right Price Scale & Bottom Time Axis Surfaces + Crisp Rules (matching main TradingChart)
+      const axisBorderColor = isLightSkin ? '#cbd5e1' : 'rgba(148, 163, 184, 0.24)';
+      const scaleLabelColor = isLightSkin ? '#334155' : '#cbd5e1';
+      const scaleTickColor = isLightSkin ? '#94a3b8' : '#64748b';
+
+      ctx.fillStyle = palette.axisSurface;
+      ctx.fillRect(plotRight + 1, 0, right - 1, height);
+      ctx.fillRect(0, plotBottom + 1, width, bottom - 1);
+
+      // Vertical price-axis border & horizontal time-axis border
+      ctx.strokeStyle = axisBorderColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(plotRight + 0.5, 0);
+      ctx.lineTo(plotRight + 0.5, plotBottom + 0.5);
+      ctx.moveTo(left, plotBottom + 0.5);
+      ctx.lineTo(width, plotBottom + 0.5);
+      ctx.stroke();
+
+      // Track all active right-axis pill Y coordinates so static labels never collide with pills
+      const occupiedRightYs = resolvedRightTags.map((t) => t.resolvedY);
+      if (isHoveringPlot && hover) {
+        occupiedRightYs.push(hover.y);
+      }
+
+      // Draw static right-side price scale labels & tick marks
+      const scaleDigits = digits ?? inferObservedPriceDigits(null, [minPrice, maxPrice, bid, ask]);
+      const tickPricesToRender = priceTicks.length >= 2
+        ? priceTicks
+        : Array.from({ length: 7 }, (_, r) => maxPrice - (r / 6) * totalRange);
+
+      ctx.font = bodyFont;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      for (const price of tickPricesToRender) {
+        const y = Math.round(yOf(price)) + 0.5;
+        if (y < top + 6 || y > plotBottom - 6) continue;
+        const collidesWithActiveTag = occupiedRightYs.some((tagY) => Math.abs(y - tagY) < tagHeight * 0.92);
+        if (collidesWithActiveTag) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(plotRight + 0.5, y);
+        ctx.lineTo(plotRight + 4.5, y);
+        ctx.strokeStyle = scaleTickColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = scaleLabelColor;
+        const labelText = scaleDigits !== null
+          ? price.toFixed(scaleDigits)
+          : formatDialogPrice(Number(price.toPrecision(6)), digits);
+        ctx.fillText(labelText, plotRight + 7, y + 0.5);
+      }
+
+      // Draw non-overlapping right-side price pills (trade/order levels first, Live Bid last on top)
+      const sortedTagsForPaint = [...resolvedRightTags].sort((a, b) => (a.isLive ? 1 : 0) - (b.isLive ? 1 : 0));
+      for (const tag of sortedTagsForPaint) {
+        const lineY = Math.round(Math.max(top, Math.min(plotBottom, tag.rawY))) + 0.5;
+        const centerY = Math.round(tag.resolvedY);
+        const tagTop = Math.round(centerY - tagHeight / 2);
+        const tagWidth = right - 4;
+        const tagX = plotRight + 3;
+
+        // Connector tick from exact lineY to pill center
+        ctx.beginPath();
+        ctx.moveTo(plotRight + 0.5, lineY);
+        ctx.lineTo(tagX, centerY);
+        ctx.strokeStyle = tag.accentColor;
+        ctx.lineWidth = 1.25;
+        ctx.stroke();
+
+        if (tag.isLive) {
+          drawCrispPillRect(ctx, tagX, tagTop, tagWidth, tagHeight, 2.5, tag.solidBg || tag.accentColor);
+          ctx.fillStyle = tag.solidText || '#ffffff';
+        } else {
+          const pillBg = isLightSkin ? '#ffffff' : '#0f172a';
+          drawCrispPillRect(ctx, tagX, tagTop, tagWidth, tagHeight, 2.5, pillBg, tag.accentColor);
+          ctx.fillStyle = isLightSkin ? tag.textColorLight : tag.textColorDark;
+        }
+
+        ctx.font = controlFont;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(formatDialogPrice(tag.price, digits), tagX + 4, centerY + 0.5);
+      }
+
+      // Draw bottom time axis labels & crisp downward tick marks (matching TradingChart)
+      ctx.font = bodyFont;
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = scaleLabelColor;
+      const timeLabelY = plotBottom + Math.round(bottom / 2) + 1;
+
+      let lastTimeRightEdge = -Infinity;
+      let hasDrawnFirstTimeLabel = false;
+      for (let i = 0; i < timeTicks.length; i += 1) {
+        const tk = timeTicks[i];
+        const tx = Math.round(tk.x) + 0.5;
+        const labelText = !hasDrawnFirstTimeLabel
+          ? formatMiniChartAxisTime(tk.timeMs, 'date-time')
+          : formatMiniChartAxisTime(tk.timeMs, 'time');
+        const labelW = Math.ceil(ctx.measureText(labelText).width);
+        const leftEdge = tx - labelW / 2;
+        const rightEdge = tx + labelW / 2;
+        if (leftEdge < left + 4 || rightEdge > plotRight - 4 || leftEdge < lastTimeRightEdge + 12) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(tx, plotBottom + 0.5);
+        ctx.lineTo(tx, plotBottom + 4.5);
+        ctx.strokeStyle = scaleTickColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillText(labelText, tx, timeLabelY);
+        lastTimeRightEdge = rightEdge;
+        hasDrawnFirstTimeLabel = true;
+      }
+
+      // Draw interactive crosshair price & time readout badges on the axes
+      if (isHoveringPlot && hover && hoveredPrice !== null && Number.isFinite(hoveredPrice) && hoveredPrice > 0) {
+        const crossBg = isLightSkin ? '#334155' : '#475569';
+        const crossCenterY = Math.round(Math.max(tagMinY, Math.min(tagMaxY, hover.y)));
+        const crossTagTop = Math.round(crossCenterY - tagHeight / 2);
+        const crossTagW = right - 4;
+        drawCrispPillRect(ctx, plotRight + 3, crossTagTop, crossTagW, tagHeight, 2.5, crossBg);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = controlFont;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const hoveredPriceText = scaleDigits !== null
+          ? hoveredPrice.toFixed(scaleDigits)
+          : formatDialogPrice(hoveredPrice, digits);
+        ctx.fillText(hoveredPriceText, plotRight + 7, crossCenterY + 0.5);
+
+        if (hoveredCandleIndex !== null && candlesToDraw[hoveredCandleIndex]) {
+          const crossTimeMs = candlesToDraw[hoveredCandleIndex].time * 1000;
+          const crossTimeText = formatMiniChartAxisTime(crossTimeMs, 'date-time');
+          const crossTimeW = Math.ceil(ctx.measureText(crossTimeText).width) + 12;
+          const rawCrossX = candleCenterX(hoveredCandleIndex);
+          const pillX = Math.max(left + 2, Math.min(plotRight - crossTimeW - 2, Math.round(rawCrossX - crossTimeW / 2)));
+          const pillH = Math.max(15, bottom - 4);
+          const pillY = plotBottom + 2;
+          drawCrispPillRect(ctx, pillX, pillY, crossTimeW, pillH, 2.5, crossBg);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(crossTimeText, pillX + crossTimeW / 2, pillY + pillH / 2 + 0.5);
+        }
       }
     };
 
@@ -1231,6 +1965,7 @@ function MiniTickChart({
         draw();
       });
     };
+    scheduleDrawRef.current = scheduleDraw;
 
     scheduleDraw();
     const resizeObserver = typeof ResizeObserver === 'undefined'
@@ -1250,14 +1985,21 @@ function MiniTickChart({
       themeObserver.disconnect();
     };
   }, [
+    activeTimeframe,
     ask,
     bid,
     chartColors,
+    chartSettings.gridLineStyle,
+    chartSettings.showGrid,
+    chartSettings.showRealVolumes,
+    chartSettings.showTickVolumes,
     chartShift,
+    chartTheme,
     digits,
+    isAdvancedUntitledLight,
     miniChartType,
-    priceStep,
     orderPrice,
+    priceStep,
     showPriceLines,
     stopLossPrice,
     symbol,
@@ -1265,10 +2007,33 @@ function MiniTickChart({
     symbolPositions,
     takeProfitPrice,
     tr,
+    tradeBarItems,
     zoomLevel,
   ]);
 
   const activeChartTypeOption = MINI_CHART_TYPE_OPTIONS.find((opt) => opt.id === miniChartType) ?? MINI_CHART_TYPE_OPTIONS[1];
+
+  const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    hoverPosRef.current = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+    scheduleDrawRef.current();
+  }, []);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    if (hoverPosRef.current !== null) {
+      hoverPosRef.current = null;
+      scheduleDrawRef.current();
+    }
+  }, []);
+
+  const handleCanvasWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
+    if (Math.abs(event.deltaY) < 2) return;
+    const step = event.deltaY < 0 ? 0.25 : -0.25;
+    setZoomLevel((z) => Math.max(0.5, Math.min(4, Number((z + step).toFixed(2)))));
+  }, []);
 
   return (
     <div className="rtx-order-dialog__chart-shell">
@@ -1327,7 +2092,26 @@ function MiniTickChart({
             </div>
           )}
         </div>
+
         <span className="rtx-order-dialog__toolbar-sep" aria-hidden="true" />
+
+        <div className="rtx-order-dialog__tf-group" role="group" aria-label={tr("Timeframe")}>
+          {MINI_CHART_TIMEFRAMES.map((tf) => (
+            <button
+              key={tf}
+              type="button"
+              data-testid={`order-mini-chart-tf-${tf}`}
+              aria-pressed={activeTimeframe === tf}
+              className={`rtx-order-dialog__tf-btn ${activeTimeframe === tf ? 'rtx-order-dialog__tf-btn--active' : ''}`}
+              onClick={() => setActiveTimeframe(tf)}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+
+        <span className="rtx-order-dialog__toolbar-sep" aria-hidden="true" />
+
         <button
           type="button"
           className="rtx-order-dialog__toolbar-btn"
@@ -1335,8 +2119,8 @@ function MiniTickChart({
           onClick={() => setZoomLevel((z) => Math.max(0.5, Number((z - 0.5).toFixed(1))))}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="4.5" stroke="#7a7a85" strokeWidth="1.2" />
-            <path d="M4.8 7H9.2M10.5 10.5L14 14" stroke="#7a7a85" strokeWidth="1.2" />
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.25" />
+            <path d="M4.8 7H9.2M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
           </svg>
         </button>
         <button
@@ -1346,8 +2130,8 @@ function MiniTickChart({
           onClick={() => setZoomLevel((z) => Math.min(4, Number((z + 0.5).toFixed(1))))}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="4.5" stroke="#3687ff" strokeWidth="1.2" />
-            <path d="M7 4.8V9.2M4.8 7H9.2M10.5 10.5L14 14" stroke="#3687ff" strokeWidth="1.2" />
+            <circle cx="7" cy="7" r="4.5" stroke="#2563eb" strokeWidth="1.25" />
+            <path d="M7 4.8V9.2M4.8 7H9.2M10.5 10.5L14 14" stroke="#2563eb" strokeWidth="1.25" strokeLinecap="round" />
           </svg>
         </button>
 
@@ -1356,15 +2140,144 @@ function MiniTickChart({
           <span>{tr("Ask ")}<strong>{ask > 0 ? formatDialogPrice(ask, digits) : '—'}</strong></span>
         </div>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={323}
-        height={371}
-        className="rtx-order-dialog__chart-canvas"
-        data-testid="order-mini-tick-chart"
-        role="img"
-        aria-label={tr("Live {{value0}} bid and ask tick chart", { value0: symbol })}
-      />
+
+      <div className="rtx-order-dialog__chart-stage" style={{ background: chartTheme.background }}>
+        <div
+          className="rtx-order-dialog__chart-hud"
+          style={{ background: chartTheme.background }}
+          aria-hidden="true"
+        >
+          <span className="rtx-order-dialog__chart-hud-symbol">{symbol}, {activeTimeframe}</span>
+          <span className="rtx-order-dialog__chart-hud-ohlc">
+            <span className="rtx-order-dialog__chart-hud-metric">
+              O: <span ref={ohlcOpenRef} className="rtx-order-dialog__chart-hud-val">—</span>
+            </span>
+            <span className="rtx-order-dialog__chart-hud-metric">
+              H: <span ref={ohlcHighRef} className="rtx-order-dialog__chart-hud-val" style={{ color: hudQuoteColors.upColor }}>—</span>
+            </span>
+            <span className="rtx-order-dialog__chart-hud-metric">
+              L: <span ref={ohlcLowRef} className="rtx-order-dialog__chart-hud-val" style={{ color: hudQuoteColors.downColor }}>—</span>
+            </span>
+            <span className="rtx-order-dialog__chart-hud-metric">
+              C: <span ref={ohlcCloseRef} className="rtx-order-dialog__chart-hud-val">—</span>
+            </span>
+          </span>
+        </div>
+
+        <canvas
+          ref={canvasRef}
+          width={520}
+          height={371}
+          className="rtx-order-dialog__chart-canvas"
+          data-testid="order-mini-tick-chart"
+          role="img"
+          aria-label={tr("Live {{value0}} bid and ask tick chart", { value0: symbol })}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={handleCanvasMouseLeave}
+          onWheel={handleCanvasWheel}
+        />
+
+        <div
+          ref={overlayLayerRef}
+          className="rtx-order-dialog__chart-trade-overlay"
+          data-testid="order-mini-chart-trade-overlay"
+        >
+          {tradeBarItems.map((item) => {
+            const hasPnl = item.kind === 'position' && item.pnlValue != null && Number.isFinite(item.pnlValue);
+            const pnlRounded = hasPnl ? Number(item.pnlValue!.toFixed(2)) : 0;
+            const pnlText = hasPnl
+              ? `${pnlRounded > 0 ? '+' : ''}${formatMoneyLabel(item.pnlValue)}`
+              : null;
+            const pnlToneClass = pnlRounded > 0
+              ? 'rtx-order-dialog__trade-bar-pnl--profit'
+              : pnlRounded < 0
+                ? 'rtx-order-dialog__trade-bar-pnl--loss'
+                : '';
+            const sideToneClass =
+              item.kind === 'tp'
+                ? 'rtx-order-dialog__trade-bar-side--tp'
+                : item.kind === 'sl'
+                  ? 'rtx-order-dialog__trade-bar-side--sl'
+                  : item.side === 'BUY'
+                    ? 'rtx-order-dialog__trade-bar-side--buy'
+                    : 'rtx-order-dialog__trade-bar-side--sell';
+
+            return (
+              <div
+                key={item.id}
+                data-order-chart-bar-id={item.id}
+                data-order-chart-bar-kind={item.kind}
+                className="rtx-order-dialog__trade-bar"
+                style={{ display: 'none' }}
+              >
+                {(item.showTpChip || item.showSlChip) && (
+                  <span className="rtx-order-dialog__trade-bar-brackets">
+                    {item.showTpChip && (
+                      <button
+                        type="button"
+                        className="rtx-order-dialog__trade-bar-bracket rtx-order-dialog__trade-bar-bracket--tp"
+                        title={tr("Add Take Profit")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenModifyForBar(item, 'TP');
+                        }}
+                      >
+                        TP
+                      </button>
+                    )}
+                    {item.showSlChip && (
+                      <button
+                        type="button"
+                        className="rtx-order-dialog__trade-bar-bracket rtx-order-dialog__trade-bar-bracket--sl"
+                        title={tr("Add Stop Loss")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenModifyForBar(item, 'SL');
+                        }}
+                      >
+                        SL
+                      </button>
+                    )}
+                  </span>
+                )}
+
+                <span className="rtx-order-dialog__trade-bar-primary">
+                  <span className={`rtx-order-dialog__trade-bar-side ${sideToneClass}`}>
+                    {item.typeLabel}
+                  </span>
+                  {item.volumeLabel && (
+                    <span className="rtx-order-dialog__trade-bar-vol">
+                      {item.volumeLabel}
+                    </span>
+                  )}
+                  {pnlText !== null && (
+                    <span className={`rtx-order-dialog__trade-bar-pnl ${pnlToneClass}`}>
+                      {pnlText}
+                    </span>
+                  )}
+                </span>
+
+                {item.canClose && (
+                  <button
+                    type="button"
+                    className="rtx-order-dialog__trade-bar-close"
+                    title={item.kind === 'pending' ? tr("Cancel order") : tr("Close position")}
+                    aria-label={item.kind === 'pending' ? tr("Cancel order") : tr("Close position")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseOrCancelBar(item);
+                    }}
+                  >
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3330,11 +4243,14 @@ export function OrderPanelDialog({
                 digits={specDigits}
                 priceStep={priceStep}
                 chartColors={chartColors}
+                chartSettings={chartSettings}
+                isAdvancedUntitledLight={isAdvancedUntitledLight}
                 orderPrice={orderType !== 'Market Execution' && Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : undefined}
                 stopLossPrice={Number.isFinite(parsedStopLoss) && parsedStopLoss > 0 ? parsedStopLoss : undefined}
                 takeProfitPrice={Number.isFinite(parsedTakeProfit) && parsedTakeProfit > 0 ? parsedTakeProfit : undefined}
                 volumeText={volumeStr}
                 sideHint={selectedSide}
+                orderType={orderType}
               />
             </div>
           )}

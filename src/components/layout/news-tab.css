@@ -25,8 +25,7 @@ html.theme-light .rtx-news-tab { color-scheme: light; }
   padding: 0 8px;
 }
 .rtx-news-select,
-.rtx-news-refresh,
-.rtx-news-open {
+.rtx-news-refresh {
   background: var(--bg-secondary);
   border: 1px solid var(--border-secondary);
   border-radius: 0;
@@ -92,5 +91,4 @@ td.rtx-news-col--time { color: var(--text-secondary); font-family: var(--font-mo
 .rtx-news-reader__head { align-items: flex-start; display: flex; gap: 8px; justify-content: space-between; }
 .rtx-news-reader__title { font-size: 13px; font-weight: 700; line-height: 18px; margin: 0; overflow-wrap: anywhere; }
 .rtx-news-reader__meta { color: var(--text-tertiary); font-size: 12px; }
-.rtx-news-reader__text { flex: 1 1 auto; min-height: 0; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
-.rtx-news-open { align-self: flex-start; cursor: pointer; padding: 0 10px; }
+.rtx-news-reader__text { flex: 1 1 auto; line-height: 1.5; min-height: 0; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }

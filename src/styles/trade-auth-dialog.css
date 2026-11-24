@@ -528,6 +528,55 @@ html:root body .rtx-auth-dialog__title {
   box-shadow: 0 0 0 3px rgb(47 140 255 / 18%) !important;
 }
 
+.rtx-auth-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.rtx-auth-field input.rtx-auth-password-input {
+  padding-inline-end: 68px;
+}
+
+.rtx-auth-password-actions {
+  position: absolute;
+  inset-inline-end: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rtx-auth-password-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--auth-muted);
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, opacity 140ms ease;
+}
+
+.rtx-auth-password-btn:hover:not(:disabled) {
+  background: var(--auth-hover);
+  color: var(--auth-text);
+}
+
+.rtx-auth-password-btn.is-copied {
+  color: #10b981;
+}
+
+.rtx-auth-password-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .rtx-auth-field__hint {
   --rtx-type-size: calc(var(--rtx-ui-font-size, 14px) - 2px);
   color: var(--auth-muted);

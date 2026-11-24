@@ -23,6 +23,9 @@ function cn(...inputs: ClassValue[]) {
 }
 
 const NON_MINIMIZABLE_COMPONENTS = new Set(['EmptyChartArea', 'Navigator', 'MarketWatch', 'Terminal']);
+const INNER_HEADER_SELECTOR = '.rtx-market-watch__header, .rtx-bottom-dock__header, [data-dock-inner-header="true"]';
+const NON_DRAG_INTERACTIVE_SELECTOR = 'button:not([role="tab"]):not([data-dock-drag-handle="true"]), input, select, textarea, a, [role="button"], [contenteditable="true"]';
+const NON_FLOAT_DOUBLE_CLICK_SELECTOR = 'button:not([role="tab"]), input, select, textarea, a, [role="button"], [contenteditable="true"]';
 
 export interface DockPanelProps {
   panel: DockPanelConfig;
@@ -97,22 +100,24 @@ export const DockPanel: React.FC<DockPanelProps> = ({
       style={style}
       onMouseDown={(e) => {
         onActivate?.();
-        if (!showHeader) {
+        if (!showHeader || isFloating) {
           const target = e.target as HTMLElement | null;
           if (
-            target?.closest('.rtx-market-watch__header, .rtx-bottom-dock__header, [data-dock-inner-header="true"]') &&
-            !target.closest('button:not([role="tab"])')
+            target?.closest(INNER_HEADER_SELECTOR) &&
+            !(showHeader && target.closest('.dock-panel__header')) &&
+            !target.closest(NON_DRAG_INTERACTIVE_SELECTOR)
           ) {
             onDragStart?.(e);
           }
         }
       }}
       onDoubleClick={(e) => {
-        if (!showHeader) {
+        if (!showHeader || isFloating) {
           const target = e.target as HTMLElement | null;
           if (
-            target?.closest('.rtx-market-watch__header, .rtx-bottom-dock__header, [data-dock-inner-header="true"]') &&
-            !target.closest('button:not([role="tab"])')
+            target?.closest(INNER_HEADER_SELECTOR) &&
+            !(showHeader && target.closest('.dock-panel__header')) &&
+            !target.closest(NON_FLOAT_DOUBLE_CLICK_SELECTOR)
           ) {
             if (panel.floatable === false) return;
             e.preventDefault();
@@ -138,7 +143,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
           onMouseDown={(e) => {
             // Click on empty header area while minimized → restore
             const target = e.target as HTMLElement;
-            if (target.closest('button:not([role="tab"])')) return;
+            if (target.closest(NON_DRAG_INTERACTIVE_SELECTOR)) return;
             if (minimized) {
               setMinimized(false);
               return;
@@ -148,7 +153,7 @@ export const DockPanel: React.FC<DockPanelProps> = ({
           }}
           onDoubleClick={(e) => {
             const target = e.target as HTMLElement;
-            if (target.closest('button:not([role="tab"])')) return;
+            if (target.closest(NON_FLOAT_DOUBLE_CLICK_SELECTOR)) return;
             if (maximized) {
               e.preventDefault();
               e.stopPropagation();

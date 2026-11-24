@@ -432,6 +432,58 @@ html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__copy-btn
   color: var(--account-success) !important;
 }
 
+.rtx-open-account-dialog__password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__password-input {
+  padding-inline-end: 58px;
+}
+
+.rtx-open-account-dialog__password-actions {
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__password-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--account-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__password-btn:hover:not(:disabled) {
+  background: var(--account-hover) !important;
+  border-color: var(--account-border) !important;
+  color: var(--account-text) !important;
+}
+
+html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__password-btn.is-copied {
+  color: var(--account-success) !important;
+}
+
+html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__password-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 html:root .rtx-open-account-dialog[data-step] .rtx-open-account-dialog__warning {
   display: flex;
   align-items: flex-start;

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
@@ -57,6 +57,53 @@ describe('ChangePasswordDialog keyboard access', () => {
             expect(mocks.setInvestorPassword).not.toHaveBeenCalled();
         } finally {
             newerDialog.remove();
+        }
+    });
+
+    it('provides eye visibility toggle and copy button for each password field', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText },
+        });
+        try {
+            render(<ChangePasswordDialog isOpen accountLogin="200003" onClose={vi.fn()} />);
+
+            const currentInput = screen.getByLabelText('Current Password');
+            const newInput = screen.getByLabelText('New Password');
+            const confirmInput = screen.getByLabelText('Confirm New Password');
+
+            expect(currentInput).toHaveClass('rtx-secret-input');
+            expect(newInput).toHaveClass('rtx-secret-input');
+            expect(confirmInput).toHaveClass('rtx-secret-input');
+
+            const copyCurrentBtn = screen.getByRole('button', { name: 'Copy: Current Password' });
+            const copyNewBtn = screen.getByRole('button', { name: 'Copy: New Password' });
+            const copyConfirmBtn = screen.getByRole('button', { name: 'Copy: Confirm New Password' });
+
+            expect(copyCurrentBtn).toBeDisabled();
+            expect(copyNewBtn).toBeDisabled();
+            expect(copyConfirmBtn).toBeDisabled();
+
+            fireEvent.change(currentInput, { target: { value: 'OldPass1!' } });
+            fireEvent.change(newInput, { target: { value: 'NewPass2!' } });
+            fireEvent.change(confirmInput, { target: { value: 'NewPass2!' } });
+
+            expect(copyCurrentBtn).toBeEnabled();
+            expect(copyNewBtn).toBeEnabled();
+            expect(copyConfirmBtn).toBeEnabled();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Show password: New Password' }));
+            expect(newInput).not.toHaveClass('rtx-secret-input');
+            expect(currentInput).toHaveClass('rtx-secret-input');
+
+            fireEvent.click(copyNewBtn);
+            await waitFor(() => expect(writeText).toHaveBeenCalledWith('NewPass2!'));
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Copied: New Password' })).toBeInTheDocument());
+        } finally {
+            if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+            else Reflect.deleteProperty(navigator, 'clipboard');
         }
     });
 });

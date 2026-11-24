@@ -537,4 +537,40 @@ describe('OpenAccountDialog account flows', () => {
             Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
         }
     });
+
+    it('toggles visibility and copies the existing account password without closing or submitting', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText },
+        });
+        try {
+            await renderDialog();
+            await selectSecondBrokerAndContinue();
+
+            fireEvent.click(screen.getByRole('radio', { name: 'Existing account' }));
+            const passwordInput = screen.getByLabelText('Existing account password');
+            const showButton = screen.getByRole('button', { name: 'Show password' });
+            const copyButton = screen.getByRole('button', { name: 'Copy Password' });
+
+            expect(passwordInput).toHaveClass('rtx-secret-input');
+            expect(copyButton).toBeDisabled();
+
+            fireEvent.change(passwordInput, { target: { value: 'ExistingPass1!' } });
+            expect(copyButton).toBeEnabled();
+
+            fireEvent.click(showButton);
+            expect(passwordInput).not.toHaveClass('rtx-secret-input');
+            expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true');
+
+            fireEvent.click(copyButton);
+            await waitFor(() => expect(writeText).toHaveBeenCalledWith('ExistingPass1!'));
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument());
+            expect(mocks.login).not.toHaveBeenCalled();
+        } finally {
+            if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+            else Reflect.deleteProperty(navigator, 'clipboard');
+        }
+    });
 });

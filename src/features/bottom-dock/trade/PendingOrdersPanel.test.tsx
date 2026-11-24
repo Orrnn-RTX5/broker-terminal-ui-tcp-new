@@ -88,8 +88,10 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
 
     expect(screen.getByText('34671')).toBeTruthy();
     expect(screen.getByText('34672')).toBeTruthy();
-    expect(screen.getByText('buy_limit')).toBeTruthy();
-    expect(screen.getByText('sell_stop')).toBeTruthy();
+    expect(screen.getByText('BUY LIMIT')).toBeTruthy();
+    expect(screen.getByText('SELL STOP')).toBeTruthy();
+    expect(screen.queryByText('buy_limit')).toBeNull();
+    expect(screen.queryByText('sell_stop')).toBeNull();
 
     const row = screen.getByText('34671').closest('tr')!;
     fireEvent.click(row.querySelectorAll('button')[0]);
@@ -221,5 +223,20 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
     expect(cancelAllBtn?.disabled).toBe(false);
 
     host.remove();
+  });
+
+  it('formats underscored pending order types with spaces for display', () => {
+    act(() => {
+      useAppStore.getState().setOrders([
+        { ...BACKEND_ROWS[0], ticket: 34673, type: 'SELL_LIMIT' },
+        { ...BACKEND_ROWS[1], ticket: 34674, type: 'SELL_STOP_LIMIT' },
+      ] as never);
+    });
+    render(<PendingOrdersPanel onModifyOrder={vi.fn()} onCancelOrder={vi.fn()} />);
+
+    expect(screen.getByText('SELL LIMIT')).toBeTruthy();
+    expect(screen.getByText('SELL STOP LIMIT')).toBeTruthy();
+    expect(screen.queryByText('SELL_LIMIT')).toBeNull();
+    expect(screen.queryByText('SELL_STOP_LIMIT')).toBeNull();
   });
 });

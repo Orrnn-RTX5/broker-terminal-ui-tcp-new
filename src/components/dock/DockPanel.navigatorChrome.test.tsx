@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DockLayout, DockPanelConfig } from '../../services/dockManager';
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
-import { DockContainer, FloatingPanelsLayer } from './DockContainer';
+import { DockContainer, FloatingPanelsLayer, GlobalEdgeIndicators } from './DockContainer';
 import { DockPanel } from './DockPanel';
 
 const initialLayout = useDockLayoutStore.getState().layout;
@@ -400,5 +400,139 @@ describe('MT5 double-click undock, drag-to-move, and double-click redock across 
     expect(redockedToolbox).not.toBeNull();
     expect(Number(redockedChart?.style.flexGrow)).toBeCloseTo(0.75, 2);
     expect(Number(redockedToolbox?.style.flexGrow)).toBeCloseTo(0.25, 2);
+  });
+
+  it('drags docked Toolbox from its inner view bar and bottom tab strip while ignoring toolbar inputs, selects, and action buttons', () => {
+    useDockLayoutStore.getState().setLayout(createFullWorkspaceLayout());
+    const onPositionsClick = vi.fn();
+    const onHistoryTabClick = vi.fn();
+    const onCloseAllClick = vi.fn();
+
+    const renderRealLikeToolbox = (panel: DockPanelConfig, _isActive: boolean, isFloating = false) => {
+      if (panel.component !== 'Terminal') {
+        return renderMockWorkspacePanel(panel, _isActive, isFloating);
+      }
+      return (
+        <div className="rtx-bottom-dock">
+          {!isFloating && (
+            <div className="rtx-bottom-dock__header dock-panel__header">
+              <button type="button" aria-label="Close Toolbox">×</button>
+            </div>
+          )}
+          <div className="rtx-bottom-dock__content">
+            <div className="rtx-trade-tab">
+              <div className="rtx-trade-view-bar" role="tablist" data-dock-inner-header="true">
+                <button type="button" role="tab" onClick={onPositionsClick}>Positions</button>
+                <button type="button" role="tab">Pending Orders</button>
+                <input aria-label="Filter logs" />
+                <select aria-label="Log type"><option value="all">All</option></select>
+              </div>
+              <div data-testid="body-toolbox">Positions rows</div>
+            </div>
+          </div>
+          <div className="rtx-bottom-dock__tabs" data-dock-inner-header="true">
+            <button type="button" data-dock-drag-handle="true" onClick={onHistoryTabClick}>History</button>
+            <button type="button" onClick={onCloseAllClick}>Close All</button>
+          </div>
+        </div>
+      );
+    };
+
+    const { container } = render(
+      <>
+        <DockContainer isRoot renderPanel={renderRealLikeToolbox} />
+        <FloatingPanelsLayer renderPanel={renderRealLikeToolbox} />
+        <GlobalEdgeIndicators />
+      </>,
+    );
+
+    const dockedToolbox = container.querySelector<HTMLElement>('[data-dock-child="toolbox"]')!;
+
+    // Interactive controls (input, select, action buttons) must not initiate a dock drag
+    const filterInput = screen.getByLabelText('Filter logs');
+    act(() => {
+      fireEvent.mouseDown(filterInput, { button: 0, clientX: 200, clientY: 600 });
+      fireEvent.mouseMove(window, { clientX: 260, clientY: 500 });
+      fireEvent.mouseUp(window, { clientX: 260, clientY: 500 });
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(0);
+
+    const typeSelect = screen.getByLabelText('Log type');
+    act(() => {
+      fireEvent.mouseDown(typeSelect, { button: 0, clientX: 220, clientY: 600 });
+      fireEvent.mouseMove(window, { clientX: 280, clientY: 500 });
+      fireEvent.mouseUp(window, { clientX: 280, clientY: 500 });
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(0);
+
+    const closeAllBtn = screen.getByRole('button', { name: 'Close All' });
+    act(() => {
+      fireEvent.mouseDown(closeAllBtn, { button: 0, clientX: 400, clientY: 740 });
+      fireEvent.mouseMove(window, { clientX: 460, clientY: 600 });
+      fireEvent.mouseUp(window, { clientX: 460, clientY: 600 });
+      fireEvent.click(closeAllBtn);
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(0);
+    expect(onCloseAllClick).toHaveBeenCalledTimes(1);
+
+    // Dragging the top Positions / Pending Orders bar floats Toolbox without rendering a black drag-ghost pill
+    const viewBar = dockedToolbox.querySelector<HTMLElement>('.rtx-trade-view-bar')!;
+    act(() => {
+      fireEvent.mouseDown(viewBar, { button: 0, clientX: 300, clientY: 600 });
+      fireEvent.mouseMove(window, { clientX: 340, clientY: 420 });
+    });
+    expect(useDockLayoutStore.getState().dragState).toBe('dragging');
+    expect(document.documentElement.getAttribute('data-dock-dragging')).toBe('true');
+    expect(document.body.querySelector('[data-dock-drag-ghost="true"]')).toBeNull();
+
+    act(() => {
+      fireEvent.mouseUp(window, { clientX: 340, clientY: 420 });
+    });
+    expect(useDockLayoutStore.getState().dragState).toBe('idle');
+    expect(document.documentElement.getAttribute('data-dock-dragging')).toBeNull();
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(1);
+
+    // Dragging the inner view bar while floating moves the floating Toolbox
+    const floatingToolbox = container.querySelector<HTMLElement>('[data-dock-floating-panel="true"][data-dock-panel="toolbox"]')!;
+    const startLeft = Number.parseInt(floatingToolbox.style.left, 10);
+    const startTop = Number.parseInt(floatingToolbox.style.top, 10);
+    const floatingViewBar = floatingToolbox.querySelector<HTMLElement>('.rtx-trade-view-bar')!;
+    act(() => {
+      fireEvent.mouseDown(floatingViewBar, { button: 0, clientX: 340, clientY: 420 });
+      fireEvent.mouseMove(window, { clientX: 420, clientY: 360 });
+      fireEvent.mouseUp(window, { clientX: 420, clientY: 360 });
+    });
+    const movedToolbox = container.querySelector<HTMLElement>('[data-dock-floating-panel="true"][data-dock-panel="toolbox"]')!;
+    expect(Number.parseInt(movedToolbox.style.left, 10)).toBe(startLeft + 80);
+    expect(Number.parseInt(movedToolbox.style.top, 10)).toBe(startTop - 60);
+
+    // Redock Toolbox, then verify dragging from an enabled bottom section tab floats without firing a stray tab click
+    act(() => {
+      useDockLayoutStore.getState().redockPanel('toolbox');
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(0);
+
+    const historyTab = screen.getByRole('button', { name: 'History' });
+    act(() => {
+      fireEvent.mouseDown(historyTab, { button: 0, clientX: 160, clientY: 740 });
+      fireEvent.mouseMove(window, { clientX: 220, clientY: 500 });
+      fireEvent.mouseUp(window, { clientX: 220, clientY: 500 });
+      fireEvent.click(historyTab);
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(1);
+    expect(onHistoryTabClick).not.toHaveBeenCalled();
+
+    // Redock again and verify a normal click (< 4px) on a tab still works
+    act(() => {
+      useDockLayoutStore.getState().redockPanel('toolbox');
+    });
+    const positionsTab = screen.getByRole('tab', { name: 'Positions' });
+    act(() => {
+      fireEvent.mouseDown(positionsTab, { button: 0, clientX: 100, clientY: 600 });
+      fireEvent.mouseUp(window, { clientX: 100, clientY: 600 });
+      fireEvent.click(positionsTab);
+    });
+    expect(useDockLayoutStore.getState().layout.floatingPanels).toHaveLength(0);
+    expect(onPositionsClick).toHaveBeenCalledTimes(1);
   });
 });

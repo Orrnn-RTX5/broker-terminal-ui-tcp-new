@@ -345,6 +345,49 @@ describe('ActionFeedbackToast', () => {
     expect(container.querySelector('.rtx-chart-panel .rtx-action-feedback-stack')).toContainElement(toast);
     expect(screen.getByRole('heading', { name: 'Pending Order Filled' })).toBeInTheDocument();
     expect(toast).toHaveTextContent('#777');
+    expect(toast.querySelector('.rtx-action-feedback__ticket-badge svg')).not.toBeInTheDocument();
+  });
+
+  it('renders a structured execution slip for chart-bottom-left pending order fills without repeating the ticket', () => {
+    render(
+      <div className="rtx-chart-panel">
+        <div className="rtx-action-feedback-stack">
+          <ActionFeedbackToast
+            durationMs={4000}
+            message="SELL LIMIT #11076181 filled: SELL 0.01 XAUUSD @ 3620.37"
+            notice={{
+              title: 'Pending Order Filled',
+              description: 'SELL LIMIT #11076181 filled: SELL 0.01 XAUUSD @ 3620.37',
+              meta: '#11076181',
+              metaIcon: 'check-circle',
+              placement: 'chart-bottom-left',
+              execution: {
+                side: 'SELL',
+                orderType: 'SELL LIMIT',
+                symbol: 'XAUUSD',
+                volume: '0.01',
+                price: '3620.37',
+                ticket: '11076181',
+              },
+            }}
+            onDismiss={() => {}}
+            tone="success"
+          />
+        </div>
+      </div>,
+    );
+
+    const toast = screen.getByRole('status');
+    expect(toast).toHaveClass('rtx-action-feedback--structured', 'rtx-action-feedback--execution');
+    expect(screen.getByRole('heading', { name: 'Pending Order Filled' })).toBeInTheDocument();
+    expect(toast.querySelector('.rtx-action-feedback__exec-type')).toHaveClass('is-sell');
+    expect(toast.querySelector('.rtx-action-feedback__exec-type')).toHaveTextContent('SELL LIMIT');
+    expect(toast.querySelector('.rtx-action-feedback__exec-symbol')).toHaveTextContent('XAUUSD');
+    expect(toast.querySelector('.rtx-action-feedback__exec-volume')).toHaveTextContent('0.01Lots');
+    expect(toast.querySelector('.rtx-action-feedback__exec-price')).toHaveTextContent('@3620.37');
+    expect(toast.querySelector('.rtx-action-feedback__ticket-badge')).toHaveTextContent('#11076181');
+    expect(toast.textContent?.match(/#11076181/g)).toHaveLength(1);
+    expect(toast.querySelector('.rtx-action-feedback__description')).not.toBeInTheDocument();
   });
 
   it('routes a captured Market Watch export to the persistent native sheet', () => {

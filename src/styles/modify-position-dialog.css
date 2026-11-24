@@ -965,69 +965,82 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modi
   color: var(--rtx-light-text);
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-btn--submit, .rtx-modify-btn--market) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog :is(.rtx-modify-btn--submit, .rtx-modify-btn--market):not(:disabled) {
   box-shadow: none !important;
   color: #ffffff !important;
   text-shadow: none;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--submit {
-  background: var(--rtx-light-accent);
-  border-color: var(--rtx-light-accent);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--submit:not(:disabled) {
+  background: var(--rtx-light-accent, #2457a7) !important;
+  border-color: var(--rtx-light-accent, #2457a7) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--submit:hover:not(:disabled) {
-  background: var(--rtx-light-accent-strong);
-  border-color: var(--rtx-light-accent-strong);
+  background: var(--rtx-light-accent-strong, #1e4788) !important;
+  border-color: var(--rtx-light-accent-strong, #1e4788) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--submit:active:not(:disabled) {
-  background: var(--rtx-light-accent-pressed);
-  border-color: var(--rtx-light-accent-pressed);
+  background: var(--rtx-light-accent-pressed, #173768) !important;
+  border-color: var(--rtx-light-accent-pressed, #173768) !important;
+  color: #ffffff !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--buy {
-  background: var(--rtx-light-buy);
-  border-color: var(--rtx-light-buy);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--buy:not(:disabled) {
+  background: var(--rtx-light-buy, #2563eb) !important;
+  border-color: var(--rtx-light-buy, #2563eb) !important;
+  color: #ffffff !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--sell {
-  background: var(--rtx-light-sell);
-  border-color: var(--rtx-light-sell);
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--sell:not(:disabled) {
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border-color: var(--rtx-light-sell, #dc2626) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--buy:hover:not(:disabled) {
-  background: var(--rtx-light-buy-hover);
-  border-color: var(--rtx-light-buy-hover);
+  background: var(--rtx-light-buy-hover, #1d4ed8) !important;
+  border-color: var(--rtx-light-buy-hover, #1d4ed8) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--sell:hover:not(:disabled) {
-  background: var(--rtx-light-sell-hover);
-  border-color: var(--rtx-light-sell-hover);
+  background: var(--rtx-light-sell-hover, #b91c1c) !important;
+  border-color: var(--rtx-light-sell-hover, #b91c1c) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--buy:active:not(:disabled) {
-  background: var(--rtx-light-buy-pressed);
-  border-color: var(--rtx-light-buy-pressed);
+  background: var(--rtx-light-buy-pressed, #1e40af) !important;
+  border-color: var(--rtx-light-buy-pressed, #1e40af) !important;
+  color: #ffffff !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--sell:active:not(:disabled) {
-  background: var(--rtx-light-sell-pressed);
-  border-color: var(--rtx-light-sell-pressed);
+  background: var(--rtx-light-sell-pressed, #991b1b) !important;
+  border-color: var(--rtx-light-sell-pressed, #991b1b) !important;
+  color: #ffffff !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--close {
-  background: var(--rtx-light-field);
-  border-color: var(--color-warning);
-  color: var(--color-warning) !important;
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--close:not(:disabled) {
+  background: var(--rtx-light-field, #ffffff) !important;
+  border-color: var(--color-warning, #78350f) !important;
+  color: var(--color-warning, #78350f) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--close:hover:not(:disabled) {
-  background: var(--rtx-light-hover);
+  background: var(--rtx-light-hover, #e8eef6) !important;
+  border-color: var(--color-warning, #78350f) !important;
+  color: var(--color-warning, #78350f) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog .rtx-modify-btn--close:active:not(:disabled) {
-  background: var(--rtx-light-pressed);
+  background: var(--rtx-light-pressed, #d6e3f3) !important;
+  border-color: var(--color-warning, #78350f) !important;
+  color: var(--color-warning, #78350f) !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog button:focus-visible {
@@ -1036,9 +1049,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog button:fo
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-modify-dialog button:disabled {
-  background: var(--rtx-light-panel-subtle);
-  border-color: var(--rtx-light-border-strong);
-  color: var(--rtx-light-text-muted) !important;
+  background: var(--rtx-light-panel-subtle, #f1f4f8) !important;
+  border-color: var(--rtx-light-border-strong, #9eacbd) !important;
+  color: var(--rtx-light-text-muted, #475569) !important;
   opacity: 1;
   cursor: not-allowed;
   transform: none;

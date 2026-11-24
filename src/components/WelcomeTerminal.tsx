@@ -1,4 +1,5 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { useDesktopStartupReady } from '../startup/useDesktopStartupReady';
 import { useSavedLogin } from '../hooks/useSavedLogin';
 import { getAuthenticatedAccountName } from '../utils/accountDisplayName';
@@ -235,7 +236,7 @@ const buildDesktopBrokerPreview = (
     };
 };
 
-type LoginIconName = 'arrow-right' | 'chevron-down' | 'eye' | 'eye-off' | 'lock' | 'maximize' | 'minus' | 'user' | 'x';
+type LoginIconName = 'arrow-right' | 'check' | 'chevron-down' | 'copy' | 'eye' | 'eye-off' | 'lock' | 'maximize' | 'minus' | 'user' | 'x';
 
 const LoginIcon = ({
     name,
@@ -250,7 +251,9 @@ const LoginIcon = ({
 }) => {
     const paths: Record<LoginIconName, React.ReactNode> = {
         'arrow-right': <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
+        check: <path d="M20 6 9 17l-5-5" />,
         'chevron-down': <path d="m6 9 6 6 6-6" />,
+        copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
         eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
         'eye-off': <><path d="m3 3 18 18" /><path d="M10.6 6.2A10.8 10.8 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3 3.8" /><path d="M6.2 6.2A17 17 0 0 0 2 12s3.5 6 10 6c1 0 1.9-.1 2.7-.4" /></>,
         lock: <><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
@@ -606,6 +609,10 @@ export function WelcomeTerminal({
             serverUrl: isDesktopBrokerSelection ? selectedBroker.server_url! : resolveBrokerExtApiUrl(selectedBroker),
         } : null,
     );
+    const { copied: passwordCopied, copy: copyPassword, reset: resetPasswordCopy } = useCopyFeedback();
+    useEffect(() => {
+        if (!password) resetPasswordCopy();
+    }, [password, resetPasswordCopy]);
     const selectedBrokerRef = useRef(selectedBroker);
     const userSelectedBrokerRef = useRef<BrokerServerItem | null>(null);
     const [searchQuery, setSearchQuery] = useState(getBrokerInputLabel(startupBroker));
@@ -1435,20 +1442,40 @@ export function WelcomeTerminal({
                                                 shell.style.boxShadow = 'none';
                                             }}
                                         />
-                                        <button
-                                            type="button"
-                                            className="rtx-password-toggle"
-                                            aria-label={showPassword ? tr("Hide password") : tr("Show password")}
-                                            aria-pressed={showPassword}
-                                            onMouseDown={e => e.preventDefault()}
-                                            onClick={() => setShowPassword(value => !value)}
-                                        >
-                                            {showPassword ? (
-                                                <LoginIcon name="eye-off" className="rtx-field-end-icon" />
-                                            ) : (
-                                                <LoginIcon name="eye" className="rtx-field-end-icon" />
-                                            )}
-                                        </button>
+                                        <div className="rtx-password-actions">
+                                            <button
+                                                type="button"
+                                                className="rtx-password-toggle"
+                                                aria-label={showPassword ? tr("Hide password") : tr("Show password")}
+                                                aria-controls="rtxPassword"
+                                                aria-pressed={showPassword}
+                                                title={showPassword ? tr("Hide password") : tr("Show password")}
+                                                onMouseDown={e => e.preventDefault()}
+                                                onClick={() => setShowPassword(value => !value)}
+                                            >
+                                                {showPassword ? (
+                                                    <LoginIcon name="eye-off" className="rtx-field-end-icon" />
+                                                ) : (
+                                                    <LoginIcon name="eye" className="rtx-field-end-icon" />
+                                                )}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`rtx-password-toggle${passwordCopied ? ' is-copied' : ''}`}
+                                                aria-label={passwordCopied ? tr("Copied") : `${tr("Copy")} ${tr("Password")}`}
+                                                aria-controls="rtxPassword"
+                                                title={passwordCopied ? tr("Copied") : tr("Copy")}
+                                                disabled={loading || !password}
+                                                onMouseDown={e => e.preventDefault()}
+                                                onClick={() => { void copyPassword(password); }}
+                                            >
+                                                {passwordCopied ? (
+                                                    <LoginIcon name="check" size={16} className="rtx-field-end-icon" />
+                                                ) : (
+                                                    <LoginIcon name="copy" size={16} className="rtx-field-end-icon" />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 

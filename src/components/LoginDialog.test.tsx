@@ -309,6 +309,32 @@ describe('LoginDialog', () => {
     expect(screen.getByRole('button', { name: 'Show password' })).toHaveAttribute('aria-pressed', 'false');
   });
 
+  it('copies the entered password with the copy button and disables it when empty', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(<LoginDialog isOpen onClose={vi.fn()} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
+      const passwordInput = screen.getByLabelText('Password', { exact: true });
+      const copyButton = screen.getByRole('button', { name: 'Copy Password' });
+      expect(copyButton).toBeDisabled();
+
+      fireEvent.change(passwordInput, { target: { value: 'SecretPass123' } });
+      expect(copyButton).toBeEnabled();
+
+      fireEvent.click(copyButton);
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('SecretPass123'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument());
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
   it('moves focus from Account ID to Password on Enter without submitting, then submits on Enter in Password', async () => {
     vi.mocked(authV2Api.login).mockResolvedValue({
       access_token: 'enter-token',

@@ -31,6 +31,10 @@ const toFiniteNumber = (value: unknown): number | null => {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 };
 
+const formatPendingOrderType = (orderType: string): string => (
+  orderType.trim().replace(/_+/g, ' ').toUpperCase()
+);
+
 // Map one backend pending row (GET /api/v2/orders/pending/{login} shape:
 // ticket, symbol, type, volume, price, price_sl/price_tp/sl_decimal,
 // time_expiry, time_setup, status) to the row view. Side is derived from the
@@ -290,17 +294,19 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
                   data-ticket={order.ticket}
                   data-row-parity={index % 2 === 0 ? 'odd' : 'even'}
                 >
-                  <td className="py-1 pl-4 pr-2 text-left text-zinc-300 whitespace-nowrap">{order.ticket}</td>
-                  <td className="px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{order.symbol}</td>
-                  <td className="px-2 py-1 text-center text-zinc-400 whitespace-nowrap">{order.orderType}</td>
-                  <td className={`px-2 py-1 text-center font-semibold whitespace-nowrap ${order.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {order.side}
+                  <td className="rtx-pending-cell--ticket py-1 pl-4 pr-2 text-left text-zinc-300 whitespace-nowrap">{order.ticket}</td>
+                  <td className="rtx-pending-cell--symbol px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{order.symbol}</td>
+                  <td className="rtx-pending-cell--type px-2 py-1 text-center text-zinc-400 whitespace-nowrap">{formatPendingOrderType(order.orderType)}</td>
+                  <td className={`rtx-pending-cell--side px-2 py-1 text-center font-semibold whitespace-nowrap ${order.side === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`rtx-pending-side-badge ${order.side === 'BUY' ? 'rtx-pending-side-badge--buy' : 'rtx-pending-side-badge--sell'}`}>
+                      {order.side}
+                    </span>
                   </td>
-                  <td className="px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{order.volume}</td>
-                  <td className="px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{formatPrice(order.price, digits)}</td>
-                  <td className="px-2 py-1 text-center text-red-400 whitespace-nowrap">{order.sl > 0 ? formatPrice(order.sl, digits) : '—'}</td>
-                  <td className="px-2 py-1 text-center text-emerald-400 whitespace-nowrap">{order.tp > 0 ? formatPrice(order.tp, digits) : '—'}</td>
-                  <td className="px-2 py-1 text-center text-zinc-400 whitespace-nowrap">
+                  <td className="rtx-pending-cell--volume px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{order.volume}</td>
+                  <td className="rtx-pending-cell--price px-2 py-1 text-center text-zinc-300 whitespace-nowrap">{formatPrice(order.price, digits)}</td>
+                  <td className={`px-2 py-1 text-center whitespace-nowrap ${order.sl > 0 ? 'text-red-400' : 'rtx-pending-cell--empty text-zinc-400'}`}>{order.sl > 0 ? formatPrice(order.sl, digits) : '—'}</td>
+                  <td className={`px-2 py-1 text-center whitespace-nowrap ${order.tp > 0 ? 'text-emerald-400' : 'rtx-pending-cell--empty text-zinc-400'}`}>{order.tp > 0 ? formatPrice(order.tp, digits) : '—'}</td>
+                  <td className={`px-2 py-1 text-center whitespace-nowrap ${order.expiry && order.expiry > 0 ? 'text-zinc-400' : 'rtx-pending-cell--empty text-zinc-400'}`}>
                     {order.expiry && order.expiry > 0 ? new Date(order.expiry * 1000).toLocaleString() : '—'}
                   </td>
                   <td className="px-2 py-1 text-center whitespace-nowrap">

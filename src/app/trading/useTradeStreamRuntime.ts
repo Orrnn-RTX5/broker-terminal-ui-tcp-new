@@ -399,6 +399,12 @@ export const useTradeStreamRuntime = ({
             if (notice && pendingLifecycleDeduper.shouldEmit(notice.dedupeKey)) {
               const specDigits = readRegisteredSymbolPriceSpec(notice.symbol)?.digits;
               const priceLabel = notice.price > 0 ? formatPrice(notice.price, specDigits ?? undefined) : '';
+              const volumeLabel = notice.volume > 0
+                ? (Number.isInteger(Math.round(notice.volume * 10000) / 100)
+                    ? notice.volume.toFixed(2)
+                    : String(Number(notice.volume.toFixed(4))))
+                : undefined;
+              const displaySymbol = notice.symbol && notice.symbol !== 'UNKNOWN' ? notice.symbol : undefined;
               if (notice.status === 'filled' || notice.status === 'triggered') {
                 const msg = `${notice.orderType} #${notice.ticket} filled: ${notice.side} ${notice.volume} ${notice.symbol}${priceLabel ? ` @ ${priceLabel}` : ''}`;
                 publishOrderFeedback(msg, 'success', {
@@ -407,6 +413,14 @@ export const useTradeStreamRuntime = ({
                   meta: `#${notice.ticket}`,
                   metaIcon: 'check-circle',
                   placement: 'chart-bottom-left',
+                  execution: {
+                    side: notice.side,
+                    orderType: notice.orderType,
+                    symbol: displaySymbol,
+                    volume: volumeLabel,
+                    price: priceLabel || undefined,
+                    ticket: notice.ticket,
+                  },
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -423,6 +437,15 @@ export const useTradeStreamRuntime = ({
                   meta: `#${notice.ticket}`,
                   metaIcon: 'clock',
                   placement: 'chart-bottom-left',
+                  execution: {
+                    side: notice.side,
+                    orderType: notice.orderType || 'STOP LIMIT',
+                    symbol: displaySymbol,
+                    volume: volumeLabel,
+                    price: priceLabel || undefined,
+                    ticket: notice.ticket,
+                    detail: 'Limit active',
+                  },
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -438,6 +461,15 @@ export const useTradeStreamRuntime = ({
                   meta: `#${notice.ticket}`,
                   metaIcon: 'clock',
                   placement: 'chart-bottom-left',
+                  execution: {
+                    side: notice.side,
+                    orderType: notice.orderType,
+                    symbol: displaySymbol,
+                    volume: volumeLabel,
+                    price: priceLabel || undefined,
+                    ticket: notice.ticket,
+                    detail: 'Expired',
+                  },
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',
@@ -452,7 +484,16 @@ export const useTradeStreamRuntime = ({
                   description: msg,
                   meta: `#${notice.ticket}`,
                   metaIcon: 'alert-triangle',
+                  hint: notice.reason,
                   placement: 'chart-bottom-left',
+                  execution: {
+                    side: notice.side,
+                    orderType: notice.orderType,
+                    symbol: displaySymbol,
+                    volume: volumeLabel,
+                    price: priceLabel || undefined,
+                    ticket: notice.ticket,
+                  },
                 });
                 useNotificationStore.getState().addNotification({
                   type: 'trading',

@@ -69,7 +69,7 @@ export function ExposureTab({ positions, formatMoney, account }: ExposureTabProp
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="rtx-exposure-table w-full min-w-[720px] table-fixed border-collapse text-left">
-            <thead className="sticky top-0 z-10 border-b border-[#20222a] bg-[#0d0f14] text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            <thead className="sticky top-0 z-10 border-b border-[#20222a] bg-[#0d0f14] text-[11px] font-semibold uppercase tracking-wider text-zinc-400" data-dock-inner-header="true">
               <tr className="h-[32px]">
                 <th className="w-[140px] p-1.5 pl-3">{tr('Assets')}</th>
                 <th className="w-[130px] p-1.5 text-right">{tr('Volume')}</th>

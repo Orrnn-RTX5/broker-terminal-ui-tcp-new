@@ -221,6 +221,13 @@ describe('stream-driven history refetch', () => {
         notice: expect.objectContaining({
           title: 'Pending Order Filled',
           placement: 'chart-bottom-left',
+          execution: expect.objectContaining({
+            side: 'BUY',
+            orderType: 'BUY LIMIT',
+            symbol: 'ETHUSD',
+            volume: '0.10',
+            ticket: '901001',
+          }),
         }),
       });
     } finally {

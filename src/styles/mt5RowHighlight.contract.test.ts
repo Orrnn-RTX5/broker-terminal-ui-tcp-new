@@ -20,7 +20,7 @@ const exposureTabSource = readSource('src/features/bottom-dock/exposure/Exposure
 const calendarTabSource = readSource('src/components/layout/CalendarTab.tsx');
 
 describe('MT5 desktop alternating row and summary highlight contract', () => {
-  it('applies MT5 #ffffff / #ebebeb alternating row striping, soft borders, and focused #0078d7 selection in Market Watch', () => {
+  it('applies MT5 #ffffff / #ebebeb alternating row striping, soft borders, and official MT5 #0078d7 selection with white text in Market Watch', () => {
     expect(marketWatchDesktopCss).toMatch(
       /html:root:is\(\.rtx-skin-untitled-light, \.theme-light\) \.rtx-market-watch\.rtx-market-watch--desktop \{[\s\S]*?--mw-desktop-row:\s*#ffffff;[\s\S]*?--mw-desktop-row-alt:\s*#ebebeb;[\s\S]*?--mw-desktop-row-selected-focus:\s*#0078d7;[\s\S]*?--mw-desktop-grid:\s*#dcdcdc;[\s\S]*?--mw-desktop-grid-vertical:\s*#c8c8c8;/,
     );
@@ -31,15 +31,15 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
     expect(marketWatchDesktopCss).not.toMatch(
       /\.rtx-market-watch__grid--lines tbody tr:nth-child\(even\) td\s*\{[\s\S]*?background:\s*var\(--mw-desktop-row\)/,
     );
-    // Focused row turns MT5 #0078d7 with white text; unfocused row returns to normal zebra striping.
+    // Focused row uses official MT5 #0078d7 blue with crisp #ffffff white text; unfocused row returns to normal zebra striping.
     expect(marketWatchDesktopCss).toMatch(
       /\.rtx-market-watch__grid tbody tr\[aria-selected='true'\]:focus-within td \{[\s\S]*?background:\s*var\(--mw-desktop-row-selected-focus, #0078d7\) !important;[\s\S]*?color:\s*#ffffff !important;/,
     );
     expect(marketWatchDesktopCss).toContain("tr[aria-selected='true']:not(:focus-within):nth-child(even) td");
     expect(marketWatchViewsCss).toContain('--rtx-market-details-row-odd: #ebebeb;');
-    // Preset light themes derive their own alternating stripe from preset tokens.
+    // Preset light themes derive their own alternating stripe and accent selection surface from preset tokens.
     expect(marketWatchDesktopCss).toMatch(
-      /:not\(\[data-rtx-theme-preset='default-light'\]\) \.rtx-market-watch\.rtx-market-watch--desktop \{[\s\S]*?--mw-desktop-row-alt:\s*color-mix\(/,
+      /:not\(\[data-rtx-theme-preset='default-light'\]\) \.rtx-market-watch\.rtx-market-watch--desktop \{[\s\S]*?--mw-desktop-row-alt:\s*color-mix\([\s\S]*?--mw-desktop-row-selected-focus:\s*var\(--rtx-light-accent, #0078d7\);/,
     );
     // Market Watch column headers (Symbol .. Daily Change) match dark theme's lighter control weight (500) rather than bold heading weight (600).
     expect(lightTypographyCss).toMatch(
@@ -57,10 +57,11 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
     expect(marketWatchDesktopCss).toMatch(
       /html:root:is\(\.rtx-skin-untitled-light, \.theme-light\) \.rtx-market-watch\.rtx-market-watch--desktop \{[\s\S]*?--mw-desktop-quote-up:\s*#0000ff;[\s\S]*?--mw-desktop-quote-down:\s*#ff0000;/,
     );
-    // Applies MT5 quote tokens across Bid, Ask, Daily Change, and direction arrows while keeping focused light selection white.
+    // Applies MT5 quote tokens across Bid, Ask, Daily Change, and direction arrows and preserves them on focused light selection.
     expect(marketWatchDesktopCss).toContain('color: var(--mw-desktop-quote-up) !important;');
     expect(marketWatchDesktopCss).toContain('color: var(--mw-desktop-quote-down) !important;');
-    expect(marketWatchDesktopCss).toContain('.rtx-market-watch__price--up, .rtx-market-watch__price--down,');
+    expect(marketWatchDesktopCss).toContain('.rtx-market-watch__grid .rtx-market-watch__price--up,');
+    expect(marketWatchDesktopCss).toContain('.rtx-market-watch__grid .rtx-market-watch__price--down,');
     // Uniform 12px / 300 global typography matching Market Watch Symbol, Bid, Ask, and Daily Change cells.
     expect(marketWatchDesktopCss).toMatch(
       /\.rtx-market-watch__grid tbody td > span,\s*html:root \.rtx-market-watch\.rtx-market-watch--desktop \.rtx-market-watch__last-close > span \{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 300 !important;/,
@@ -106,10 +107,29 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
     expect(lightTypographyCss).not.toContain('.rtx-market-watch__symbol-count');
   });
 
-  it('applies MT5 #ffffff headers, #ffffff/#ebebeb alternating rows, #a0a0a0/#c8c8c8 dividers, #0078d7 selection, bold #c8c8c8 summary bar, and #f0f0f0/#ffffff bottom tabs with #696969 separators across Trade to Close All', () => {
+  it('applies MT5 #ffffff headers, #ffffff/#ebebeb alternating rows, #a0a0a0/#c8c8c8 dividers, official MT5 #0078d7 light selection with white text, bold #c8c8c8 summary bar, and #f0f0f0/#ffffff bottom tabs with #696969 separators across Trade to Close All', () => {
     expect(mt5SurfacesCss).toMatch(
       /html:root:is\(\.rtx-advanced-view\.rtx-skin-untitled-light, \.rtx-skin-untitled-light, \.theme-light\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-row:\s*#ffffff;[\s\S]*?--rtx-toolbox-row-alt:\s*#ebebeb;[\s\S]*?--rtx-toolbox-selected:\s*#0078d7;[\s\S]*?--rtx-toolbox-summary:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-tabs:\s*#f0f0f0;[\s\S]*?--rtx-toolbox-border-header:\s*#a0a0a0;[\s\S]*?--rtx-toolbox-border-grid:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-border-tab:\s*#696969;[\s\S]*?--rtx-toolbox-tab-divider:\s*#696969;[\s\S]*?--rtx-toolbox-profit:\s*#0000ff;[\s\S]*?--rtx-toolbox-loss:\s*#ea3323;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-font-weight-body:\s*300;/,
     );
+    // Light selected rows use official MT5 #0078d7 blue with crisp #ffffff white text across every cell and white-backed row buttons.
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-bottom-dock tbody tr:is\([\s\S]*?\.rtx-pending-order-row\[aria-selected='true'\][\s\S]*?\) > td \{[\s\S]*?background:\s*var\(--rtx-toolbox-selected, #0078d7\) !important;[\s\S]*?color:\s*#ffffff !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-trade-table tbody tr:is\(\.rtx-trade-row--selected, \.rtx-trade-row\[aria-selected='true'\]\) :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) \{[\s\S]*?background:\s*transparent !important;[\s\S]*?color:\s*#ffffff !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-pending-order-row\[aria-selected='true'\] \.rtx-pending-row-btn \{[\s\S]*?background:\s*#ffffff !important;[\s\S]*?color:\s*#1e293b !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /:not\(\[data-rtx-theme-preset='default-light'\]\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-selected:\s*var\(--rtx-light-accent, #0078d7\);/,
+    );
+    // Pending Orders rows give 28px breathing room for 20px buttons and style BUY/SELL badges cleanly.
+    expect(mt5SurfacesCss).toContain('.rtx-pending-side-badge--buy');
+    expect(mt5SurfacesCss).toContain('.rtx-pending-side-badge--sell');
+    expect(mt5SurfacesCss).toContain('height: 28px !important;');
+    // Default tbody td rule uses :where() for spacer exclusions so it never out-ranks semantic or selected-row color rules.
+    expect(mt5SurfacesCss).toContain(':not(:where(.rtx-history-spacer-row, .rtx-journal-spacer-row, [data-rtx-spacer])) > td:not(:where(.rtx-journal-spacer-cell))');
     for (const rowClass of [
       '.rtx-trade-row',
       '.rtx-pending-order-row',

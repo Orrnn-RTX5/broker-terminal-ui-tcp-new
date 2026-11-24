@@ -1307,8 +1307,15 @@ html:root.rtx-skin-untitled-light .rtx-login-overlay .rtx-login-panel :is(
     transition: background-color 99999s ease-out 0s !important;
 }
 
-.rtx-password-toggle {
+.rtx-password-actions {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+.rtx-password-toggle {
     width: 30px;
     height: 30px;
     display: inline-flex;
@@ -1321,14 +1328,23 @@ html:root.rtx-skin-untitled-light .rtx-login-overlay .rtx-login-panel :is(
     color: #86a7a4;
     cursor: pointer;
     flex: 0 0 auto;
-    transition: color 0.16s ease, background 0.16s ease;
+    transition: color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
 }
 
-.rtx-password-toggle:hover,
-.rtx-password-toggle:focus-visible {
+.rtx-password-toggle:hover:not(:disabled),
+.rtx-password-toggle:focus-visible:not(:disabled) {
     color: #c8fff1;
     background: rgba(53, 216, 178, 0.08);
     outline: none;
+}
+
+.rtx-password-toggle.is-copied {
+    color: #35d8b2;
+}
+
+.rtx-password-toggle:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .rtx-field-end-icon {
@@ -1674,10 +1690,14 @@ html:root.rtx-skin-untitled-light .rtx-login-overlay .rtx-login-panel :is(
     color: #88a9d8;
 }
 
-.rtx-login-overlay--accent .rtx-password-toggle:hover,
-.rtx-login-overlay--accent .rtx-password-toggle:focus-visible {
+.rtx-login-overlay--accent .rtx-password-toggle:hover:not(:disabled),
+.rtx-login-overlay--accent .rtx-password-toggle:focus-visible:not(:disabled) {
     color: #d7e8ff;
     background: rgba(47, 140, 255, 0.1);
+}
+
+.rtx-login-overlay--accent .rtx-password-toggle.is-copied {
+    color: #34d399;
 }
 
 .rtx-login-overlay--accent .rtx-broker-input-wrap.is-locked input {

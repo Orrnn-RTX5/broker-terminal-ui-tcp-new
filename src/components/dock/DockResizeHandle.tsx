@@ -164,6 +164,7 @@ export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = 'none';
     document.body.style.cursor = direction === 'vertical' ? 'ew-resize' : 'ns-resize';
+    document.documentElement.setAttribute('data-dock-resizing', 'true');
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
@@ -172,6 +173,7 @@ export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.userSelect = prevUserSelect;
       document.body.style.cursor = prevCursor;
+      document.documentElement.removeAttribute('data-dock-resizing');
     };
   }, [isDragging, direction, usePreviewCommit]);
 

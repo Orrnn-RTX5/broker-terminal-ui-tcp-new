@@ -399,4 +399,53 @@ describe('enterprise light visual-system contract', () => {
       /\.rtx-bottom-dock__tabs \.rtx-dock-tab\.active-tab\s*\{[\s\S]*?border: 1px solid var\(--rtx-toolbox-border-tab, #a0a0a0\) !important;[\s\S]*?border-top: 0 !important;/,
     );
   });
+
+  it('keeps Modify Position and solid light action button labels visible on hover and click', () => {
+    const modifyDialogCss = readSource('src/styles/modify-position-dialog.css');
+    const lastSymbolCss = readSource('src/styles/last-symbol-panel.css');
+    const bugReportCss = readSource('src/styles/bug-report-dialog.css');
+    const historyDownloaderCss = readSource('src/styles/history-downloader.css');
+
+    for (const excludedClass of [
+      '.rtx-modify-btn--market',
+      '.rtx-modify-btn--submit',
+      '.rtx-modify-btn--close',
+      '.last-symbol-trade-button',
+      '.rtx-bug-report-send',
+      '.rtx-history-primary-button',
+    ]) {
+      expect(legacyLightCss).toContain(excludedClass);
+    }
+
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--sell:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-sell-hover, #b91c1c\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--sell:active:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-sell-pressed, #991b1b\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--buy:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-buy-hover, #1d4ed8\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--buy:active:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-buy-pressed, #1e40af\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--submit:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-strong, #1e4788\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-btn--submit:active:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-pressed, #173768\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(modifyDialogCss).toMatch(
+      /\.rtx-modify-dialog button:disabled\s*\{[\s\S]*?background: var\(--rtx-light-panel-subtle, #f1f4f8\) !important;[\s\S]*?color: var\(--rtx-light-text-muted, #475569\) !important;/,
+    );
+    expect(lastSymbolCss).toMatch(
+      /\.last-symbol-trade-button--sell:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-sell-hover, #b91c1c\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(bugReportCss).toMatch(
+      /\.rtx-bug-report-send:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-strong, #1e4788\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(historyDownloaderCss).toMatch(
+      /\.rtx-history-primary-button:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-strong, #1e4788\) !important;[\s\S]*?color: var\(--text-inverse, #ffffff\) !important;/,
+    );
+  });
 });

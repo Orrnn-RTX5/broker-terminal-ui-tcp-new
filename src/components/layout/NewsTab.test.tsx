@@ -43,17 +43,19 @@ describe('NewsTab', () => {
         expect(JSON.parse(localStorage.getItem(NEWS_READ_STORAGE_KEY) ?? '[]')).toEqual(['2']);
     });
 
-    it('shows the body as plain text and opens the article externally', async () => {
-        fetchMock.mockResolvedValue([mk()]);
-        const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    it('renders clean plain text without raw HTML tags and omits the Open article button', async () => {
+        fetchMock.mockResolvedValue([mk({
+            body: '<ul><li>Item 1</li><li>Item 2</li></ul><p style="text-align: justify">Body <b>bold</b>&nbsp;text</p>',
+        })]);
         render(<NewsTab />);
         await flush();
         fireEvent.click(screen.getAllByRole('row')[1]);
         const body = screen.getByTestId('news-article-body');
-        expect(body.textContent).toBe('Body <b>bold</b>');
-        expect(body.querySelector('b')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Open article' }));
-        expect(open).toHaveBeenCalledWith('https://example.com/1', '_blank', 'noopener,noreferrer');
+        expect(body.textContent).toBe('• Item 1\n• Item 2\n\nBody bold text');
+        expect(body.textContent).not.toContain('<ul>');
+        expect(body.textContent).not.toContain('&nbsp;');
+        expect(body.querySelector('b, ul, li, p')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open article' })).toBeNull();
     });
 
     it('filters by current symbol currencies and category', async () => {
@@ -130,13 +132,16 @@ describe('NewsTab', () => {
         await flush();
         expect(screen.getByText('No news')).toBeInTheDocument();
     });
-    it('refuses to open non-http(s) article urls', async () => {
-        fetchMock.mockResolvedValue([mk({ url: 'javascript:alert(1)' })]);
+    it('uses a non-error icon for high-priority news and never opens external article links', async () => {
+        fetchMock.mockResolvedValue([mk({ priority: 2, url: 'https://example.com/1' })]);
         const open = vi.spyOn(window, 'open').mockReturnValue(null);
         render(<NewsTab />);
         await flush();
+        const importantBadge = screen.getByLabelText('Important');
+        expect(importantBadge.querySelector('polygon')).not.toBeNull();
+        expect(importantBadge.innerHTML).not.toContain('M8 2L1.5 13.5');
         fireEvent.click(screen.getAllByRole('row')[1]);
-        fireEvent.click(screen.getByRole('button', { name: 'Open article' }));
+        expect(screen.queryByRole('button', { name: 'Open article' })).toBeNull();
         expect(open).not.toHaveBeenCalled();
     });
 

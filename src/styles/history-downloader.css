@@ -1133,20 +1133,22 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-history-downloader {
   }
 
   & .rtx-history-primary-button:not(:disabled) {
-    background: var(--rtx-light-accent);
-    border-color: var(--rtx-light-accent);
-    color: var(--text-inverse) !important;
+    background: var(--rtx-light-accent, #2457a7) !important;
+    border-color: var(--rtx-light-accent, #2457a7) !important;
+    color: var(--text-inverse, #ffffff) !important;
     box-shadow: none;
   }
 
   & .rtx-history-primary-button:hover:not(:disabled) {
-    background: var(--rtx-light-accent-strong);
-    border-color: var(--rtx-light-accent-strong);
+    background: var(--rtx-light-accent-strong, #1e4788) !important;
+    border-color: var(--rtx-light-accent-strong, #1e4788) !important;
+    color: var(--text-inverse, #ffffff) !important;
   }
 
   & .rtx-history-primary-button:active:not(:disabled) {
-    background: var(--rtx-light-accent-pressed);
-    border-color: var(--rtx-light-accent-pressed);
+    background: var(--rtx-light-accent-pressed, #173768) !important;
+    border-color: var(--rtx-light-accent-pressed, #173768) !important;
+    color: var(--text-inverse, #ffffff) !important;
   }
 
   & .rtx-history-primary-button:disabled {

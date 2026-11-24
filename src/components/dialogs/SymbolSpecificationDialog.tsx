@@ -1876,6 +1876,7 @@ export const SymbolSpecificationDialog: React.FC<SymbolSpecificationDialogProps>
           --mw-spec-grid: #373b41;
           --mw-spec-outer-border: #3d4249;
           --mw-spec-selected-bg: #0078d7;
+          --mw-spec-selected-text: #ffffff;
           --mw-spec-label: #e2e8f0;
           --mw-spec-value: #f8fafc;
           --mw-spec-muted: #94a3b8;
@@ -1902,6 +1903,8 @@ export const SymbolSpecificationDialog: React.FC<SymbolSpecificationDialogProps>
           --mw-spec-grid: #d5dce6;
           --mw-spec-outer-border: #b8c2cf;
           --mw-spec-selected-bg: #0078d7;
+          --mw-spec-selected-text: #ffffff;
+          --mw-spec-selected-accent: #0078d7;
           --mw-spec-label: #1e293b;
           --mw-spec-value: #0f172a;
           --mw-spec-muted: #64748b;
@@ -1932,7 +1935,17 @@ export const SymbolSpecificationDialog: React.FC<SymbolSpecificationDialogProps>
         }
         .rtx-symbol-specification-dialog .rtx-spec-row[data-selected="true"] {
           background: var(--mw-spec-selected-bg);
-          color: #ffffff;
+          color: var(--mw-spec-selected-text, #ffffff);
+        }
+        .theme-light .rtx-symbol-specification-dialog .rtx-spec-row[data-selected="true"],
+        .rtx-skin-untitled-light .rtx-symbol-specification-dialog .rtx-spec-row[data-selected="true"] {
+          background: var(--mw-spec-selected-bg, #0078d7) !important;
+          color: var(--mw-spec-selected-text, #ffffff) !important;
+          box-shadow: none;
+        }
+        .theme-light .rtx-symbol-specification-dialog .rtx-spec-row[data-selected="true"] :is(span, a, div),
+        .rtx-skin-untitled-light .rtx-symbol-specification-dialog .rtx-spec-row[data-selected="true"] :is(span, a, div) {
+          color: inherit !important;
         }
         .rtx-symbol-specification-dialog .rtx-spec-scroll::-webkit-scrollbar {
           width: 15px;

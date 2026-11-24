@@ -33,13 +33,14 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-
 }
 
 /* MT5 desktop light Market Watch alternating row rhythm (#ffffff / #ebebeb),
-   soft silver #c8c8c8/#dcdcdc grid dividers, focused #0078d7 selection, and
-   exact MT5 light Market Watch blue (#0000ff) / red (#ff0000) column values. */
+   soft silver #c8c8c8/#dcdcdc grid dividers, official MT5 #0078d7 blue selection
+   with pure #ffffff white text, and exact MT5 light Market Watch blue (#0000ff) /
+   red (#ff0000) column values on unselected rows. */
 html:root:is(.rtx-skin-untitled-light, .theme-light) .rtx-market-watch.rtx-market-watch--desktop {
   --mw-desktop-row: #ffffff;
   --mw-desktop-row-alt: #ebebeb;
   --mw-desktop-chrome: var(--rtx-light-panel-subtle, #f1f4f8);
-  --mw-desktop-row-hover: #e2ebf6;
+  --mw-desktop-row-hover: #dfe9f5;
   --mw-desktop-row-selected: transparent;
   --mw-desktop-row-selected-focus: #0078d7;
   --mw-desktop-grid: #dcdcdc;
@@ -55,8 +56,8 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
   --mw-desktop-row-alt: color-mix(in srgb, var(--rtx-light-panel) 92%, var(--rtx-light-text) 8%);
   --mw-desktop-chrome: var(--rtx-light-panel-header);
   --mw-desktop-row-hover: var(--rtx-light-hover);
-  --mw-desktop-row-selected-focus: var(--rtx-light-accent);
-  --mw-desktop-selection: var(--rtx-light-accent);
+  --mw-desktop-row-selected-focus: var(--rtx-light-accent, #0078d7);
+  --mw-desktop-selection: var(--rtx-light-accent, #0078d7);
   --mw-desktop-grid: var(--rtx-light-row-border, #dcdcdc);
   --mw-desktop-grid-vertical: var(--rtx-light-border, #c8c8c8);
   --mw-desktop-border-strong: var(--rtx-light-border, #c8c8c8);
@@ -372,13 +373,16 @@ html:root:is(.rtx-skin-untitled-light, .theme-light) .rtx-market-watch.rtx-marke
 }
 
 html:root:is(.rtx-skin-untitled-light, .theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody tr[aria-selected='true']:focus-within :is(
-  td, span, svg, .price-display, .price-big, .price-small,
-  .rtx-market-watch__symbol, .rtx-market-watch__price,
-  .rtx-market-watch__price--up, .rtx-market-watch__price--down,
-  .rtx-market-watch__price--bid:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty),
-  .rtx-market-watch__price--ask:not(.rtx-market-watch__price--up):not(.rtx-market-watch__price--down):not(.rtx-market-watch__price--empty),
-  .rtx-market-watch__daily, .rtx-market-watch__daily--up, .rtx-market-watch__daily--down,
-  .rtx-market-watch__direction, .rtx-market-watch__direction--up, .rtx-market-watch__direction--down
+  .rtx-market-watch__symbol,
+  .rtx-market-watch__price,
+  .rtx-market-watch__price :is(.price-display, .price-big, .price-small),
+  .rtx-market-watch__daily,
+  .rtx-market-watch__daily span,
+  .rtx-market-watch__daily-price,
+  .rtx-market-watch__direction,
+  .rtx-market-watch__last-close,
+  .rtx-market-watch__last-close span,
+  svg
 ) {
   color: #ffffff !important;
 }

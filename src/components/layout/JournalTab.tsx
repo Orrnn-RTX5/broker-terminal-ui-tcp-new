@@ -1093,7 +1093,7 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
         >
 
             {/* ── Toolbar ─────────────────────────────────────────────────── */}
-            <div className={`rtx-journal-toolbar rtx-trade-view-bar ${showAdvancedFilters ? 'rtx-journal-toolbar--expanded' : ''}`} style={{ gap: '8px', paddingLeft: '6px', paddingRight: '6px' }}>
+            <div className={`rtx-journal-toolbar rtx-trade-view-bar ${showAdvancedFilters ? 'rtx-journal-toolbar--expanded' : ''}`} data-dock-inner-header="true" style={{ gap: '8px', paddingLeft: '6px', paddingRight: '6px' }}>
 
                 {/* Type filter */}
                 <div className="rtx-journal-advanced-control flex items-center gap-1.5 shrink-0">

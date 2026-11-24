@@ -856,13 +856,18 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
      tab connected seamlessly upward with left/bottom/right borders, #6d6d6d
      inactive tabs, and full-height #696969 vertical tab separators (top 2px to
      bottom 1px) across Trade through Close All
-   - Solid #0078d7 selected row with pure #ffffff text and History TP (#60f060)
-     / SL (#ff8080) trigger highlights */
+   - Classic MT5 highlight blue (#0078d7) selected row with pure #ffffff white text
+     across every cell, profit/loss value, side label, and icon (matching MT5 desktop),
+     clean subtle column dividers, white-backed row buttons, and History TP (#60f060) /
+     SL (#ff8080) trigger highlights on unselected rows */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
   --rtx-toolbox-row: #ffffff;
   --rtx-toolbox-row-alt: #ebebeb;
-  --rtx-toolbox-row-hover: #e2ebf6;
+  --rtx-toolbox-row-hover: #dfe9f5;
   --rtx-toolbox-selected: #0078d7;
+  --rtx-toolbox-selected-border: #0078d7;
+  --rtx-toolbox-selected-divider: rgba(255, 255, 255, 0.2);
+  --rtx-toolbox-selected-accent: #0078d7;
   --rtx-toolbox-summary: #c8c8c8;
   --rtx-toolbox-tabs: #f0f0f0;
   --rtx-toolbox-toolbar: #f0f0f0;
@@ -923,7 +928,10 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
   --rtx-toolbox-row: var(--rtx-light-panel);
   --rtx-toolbox-row-alt: color-mix(in srgb, var(--rtx-light-panel) 92%, var(--rtx-light-text) 8%);
   --rtx-toolbox-row-hover: var(--rtx-light-hover);
-  --rtx-toolbox-selected: var(--rtx-light-accent);
+  --rtx-toolbox-selected: var(--rtx-light-accent, #0078d7);
+  --rtx-toolbox-selected-border: var(--rtx-light-accent, #0078d7);
+  --rtx-toolbox-selected-divider: rgba(255, 255, 255, 0.2);
+  --rtx-toolbox-selected-accent: var(--rtx-light-accent, #0078d7);
   --rtx-toolbox-summary: var(--rtx-light-panel-header);
   --rtx-toolbox-tabs: var(--rtx-light-panel-subtle, var(--rtx-light-panel-header));
   --rtx-toolbox-toolbar: var(--rtx-light-panel-subtle, var(--rtx-light-panel-header));
@@ -1037,7 +1045,6 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-tab table,
   .rtx-codebase-tab table,
   .rtx-experts-tab table,
-  .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
 ) thead tr {
   height: 20px !important;
@@ -1052,7 +1059,6 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-tab table,
   .rtx-codebase-tab table,
   .rtx-experts-tab table,
-  .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
 ) thead th {
   height: 20px !important;
@@ -1074,7 +1080,6 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-tab table,
   .rtx-codebase-tab table,
   .rtx-experts-tab table,
-  .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
 ) thead th:last-child {
   border-right: none !important;
@@ -1091,9 +1096,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-tab table,
   .rtx-codebase-tab table,
   .rtx-experts-tab table,
-  .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
-) tbody tr:not(.rtx-history-spacer-row):not(.rtx-journal-spacer-row):not([data-rtx-spacer]) {
+) tbody tr:not(:where(.rtx-history-spacer-row, .rtx-journal-spacer-row, [data-rtx-spacer])) {
   height: 20px !important;
 }
 
@@ -1106,9 +1110,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-tab table,
   .rtx-codebase-tab table,
   .rtx-experts-tab table,
-  .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
-) tbody tr:not(.rtx-history-spacer-row):not(.rtx-journal-spacer-row):not([data-rtx-spacer]) > td:not(.rtx-journal-spacer-cell) {
+) tbody tr:not(:where(.rtx-history-spacer-row, .rtx-journal-spacer-row, [data-rtx-spacer])) > td:not(:where(.rtx-journal-spacer-cell)) {
   height: 20px !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
@@ -1140,7 +1143,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   width: 172px !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-table tbody tr:not([aria-selected='true']) td > span:not(.text-red-400):not(.text-rose-400):not(.text-amber-400):not(.text-emerald-400) {
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-table tbody tr td > span:not(.text-red-400):not(.text-rose-400):not(.text-amber-400):not(.text-emerald-400) {
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
@@ -1328,9 +1331,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-history-toolbar .rtx-history-refresh-btn,
-  .rtx-journal-tab .rtx-journal-control:not(.rtx-journal-time-btn),
-  .rtx-pending-bulk-btn,
-  .rtx-pending-row-btn
+  .rtx-journal-tab .rtx-journal-control:not(.rtx-journal-time-btn)
 ) {
   background: var(--rtx-toolbox-row, #ffffff) !important;
   background-color: var(--rtx-toolbox-row, #ffffff) !important;
@@ -1340,11 +1341,94 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   box-shadow: none !important;
 }
 
+/* Institutional Pending Orders table rhythm, typography, badges, and crisp action controls in Light theme. */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table thead tr,
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table thead th {
+  height: 24px !important;
+  min-height: 24px !important;
+  --rtx-font-weight-body: 500;
+  color: #334155 !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  border-right-color: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row,
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row > td {
+  height: 28px !important;
+  min-height: 28px !important;
+  vertical-align: middle !important;
+  --rtx-font-weight-body: 400;
+  color: #0f172a !important;
+  border-bottom-color: #e2e8f0 !important;
+  border-right-color: #e9eef4 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row > td.rtx-pending-cell--symbol {
+  --rtx-font-weight-body: 600;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row > td.rtx-pending-cell--type {
+  color: #334155 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row > td.rtx-pending-cell--empty {
+  color: #94a3b8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table .rtx-pending-side-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  --rtx-font-weight-body: 600;
+  letter-spacing: 0.02em;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table .rtx-pending-side-badge--buy {
+  background: transparent !important;
+  border: 0 !important;
+  color: #1d4ed8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table .rtx-pending-side-badge--sell {
+  background: transparent !important;
+  border: 0 !important;
+  color: #b91c1c !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-pending-bulk-btn,
+  .rtx-pending-row-btn
+) {
+  height: 20px !important;
+  min-height: 20px !important;
+  padding: 0 9px !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #1e293b !important;
+  border-radius: 4px !important;
+  --rtx-font-weight-body: 500;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04) !important;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-bulk-btn:disabled {
+  background: #f8fafc !important;
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-history-toolbar .rtx-history-refresh-btn,
-  .rtx-journal-tab button.rtx-journal-control:not(.rtx-journal-time-btn),
-  .rtx-pending-bulk-btn,
-  .rtx-pending-row-btn--modify
+  .rtx-journal-tab button.rtx-journal-control:not(.rtx-journal-time-btn)
 ):not(:disabled):hover {
   background: #e4e4e4 !important;
   background-color: #e4e4e4 !important;
@@ -1353,21 +1437,34 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-pending-bulk-btn--buy,
+  .rtx-pending-bulk-btn--sell,
+  .rtx-pending-row-btn--modify
+):not(:disabled):hover {
+  background: #f1f5f9 !important;
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-pending-bulk-btn--all,
   .rtx-pending-row-btn--cancel
 ) {
-  color: var(--rtx-toolbox-loss, #ea3323) !important;
-  border-color: color-mix(in srgb, var(--rtx-toolbox-loss, #ea3323) 45%, #b0b0b0) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #b91c1c !important;
+  border-color: #cbd5e1 !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-pending-bulk-btn--all,
   .rtx-pending-row-btn--cancel
 ):not(:disabled):hover {
-  background: var(--rtx-toolbox-loss, #ea3323) !important;
-  background-color: var(--rtx-toolbox-loss, #ea3323) !important;
-  border-color: var(--rtx-toolbox-loss, #ea3323) !important;
-  color: #ffffff !important;
+  background: #f1f5f9 !important;
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #991b1b !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-periods {
@@ -1605,7 +1702,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   color: #000000 !important;
 }
 
-/* MT5 solid #0078d7 selected row with pure white text across all cells. */
+/* Official MT5 blue (#0078d7) selected row with pure #ffffff white text across every
+   cell, profit/loss value, side label, and icon so contrast stays razor-sharp in Light theme. */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock tbody tr:is(
   .rtx-trade-row--selected,
   .rtx-trade-row[aria-selected='true'],
@@ -1628,8 +1726,11 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-codebase-row[data-selected='true'],
   .rtx-experts-row[data-selected='true']
 ) > td {
+  --rtx-font-weight-body: 400;
   background: var(--rtx-toolbox-selected, #0078d7) !important;
   color: #ffffff !important;
+  border-bottom-color: var(--rtx-toolbox-selected-border, #0078d7) !important;
+  border-right-color: var(--rtx-toolbox-selected-divider, rgba(255, 255, 255, 0.2)) !important;
   box-shadow: none !important;
 }
 
@@ -1643,39 +1744,121 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-row[data-selected='true'],
   .rtx-codebase-row[data-selected='true'],
   .rtx-experts-row[data-selected='true']
-) :is(td, td.text-profit, td.text-loss, td.text-rose-400, td.text-emerald-400, td.text-red-400, span, button.rtx-trade-sl-value, button.rtx-trade-tp-value, .rtx-exposure-asset-name) {
+) :is(
+  td,
+  td > span,
+  span:not(.rtx-exposure-asset-badge),
+  td.rtx-trade-side-cell--buy,
+  td.rtx-trade-side-cell--buy span,
+  td.rtx-trade-side-cell--sell,
+  td.rtx-trade-side-cell--sell span,
+  .rtx-pending-side-badge,
+  .rtx-pending-side-badge--buy,
+  .rtx-pending-side-badge--sell,
+  td.text-profit,
+  td .text-profit,
+  td.text-loss,
+  td .text-loss,
+  td.rtx-trade-profit-value--positive,
+  td.rtx-trade-profit-value--negative,
+  button.rtx-trade-sl-value,
+  button.rtx-trade-tp-value,
+  td.text-emerald-400,
+  span.text-emerald-400,
+  td.text-rose-400,
+  span.text-rose-400,
+  td.text-red-400,
+  span.text-red-400,
+  span.text-\[\#ff7676\],
+  .rtx-calendar-value--up,
+  .rtx-calendar-value--down,
+  .rtx-exposure-asset-name
+) {
   color: #ffffff !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, [aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button),
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn {
-  background: rgba(255, 255, 255, 0.16) !important;
-  border-color: rgba(255, 255, 255, 0.42) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] > td.rtx-pending-cell--symbol {
+  --rtx-font-weight-body: 600;
   color: #ffffff !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, [aria-selected='true']) .rtx-trade-action-button:not(:disabled):hover,
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn--modify:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.3) !important;
-  border-color: #ffffff !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] > td.rtx-pending-cell--empty {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Selected Positions row Actions icons stay clean & borderless with crisp #ffffff strokes directly on #0078d7 blue (no blank white boxes). */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) svg {
+  background: transparent !important;
   color: #ffffff !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, [aria-selected='true']) .rtx-trade-close-button:not(:disabled):hover,
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn--cancel:not(:disabled):hover {
-  background: var(--rtx-toolbox-loss, #ea3323) !important;
-  border-color: var(--rtx-toolbox-loss, #ea3323) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) .rtx-trade-action-button:not(.rtx-trade-close-button):not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
   color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) .rtx-trade-close-button:not(:disabled):hover {
+  background: #dc2626 !important;
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+/* Selected Pending Orders row text buttons (Modify / Cancel) stay crisp white pills with high-contrast labels. */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.85) !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.14) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn :is(span, svg) {
+  background: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn--cancel {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.85) !important;
+  color: #b91c1c !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn--modify:not(:disabled):hover {
+  background: #eff6ff !important;
+  background-color: #eff6ff !important;
+  border-color: #2563eb !important;
+  color: #1d4ed8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock table.rtx-pending-orders-table tbody tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn--cancel:not(:disabled):hover {
+  background: #f1f5f9 !important;
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #991b1b !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-exposure-tab .rtx-exposure-table tbody tr.rtx-exposure-row[aria-selected='true'] .rtx-exposure-asset-badge {
-  background: rgba(255, 255, 255, 0.2) !important;
-  border-color: rgba(255, 255, 255, 0.45) !important;
-  color: #ffffff !important;
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-exposure-tab .rtx-exposure-table tbody tr.rtx-exposure-row[aria-selected='true'] .rtx-exposure-graph-track {
-  border-color: rgba(255, 255, 255, 0.55) !important;
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* MT5 desktop #c8c8c8 summary bar with bold (700) pure #000000 account metrics and totals. */

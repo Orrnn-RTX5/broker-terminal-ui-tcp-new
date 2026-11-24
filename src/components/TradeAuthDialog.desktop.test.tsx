@@ -110,7 +110,9 @@ describe('desktop trading authentication', () => {
     expect(screen.getByRole('dialog', { name: 'Log in to trade' })).toBeVisible();
     expect(screen.queryByText('Account required to trade')).not.toBeInTheDocument();
     expect(screen.queryByText(/terminal deployment URL/)).not.toBeInTheDocument();
-    await screen.findByText('Server online');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
+    expect(screen.queryByText('Server online')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Server' })).not.toBeInTheDocument();
     const server = screen.getByRole('combobox', { name: /Server/i });
     expect(server).toBeEnabled();
     expect(server).toHaveValue('Nexa');
@@ -127,10 +129,11 @@ describe('desktop trading authentication', () => {
     // The login does not wait for the broker a demo account would use.
     expect(screen.getByText('Account required to trade')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
-    await screen.findByText('Server online');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
 
     fireEvent.change(screen.getByRole('combobox', { name: /Server/i }), { target: { value: 'achiever' } });
-    await screen.findByText('Server online');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('https://achiever.test/health', expect.anything()));
+    await waitFor(() => expect(screen.getByLabelText('Password', { exact: true })).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Password', { exact: true }), { target: { value: 'test-password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
@@ -158,7 +161,7 @@ describe('desktop trading authentication', () => {
     const onAuthenticated = vi.fn();
     render(<TradeAuthDialog isOpen intent={intent} onClose={onClose} onAuthenticated={onAuthenticated} />);
     fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
-    await screen.findByText('Server online');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
 
     expect(screen.getByText(/No order has been placed/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Continue viewing' }));

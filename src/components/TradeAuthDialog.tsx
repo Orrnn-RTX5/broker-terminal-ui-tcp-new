@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, ChevronRight, Info, LogIn, UserPlus, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronRight, Copy, Eye, EyeOff, Info, LogIn, UserPlus, X } from 'lucide-react';
 import '../styles/trade-auth-dialog.css';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { LoginDialog } from './LoginDialog';
 import {
   loadDemoRegistrationModes,
@@ -125,11 +126,16 @@ function TradeAuthFlow({
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const { copied: copiedPassword, copy: copyPassword, reset: resetPasswordCopy } = useCopyFeedback();
+  const { copied: copiedConfirmPassword, copy: copyConfirmPassword, reset: resetConfirmPasswordCopy } = useCopyFeedback();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountMode, setAccountMode] = useState<DemoAccountMode>('hedging');
   const [demoModes, setDemoModes] = useState<{ brokerId: string; modes: DemoRegistrationModes } | null>(null);
   const tr = useUiTranslation();
+  const dialogId = useId();
   const dialogRef = useRef<HTMLElement>(null);
   const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const primaryActionRef = useRef<HTMLButtonElement>(null);
@@ -189,7 +195,19 @@ function TradeAuthFlow({
     setError(null);
     setPassword('');
     setConfirmPassword('');
-  }, [isOpen, effectiveInitialMode]);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    resetPasswordCopy();
+    resetConfirmPasswordCopy();
+  }, [isOpen, effectiveInitialMode, resetPasswordCopy, resetConfirmPasswordCopy]);
+
+  useEffect(() => {
+    if (!password) resetPasswordCopy();
+  }, [password, resetPasswordCopy]);
+
+  useEffect(() => {
+    if (!confirmPassword) resetConfirmPasswordCopy();
+  }, [confirmPassword, resetConfirmPasswordCopy]);
 
   useLayoutEffect(() => {
     if (!isOpen || !anchorRef) {
@@ -740,35 +758,93 @@ function TradeAuthFlow({
                 )}
 
                 <div className="rtx-auth-grid">
-                  <label className="rtx-auth-field">
-                    <span className="rtx-auth-field__label">Password</span>
-                    <input
-                      type="text"
-                      className="rtx-secret-input"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      autoComplete="off"
-                      spellCheck={false}
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      placeholder="••••••••"
-                    />
-                  </label>
+                  <div className="rtx-auth-field">
+                    <label htmlFor={`${dialogId}-password`} className="rtx-auth-field__label">Password</label>
+                    <div className="rtx-auth-password-wrap">
+                      <input
+                        id={`${dialogId}-password`}
+                        type="text"
+                        className={`rtx-auth-password-input${showPassword ? '' : ' rtx-secret-input'}`}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        placeholder="••••••••"
+                      />
+                      <div className="rtx-auth-password-actions">
+                        <button
+                          type="button"
+                          className="rtx-auth-password-btn"
+                          aria-label={showPassword ? tr('Hide password') : tr('Show password')}
+                          aria-controls={`${dialogId}-password`}
+                          aria-pressed={showPassword}
+                          title={showPassword ? tr('Hide password') : tr('Show password')}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setShowPassword((current) => !current)}
+                        >
+                          {showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`rtx-auth-password-btn${copiedPassword ? ' is-copied' : ''}`}
+                          aria-label={copiedPassword ? tr('Copied') : `${tr('Copy')} ${tr('Password')}`}
+                          aria-controls={`${dialogId}-password`}
+                          title={copiedPassword ? tr('Copied') : tr('Copy')}
+                          disabled={!password}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => { void copyPassword(password); }}
+                        >
+                          {copiedPassword ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
-                  <label className="rtx-auth-field">
-                    <span className="rtx-auth-field__label">Confirm password</span>
-                    <input
-                      type="text"
-                      className="rtx-secret-input"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      autoComplete="off"
-                      spellCheck={false}
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      placeholder="••••••••"
-                    />
-                  </label>
+                  <div className="rtx-auth-field">
+                    <label htmlFor={`${dialogId}-confirm-password`} className="rtx-auth-field__label">Confirm password</label>
+                    <div className="rtx-auth-password-wrap">
+                      <input
+                        id={`${dialogId}-confirm-password`}
+                        type="text"
+                        className={`rtx-auth-password-input${showConfirmPassword ? '' : ' rtx-secret-input'}`}
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        placeholder="••••••••"
+                      />
+                      <div className="rtx-auth-password-actions">
+                        <button
+                          type="button"
+                          className="rtx-auth-password-btn"
+                          aria-label={showConfirmPassword ? tr('Hide password') : tr('Show password')}
+                          aria-controls={`${dialogId}-confirm-password`}
+                          aria-pressed={showConfirmPassword}
+                          title={showConfirmPassword ? tr('Hide password') : tr('Show password')}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setShowConfirmPassword((current) => !current)}
+                        >
+                          {showConfirmPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`rtx-auth-password-btn${copiedConfirmPassword ? ' is-copied' : ''}`}
+                          aria-label={copiedConfirmPassword ? tr('Copied') : `${tr('Copy')} ${tr('Password')}`}
+                          aria-controls={`${dialogId}-confirm-password`}
+                          title={copiedConfirmPassword ? tr('Copied') : tr('Copy')}
+                          disabled={!confirmPassword}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => { void copyConfirmPassword(confirmPassword); }}
+                        >
+                          {copiedConfirmPassword ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <span className="rtx-auth-field__hint">

@@ -302,14 +302,6 @@ html:root.rtx-skin-untitled-light .rtx-chart-price-badge :is(span, strong) {
   --rtx-type-weight: var(--rtx-light-weight-control);
 }
 
-html:root.rtx-skin-untitled-light .rtx-action-feedback {
-  --rtx-af-text-xs: var(--rtx-light-type-caption);
-  --rtx-af-text-sm: var(--rtx-light-type-body);
-  --rtx-af-text-md: var(--rtx-light-type-body);
-  --rtx-af-text-lg: var(--rtx-light-type-section);
-  --rtx-af-text-xl: var(--rtx-light-type-title);
-}
-
 /* Existing dock geometry and light surface aliases. */
 html:root.rtx-advanced-view.rtx-skin-untitled-light {
   --rtx-light-ui-font-size: var(--rtx-ui-font-size);
@@ -784,7 +776,6 @@ html:root.rtx-skin-untitled-light .rtx-last-symbol-panel :is(
    section heading. This also covers lazy-loaded panels and portalled popups. */
 html:root.rtx-skin-untitled-light :is(
   .rtx-export-sheet__button, .rtx-bug-report-button,
-  .rtx-action-feedback__more, .rtx-action-feedback__symbol-tag,
   .drawing-color-picker__title,
   .rtx-history-coverage-title, .rtx-history-section-heading h3,
   .rtx-history-tasks__header h3, .rtx-indicator-add,
@@ -804,12 +795,7 @@ html:root.rtx-skin-untitled-light :is(
   .rtx-history-status-tag, .rtx-history-duration-badge,
   .rtx-history-coverage-date, .rtx-history-coverage-recorded,
   .rtx-indicator-description, .rtx-auth-dialog__footer,
-  .rtx-bulk-close-dialog__symbol-badge,
-  .rtx-action-feedback__meta, .rtx-action-feedback__channel,
-  .rtx-action-feedback__status-pill, .rtx-action-feedback__stat-label,
-  .rtx-action-feedback__channel-label, .rtx-action-feedback__hint,
-  .rtx-action-feedback__footnote, .rtx-action-feedback__side,
-  .rtx-action-feedback__rejected
+  .rtx-bulk-close-dialog__symbol-badge
 ) {
   --rtx-type-size: var(--rtx-light-type-caption);
   --rtx-type-weight: var(--rtx-light-weight-body);
@@ -819,12 +805,7 @@ html:root.rtx-skin-untitled-light :is(
 
 html:root.rtx-skin-untitled-light :is(
   .rtx-export-sheet__filename, .rtx-export-sheet__location-note,
-  .rtx-export-sheet__guidance p, .rtx-export-sheet__error,
-  .rtx-action-feedback__description, .rtx-action-feedback__subtitle,
-  .rtx-action-feedback__unit, .rtx-action-feedback__details dt,
-  .rtx-action-feedback__details dd, .rtx-action-feedback__stat-value,
-  .rtx-action-feedback__row-symbol, .rtx-action-feedback__pnl,
-  .rtx-action-feedback__reason
+  .rtx-export-sheet__guidance p, .rtx-export-sheet__error
 ) {
   --rtx-type-size: var(--rtx-light-type-body);
   --rtx-type-weight: var(--rtx-light-weight-body);
@@ -848,23 +829,6 @@ html:root.rtx-skin-untitled-light .rtx-bulk-close-dialog__breakdown-item {
   --rtx-type-size: var(--rtx-light-type-body);
   --rtx-type-weight: var(--rtx-light-weight-body);
   line-height: 18px !important;
-}
-
-html:root.rtx-skin-untitled-light .rtx-action-feedback__title {
-  --rtx-type-size: var(--rtx-light-type-body);
-  --rtx-type-weight: var(--rtx-light-weight-body);
-  line-height: 18px !important;
-}
-
-html:root.rtx-skin-untitled-light .rtx-action-feedback--report .rtx-action-feedback__title {
-  --rtx-type-size: var(--rtx-light-type-title);
-  --rtx-type-weight: var(--rtx-light-weight-heading);
-  line-height: calc(var(--rtx-light-type-title) + 6px) !important;
-}
-
-html:root.rtx-skin-untitled-light .rtx-action-feedback__pnl-value {
-  --rtx-type-size: var(--rtx-light-type-section);
-  --rtx-type-weight: var(--rtx-light-weight-control);
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch-trading__symbol {

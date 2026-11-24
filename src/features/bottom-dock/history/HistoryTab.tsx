@@ -654,7 +654,7 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         { label: 'Time', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatBalanceTs(row.operation.time) : formatTs(row.trade.openTime)) },
         { label: 'Symbol', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : row.trade.symbol || '-') },
         ...(isColumnVisible('ticket') ? [{ label: 'Ticket', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.id : getHistoryTicket(row.trade)) }] : []),
-        { label: 'Type', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.type : String(row.trade.orderType || row.trade.side || row.trade.type || '-').toLowerCase()) },
+        { label: 'Type', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.type : String(row.trade.orderType || row.trade.side || row.trade.type || '-').replace(/_+/g, ' ').toLowerCase()) },
         { label: 'Volume', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatHistoryVolume(row.trade)) },
         { label: 'Price', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatPriceCell(row.trade.openPrice, row.trade.symbol, row.trade.digits)) },
         { label: 'S/L', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatLevelCell(row.trade.sl, row.trade.symbol, row.trade.digits)) },
@@ -1013,7 +1013,7 @@ ${rows}
             className="rtx-history-tab h-full flex flex-col relative bg-[#131316] overflow-hidden"
             onContextMenu={(event) => handleHistoryContextMenu(event)}
         >
-            <div className="rtx-history-toolbar rtx-trade-view-bar" role="tablist" aria-label={tr('History time filters')}>
+            <div className="rtx-history-toolbar rtx-trade-view-bar" role="tablist" aria-label={tr('History time filters')} data-dock-inner-header="true">
                 <div className="rtx-history-toolbar__periods flex h-full min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap">
                         {HISTORY_PERIOD_PRESETS.map(([period, label]) => (
                             <button
@@ -1168,7 +1168,7 @@ ${rows}
                                 );
                             }
                             const order = row.trade;
-                            const sideLabel = String(order.orderType || order.side || order.type || '-').toLowerCase();
+                            const sideLabel = String(order.orderType || order.side || order.type || '-').replace(/_+/g, ' ').toLowerCase();
                             const tradeKey = row.key;
                             const volumeLabel = formatHistoryVolume(order);
                             const marketValue = getHistoryMarketValue(order);

@@ -1075,8 +1075,8 @@
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-primary);
   display: flex;
-  flex: 0 0 364px;
-  min-width: 0;
+  flex: 1 1 580px;
+  min-width: 480px;
 }
 
 .rtx-order-dialog__chart-shell {
@@ -1085,7 +1085,7 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  padding: 6px 6px 8px;
+  padding: 6px 8px 8px;
   position: relative;
 }
 
@@ -1095,8 +1095,249 @@
   display: flex;
   flex: 0 0 26px;
   gap: 4px;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   z-index: 2;
+}
+
+.rtx-order-dialog__tf-group {
+  align-items: center;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.rtx-order-dialog__tf-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--order-supporting-text);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: "Segoe UI", Tahoma, var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  height: 22px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 6px;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.rtx-order-dialog__tf-btn:hover {
+  background: rgb(255 255 255 / 7%);
+  color: var(--text-primary);
+}
+
+.rtx-order-dialog__tf-btn--active {
+  background: rgb(54 135 255 / 18%);
+  border-color: rgb(54 135 255 / 42%);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.rtx-order-dialog__chart-stage {
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.rtx-order-dialog__chart-hud {
+  align-items: center;
+  border-radius: 3px;
+  color: var(--order-supporting-text);
+  display: flex;
+  flex-wrap: nowrap;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, var(--font-sans);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  gap: 8px;
+  left: 6px;
+  line-height: 14px;
+  max-width: calc(100% - 76px);
+  overflow: hidden;
+  padding: 2px 5px;
+  pointer-events: none;
+  position: absolute;
+  top: 3px;
+  white-space: nowrap;
+  z-index: 3;
+}
+
+.rtx-order-dialog__chart-hud-symbol {
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.rtx-order-dialog__chart-hud-ohlc {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rtx-order-dialog__chart-hud-metric {
+  color: var(--order-supporting-text);
+  font-weight: 400;
+}
+
+.rtx-order-dialog__chart-hud-val {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Main-chart-style floating trade & pending order control strips */
+.rtx-order-dialog__chart-trade-overlay {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
+.rtx-order-dialog__trade-bar {
+  align-items: center;
+  background-color: #191a1e;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px #94a3b8, 0 2px 10px rgba(0, 0, 0, 0.65);
+  box-sizing: border-box;
+  color: #ffffff;
+  display: inline-flex;
+  font-family: var(--rtx-ui-font-family, "Segoe UI", Tahoma, Arial, sans-serif);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  gap: 0;
+  height: 18px;
+  left: 6px;
+  line-height: 16px;
+  max-width: calc(100% - 76px);
+  min-height: 18px;
+  overflow: hidden;
+  padding: 0;
+  pointer-events: auto;
+  position: absolute;
+  transform: translateY(-50%);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.rtx-order-dialog__trade-bar-brackets {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  height: 18px;
+  padding: 0 2px 0 3px;
+}
+
+.rtx-order-dialog__trade-bar-bracket {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  height: 16px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  line-height: 14px;
+  min-width: 21px;
+  padding: 0 4px;
+}
+
+.rtx-order-dialog__trade-bar-bracket:hover {
+  background: #292a30;
+}
+
+.rtx-order-dialog__trade-bar-bracket--tp {
+  color: #4ade80;
+}
+
+.rtx-order-dialog__trade-bar-bracket--sl {
+  color: #fbbf24;
+}
+
+.rtx-order-dialog__trade-bar-primary {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+}
+
+.rtx-order-dialog__trade-bar-side {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rtx-order-dialog__trade-bar-side--buy {
+  color: #72b0ff;
+}
+
+.rtx-order-dialog__trade-bar-side--sell {
+  color: #ff8589;
+}
+
+.rtx-order-dialog__trade-bar-side--tp {
+  color: #4ade80;
+}
+
+.rtx-order-dialog__trade-bar-side--sl {
+  color: #fbbf24;
+}
+
+.rtx-order-dialog__trade-bar-vol {
+  color: #ffffff;
+  font-weight: 400;
+}
+
+.rtx-order-dialog__trade-bar-pnl {
+  color: #ffffff;
+  font-weight: 600;
+  min-width: 4ch;
+  text-align: right;
+}
+
+.rtx-order-dialog__trade-bar-pnl--profit {
+  color: #72b0ff;
+}
+
+.rtx-order-dialog__trade-bar-pnl--loss {
+  color: #ff8589;
+}
+
+.rtx-order-dialog__trade-bar-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid #4b5563;
+  border-radius: 0;
+  color: #e5e7eb;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 18px;
+  height: 18px;
+  justify-content: center;
+  padding: 0;
+  width: 18px;
+}
+
+.rtx-order-dialog__trade-bar-close:hover {
+  background: #3b2529;
+  color: #ff8589;
 }
 
 .rtx-order-dialog__toolbar-btn {
@@ -1295,10 +1536,11 @@ html.theme-light .rtx-order-dialog .rtx-order-dialog__chart-type-item--active {
 
 .rtx-order-dialog__chart-canvas {
   color: var(--order-supporting-text);
+  cursor: crosshair;
   display: block;
   flex: 1;
-  height: 454px;
-  min-height: 320px;
+  height: 468px;
+  min-height: 360px;
   position: relative;
   width: 100%;
   z-index: 1;
@@ -1917,6 +2159,165 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   background: #cbd5e1 !important;
 }
 
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__tf-btn {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 500;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #475569 !important;
+  line-height: 1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__tf-btn:hover {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__tf-btn--active {
+  --rtx-font-weight-body: 600;
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__chart-stage {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__chart-hud {
+  --rtx-ui-font-size: 10px;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #475569 !important;
+  line-height: 14px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__chart-hud-symbol {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 600;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__chart-hud-metric {
+  --rtx-ui-font-size: 10px;
+  color: #475467 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__chart-hud-val {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 500;
+  color: #0f172a;
+}
+
+/* Light theme floating trade & pending order strips (exact main-chart LIGHT_CHART_TRADE_COLORS) */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar {
+  --rtx-ui-font-size: 11px;
+  --rtx-type-size: 11px;
+  background-color: #ffffff !important;
+  border: 0 !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 1px #52647b, 0 2px 6px rgba(15, 23, 42, 0.16) !important;
+  color: #111827 !important;
+  font-size: 11px !important;
+  height: 18px !important;
+  line-height: 16px !important;
+  min-height: 18px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-bracket {
+  --rtx-ui-font-size: 10.5px;
+  --rtx-type-size: 10.5px;
+  --rtx-font-weight-body: 600;
+  background: transparent !important;
+  border: 0 !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  height: 16px !important;
+  line-height: 14px !important;
+  min-height: 16px !important;
+  padding: 0 4px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-bracket:hover {
+  background: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-bracket--tp {
+  color: #05564f !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-bracket--sl {
+  color: #664300 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-side {
+  --rtx-ui-font-size: 11px;
+  --rtx-type-size: 11px;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 16px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-side--buy {
+  color: #153eaa !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-side--sell {
+  color: #981b24 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-side--tp {
+  color: #05564f !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-side--sl {
+  color: #664300 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-vol {
+  --rtx-ui-font-size: 11px;
+  --rtx-type-size: 11px;
+  color: #111827 !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 16px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-pnl {
+  --rtx-ui-font-size: 11px;
+  --rtx-type-size: 11px;
+  color: #111827 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 16px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-pnl--profit {
+  color: #153eaa !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-pnl--loss {
+  color: #981b24 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-close {
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 1px solid #b0bdce !important;
+  border-radius: 0 !important;
+  color: #172033 !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  padding: 0 !important;
+  width: 18px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__trade-bar-close:hover {
+  background: #fff0f1 !important;
+  color: #981b24 !important;
+}
+
 /* Column 4: Depth of Market Table (Volume | Price | Trade) */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-table-wrap {
   background: #ffffff !important;
@@ -2419,25 +2820,46 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
     font-size: 9.5px !important;
   }
 
-  /* Column 3: Right Candlestick + Tick Chart Pane (Compact Laptop Width) */
+  /* Column 3: Right Candlestick + Tick Chart Pane (Expanded Institutional Landscape Width) */
   .rtx-order-dialog__chart {
-    flex: 0 0 220px;
+    flex: 1 1 500px;
+    min-width: 360px;
+    width: 500px;
   }
 
   .rtx-order-dialog__chart-shell {
-    padding: 4px 4px 5px;
+    padding: 5px 6px 6px;
   }
 
   .rtx-order-dialog__chart-toolbar,
   .rtx-order-dialog__dom-toolbar {
-    flex: 0 0 20px;
-    gap: 2px;
-    margin-bottom: 2px;
+    flex: 0 0 22px;
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+
+  .rtx-order-dialog__tf-btn {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+    height: 19px;
+    padding: 0 5px;
+  }
+
+  .rtx-order-dialog__chart-hud {
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
+    gap: 6px;
+    left: 5px;
+    top: 2px;
+  }
+
+  .rtx-order-dialog__chart-hud-ohlc {
+    gap: 5px;
   }
 
   .rtx-order-dialog__toolbar-btn {
-    height: 18px;
-    width: 18px;
+    height: 19px;
+    width: 19px;
   }
 
   .rtx-order-dialog__toolbar-btn svg {
@@ -2446,8 +2868,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   }
 
   .rtx-order-dialog__chart-type-btn {
-    height: 18px;
-    padding: 0 3px;
+    height: 19px;
+    padding: 0 4px;
   }
 
   .rtx-order-dialog__chart-type-btn svg:first-child {
@@ -2464,8 +2886,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   }
 
   .rtx-order-dialog__chart-canvas {
-    height: 326px;
-    min-height: 220px;
+    height: 362px;
+    min-height: 280px;
   }
 
   /* Column 4: Depth of Market Pane (Compact Laptop Width) */
@@ -2516,7 +2938,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 
 @media (max-width: 1440px), (max-height: 780px) {
   .rtx-order-dialog__content {
-    min-height: 356px;
+    min-height: 382px;
   }
 
   .rtx-order-dialog__sidebar {
@@ -2534,12 +2956,14 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   }
 
   .rtx-order-dialog__chart {
-    flex: 0 0 210px;
+    flex: 1 1 460px;
+    min-width: 320px;
+    width: 460px;
   }
 
   .rtx-order-dialog__chart-canvas {
-    height: 316px;
-    min-height: 210px;
+    height: 348px;
+    min-height: 260px;
   }
 
   .rtx-order-dialog__dom {
@@ -2557,11 +2981,26 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   }
 
   .rtx-order-dialog__chart {
-    flex: 0 0 202px;
+    flex: 1 1 400px;
+    min-width: 280px;
+    width: 400px;
+  }
+
+  .rtx-order-dialog__chart-canvas {
+    height: 324px;
+    min-height: 240px;
   }
 
   .rtx-order-dialog__dom {
     flex: 0 0 174px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .rtx-order-dialog__chart {
+    flex: 1 1 320px;
+    min-width: 240px;
+    width: auto;
   }
 }
 
@@ -2585,10 +3024,12 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-order-dialog__chart,
   .rtx-order-dialog__dom {
     flex: 1 1 100%;
+    min-width: 0;
+    width: auto;
   }
 
   .rtx-order-dialog__chart-canvas {
-    height: 210px;
-    min-height: 210px;
+    height: 260px;
+    min-height: 240px;
   }
 }

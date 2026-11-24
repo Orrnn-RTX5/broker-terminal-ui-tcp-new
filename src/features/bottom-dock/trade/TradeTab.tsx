@@ -1052,7 +1052,7 @@ ${rows}
             className="rtx-trade-tab h-full cursor-default flex flex-col relative bg-[#131316] overflow-hidden"
             onContextMenu={(event) => handleTradeContextMenu(event)}
         >
-            <div className="rtx-trade-view-bar" role="tablist" aria-label="Trade views">
+            <div className="rtx-trade-view-bar" role="tablist" aria-label="Trade views" data-dock-inner-header="true">
                 <button
                     type="button"
                     role="tab"

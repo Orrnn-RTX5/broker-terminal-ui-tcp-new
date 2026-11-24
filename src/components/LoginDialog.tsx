@@ -37,8 +37,9 @@ import {
 } from '../services/brokerPresentation';
 import { LAST_AUTHENTICATED_BROKER_ID_KEY, pickDiscoveryBroker, type BrokerServerItem } from './WelcomeTerminal';
 import { BrokerLogoImage } from './BrokerLogoImage';
-import { User, X, ChevronDown, LockKeyhole, Eye, EyeOff, LoaderCircle, Server, AlertCircle } from 'lucide-react';
+import { User, X, ChevronDown, LockKeyhole, Eye, EyeOff, Copy, Check, LoaderCircle, Server, AlertCircle } from 'lucide-react';
 import '../styles/login-dialog.css';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { useSavedLogin } from '../hooks/useSavedLogin';
 import { rememberAccountSession } from '../services/accountSessionCache';
 import {
@@ -133,6 +134,7 @@ export function LoginDialog({
     );
     const [searchQuery, setSearchQuery] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const { copied: passwordCopied, copy: copyPassword, reset: resetPasswordCopy } = useCopyFeedback();
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [healthStatus, setHealthStatus] = useState<'checking' | 'online' | 'offline' | null>(null);
     const healthStatusRef = useRef<'checking' | 'online' | 'offline' | null>(null);
@@ -193,8 +195,9 @@ export function LoginDialog({
         invalidatePendingLogin();
         setLoading(false);
         setShowPassword(false);
+        resetPasswordCopy();
         onClose();
-    }, [invalidatePendingLogin, onClose]);
+    }, [invalidatePendingLogin, onClose, resetPasswordCopy]);
 
     // Pre-fill with current account or provided initial login
     useEffect(() => {
@@ -203,15 +206,21 @@ export function LoginDialog({
             healthStatusRef.current = null;
             userSelectedBrokerRef.current = null;
             setHealthStatus(null);
+            resetPasswordCopy();
             invalidatePendingLogin();
         }
         if (isOpen) {
             setError(null);
             setShowPassword(false);
+            resetPasswordCopy();
             setSearchQuery('');
             setTimeout(() => loginInputRef.current?.select(), 100);
         }
-    }, [isOpen, initialLogin, invalidatePendingLogin]);
+    }, [isOpen, initialLogin, invalidatePendingLogin, resetPasswordCopy]);
+
+    useEffect(() => {
+        if (!password) resetPasswordCopy();
+    }, [password, resetPasswordCopy]);
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -722,10 +731,6 @@ export function LoginDialog({
             : healthStatus === 'online' ? 'Server online'
                 : healthStatus === 'offline' ? 'Server unavailable' : null;
 
-    const openTcpEndpointDialog = () => {
-        (window as unknown as { rtx5OpenTcpEndpointDialog?: () => void }).rtx5OpenTcpEndpointDialog?.();
-    };
-
     return ReactDOM.createPortal(
         <div className="rtx-login-layer">
             <div className="rtx-login-backdrop" onClick={closeDialog} />
@@ -770,29 +775,7 @@ export function LoginDialog({
 
                     {isDesktop && (
                         <div className="rtx-login-field">
-                            <div className="rtx-login-field-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                                <label htmlFor={`${dialogId}-server`} className="rtx-login-label text-[14px] leading-5 font-medium">{tr("Broker Server")}</label>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {serverStatusLabel && <span role="status" className="rtx-login-status" data-status={directoryLoading ? 'checking' : healthStatus}>{tr(serverStatusLabel)}</span>}
-                                    <button
-                                        type="button"
-                                        onClick={openTcpEndpointDialog}
-                                        title="Configure Broker Access Server — Alt+Shift+T"
-                                        style={{
-                                            padding: '2px 7px',
-                                            borderRadius: 4,
-                                            border: '1px solid rgba(52,211,153,0.35)',
-                                            background: 'rgba(15,23,42,0.8)',
-                                            color: '#6ee7b7',
-                                            fontSize: 11,
-                                            fontFamily: 'monospace',
-                                            cursor: 'pointer',
-                                        }}
-                                    >
-                                        Server
-                                    </button>
-                                </div>
-                            </div>
+                            <label htmlFor={`${dialogId}-server`} className="rtx-login-label text-[14px] leading-5 font-medium">{tr("Broker Server")}</label>
                             <div className="rtx-login-control">
                                 <Server size={17} className="rtx-login-field-icon" aria-hidden="true" />
                                 <select
@@ -890,23 +873,41 @@ export function LoginDialog({
                                 className={`rtx-login-input rtx-login-password-input${showPassword ? '' : ' rtx-secret-input'}`}
                                 placeholder={tr("Password")}
                             />
-                            <button
-                                type="button"
-                                className="rtx-login-password-toggle"
-                                aria-label={tr(showPassword ? "Hide password" : "Show password")}
-                                aria-controls={`${dialogId}-password`}
-                                aria-pressed={showPassword}
-                                title={tr(showPassword ? "Hide password" : "Show password")}
-                                disabled={loading || (isDesktop && (directoryLoading || healthStatus !== 'online'))}
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => setShowPassword((current) => !current)}
-                            >
-                                {showPassword ? (
-                                    <EyeOff size={17} aria-hidden="true" />
-                                ) : (
-                                    <Eye size={17} aria-hidden="true" />
-                                )}
-                            </button>
+                            <div className="rtx-login-password-actions">
+                                <button
+                                    type="button"
+                                    className="rtx-login-password-toggle"
+                                    aria-label={tr(showPassword ? "Hide password" : "Show password")}
+                                    aria-controls={`${dialogId}-password`}
+                                    aria-pressed={showPassword}
+                                    title={tr(showPassword ? "Hide password" : "Show password")}
+                                    disabled={loading || (isDesktop && (directoryLoading || healthStatus !== 'online'))}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => setShowPassword((current) => !current)}
+                                >
+                                    {showPassword ? (
+                                        <EyeOff size={17} aria-hidden="true" />
+                                    ) : (
+                                        <Eye size={17} aria-hidden="true" />
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`rtx-login-password-toggle${passwordCopied ? ' is-copied' : ''}`}
+                                    aria-label={passwordCopied ? tr("Copied") : `${tr("Copy")} ${tr("Password")}`}
+                                    aria-controls={`${dialogId}-password`}
+                                    title={passwordCopied ? tr("Copied") : tr("Copy")}
+                                    disabled={loading || (isDesktop && (directoryLoading || healthStatus !== 'online')) || !password}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => { void copyPassword(password); }}
+                                >
+                                    {passwordCopied ? (
+                                        <Check size={16} aria-hidden="true" />
+                                    ) : (
+                                        <Copy size={16} aria-hidden="true" />
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
 

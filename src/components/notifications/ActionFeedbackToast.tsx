@@ -15,6 +15,23 @@ import {
 export type ActionFeedbackTone = 'success' | 'warning' | 'error' | 'loss';
 export type ActionFeedbackType = 'success' | 'error';
 
+export interface ActionFeedbackExecution {
+  /** Order side for semantic color coding (BUY blue / SELL red). */
+  side?: 'BUY' | 'SELL';
+  /** Order type label such as "SELL LIMIT" or "BUY STOP". */
+  orderType?: UiMessage;
+  /** Instrument symbol such as "XAUUSD". */
+  symbol?: string;
+  /** Formatted volume such as "0.01". */
+  volume?: string;
+  /** Formatted execution or trigger price such as "3620.37". */
+  price?: string;
+  /** Broker ticket identifier without leading '#', e.g. "11076181". */
+  ticket?: string;
+  /** Optional compact state detail such as "Limit active" or "Expired". */
+  detail?: UiMessage;
+}
+
 export interface ActionFeedbackNotice {
   /** Short action or workspace name, used as the notice heading. */
   title: UiMessage;
@@ -27,6 +44,8 @@ export interface ActionFeedbackNotice {
   metaIcon?: IconName;
   /** Brief next step or clarification shown below the destination. */
   hint?: UiMessage;
+  /** Structured order-execution details for compact institutional trade slips. */
+  execution?: ActionFeedbackExecution;
   /** Where to render the notice; defaults to centered unless anchored to the chart bottom-left. */
   placement?: 'center' | 'chart-bottom-left';
   /** Captured export data for the persistent result sheet and CSV action. */
@@ -478,10 +497,28 @@ function CompactToast({ durationMs, message, notice, onDismiss, tone }: Omit<Act
   const { dismiss, exiting, paused, setHold } = useToastLifetime(activeDurationMs, onDismiss);
   const isCenteredNotice = Boolean(notice && notice.placement !== 'chart-bottom-left');
   const isChartNotice = Boolean(notice && notice.placement === 'chart-bottom-left');
+  const execution = notice?.execution;
+  const hasExecution = Boolean(
+    execution && (execution.orderType || execution.symbol || execution.volume || execution.price || execution.detail),
+  );
+  const hasDestinationChannel = Boolean(notice?.meta && notice.metaLabel);
+  const headerBadgeText = execution?.ticket
+    ? `#${execution.ticket}`
+    : notice?.meta && !notice.metaLabel
+      ? formatUiMessage(notice.meta, tr)
+      : null;
+  const showHeaderBadgeIcon = Boolean(
+    notice?.metaIcon
+    && headerBadgeText
+    && !headerBadgeText.startsWith('#')
+    && notice.metaIcon !== TONE_ICON[tone],
+  );
 
   const className = [
     'rtx-action-feedback',
     `rtx-action-feedback--${tone}`,
+    notice ? 'rtx-action-feedback--structured' : 'rtx-action-feedback--inline',
+    hasExecution ? 'rtx-action-feedback--execution' : '',
     exiting ? 'is-exiting' : '',
     paused ? 'is-paused' : '',
   ].filter(Boolean).join(' ');
@@ -511,50 +548,142 @@ function CompactToast({ durationMs, message, notice, onDismiss, tone }: Omit<Act
         role={tone === 'success' ? 'status' : 'alert'}
         style={{ '--rtx-action-feedback-duration': `${activeDurationMs}ms` } as React.CSSProperties}
       >
-        <div className="rtx-action-feedback__icon" aria-hidden="true">
-          <Icon name={TONE_ICON[tone]} size="md" />
-        </div>
+        {notice ? (
+          <>
+            <div className="rtx-action-feedback__head">
+              <div className="rtx-action-feedback__icon" aria-hidden="true">
+                <Icon name={TONE_ICON[tone]} size="sm" />
+              </div>
 
-        <div className="rtx-action-feedback__content">
-          <div className="rtx-action-feedback__meta">
-            <span className="rtx-action-feedback__status">{tone === 'success' ? tr('Completed') : tr('Failed')}</span>
-            <time className="rtx-action-feedback__time" dateTime={new Date(shownAt).toISOString()}>
-              {formatClockTime(shownAt)}
-            </time>
-          </div>
-          <div aria-level={2} className="rtx-action-feedback__title" role="heading">
-            {formatUiMessage(notice?.title ?? message, tr)}
-          </div>
-          {notice?.description && (
-            <p className="rtx-action-feedback__description">{formatUiMessage(notice.description, tr)}</p>
-          )}
-          {notice?.meta && (
-            <div className={`rtx-action-feedback__channel${notice.metaLabel ? ' is-destination' : ''}`}>
-              {notice.metaLabel && (
-                <span className="rtx-action-feedback__channel-label">
-                  {formatUiMessage(notice.metaLabel, tr)}
-                </span>
-              )}
-              <span className="rtx-action-feedback__channel-value">
-                {notice.metaIcon && <span aria-hidden="true"><Icon name={notice.metaIcon} size="xs" /></span>}
-                <span>{formatUiMessage(notice.meta, tr)}</span>
-              </span>
+              <div className="rtx-action-feedback__head-main">
+                <div aria-level={2} className="rtx-action-feedback__title" role="heading">
+                  {formatUiMessage(notice.title, tr)}
+                </div>
+                {isCenteredNotice && (
+                  <span className="rtx-action-feedback__status">
+                    {tone === 'success' ? tr('Completed') : tr('Failed')}
+                  </span>
+                )}
+              </div>
+
+              <div className="rtx-action-feedback__head-end">
+                {headerBadgeText && (
+                  <span className="rtx-action-feedback__ticket-badge">
+                    {showHeaderBadgeIcon && notice.metaIcon && (
+                      <span aria-hidden="true"><Icon name={notice.metaIcon} size="xs" /></span>
+                    )}
+                    <span>{headerBadgeText}</span>
+                  </span>
+                )}
+                <time className="rtx-action-feedback__time" dateTime={new Date(shownAt).toISOString()}>
+                  {formatClockTime(shownAt)}
+                </time>
+                <button
+                  aria-label={tr('Dismiss')}
+                  className="rtx-action-feedback__dismiss"
+                  onClick={dismiss}
+                  title={tr('Dismiss')}
+                  type="button"
+                >
+                  <Icon name="x-close" size="sm" />
+                </button>
+              </div>
             </div>
-          )}
-          {notice?.hint && (
-            <p className="rtx-action-feedback__hint">{formatUiMessage(notice.hint, tr)}</p>
-          )}
-        </div>
 
-        <button
-          aria-label={tr('Dismiss')}
-          className="rtx-action-feedback__dismiss"
-          onClick={dismiss}
-          title={tr('Dismiss')}
-          type="button"
-        >
-          <Icon name="x-close" size="sm" />
-        </button>
+            {(hasExecution || notice.description || hasDestinationChannel || notice.hint) && (
+              <div className="rtx-action-feedback__notice-body">
+                {hasExecution && execution ? (
+                  <div className="rtx-action-feedback__execution">
+                    <div className="rtx-action-feedback__exec-main">
+                      {execution.orderType && (
+                        <span
+                          className={`rtx-action-feedback__exec-type${
+                            execution.side === 'SELL'
+                              ? ' is-sell'
+                              : execution.side === 'BUY'
+                                ? ' is-buy'
+                                : ''
+                          }`}
+                        >
+                          {formatUiMessage(execution.orderType, tr)}
+                        </span>
+                      )}
+                      {execution.symbol && (
+                        <span className="rtx-action-feedback__exec-symbol">{execution.symbol}</span>
+                      )}
+                      {execution.volume && (
+                        <span className="rtx-action-feedback__exec-volume">
+                          <span>{execution.volume}</span>
+                          <span className="rtx-action-feedback__exec-unit">{tr('Lots')}</span>
+                        </span>
+                      )}
+                      {execution.detail && (
+                        <span className="rtx-action-feedback__exec-detail">
+                          {formatUiMessage(execution.detail, tr)}
+                        </span>
+                      )}
+                    </div>
+
+                    {execution.price && (
+                      <div className="rtx-action-feedback__exec-price">
+                        <span className="rtx-action-feedback__exec-at" aria-hidden="true">@</span>
+                        <span>{execution.price}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  notice.description && (
+                    <p className="rtx-action-feedback__description">
+                      {formatUiMessage(notice.description, tr)}
+                    </p>
+                  )
+                )}
+
+                {hasDestinationChannel && notice.meta && (
+                  <div className="rtx-action-feedback__channel is-destination">
+                    {notice.metaLabel && (
+                      <span className="rtx-action-feedback__channel-label">
+                        {formatUiMessage(notice.metaLabel, tr)}
+                      </span>
+                    )}
+                    <span className="rtx-action-feedback__channel-value">
+                      {notice.metaIcon && (
+                        <span aria-hidden="true"><Icon name={notice.metaIcon} size="xs" /></span>
+                      )}
+                      <span>{formatUiMessage(notice.meta, tr)}</span>
+                    </span>
+                  </div>
+                )}
+
+                {notice.hint && (
+                  <p className="rtx-action-feedback__hint">{formatUiMessage(notice.hint, tr)}</p>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="rtx-action-feedback__icon" aria-hidden="true">
+              <Icon name={TONE_ICON[tone]} size="sm" />
+            </div>
+
+            <div className="rtx-action-feedback__content">
+              <div aria-level={2} className="rtx-action-feedback__title" role="heading">
+                {formatUiMessage(message, tr)}
+              </div>
+            </div>
+
+            <button
+              aria-label={tr('Dismiss')}
+              className="rtx-action-feedback__dismiss"
+              onClick={dismiss}
+              title={tr('Dismiss')}
+              type="button"
+            >
+              <Icon name="x-close" size="sm" />
+            </button>
+          </>
+        )}
 
         <span className="rtx-action-feedback__lifetime" aria-hidden="true" />
       </section>

@@ -1,7 +1,8 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
-import { useId, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff } from 'lucide-react';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { useDialogFocusScope } from '../hooks/useDialogFocusScope';
 import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { ApiError } from '../api/client';
@@ -25,7 +26,13 @@ interface PasswordFieldProps {
 function PasswordField({ id, label, value, onChange, placeholder, inputRef }: PasswordFieldProps) {
     const tr = useUiTranslation();
     const [visible, setVisible] = useState(false);
+    const { copied, copy, reset } = useCopyFeedback();
     const toggleLabel = `${visible ? tr('Hide password') : tr('Show password')}: ${label}`;
+    const copyLabel = `${copied ? tr('Copied') : tr('Copy')}: ${label}`;
+
+    useEffect(() => {
+        if (!value) reset();
+    }, [value, reset]);
 
     return (
         <div className="space-y-1">
@@ -41,21 +48,35 @@ function PasswordField({ id, label, value, onChange, placeholder, inputRef }: Pa
                     autoCapitalize="none"
                     value={value}
                     onChange={event => onChange(event.target.value)}
-                    className={`${visible ? '' : 'rtx-secret-input '}w-full bg-[#0d0d11] border border-zinc-700 rounded pl-3 pr-10 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600`}
+                    className={`${visible ? '' : 'rtx-secret-input '}w-full bg-[#0d0d11] border border-zinc-700 rounded pl-3 pr-[4.5rem] py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600`}
                     placeholder={placeholder}
                 />
-                <button
-                    type="button"
-                    aria-label={toggleLabel}
-                    aria-controls={id}
-                    aria-pressed={visible}
-                    title={toggleLabel}
-                    className="absolute inset-y-0 right-1 flex w-8 items-center justify-center rounded text-zinc-400 hover:text-zinc-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                    onMouseDown={event => event.preventDefault()}
-                    onClick={() => setVisible(current => !current)}
-                >
-                    {visible ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
-                </button>
+                <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                    <button
+                        type="button"
+                        aria-label={toggleLabel}
+                        aria-controls={id}
+                        aria-pressed={visible}
+                        title={toggleLabel}
+                        className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:text-zinc-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => setVisible(current => !current)}
+                    >
+                        {visible ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+                    </button>
+                    <button
+                        type="button"
+                        aria-label={copyLabel}
+                        aria-controls={id}
+                        title={copied ? tr('Copied') : tr('Copy')}
+                        disabled={!value}
+                        className={`flex h-7 w-7 items-center justify-center rounded transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-40 disabled:cursor-not-allowed ${copied ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'}`}
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void copy(value); }}
+                    >
+                        {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                    </button>
+                </div>
             </div>
         </div>
     );

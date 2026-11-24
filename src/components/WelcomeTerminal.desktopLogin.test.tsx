@@ -473,4 +473,38 @@ describe('desktop broker directory login', () => {
     await waitFor(() => expect(runtime.login).toHaveBeenCalledOnce());
     await waitFor(() => expect(onLogin).toHaveBeenCalledOnce());
   });
+
+  it('toggles password visibility and copies the entered password on the login screen', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(<WelcomeTerminal onLogin={vi.fn()} />);
+      await waitFor(() => expect(loginButton()).toBeEnabled());
+
+      const passwordInput = screen.getByLabelText('Password', { selector: 'input' });
+      const showButton = screen.getByRole('button', { name: 'Show password' });
+      const copyButton = screen.getByRole('button', { name: 'Copy Password' });
+
+      expect(passwordInput).toHaveClass('rtx-secret-input');
+      expect(copyButton).toBeDisabled();
+
+      fireEvent.change(passwordInput, { target: { value: 'WelcomePass1!' } });
+      expect(copyButton).toBeEnabled();
+
+      fireEvent.click(showButton);
+      expect(passwordInput).not.toHaveClass('rtx-secret-input');
+      expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true');
+
+      fireEvent.click(copyButton);
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('WelcomePass1!'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument());
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
 });

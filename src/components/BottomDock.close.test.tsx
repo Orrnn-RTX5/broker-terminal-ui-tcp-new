@@ -40,7 +40,8 @@ vi.mock('../features/bottom-dock/exposure/ExposureTab', () => ({ ExposureTab: ()
 vi.mock('../features/bottom-dock/toolbox/ToolboxTab', () => ({ ToolboxTab: () => null }));
 vi.mock('./HistoryDownloader', () => ({ HistoryDownloader: () => null }));
 vi.mock('./layout/JournalTab', () => ({ JournalTab: () => null }));
-vi.mock('./layout/NewsTab', () => ({ NewsTab: () => null }));
+vi.mock('./layout/NewsTab', () => ({ NewsTab: () => <div data-testid="mock-news-tab" /> }));
+vi.mock('./layout/CompanyTab', () => ({ CompanyTab: () => <div data-testid="mock-company-tab" /> }));
 
 const TAB_LABELS = [
     'Trade',
@@ -123,16 +124,16 @@ describe('Toolbox header close control', () => {
         }
 
         expect(sectionsClosed).toBe(7);
-        expect(openSpy).toHaveBeenCalledWith('https://orrnn.com', '_blank', 'noopener,noreferrer');
+        expect(openSpy).not.toHaveBeenCalled();
         expect(onCloseBulk).not.toHaveBeenCalled();
         expect(onClosePosition).not.toHaveBeenCalled();
         expect(onModifyPosition).not.toHaveBeenCalled();
         expect(onCancelOrder).not.toHaveBeenCalled();
     });
 
-    it('removes Historical Data, Articles, Code Base, and Experts, opens orrnn.com on Company click, and unlocks News while Mailbox/Calendar/Alerts stay locked', () => {
+    it('removes Historical Data, Articles, Code Base, and Experts, opens Company in-app like News, and keeps Mailbox/Calendar/Alerts locked', async () => {
         const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
-        render(
+        const { container } = render(
             <BottomDock
                 height={300}
                 onClosePosition={vi.fn()}
@@ -159,13 +160,28 @@ describe('Toolbox header close control', () => {
             fireEvent.click(tab);
         }
 
+        const contentArea = container.querySelector<HTMLElement>('.rtx-bottom-dock__content')!;
         expect(screen.getByRole('button', { name: /^News/ })).toBeEnabled();
+        expect(within(contentArea).queryByTestId('mock-company-tab')).toBeNull();
+
         const companyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
         expect(companyTab).toBeEnabled();
-        fireEvent.click(companyTab);
-        expect(openSpy).toHaveBeenCalledWith('https://orrnn.com', '_blank', 'noopener,noreferrer');
+        await act(async () => { fireEvent.click(companyTab); });
 
-        expect(screen.getByRole('button', { name: 'Trade — Open positions and live account summary' })).toHaveClass('active-tab');
+        expect(openSpy).not.toHaveBeenCalled();
+        expect(companyTab).toHaveClass('active-tab');
+        const companyContent = await within(contentArea).findByTestId('mock-company-tab');
+        expect(companyContent.parentElement).not.toHaveAttribute('hidden');
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'News — Market news messages' }));
+        });
+        expect(screen.getByRole('button', { name: 'News — Market news messages' })).toHaveClass('active-tab');
+        expect(companyContent.parentElement).toHaveAttribute('hidden');
+        const newsContent = await within(contentArea).findByTestId('mock-news-tab');
+        expect(newsContent.parentElement).not.toHaveAttribute('hidden');
+        expect(newsContent.parentElement?.parentElement).toBe(companyContent.parentElement?.parentElement);
+
         fireEvent.click(screen.getByRole('button', { name: 'Journal — Terminal logs and connection events' }));
         expect(screen.getByRole('button', { name: 'Journal — Terminal logs and connection events' })).toHaveClass('active-tab');
 
