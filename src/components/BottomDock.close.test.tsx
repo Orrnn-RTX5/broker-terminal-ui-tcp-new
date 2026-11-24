@@ -245,7 +245,7 @@ describe('Toolbox header close control', () => {
         expect(tradeTab).toHaveClass('active-tab');
     });
 
-    it('redirects Company to a new page in desktop .exe runtime, while keeping web-tcp embedded in-app', async () => {
+    it('embeds Company in-app (iframe pane, no new window) in both the web terminal and the desktop .exe runtime', async () => {
         const w = window as unknown as {
             rtx5Electron?: { isDesktop?: boolean; platform?: string };
             electronAPI?: { isDesktop?: boolean; platform?: string };
@@ -270,7 +270,7 @@ describe('Toolbox header close control', () => {
             expect(await screen.findByTestId('mock-company-tab')).toBeInTheDocument();
             webView.unmount();
 
-            // 2. Desktop .exe (clientcore platform='win32'): redirects Company to a new page and keeps active tab.
+            // 2. Desktop .exe (clientcore platform='win32'): Company also stays in-app (iframe pane), never a new window.
             w.rtx5Electron = { isDesktop: true, platform: 'win32' };
             w.electronAPI = { isDesktop: true, platform: 'win32' };
             sessionStorage.setItem(SESSION_VIEW_KEYS.bottomDockTab, 'Company');
@@ -283,19 +283,23 @@ describe('Toolbox header close control', () => {
             );
             const tradeTab = screen.getByRole('button', { name: 'Trade — Open positions and live account summary' });
             const exeCompanyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
+            // A restored Company selection is kept on the desktop too.
+            expect(exeCompanyTab).toHaveClass('active-tab');
+            expect(await screen.findByTestId('mock-company-tab')).toBeInTheDocument();
+
+            await act(async () => { fireEvent.click(tradeTab); });
             expect(tradeTab).toHaveClass('active-tab');
-            expect(screen.queryByTestId('mock-company-tab')).toBeNull();
 
             await act(async () => { fireEvent.click(exeCompanyTab); });
-            expect(openSpy).toHaveBeenCalledTimes(1);
-            expect(openSpy).toHaveBeenCalledWith('https://orrnn.com/', '_blank', 'noopener,noreferrer');
-            expect(tradeTab).toHaveClass('active-tab');
-            expect(exeCompanyTab).not.toHaveClass('active-tab');
-            expect(screen.queryByTestId('mock-company-tab')).toBeNull();
+            expect(exeCompanyTab).toHaveClass('active-tab');
+            expect(tradeTab).not.toHaveClass('active-tab');
 
-            window.dispatchEvent(new CustomEvent('rtx:open-bottom-dock-tab', { detail: { tab: 'Company' } }));
-            expect(openSpy).toHaveBeenCalledTimes(2);
-            expect(tradeTab).toHaveClass('active-tab');
+            await act(async () => { fireEvent.click(tradeTab); });
+            await act(async () => {
+                window.dispatchEvent(new CustomEvent('rtx:open-bottom-dock-tab', { detail: { tab: 'Company' } }));
+            });
+            expect(exeCompanyTab).toHaveClass('active-tab');
+            expect(openSpy).not.toHaveBeenCalled();
             exeView.unmount();
         } finally {
             delete w.rtx5Electron;
