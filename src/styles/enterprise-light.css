@@ -1718,19 +1718,16 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-desktop-menu-bar,
   line-height: 18px !important;
 }
 
-/* Open positions follow MT5 desktop alternating row shading (#ebebeb / #ffffff)
+/* Open positions follow MT5 desktop alternating row shading (#ffffff / #ebebeb)
    and share Market Watch's selection highlight. */
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row,
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(even) {
-  background: var(--rtx-light-panel) !important;
-}
-
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected)[data-row-parity="even"] {
-  background: var(--rtx-light-panel) !important;
-}
-
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected)[data-row-parity="odd"],
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):not([data-row-parity]):nth-child(odd) {
+  background: var(--rtx-light-panel) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected)[data-row-parity="even"],
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-table tbody tr.rtx-trade-row:not(.rtx-trade-row--selected):nth-child(even) {
   background: var(--rtx-toolbox-row-alt, #ebebeb) !important;
 }
 

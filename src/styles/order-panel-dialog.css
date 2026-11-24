@@ -717,24 +717,55 @@
 .rtx-order-dialog__price-summary {
   --rtx-type-size: 11px;
   --rtx-type-weight: 500;
-  align-items: center;
+  align-items: stretch;
   background: color-mix(in srgb, var(--bg-primary) 55%, var(--bg-secondary));
   border: 1px solid var(--border-primary);
   border-radius: 4px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 4px;
   padding: 5px 8px;
 }
 
-.rtx-order-dialog__spread-meta {
+.rtx-order-dialog__summary-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+  width: 100%;
+}
+
+.rtx-order-dialog__summary-row--range {
+  border-top: 1px solid color-mix(in srgb, var(--border-primary) 75%, transparent);
+  padding-top: 3.5px;
+}
+
+.rtx-order-dialog__spread-meta,
+.rtx-order-dialog__range-item {
   --rtx-type-size: 11px;
   --rtx-type-weight: 500;
+  align-items: baseline;
   color: var(--order-supporting-text);
+  display: inline-flex;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  gap: 3px;
   line-height: 1.25;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rtx-order-dialog__summary-key {
+  color: var(--order-supporting-text);
+  font-weight: 400;
+}
+
+.rtx-order-dialog__summary-val {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .rtx-order-dialog__mt5-quote {
@@ -742,6 +773,7 @@
   --rtx-type-size: 11px;
   --rtx-type-weight: 600;
   color: var(--text-primary);
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1529,113 +1561,482 @@ html.theme-light .rtx-order-dialog .rtx-order-dialog__chart-type-item--active {
   opacity: 0.45;
 }
 
-/* ─── Light Theme Overrides ──────────────────────────────────── */
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog-backdrop {
+/* ─── Light Theme Overrides (Mirrors Dark Theme 4-Pane Layout & Visual Hierarchy) ─── */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog-backdrop {
   background: rgba(15, 23, 42, 0.28);
   backdrop-filter: none;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog {
-  --order-ask: var(--rtx-light-quote-up);
-  --order-bid: var(--color-loss);
-  --order-buy-action: var(--rtx-light-buy);
-  --order-sell-action: var(--rtx-light-sell);
-  --order-chart-axis-surface: var(--rtx-light-panel-header);
-  --order-control-bg: var(--rtx-light-field);
-  --order-supporting-text: var(--rtx-light-text-muted);
-  --order-sidebar-bg: var(--rtx-light-panel-subtle);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog {
+  --order-ask: #2563eb;
+  --order-bid: #dc2626;
+  --order-buy-action: #3b82f6;
+  --order-sell-action: #ef4444;
+  --order-chart-axis-surface: #f8fafc;
+  --order-control-bg: #ffffff;
+  --order-supporting-text: #475569;
+  --order-sidebar-bg: #f4f6f9;
+  --rtx-ui-font-size: 11px;
+  --rtx-font-weight-body: 400;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 5px !important;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.05) !important;
+  color: #0f172a !important;
+  width: auto !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__content .rtx-order-dialog__form {
-  background: var(--rtx-light-elevated) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__header {
+  background: #f8fafc !important;
+  background-color: #f8fafc !important;
+  background-image: none !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog :is(.rtx-order-dialog__header, .rtx-order-dialog__chart-toolbar, .rtx-order-dialog__dom-toolbar) {
-  background: var(--rtx-light-panel-header) !important;
-  border-color: var(--rtx-light-border) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__title {
+  --rtx-ui-font-size: 11px;
+  --rtx-font-weight-body: 500;
+  color: #334155 !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__content :is(.rtx-order-dialog__chart, .rtx-order-dialog__dom) {
-  background: var(--rtx-light-chart) !important;
-  border-color: var(--rtx-light-border) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__close {
+  color: #64748b !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__title {
-  color: var(--rtx-light-text) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__close:hover {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #dc2626 !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__label {
-  color: var(--rtx-light-text-secondary) !important;
+/* Column 1: Left Mode Sidebar */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__sidebar {
+  background: #f4f6f9 !important;
+  border-right: 1px solid #e2e8f0 !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__close {
-  color: var(--rtx-light-text-muted) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mode-btn {
+  background: transparent !important;
+  border-left-color: transparent !important;
+  color: #64748b !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__close:hover {
-  background: var(--color-loss-dimmer) !important;
-  color: var(--color-loss) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mode-btn:hover {
+  background: rgba(15, 23, 42, 0.04) !important;
+  color: #0f172a !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog :is(.rtx-order-dialog__control, .rtx-order-dialog__volume-control) {
-  background: var(--rtx-light-field) !important;
-  border-color: var(--rtx-light-control-border) !important;
-  color: var(--rtx-light-text) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mode-btn--active {
+  --rtx-font-weight-body: 500;
+  background: #ffffff !important;
+  border-left-color: #2563eb !important;
+  color: #0f172a !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__volume-input {
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mode-text {
+  --rtx-ui-font-size: 10.5px;
+}
+
+/* Column 2: Main Order Form */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__content .rtx-order-dialog__form {
+  background: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__hero-bar {
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__hero-title {
+  --rtx-ui-font-size: 11.5px;
+  --rtx-font-weight-body: 500;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__hero-icon-btn {
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__hero-icon-btn:hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__hero-icon-btn--active {
+  background: #eff6ff !important;
+  border-color: #60a5fa !important;
+  color: #2563eb !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__instrument-name {
+  --rtx-ui-font-size: 10.5px;
+  --rtx-font-weight-body: 500;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__instrument-change {
+  --rtx-ui-font-size: 9.5px;
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__spread-pill-label {
+  --rtx-ui-font-size: 8.5px;
+  --rtx-font-weight-body: 600;
+  color: #64748b !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__spread-pill-val {
+  --rtx-ui-font-size: 9.5px;
+  --rtx-font-weight-body: 600;
+  color: #059669 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mt5-fields {
+  border-top-color: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__label {
+  --rtx-ui-font-size: 10.5px;
+  color: #475569 !important;
+  line-height: 18px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__control, .rtx-order-dialog__volume-control) {
+  --rtx-ui-font-size: 10.5px;
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 3px !important;
+  color: #0f172a !important;
+  line-height: 18px !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__volume-input {
+  --rtx-ui-font-size: 10.5px;
   background: transparent !important;
   border: 0 !important;
-  color: var(--rtx-light-text) !important;
+  color: #0f172a !important;
+  line-height: 18px !important;
   box-shadow: none !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog :is(.rtx-order-dialog__control, .rtx-order-dialog__volume-control):hover {
-  border-color: var(--rtx-light-control-border-hover) !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__spinner {
+  background: #f1f5f9 !important;
+  border-left: 1px solid #cbd5e1 !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__control:focus,
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog .rtx-order-dialog__volume-control:focus-within {
-  border-color: var(--rtx-light-accent) !important;
-  outline: 2px solid var(--rtx-light-accent) !important;
-  outline-offset: 2px;
-  box-shadow: none !important;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__spinner-button {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action:not(:disabled) {
-  color: #ffffff;
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__spinner-button:hover:not(:disabled) {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__control, .rtx-order-dialog__volume-control):hover {
+  border-color: #94a3b8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__control:focus,
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__volume-control:focus-within {
+  border-color: #2563eb !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__contract-units {
+  --rtx-ui-font-size: 10px;
+  color: #334155 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__fill-tab {
+  --rtx-ui-font-size: 9.5px;
+  background: transparent !important;
+  border-radius: 0 !important;
+  color: #64748b !important;
+  line-height: 1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__fill-tab:hover {
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__fill-tab--active {
+  --rtx-font-weight-body: 500;
+  border-bottom-color: #2563eb !important;
+  color: #0f172a !important;
+}
+
+/* Bottom SELL / BUY Cards, Sentiment Bar & Spread Summary */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__bottom-actions {
+  border-top-color: #e2e8f0 !important;
+  gap: 5px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action:not(:disabled) {
+  color: #ffffff !important;
   filter: none;
   box-shadow: none;
+  line-height: 1.1 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--buy:not(:disabled) {
-  background: var(--order-buy-action);
-  border-color: var(--order-buy-action);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action:not(:disabled) :is(span, .rtx-order-dialog__action-card-label, .rtx-order-dialog__action-card-side-tag, .rtx-order-dialog__action-card-price, .rtx-order-dialog__action-card-prefix, .rtx-order-dialog__action-card-pips) {
+  color: #ffffff !important;
+  line-height: 1.05 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--sell:not(:disabled) {
-  background: var(--order-sell-action);
-  border-color: var(--order-sell-action);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__action-card-label {
+  --rtx-ui-font-size: 9px;
+  --rtx-font-weight-body: 700;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--buy:hover:not(:disabled) {
-  background: var(--rtx-light-buy-hover);
-  border-color: var(--rtx-light-buy-hover);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__action-card-side-tag {
+  --rtx-ui-font-size: 7.5px;
+  --rtx-font-weight-body: 600;
+  background: rgba(0, 0, 0, 0.18) !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--sell:hover:not(:disabled) {
-  background: var(--rtx-light-sell-hover);
-  border-color: var(--rtx-light-sell-hover);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__action-card-price, .rtx-order-dialog__action-card-prefix) {
+  --rtx-ui-font-size: 11px;
+  --rtx-font-weight-body: 600;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--buy:active:not(:disabled) {
-  background: var(--rtx-light-buy-pressed);
-  border-color: var(--rtx-light-buy-pressed);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__action-card-pips {
+  --rtx-ui-font-size: 12.5px;
+  --rtx-font-weight-body: 700;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--sell:active:not(:disabled) {
-  background: var(--rtx-light-sell-pressed);
-  border-color: var(--rtx-light-sell-pressed);
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--sell:not(:disabled) {
+  background: #ff5252 !important;
+  border-color: #ef4444 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--sell:hover:not(:disabled) {
+  background: #ef4444 !important;
+  border-color: #dc2626 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--sell:active:not(:disabled) {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--buy:not(:disabled) {
+  background: #3f91ff !important;
+  border-color: #2563eb !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--buy:hover:not(:disabled) {
+  background: #2b7fff !important;
+  border-color: #1d4ed8 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog__action--buy:active:not(:disabled) {
+  background: #2563eb !important;
+  border-color: #1e40af !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__sentiment-strip, .rtx-order-dialog__sentiment-sell, .rtx-order-dialog__sentiment-buy) {
+  --rtx-ui-font-size: 8.5px;
+  --rtx-font-weight-body: 600;
+  height: 12px !important;
+  line-height: 1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__sentiment-sell {
+  background: linear-gradient(90deg, #b91c1c 0%, #ef4444 100%) !important;
+  color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__sentiment-buy {
+  background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__price-summary {
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__summary-row--range {
+  border-top-color: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__spread-meta, .rtx-order-dialog__range-item, .rtx-order-dialog__summary-key) {
+  --rtx-ui-font-size: 9.5px;
+  color: #64748b !important;
+  line-height: 1.2 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__summary-val {
+  --rtx-ui-font-size: 9.5px;
+  --rtx-font-weight-body: 500;
+  color: #0f172a !important;
+  line-height: 1.2 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__mt5-quote {
+  --rtx-ui-font-size: 9.5px;
+  --rtx-font-weight-body: 600;
+  color: #0f172a !important;
+  line-height: 1.2 !important;
+}
+
+/* Column 3 & 4: Mini Chart & Depth of Market Panes */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__content :is(.rtx-order-dialog__chart, .rtx-order-dialog__dom) {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__chart-toolbar, .rtx-order-dialog__dom-toolbar) {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__toolbar-btn, .rtx-order-dialog__chart-type-btn) {
+  background: transparent !important;
+  color: #475569 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__toolbar-btn:hover, .rtx-order-dialog__chart-type-btn:hover, .rtx-order-dialog__chart-type-btn--open) {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__toolbar-sep {
+  background: #cbd5e1 !important;
+}
+
+/* Column 4: Depth of Market Table (Volume | Price | Trade) */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-table-wrap {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-table {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 400;
+  background: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-table thead th {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 500;
+  background: #f8fafc !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  border-right: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  line-height: 1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-table thead th:last-child {
+  border-right: 0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-row td {
+  --rtx-ui-font-size: 10px;
+  border-bottom: 1px solid #e2e8f0 !important;
+  border-right: 1px solid #cbd5e1 !important;
+  line-height: 1 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-row td:last-child {
+  border-right: 0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-row--best-ask td {
+  border-bottom: 1px solid #64748b !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-vol {
+  background: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-bar--ask {
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.34), rgba(220, 38, 38, 0.16)) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-bar--bid {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.32), rgba(37, 99, 235, 0.16)) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-vol-text {
+  --rtx-ui-font-size: 10px;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-price--ask {
+  --rtx-font-weight-body: 500;
+  background: #b92b32 !important;
+  color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-price--bid {
+  --rtx-font-weight-body: 500;
+  background: #2251b8 !important;
+  color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-trade {
+  background: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-chevron {
+  --rtx-ui-font-size: 10px;
+  --rtx-font-weight-body: 600;
+  background: transparent !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-chevron--sell {
+  border-right: 1px solid #e2e8f0 !important;
+  color: #dc2626 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-chevron--buy {
+  color: #2563eb !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-chevron:hover {
+  background: rgba(15, 23, 42, 0.06) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-box,
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-positions {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-step {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-btn {
+  color: #ffffff !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-btn--sell {
+  background: #ef4444 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-btn--close {
+  background: #64748b !important;
+  border-color: #475569 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__dom-oct-btn--buy {
+  background: #3b82f6 !important;
 }
 
 @keyframes rtx-order-progress {
@@ -1992,26 +2393,30 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__action--sell:a
   }
 
   .rtx-order-dialog__price-summary {
-    --rtx-type-size: 9px;
-    flex-wrap: nowrap;
-    gap: 4px;
-    overflow: hidden;
-    padding: 2.5px 5px;
+    --rtx-ui-font-size: 9.5px;
+    --rtx-type-size: 9.5px;
+    gap: 3px;
+    padding: 3.5px 6px;
   }
 
-  .rtx-order-dialog__spread-meta {
-    --rtx-type-size: 9px;
-    font-size: 9px !important;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .rtx-order-dialog__summary-row--range {
+    padding-top: 3px;
+  }
+
+  .rtx-order-dialog__spread-meta,
+  .rtx-order-dialog__range-item,
+  .rtx-order-dialog__summary-key,
+  .rtx-order-dialog__summary-val {
+    --rtx-ui-font-size: 9.5px;
+    --rtx-type-size: 9.5px;
+    font-size: 9.5px !important;
   }
 
   .rtx-order-dialog__mt5-quote {
-    --rtx-type-size: 9px;
+    --rtx-ui-font-size: 9.5px;
+    --rtx-type-size: 9.5px;
     flex-shrink: 0;
-    font-size: 9px !important;
+    font-size: 9.5px !important;
   }
 
   /* Column 3: Right Candlestick + Tick Chart Pane (Compact Laptop Width) */

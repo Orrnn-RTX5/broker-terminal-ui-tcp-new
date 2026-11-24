@@ -106,9 +106,9 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
     expect(lightTypographyCss).not.toContain('.rtx-market-watch__symbol-count');
   });
 
-  it('applies MT5 #ffffff headers, #ebebeb/#ffffff alternating rows, #d2d2d2 dividers, #0078d7 selection, #c8c8c8 summary bar, and #f0f0f0/#ffffff bottom tabs across Trade to Journal', () => {
+  it('applies MT5 #ffffff headers, #ffffff/#ebebeb alternating rows, #a0a0a0/#c8c8c8 dividers, #0078d7 selection, bold #c8c8c8 summary bar, and #f0f0f0/#ffffff bottom tabs with #696969 separators across Trade to Close All', () => {
     expect(mt5SurfacesCss).toMatch(
-      /html:root:is\(\.rtx-advanced-view\.rtx-skin-untitled-light, \.rtx-skin-untitled-light, \.theme-light\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-row:\s*#ffffff;[\s\S]*?--rtx-toolbox-row-alt:\s*#ebebeb;[\s\S]*?--rtx-toolbox-selected:\s*#0078d7;[\s\S]*?--rtx-toolbox-summary:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-tabs:\s*#f0f0f0;[\s\S]*?--rtx-toolbox-border-header:\s*#b0b0b0;[\s\S]*?--rtx-toolbox-border-grid:\s*#d2d2d2;[\s\S]*?--rtx-toolbox-profit:\s*#0000ff;[\s\S]*?--rtx-toolbox-loss:\s*#ea3323;/,
+      /html:root:is\(\.rtx-advanced-view\.rtx-skin-untitled-light, \.rtx-skin-untitled-light, \.theme-light\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-row:\s*#ffffff;[\s\S]*?--rtx-toolbox-row-alt:\s*#ebebeb;[\s\S]*?--rtx-toolbox-selected:\s*#0078d7;[\s\S]*?--rtx-toolbox-summary:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-tabs:\s*#f0f0f0;[\s\S]*?--rtx-toolbox-border-header:\s*#a0a0a0;[\s\S]*?--rtx-toolbox-border-grid:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-border-tab:\s*#696969;[\s\S]*?--rtx-toolbox-tab-divider:\s*#696969;[\s\S]*?--rtx-toolbox-profit:\s*#0000ff;[\s\S]*?--rtx-toolbox-loss:\s*#ea3323;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-font-weight-body:\s*300;/,
     );
     for (const rowClass of [
       '.rtx-trade-row',
@@ -120,7 +120,7 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
       expect(mt5SurfacesCss).toContain(rowClass);
     }
     expect(mt5SurfacesCss).toMatch(
-      /:is\(\[data-row-parity='odd'\], :not\(\[data-row-parity\]\):nth-child\(odd\)\)\s*\{[\s\S]*?background:\s*var\(--rtx-toolbox-row-alt\) !important;/,
+      /:is\(\[data-row-parity='even'\], :not\(\[data-row-parity\]\):nth-child\(even\)\)\s*\{[\s\S]*?background:\s*var\(--rtx-toolbox-row-alt\) !important;/,
     );
     expect(mt5SurfacesCss).toMatch(
       /td\.rtx-history-cell--tp-hit \{[\s\S]*?background:\s*#60f060 !important;[\s\S]*?color:\s*#000000 !important;/,
@@ -132,13 +132,16 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
       /\.rtx-history-summary-bar :is\(\s*\.rtx-history-summary-table,[\s\S]*?background:\s*transparent !important;/,
     );
     expect(enterpriseLightCss).toMatch(
-      /\.rtx-trade-table tbody tr\.rtx-trade-row:not\(\.rtx-trade-row--selected\)\[data-row-parity="odd"\][\s\S]*?background:\s*var\(--rtx-toolbox-row-alt, #ebebeb\) !important;/,
+      /\.rtx-trade-table tbody tr\.rtx-trade-row:not\(\.rtx-trade-row--selected\)\[data-row-parity="even"\][\s\S]*?background:\s*var\(--rtx-toolbox-row-alt, #ebebeb\) !important;/,
     );
     expect(enterpriseLightCss).toMatch(/\.rtx-exposure-account-bar \{\s*display:\s*flex;\s*\}/);
     expect(enterpriseLightCss).toContain('.rtx-trade-sl-value.text-zinc-100');
     expect(indexCss).toContain('.rtx-trade-sl-value.text-zinc-100');
     expect(mt5SurfacesCss).toMatch(
-      /\.rtx-bottom-dock :is\(\s*\.rtx-trade-footer,\s*\.rtx-history-summary-bar,\s*\.rtx-exposure-account-bar\s*\) \{[\s\S]*?background:\s*var\(--rtx-toolbox-summary, #c8c8c8\) !important;/,
+      /\.rtx-bottom-dock :is\(\s*\.rtx-trade-footer,\s*\.rtx-history-summary-bar,\s*\.rtx-exposure-account-bar\s*\) \{[\s\S]*?--rtx-font-weight-body:\s*700;[\s\S]*?background:\s*var\(--rtx-toolbox-summary, #c8c8c8\) !important;[\s\S]*?font-weight:\s*700 !important;/,
+    );
+    expect(lightTypographyCss).toMatch(
+      /\.rtx-bottom-dock__tabs :is\([\s\S]*?\)::after \{[\s\S]*?top:\s*50%(?: !important)?;[\s\S]*?right:\s*0;[\s\S]*?height:\s*11px(?: !important)?;[\s\S]*?transform:\s*translateY\(-50%\);/,
     );
     expect(mt5SurfacesCss).toContain("tr.rtx-exposure-row[aria-selected='true'] .rtx-exposure-asset-badge");
     expect(mt5SurfacesCss).toContain("tr.rtx-pending-order-row[aria-selected='true'] .rtx-pending-row-btn");

@@ -398,19 +398,19 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light [data-dock-panel-component='
 }
 
 /* Paint the top separator behind the tabs. The selected tab covers that line
-   to join the shared panel above, with an MT5 #a0a0a0 outline on the other sides. */
+   to join the shared panel above, with an MT5 crisp outline on the other sides. */
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs {
   --rtx-light-ui-font-size: var(--rtx-light-toolbox-tab-size);
   --rtx-light-ui-font-weight: var(--rtx-light-weight-body);
   --rtx-light-control-line-height: var(--rtx-ui-line-height);
-  --rtx-dock-tab-strip-height: calc(var(--rtx-light-control-line-height) + 7px);
+  --rtx-dock-tab-strip-height: calc(var(--rtx-light-control-line-height) + 6px);
   height: var(--rtx-dock-tab-strip-height) !important;
   min-height: var(--rtx-dock-tab-strip-height) !important;
   max-height: var(--rtx-dock-tab-strip-height) !important;
   flex-shrink: 0;
   flex-wrap: nowrap;
   gap: 0;
-  padding: 0 4px 4px 4px !important;
+  padding: 0 4px 0 0 !important;
   border: 0 !important;
   background: var(--rtx-toolbox-tabs, #f0f0f0) !important;
   box-shadow: none !important;
@@ -423,8 +423,8 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs::befo
   left: 0;
   right: 0;
   z-index: 1;
-  height: 1px;
-  background: var(--rtx-toolbox-border-tab, #a0a0a0);
+  height: var(--rtx-toolbox-line-width, 1px);
+  background: var(--rtx-toolbox-border-tab, #696969);
   pointer-events: none;
 }
 
@@ -465,15 +465,18 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs :is(
   .rtx-dock-tab-scroller .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)),
-  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)):not(:last-child)
+  .rtx-dock-tab-scroller .rtx-dock-tab:last-child:not(.active-tab),
+  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab))
 )::after {
   content: '';
   position: absolute;
-  top: 5px;
+  top: 50% !important;
   right: 0;
-  bottom: 5px;
+  bottom: auto !important;
+  height: 11px !important;
+  transform: translateY(-50%);
   width: 1px;
-  background: var(--rtx-toolbox-tab-divider, #c0c0c0);
+  background: var(--mw-desktop-grid, #c8c8c8) !important;
   opacity: 1;
   pointer-events: none;
 }
@@ -484,6 +487,9 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs:has(.
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
   background: #e4e4e4 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
@@ -493,8 +499,14 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-
   height: 100% !important;
   background: var(--rtx-toolbox-row, #ffffff) !important;
   border: 1px solid var(--rtx-toolbox-border-tab, #a0a0a0) !important;
+  border-width: var(--rtx-toolbox-line-width, 1px) !important;
   border-top: 0 !important;
+  border-bottom: 0 !important;
   color: var(--rtx-toolbox-text, #000000) !important;
+}
+
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab-scroller .rtx-dock-tab:first-child.active-tab {
+  border-left: 0 !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):active {
@@ -503,8 +515,17 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-
   height: 100% !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-bottom-dock__tabs .rtx-dock-tab:focus-visible {
-  outline-offset: -3px;
+html:root.rtx-advanced-view.rtx-skin-untitled-light :is(
+  .rtx-bottom-dock__tabs .rtx-dock-tab,
+  .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-bulk-close,
+  .rtx-bottom-dock .rtx-trade-subtab-btn,
+  .rtx-bottom-dock .rtx-history-time-btn,
+  .rtx-bottom-dock .rtx-journal-time-btn,
+  .rtx-market-watch__view-tabs button
+):is(:focus, :focus-visible) {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud {
@@ -512,13 +533,12 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-hud {
   flex-wrap: wrap;
 }
 
-/* Grow fixed form chrome so two text lines and longer labels remain visible. */
+/* Keep the light Order dialog tightly sized to its 4-pane flex layout (matching Dark Theme). */
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog {
-  width: 880px;
+  width: auto;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__content {
-  grid-template-columns: minmax(0, 1fr) minmax(370px, 410px);
   overflow-y: auto;
 }
 
@@ -527,16 +547,6 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__chart-hea
   min-height: 66px;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__field {
-  grid-template-columns: 96px minmax(0, 1fr);
-}
-
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog :is(
-  .rtx-order-dialog__control, .rtx-order-dialog__volume-control
-) {
-  height: 36px;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-oct {
@@ -553,12 +563,6 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-price-badge span 
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-chart-crosshair-label {
   line-height: 1.5 !important;
-}
-
-@media (max-width: 720px) {
-  html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-order-dialog__content {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* Nested menu labels and shortcuts share one row at each reading size.

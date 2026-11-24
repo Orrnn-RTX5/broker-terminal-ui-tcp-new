@@ -3274,28 +3274,43 @@ export function OrderPanelDialog({
                 className="rtx-order-dialog__price-summary"
                 aria-label={tr("Bid {{value0}}, Ask {{value1}}", { value0: formatDialogPrice(bid, specDigits), value1: formatDialogPrice(ask, specDigits) })}
               >
-                <span className="rtx-order-dialog__spread-meta">
-                  {tr("Spread: ")}{spreadDisplay} · H: {sessionHighDisplay} · L: {sessionLowDisplay}
-                </span>
-                <span className="rtx-order-dialog__mt5-quote">
-                  {dialogQuoteColors.isDefaultPalette ? (
-                    `${formatMt5QuotePrice(bid, specDigits)} / ${formatMt5QuotePrice(ask, specDigits)}`
-                  ) : (
-                    <>
-                      <span style={{ color: dialogQuoteColors.downColor }}>{formatMt5QuotePrice(bid, specDigits)}</span>
-                      {' / '}
-                      <span style={{ color: dialogQuoteColors.upColor }}>{formatMt5QuotePrice(ask, specDigits)}</span>
-                    </>
-                  )}
-                </span>
+                <div className="rtx-order-dialog__summary-row">
+                  <span className="rtx-order-dialog__spread-meta">
+                    <span className="rtx-order-dialog__summary-key">{tr("Spread:")}</span>{' '}
+                    <span className="rtx-order-dialog__summary-val">{spreadDisplay}</span>
+                  </span>
+                  <span className="rtx-order-dialog__mt5-quote">
+                    {dialogQuoteColors.isDefaultPalette ? (
+                      `${formatMt5QuotePrice(bid, specDigits)} / ${formatMt5QuotePrice(ask, specDigits)}`
+                    ) : (
+                      <>
+                        <span style={{ color: dialogQuoteColors.downColor }}>{formatMt5QuotePrice(bid, specDigits)}</span>
+                        {' / '}
+                        <span style={{ color: dialogQuoteColors.upColor }}>{formatMt5QuotePrice(ask, specDigits)}</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div className="rtx-order-dialog__summary-row rtx-order-dialog__summary-row--range">
+                  <span className="rtx-order-dialog__range-item">
+                    <span className="rtx-order-dialog__summary-key">{tr("High:")}</span>{' '}
+                    <span className="rtx-order-dialog__summary-val">{sessionHighDisplay}</span>
+                  </span>
+                  <span className="rtx-order-dialog__range-item">
+                    <span className="rtx-order-dialog__summary-key">{tr("Low:")}</span>{' '}
+                    <span className="rtx-order-dialog__summary-val">{sessionLowDisplay}</span>
+                  </span>
+                </div>
                 <span className="rtx-order-dialog__spread-sr">{tr("Spread: ")}{spreadDisplay}</span>
                 {specStopsLevel !== null && specStopsLevel > 0 && (
-                  <span
-                    className="rtx-order-dialog__margin ml-2"
+                  <div
+                    className="rtx-order-dialog__summary-row rtx-order-dialog__summary-row--range"
                     data-testid="order-dialog-stops-level"
                   >
-                    {tr("Min stop distance")}: {specStopsLevel} pts
-                  </span>
+                    <span className="rtx-order-dialog__margin">
+                      {tr("Min stop distance")}: {specStopsLevel} pts
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

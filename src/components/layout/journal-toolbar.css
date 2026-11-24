@@ -41,12 +41,12 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-tab .rtx-journa
   color: var(--rtx-light-text-secondary) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-tab button.rtx-journal-control:not(:disabled):hover {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-tab button.rtx-journal-control:not(.rtx-journal-time-btn):not(:disabled):hover {
   background-color: var(--rtx-light-hover) !important;
   border-color: var(--rtx-light-control-border-hover) !important;
 }
 
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-tab .rtx-journal-control:is(:focus, :focus-visible) {
+html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-journal-tab .rtx-journal-control:not(.rtx-journal-time-btn):is(:focus, :focus-visible) {
   border-color: var(--rtx-light-accent-border) !important;
   box-shadow: inset 0 0 0 1px var(--rtx-light-focus-ring) !important;
 }

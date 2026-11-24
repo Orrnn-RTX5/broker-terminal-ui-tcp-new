@@ -58,7 +58,7 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__vie
   position: relative;
   height: 27px !important;
   min-height: 27px !important;
-  padding: 0 4px 4px 0 !important;
+  padding: 0 4px 0 0 !important;
   border-top: 0 !important;
   background: var(--rtx-toolbox-tabs) !important;
   box-sizing: border-box !important;
@@ -94,8 +94,20 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__vie
   padding-left: 4px !important;
 }
 
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button:not([aria-selected='true']):not(:has(+ button[aria-selected='true']))::after,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs button:not([aria-selected='true']):not(:has(+ button[aria-selected='true']))::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  height: 11px;
+  transform: translateY(-50%);
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button[aria-selected='true'],
-html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button:first-child[aria-selected='true'],
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs button[aria-selected='true'] {
   position: relative;
   z-index: 2;
@@ -105,9 +117,15 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__vie
   background: var(--bg-secondary) !important;
   border: 1px solid color-mix(in srgb, var(--text-primary, #e2e2e8) 42%, var(--bg-secondary, #1f1f1f)) !important;
   border-top: 0 !important;
+  border-bottom: 0 !important;
   border-left: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
   color: #ffffff !important;
   box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button:first-child[aria-selected='true'],
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch__view-tabs button:first-child[aria-selected='true'] {
+  border-left: 0 !important;
 }
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
@@ -253,7 +271,7 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-rows: minmax(0, 1fr) !important;
   box-sizing: border-box !important;
-  padding: 0 4px 4px 0 !important;
+  padding: 0 4px 0 0 !important;
   border-top: 0 !important;
   background: var(--rtx-toolbox-tabs) !important;
   box-shadow: none !important;
@@ -309,15 +327,16 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs :is(
   .rtx-dock-tab-scroller .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)),
-  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab)):not(:last-child)
+  .rtx-dock-tab-actions .rtx-dock-tab:not(.active-tab):not(:has(+ .active-tab))
 )::after {
   content: '';
   position: absolute;
-  top: 5px;
+  top: 50%;
   right: 0;
-  bottom: 5px;
+  height: 11px;
+  transform: translateY(-50%);
   width: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.22);
   pointer-events: none;
 }
 
@@ -327,6 +346,9 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-
 
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab:not(:disabled):not(.active-tab):hover {
   background: rgba(255, 255, 255, 0.06) !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
   color: #ffffff !important;
 }
 
@@ -338,6 +360,7 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-
   background: var(--bg-secondary) !important;
   border: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
   border-top: 0 !important;
+  border-bottom: 0 !important;
   border-radius: 0 !important;
   color: #ffffff !important;
   box-shadow: none !important;
@@ -652,7 +675,104 @@ html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.t
   border-top: 0 !important;
   border-left: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
   border-right: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
-  border-bottom: 1px solid var(--rtx-mt5-tab-border, #72727a) !important;
+  border-bottom: 0 !important;
+}
+
+/* Flush left & bottom edges with no floating underline on Positions, Today, Journal 2h, and Trade in Dark Theme (matching Symbols). */
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab > .rtx-trade-view-bar,
+  .rtx-history-tab .rtx-history-toolbar,
+  .rtx-journal-tab .rtx-journal-toolbar:not(.rtx-journal-toolbar--expanded)
+) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: 0 !important;
+  align-items: stretch !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-toolbar--expanded {
+  padding-left: 0 !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
+  .rtx-history-toolbar .rtx-history-toolbar__periods,
+  .rtx-journal-tab .rtx-journal-periods
+) {
+  height: 100% !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: 0 !important;
+  border-left: 0 !important;
+  align-items: stretch !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-toolbar :is(
+  .rtx-journal-control:not(.rtx-journal-time-btn),
+  .rtx-journal-toolbar__summary
+) {
+  align-self: center !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab .rtx-trade-subtab-btn[aria-selected='true'],
+  .rtx-history-toolbar .rtx-history-time-btn[aria-selected='true'],
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn[aria-selected='true'],
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn[aria-pressed='true']
+) {
+  height: 100% !important;
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab .rtx-trade-subtab-btn:not([aria-selected='true']):not(:has(+ .rtx-trade-subtab-btn[aria-selected='true'])),
+  .rtx-history-toolbar .rtx-history-time-btn:not([aria-selected='true']):not(:has(+ .rtx-history-time-btn[aria-selected='true'])),
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:not([aria-selected='true']):not([aria-pressed='true']):not(:has(+ .rtx-journal-time-btn:is([aria-selected='true'], [aria-pressed='true'])))
+)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  height: 11px;
+  transform: translateY(-50%);
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab .rtx-trade-subtab-btn:not([aria-selected='true']),
+  .rtx-history-toolbar .rtx-history-time-btn:not([aria-selected='true']),
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:not([aria-selected='true']):not([aria-pressed='true'])
+):hover {
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-tab .rtx-trade-subtab-btn:first-child,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-tab .rtx-trade-subtab-btn:first-child[aria-selected='true'],
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-history-toolbar .rtx-history-time-btn:first-child,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-history-toolbar .rtx-history-time-btn:first-child[aria-selected='true'],
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:first-child,
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:first-child:is([aria-selected='true'], [aria-pressed='true']),
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab-scroller .rtx-dock-tab:first-child.active-tab,
+html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab-scroller .rtx-dock-tab:first-child.active-tab {
+  border-left: 0 !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) :is(
+  .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab,
+  .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-bulk-close,
+  .rtx-bottom-dock .rtx-trade-subtab-btn,
+  .rtx-bottom-dock .rtx-history-time-btn,
+  .rtx-bottom-dock .rtx-journal-time-btn,
+  .rtx-market-watch__view-tabs button
+):is(:focus, :focus-visible) {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 html:root[data-rtx-theme-configured='true']:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-market-watch .rtx-market-watch__row--selected {
@@ -725,14 +845,17 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
 }
 
 /* MT5 desktop light Toolbox surfaces sampled directly from the running MT5
-   desktop app (Trade through Journal):
-   - Pure #ffffff table headers with #000000 labels and #b0b0b0 borders/dividers
-   - Alternating #ebebeb / #ffffff data rows with #d2d2d2 column/row dividers
+   desktop app (Trade, Exposure, History, Journal — Build 6275):
+   - Pure #ffffff table headers with #000000 labels (regular 400), #a0a0a0
+     vertical column dividers, and no dark bottom rule between header & row 1
+   - Alternating #ffffff (row 1 / odd) / #ebebeb (row 2 / even) data rows with
+     crisp #c8c8c8 column/row dividers aligned pixel-for-pixel with headers
    - MT5 blue (#0000ff) positive / red (#ea3323) negative profit values
-   - Flat neutral #c8c8c8 summary bar with #000000 text
-   - Neutral #f0f0f0 bottom tab strip with #a0a0a0 top rule, #ffffff active tab
-     connected seamlessly to the content above, #6d6d6d inactive tabs, and
-     #c0c0c0 vertical tab separators
+   - Flat neutral #c8c8c8 summary bar with bold (700) #000000 text & totals
+   - Neutral #f0f0f0 bottom tab strip with crisp #696969 top seam, #ffffff active
+     tab connected seamlessly upward with left/bottom/right borders, #6d6d6d
+     inactive tabs, and full-height #696969 vertical tab separators (top 2px to
+     bottom 1px) across Trade through Close All
    - Solid #0078d7 selected row with pure #ffffff text and History TP (#60f060)
      / SL (#ff8080) trigger highlights */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
@@ -743,17 +866,57 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   --rtx-toolbox-summary: #c8c8c8;
   --rtx-toolbox-tabs: #f0f0f0;
   --rtx-toolbox-toolbar: #f0f0f0;
-  --rtx-toolbox-border-header: #b0b0b0;
-  --rtx-toolbox-border-grid: #d2d2d2;
-  --rtx-toolbox-border-tab: #a0a0a0;
-  --rtx-toolbox-tab-divider: #c0c0c0;
+  --rtx-toolbox-border-header: #a0a0a0;
+  --rtx-toolbox-border-grid: #c8c8c8;
+  --rtx-toolbox-border-tab: #696969;
+  --rtx-toolbox-tab-divider: #696969;
   --rtx-toolbox-text: #000000;
   --rtx-toolbox-text-muted: #6d6d6d;
   --rtx-toolbox-text-disabled: #9a9a9a;
   --rtx-toolbox-profit: #0000ff;
   --rtx-toolbox-loss: #ea3323;
+  --rtx-toolbox-line-width: 1px;
+  --rtx-ui-font-size: 11px;
+  --rtx-ui-line-height: 17px;
+  --rtx-light-ui-font-size: 11px;
+  --rtx-light-type-body: 11px;
+  --rtx-light-type-caption: 11px;
+  --rtx-light-toolbox-tab-size: 11px;
+  --rtx-light-control-line-height: 17px;
+  --rtx-font-weight-body: 300;
+  --rtx-font-weight-control: 300;
+  --rtx-font-weight-heading: 300;
+  --rtx-light-weight-body: 300;
+  --rtx-light-weight-control: 300;
+  --rtx-light-weight-heading: 300;
   background: var(--rtx-toolbox-row) !important;
   color: var(--rtx-toolbox-text) !important;
+}
+
+html:root.rtx-advanced-font-small:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+  --rtx-ui-font-size: 10.5px;
+  --rtx-ui-line-height: 16px;
+  --rtx-light-ui-font-size: 10.5px;
+  --rtx-light-type-body: 10.5px;
+  --rtx-light-type-caption: 10.5px;
+  --rtx-light-toolbox-tab-size: 10.5px;
+  --rtx-light-control-line-height: 16px;
+}
+
+html:root.rtx-advanced-font-large:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+  --rtx-ui-font-size: 12px;
+  --rtx-ui-line-height: 18px;
+  --rtx-light-ui-font-size: 12px;
+  --rtx-light-type-body: 12px;
+  --rtx-light-type-caption: 12px;
+  --rtx-light-toolbox-tab-size: 12px;
+  --rtx-light-control-line-height: 18px;
+}
+
+@media (min-resolution: 2dppx) {
+  html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+    --rtx-toolbox-line-width: 0.5px;
+  }
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='true']:not([data-rtx-theme-preset='default-light']) .rtx-bottom-dock {
@@ -764,10 +927,10 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='t
   --rtx-toolbox-summary: var(--rtx-light-panel-header);
   --rtx-toolbox-tabs: var(--rtx-light-panel-subtle, var(--rtx-light-panel-header));
   --rtx-toolbox-toolbar: var(--rtx-light-panel-subtle, var(--rtx-light-panel-header));
-  --rtx-toolbox-border-header: var(--rtx-light-border-strong, #b0b0b0);
-  --rtx-toolbox-border-grid: var(--rtx-light-row-border, #d2d2d2);
-  --rtx-toolbox-border-tab: var(--rtx-light-border-strong, #a0a0a0);
-  --rtx-toolbox-tab-divider: var(--rtx-light-border, #c0c0c0);
+  --rtx-toolbox-border-header: var(--rtx-light-border-strong, #a0a0a0);
+  --rtx-toolbox-border-grid: var(--rtx-light-row-border, #c8c8c8);
+  --rtx-toolbox-border-tab: var(--rtx-light-border-strong, #696969);
+  --rtx-toolbox-tab-divider: var(--rtx-light-border, #696969);
   --rtx-toolbox-text: var(--rtx-light-text, #182230);
   --rtx-toolbox-text-muted: var(--rtx-light-text-muted, #475569);
   --rtx-toolbox-profit: var(--color-profit, #1746bc);
@@ -793,7 +956,8 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
-/* MT5 desktop white table headers with crisp #000000 labels and #b0b0b0 borders across Trade through Journal. */
+/* MT5 desktop white table headers with crisp #000000 labels (including sortable
+   header buttons), #a0a0a0 vertical dividers, and seamless transition to row 1. */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-table,
   .rtx-pending-orders-table,
@@ -839,11 +1003,66 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-experts-tab table,
   .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
+) thead th :is(button, span) {
+  background: transparent !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table,
+  .rtx-articles-tab table,
+  .rtx-codebase-tab table,
+  .rtx-experts-tab table,
+  .rtx-journal-tab .rtx-journal-table,
+  .rtx-journal-table
+) :is(thead, thead tr, tbody, tbody tr) {
+  border: 0 !important;
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table,
+  .rtx-articles-tab table,
+  .rtx-codebase-tab table,
+  .rtx-experts-tab table,
+  .rtx-journal-tab .rtx-journal-table,
+  .rtx-journal-table
+) thead tr {
+  height: 20px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table,
+  .rtx-articles-tab table,
+  .rtx-codebase-tab table,
+  .rtx-experts-tab table,
+  .rtx-journal-tab .rtx-journal-table,
+  .rtx-journal-table
 ) thead th {
+  height: 20px !important;
+  min-height: 20px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
   border-top: 0 !important;
   border-left: 0 !important;
-  border-bottom: 1px solid var(--rtx-toolbox-border-header, #b0b0b0) !important;
-  border-right: 1px solid var(--rtx-toolbox-border-header, #b0b0b0) !important;
+  border-bottom: 0 !important;
+  border-right: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-header, #a0a0a0) !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
@@ -861,7 +1080,23 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   border-right: none !important;
 }
 
-/* MT5 desktop #d2d2d2 grid dividers and crisp #000000 row text across all Toolbox tables. */
+/* MT5 desktop #c8c8c8 grid dividers (aligned pixel-for-pixel with #a0a0a0 header
+   dividers) and crisp #000000 row text across all Toolbox tables. */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table,
+  .rtx-articles-tab table,
+  .rtx-codebase-tab table,
+  .rtx-experts-tab table,
+  .rtx-journal-tab .rtx-journal-table,
+  .rtx-journal-table
+) tbody tr:not(.rtx-history-spacer-row):not(.rtx-journal-spacer-row):not([data-rtx-spacer]) {
+  height: 20px !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-table,
   .rtx-pending-orders-table,
@@ -874,10 +1109,13 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-journal-tab .rtx-journal-table,
   .rtx-journal-table
 ) tbody tr:not(.rtx-history-spacer-row):not(.rtx-journal-spacer-row):not([data-rtx-spacer]) > td:not(.rtx-journal-spacer-cell) {
+  height: 20px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
   border-top: 0 !important;
   border-left: 0 !important;
-  border-bottom: 1px solid var(--rtx-toolbox-border-grid, #d2d2d2) !important;
-  border-right: 1px solid var(--rtx-toolbox-border-grid, #d2d2d2) !important;
+  border-bottom: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-grid, #c8c8c8) !important;
+  border-right: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-grid, #c8c8c8) !important;
   color: var(--rtx-toolbox-text, #000000) !important;
   box-shadow: none !important;
 }
@@ -898,6 +1136,14 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   border-right: none !important;
 }
 
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-table thead th:first-child {
+  width: 172px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-table tbody tr:not([aria-selected='true']) td > span:not(.text-red-400):not(.text-rose-400):not(.text-amber-400):not(.text-emerald-400) {
+  color: var(--rtx-toolbox-text, #000000) !important;
+}
+
 /* MT5 desktop neutral #f0f0f0 sub-toolbars (Trade Positions/Pending, History periods, Journal filters). */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-tab > div:first-child,
@@ -912,21 +1158,71 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   border-top: 0 !important;
   border-left: 0 !important;
   border-right: 0 !important;
-  border-bottom: 1px solid var(--rtx-toolbox-border-header, #b0b0b0) !important;
+  border-bottom: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-header, #a0a0a0) !important;
   color: var(--rtx-toolbox-text, #000000) !important;
   box-shadow: none !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab > div:first-child,
+  .rtx-trade-view-bar,
+  .rtx-history-tab .rtx-history-toolbar,
+  .rtx-history-toolbar
+) {
+  height: 25px !important;
+  min-height: 25px !important;
+  padding: 0 28px 0 0 !important;
+  align-items: stretch !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-toolbar:not(.rtx-journal-toolbar--expanded) {
+  height: 25px !important;
+  min-height: 25px !important;
+  padding: 0 28px 0 0 !important;
+  align-items: stretch !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-toolbar--expanded {
+  min-height: 26px !important;
+  padding: 2px 28px 2px 0 !important;
+  align-items: center !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-view-bar::before {
+  display: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-subtab-btn,
   .rtx-history-toolbar .rtx-history-time-btn,
-  .rtx-journal-tab .rtx-journal-time-btn
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn
 ) {
+  position: relative;
+  height: 100% !important;
+  min-height: 0 !important;
   background: transparent !important;
   background-color: transparent !important;
-  border: 1px solid transparent !important;
-  border-radius: 2px !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
   color: var(--rtx-toolbox-text-muted, #6d6d6d) !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-subtab-btn:not([aria-selected='true']):not(:has(+ .rtx-trade-subtab-btn[aria-selected='true'])),
+  .rtx-history-toolbar .rtx-history-time-btn:not([aria-selected='true']):not(:has(+ .rtx-history-time-btn[aria-selected='true'])),
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:not([aria-selected='true']):not([aria-pressed='true']):not(:has(+ .rtx-journal-time-btn:is([aria-selected='true'], [aria-pressed='true'])))
+)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  height: 11px;
+  transform: translateY(-50%);
+  width: 1px;
+  background: var(--mw-desktop-grid, #c8c8c8);
+  pointer-events: none;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
@@ -936,21 +1232,63 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 ):hover:not([aria-selected='true']):not([aria-pressed='true']) {
   background: #e4e4e4 !important;
   background-color: #e4e4e4 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-subtab-btn[aria-selected='true'],
   .rtx-history-toolbar .rtx-history-time-btn[aria-selected='true'],
-  .rtx-journal-tab .rtx-journal-time-btn[aria-selected='true'],
-  .rtx-journal-tab .rtx-journal-time-btn[aria-pressed='true'],
-  .rtx-journal-tab .rtx-journal-auto[aria-pressed='true']
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn[aria-selected='true'],
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn[aria-pressed='true']
 ) {
   background: var(--rtx-toolbox-row, #ffffff) !important;
   background-color: var(--rtx-toolbox-row, #ffffff) !important;
-  border-color: var(--rtx-toolbox-border-tab, #a0a0a0) !important;
+  border: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-tab, #696969) !important;
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
   color: var(--rtx-toolbox-text, #000000) !important;
   box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-tab .rtx-trade-subtab-btn:first-child,
+  .rtx-trade-tab .rtx-trade-subtab-btn:first-child[aria-selected='true'],
+  .rtx-history-toolbar .rtx-history-time-btn:first-child,
+  .rtx-history-toolbar .rtx-history-time-btn:first-child[aria-selected='true'],
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:first-child,
+  .rtx-journal-tab .rtx-journal-periods .rtx-journal-time-btn:first-child:is([aria-selected='true'], [aria-pressed='true'])
+) {
+  border-left: 0 !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-auto[aria-pressed='true'] {
+  background: var(--rtx-toolbox-row, #ffffff) !important;
+  background-color: var(--rtx-toolbox-row, #ffffff) !important;
+  border: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-tab, #696969) !important;
+  border-radius: 2px !important;
+  color: var(--rtx-toolbox-text, #000000) !important;
+  box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-history-toolbar .rtx-history-toolbar__periods,
+  .rtx-journal-tab .rtx-journal-periods
+) {
+  height: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  align-items: stretch !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-toolbar :is(
+  .rtx-journal-control:not(.rtx-journal-time-btn),
+  .rtx-journal-toolbar__summary
+) {
+  align-self: center !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-history-toolbar :is(
@@ -974,6 +1312,20 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   border-radius: 2px !important;
 }
 
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-history-toolbar .rtx-history-refresh-btn {
+  height: 19px !important;
+  min-height: 19px !important;
+  line-height: 1 !important;
+  margin-top: 1px !important;
+  padding: 0 7px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-journal-tab .rtx-journal-control:not(.rtx-journal-time-btn) {
+  height: 20px !important;
+  min-height: 20px !important;
+  line-height: 1 !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-history-toolbar .rtx-history-refresh-btn,
   .rtx-journal-tab .rtx-journal-control:not(.rtx-journal-time-btn),
@@ -982,7 +1334,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 ) {
   background: var(--rtx-toolbox-row, #ffffff) !important;
   background-color: var(--rtx-toolbox-row, #ffffff) !important;
-  border: 1px solid var(--rtx-toolbox-border-header, #b0b0b0) !important;
+  border: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-header, #a0a0a0) !important;
   color: var(--rtx-toolbox-text, #000000) !important;
   border-radius: 2px !important;
   box-shadow: none !important;
@@ -1061,7 +1413,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-articles-row,
   .rtx-codebase-row,
   .rtx-experts-row
-):is([data-row-parity='odd'], :not([data-row-parity]):nth-child(odd)) {
+):is([data-row-parity='even'], :not([data-row-parity]):nth-child(even)) {
   background: var(--rtx-toolbox-row-alt) !important;
 }
 
@@ -1088,15 +1440,28 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   background: var(--rtx-toolbox-row-hover) !important;
 }
 
-/* MT5 desktop light Profit blue (#0000ff) / Loss red (#ea3323) and readable SL/TP values across Trade, History, Exposure, Pending, and Calendar cells. */
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
+/* MT5 desktop light Profit blue (#0000ff) / Loss red (#ea3323) and readable SL/TP values across Trade, History, Exposure, Pending, and Calendar cells.
+   Include the table class so specificity exceeds the default #000000 tbody td rule above. */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table
+) tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
   button.rtx-trade-sl-value,
   button.rtx-trade-tp-value
 ) {
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table
+) tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
   td.text-profit,
   td .text-profit,
   td.rtx-trade-profit-value--positive,
@@ -1107,7 +1472,18 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   color: var(--rtx-toolbox-profit, #0000ff) !important;
 }
 
-html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-history-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-history-tp-value.text-profit {
+  background-color: transparent !important;
+  color: var(--rtx-toolbox-profit, #0000ff) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
+  .rtx-trade-table,
+  .rtx-pending-orders-table,
+  .rtx-history-table,
+  .rtx-exposure-table,
+  .rtx-calendar-tab__table
+) tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']):not([data-selected='true']) :is(
   td.text-loss,
   td .text-loss,
   td.rtx-trade-profit-value--negative,
@@ -1120,6 +1496,11 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 }
 
 /* Flat MT5 light row action buttons (unselected rows use clean borderless muted gray icons like MT5's flat X). */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr :is(.rtx-trade-action-button, .rtx-trade-close-button) {
+  height: 18px !important;
+  width: 18px !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) {
   background: transparent !important;
   border-color: transparent !important;
@@ -1297,18 +1678,47 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   border-color: rgba(255, 255, 255, 0.55) !important;
 }
 
-/* MT5 desktop #c8c8c8 summary bar with pure #000000 account metrics and totals. */
+/* MT5 desktop #c8c8c8 summary bar with bold (700) pure #000000 account metrics and totals. */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-footer,
   .rtx-history-summary-bar,
   .rtx-exposure-account-bar
 ) {
+  --rtx-font-weight-body: 700;
+  --rtx-font-weight-control: 700;
+  --rtx-font-weight-heading: 700;
+  --rtx-light-weight-body: 700;
+  --rtx-light-weight-control: 700;
+  --rtx-light-weight-heading: 700;
   background: var(--rtx-toolbox-summary, #c8c8c8) !important;
   background-color: var(--rtx-toolbox-summary, #c8c8c8) !important;
   background-image: none !important;
-  border-top: 1px solid var(--rtx-toolbox-border-header, #b0b0b0) !important;
+  border-top: var(--rtx-toolbox-line-width, 1px) solid var(--rtx-toolbox-border-grid, #c8c8c8) !important;
   color: var(--rtx-toolbox-text, #000000) !important;
+  font-weight: 700 !important;
   box-shadow: none !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-footer > .rtx-trade-footer-inner {
+  min-height: 20px !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-footer .rtx-trade-metric-label::after {
+  content: ':';
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-exposure-account-bar {
+  height: 20px !important;
+  min-height: 20px !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-history-summary-bar .rtx-history-summary-row > td {
+  height: 20px !important;
+  min-height: 20px !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-history-summary-bar :is(
@@ -1325,9 +1735,16 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock :is(
   .rtx-trade-footer .rtx-trade-metric-label,
   .rtx-trade-footer .rtx-trade-footer-metric,
+  .rtx-trade-footer .rtx-trade-footer-metric span,
   .rtx-trade-footer .rtx-trade-footer-floating,
+  .rtx-trade-footer .rtx-trade-footer-floating span,
   .rtx-trade-footer .rtx-trade-footer-floating.text-profit,
   .rtx-trade-footer .rtx-trade-footer-floating.text-loss,
+  .rtx-trade-footer .text-profit,
+  .rtx-trade-footer .text-loss,
+  .rtx-trade-footer .text-zinc-100,
+  .rtx-trade-footer .text-zinc-300,
+  .rtx-trade-footer .rtx-trade-footer-currency,
   .rtx-trade-footer .rtx-trade-footer-status,
   .rtx-history-summary-bar .rtx-history-summary-label,
   .rtx-history-summary-bar .rtx-history-summary-status,
@@ -1341,6 +1758,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-exposure-account-bar .rtx-exposure-account-value
 ) {
   color: var(--rtx-toolbox-text, #000000) !important;
+  font-weight: 700 !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-footer .rtx-trade-footer-status {
@@ -1354,8 +1772,9 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
-/* MT5 desktop light bottom tab strip (#f0f0f0 bar, #a0a0a0 top seam, #ffffff connected active tab, #6d6d6d inactive tabs). */
+/* MT5 desktop light bottom tab strip (#f0f0f0 bar, #696969 top seam, #ffffff connected active tab, #6d6d6d inactive tabs). */
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs {
+  padding-bottom: 0 !important;
   background: var(--rtx-toolbox-tabs, #f0f0f0) !important;
 }
 
@@ -1370,11 +1789,25 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.active-tab {
   background: var(--rtx-toolbox-row, #ffffff) !important;
+  border-bottom: 0 !important;
   color: var(--rtx-toolbox-text, #000000) !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-bottom-dock__tabs :is(.rtx-dock-tab-scroller, .rtx-dock-tab-actions) .rtx-dock-tab:disabled {
   color: var(--rtx-toolbox-text-disabled, #9a9a9a) !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) :is(
+  .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab,
+  .rtx-bottom-dock .rtx-bottom-dock__tabs .rtx-dock-tab.rtx-bulk-close,
+  .rtx-bottom-dock .rtx-trade-subtab-btn,
+  .rtx-bottom-dock .rtx-history-time-btn,
+  .rtx-bottom-dock .rtx-journal-time-btn,
+  .rtx-market-watch__view-tabs button
+):is(:focus, :focus-visible) {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light[data-rtx-theme-configured='true']:not([data-rtx-theme-preset='default-light']) :is(
