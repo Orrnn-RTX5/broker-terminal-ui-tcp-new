@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../ui/Icon';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
@@ -8,6 +8,7 @@ import {
     formatNewsText,
     NEWS_READ_STORAGE_KEY,
     NEWS_REFRESH_INTERVAL_MS,
+    sanitizeNewsUrl,
     type NewsErrorKind,
     type NewsItem,
     NewsServiceError,
@@ -60,6 +61,24 @@ const formatNewsTime = (timestampMs: number): string => (
 
 const capitalize = (value: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : value);
 
+/** Returns the normalized URL only for absolute http(s) links without embedded credentials. */
+function sanitizeEmbedUrl(value: unknown): string | null {
+    const safeUrl = sanitizeNewsUrl(value);
+    if (!safeUrl) return null;
+    try {
+        const parsed = new URL(safeUrl);
+        if (parsed.username || parsed.password) return null;
+        return parsed.href;
+    } catch {
+        return null;
+    }
+}
+
+interface OpenedArticle {
+    url: string;
+    title: string;
+}
+
 interface NewsTabProps {
     /** True while the News dock tab is the visible one. */
     active?: boolean;
@@ -77,6 +96,9 @@ export function NewsTab({ active = true }: NewsTabProps) {
     const [scope, setScope] = useState<ScopeFilter>('all');
     const [category, setCategory] = useState<CategoryFilter>('all');
     const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [openedArticle, setOpenedArticle] = useState<OpenedArticle | null>(null);
+    const [articleReloadNonce, setArticleReloadNonce] = useState(0);
+    const [articleLoadedKey, setArticleLoadedKey] = useState<string | null>(null);
     const [initialReadIds] = useState<string[]>(loadReadIds);
     const [readIds, setReadIds] = useState<Set<string>>(() => new Set(initialReadIds));
     const readOrderRef = useRef<string[]>(initialReadIds);
@@ -155,8 +177,17 @@ export function NewsTab({ active = true }: NewsTabProps) {
         [selectedItem],
     );
 
+    const selectedUrl = useMemo(
+        () => (selectedItem ? sanitizeEmbedUrl(selectedItem.url) : null),
+        [selectedItem],
+    );
+
+    const articleFrameKey = openedArticle ? `${openedArticle.url}:${articleReloadNonce}` : '';
+    const articleLoading = Boolean(openedArticle) && articleLoadedKey !== articleFrameKey;
+
     const openItem = useCallback((item: NewsItem) => {
         setSelectedId(item.id);
+        setOpenedArticle(null);
         const key = String(item.id);
         if (readOrderRef.current.includes(key)) return;
         readOrderRef.current = [...readOrderRef.current, key].slice(-MAX_READ_IDS);
@@ -164,10 +195,69 @@ export function NewsTab({ active = true }: NewsTabProps) {
         setReadIds(new Set(readOrderRef.current));
     }, []);
 
+    const handleOpenArticle = useCallback(() => {
+        if (!selectedUrl) return;
+        setArticleReloadNonce(0);
+        setArticleLoadedKey(null);
+        setOpenedArticle({ url: selectedUrl, title: selectedTitle });
+    }, [selectedTitle, selectedUrl]);
+
+    const handleReloadArticle = useCallback(() => {
+        setArticleReloadNonce((current) => current + 1);
+    }, []);
+
+    const handleCloseArticle = useCallback(() => {
+        setOpenedArticle(null);
+    }, []);
+
     if (!enabled) {
         return (
             <div className="rtx-news-tab" data-testid="news-tab">
                 <div className="rtx-news-state" role="status">{tr('News is disabled in Options')}</div>
+            </div>
+        );
+    }
+
+    if (openedArticle) {
+        return (
+            <div className="rtx-news-tab" data-testid="news-tab">
+                <div className="rtx-news-toolbar rtx-news-browser-toolbar" data-dock-inner-header="true">
+                    <button
+                        type="button"
+                        className="rtx-news-back"
+                        title={tr('Back')}
+                        aria-label={tr('Back')}
+                        onClick={handleCloseArticle}
+                    >
+                        <ArrowLeft size={12} aria-hidden="true" />
+                        <span>{tr('Back')}</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="rtx-news-refresh"
+                        title={tr('Refresh')}
+                        aria-label={tr('Refresh')}
+                        onClick={handleReloadArticle}
+                    >
+                        <Icon name="refresh" size="xs" />
+                    </button>
+                    <span className="rtx-news-browser-title" title={openedArticle.title}>
+                        {openedArticle.title}
+                    </span>
+                    {articleLoading ? <span className="rtx-news-banner" role="status">{tr('Loading…')}</span> : null}
+                </div>
+                <div className="rtx-news-browser-body">
+                    <iframe
+                        key={articleFrameKey}
+                        className="rtx-news-browser-frame"
+                        data-testid="news-article-iframe"
+                        title={openedArticle.title || tr('Open article')}
+                        src={openedArticle.url}
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allow="clipboard-write"
+                        onLoad={() => setArticleLoadedKey(articleFrameKey)}
+                    />
+                </div>
             </div>
         );
     }
@@ -286,6 +376,15 @@ export function NewsTab({ active = true }: NewsTabProps) {
                                 .join(' · ')}
                         </div>
                         <div className="rtx-news-reader__text" data-testid="news-article-body">{selectedBody}</div>
+                        {selectedUrl ? (
+                            <button
+                                type="button"
+                                className="rtx-news-open"
+                                onClick={handleOpenArticle}
+                            >
+                                {tr('Open article')}
+                            </button>
+                        ) : null}
                     </aside>
                 ) : null}
             </div>

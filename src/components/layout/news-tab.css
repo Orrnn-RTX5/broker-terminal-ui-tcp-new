@@ -25,7 +25,9 @@ html.theme-light .rtx-news-tab { color-scheme: light; }
   padding: 0 8px;
 }
 .rtx-news-select,
-.rtx-news-refresh {
+.rtx-news-refresh,
+.rtx-news-back,
+.rtx-news-open {
   background: var(--bg-secondary);
   border: 1px solid var(--border-secondary);
   border-radius: 0;
@@ -34,14 +36,56 @@ html.theme-light .rtx-news-tab { color-scheme: light; }
   height: 20px;
   line-height: 18px;
 }
-.rtx-news-refresh {
+.rtx-news-refresh,
+.rtx-news-back {
   align-items: center;
+  cursor: pointer;
   display: inline-flex;
+  gap: 4px;
   justify-content: center;
   padding: 0 6px;
+  white-space: nowrap;
 }
-.rtx-news-refresh:disabled { opacity: 0.5; }
-.rtx-news-banner { color: var(--text-tertiary); font-size: 12px; margin-left: auto; }
+.rtx-news-back {
+  padding: 0 8px;
+}
+.rtx-news-refresh:hover,
+.rtx-news-back:hover,
+.rtx-news-open:hover {
+  background: var(--bg-quaternary);
+}
+.rtx-news-refresh:disabled { cursor: default; opacity: 0.5; }
+.rtx-news-banner { color: var(--text-tertiary); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.rtx-news-browser-toolbar { padding: 0 34px 0 8px; }
+.rtx-news-browser-title {
+  color: var(--text-secondary);
+  flex: 1 1 auto;
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rtx-news-browser-body {
+  background: var(--bg-secondary);
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+}
+.rtx-news-browser-frame {
+  background: var(--bg-secondary);
+  border: 0;
+  display: block;
+  flex: 1 1 auto;
+  height: 100%;
+  width: 100%;
+}
+html[data-dock-resizing='true'] .rtx-news-browser-frame,
+.rtx-bottom-dock[data-resizing='true'] .rtx-news-browser-frame {
+  pointer-events: none;
+}
 
 .rtx-news-body { display: flex; flex: 1 1 auto; min-height: 0; }
 .rtx-news-scroll { flex: 1 1 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
@@ -92,3 +136,4 @@ td.rtx-news-col--time { color: var(--text-secondary); font-family: var(--font-mo
 .rtx-news-reader__title { font-size: 13px; font-weight: 700; line-height: 18px; margin: 0; overflow-wrap: anywhere; }
 .rtx-news-reader__meta { color: var(--text-tertiary); font-size: 12px; }
 .rtx-news-reader__text { flex: 1 1 auto; line-height: 1.5; min-height: 0; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.rtx-news-open { align-self: flex-start; cursor: pointer; padding: 0 10px; }
