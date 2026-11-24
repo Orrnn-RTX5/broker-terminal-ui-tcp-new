@@ -235,7 +235,13 @@ const isEntryInDeal = (trade: Trade): boolean => {
 
 const isEntryOutDeal = (trade: Trade): boolean => {
   const entry = dealEntryKind(trade);
-  return entry === 'entry_out' || entry === 'out' || entry.endsWith('_out');
+  return (
+    entry === 'entry_out' ||
+    entry === 'out' ||
+    entry === 'entry_out_by' ||
+    entry === 'out_by' ||
+    entry.endsWith('_out')
+  );
 };
 
 const isEntryInOutDeal = (trade: Trade): boolean => {

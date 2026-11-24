@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -15,7 +16,10 @@ import {
   binaryTcpMarketStream,
   type DecodedBinaryDepth,
 } from '../../services/binaryTcpMarketStream';
-import { buildBrokerWsV2Uri } from '../../services/brokerSession';
+import {
+  buildBrokerWsV2Uri,
+  onSessionChange,
+} from '../../services/brokerSession';
 import { getEnhancedWebSocketService } from '../../services/websocket-enhanced';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -24,10 +28,7 @@ import {
   roundPriceToDigits,
   type SpreadMarkupMap,
 } from '../../utils/spreadMarkup';
-import {
-  fetchMarketDataJson,
-  useBrokerSessionRevision,
-} from './marketDataSession';
+import { fetchMarketDataJson } from './marketDataSession';
 import {
   getSpreadPips,
   normalizeOrderBook,
@@ -117,6 +118,29 @@ export const decodedBinaryDepthToLiveOrderBook = (
   };
 };
 
+interface SessionRevisions {
+  all: number;
+  owner: number;
+}
+
+const useOrderBookSessionRevisions = (): SessionRevisions => {
+  const [revisions, setRevisions] = useState<SessionRevisions>({ all: 0, owner: 0 });
+  useEffect(() => onSessionChange((reason) => {
+    setRevisions((current) => ({
+      all: current.all + 1,
+      owner: reason === 'token_rotation' ? current.owner : current.owner + 1,
+    }));
+  }), []);
+  return revisions;
+};
+
+/** Request key (normalised symbol, authentication state, owner session revision) that the stored book, error and loading belong to. */
+interface RequestOwner {
+  symbol: string;
+  authenticated: boolean;
+  session: number;
+}
+
 export function useLiveOrderBook(symbol: string, depth: number) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const [rawOrderBook, setOrderBook] = useState<LiveOrderBook | null>(null);
@@ -129,10 +153,29 @@ export function useLiveOrderBook(symbol: string, depth: number) {
   const [error, setError] = useState<string | null>(null);
   const isAuthenticated = useAppStore((state) => state.isAuthenticated);
   const authToken = useAppStore((state) => state.authToken);
-  const sessionRevision = useBrokerSessionRevision();
+  const { all: sessionRevision, owner: ownerSessionRevision } = useOrderBookSessionRevisions();
+  // The request key the stored state belongs to. It changes only in the reload effect, when the key changes.
+  const [owner, setOwner] = useState<RequestOwner>(() => ({
+    symbol: normalizedSymbol,
+    authenticated: isAuthenticated,
+    session: ownerSessionRevision,
+  }));
+  const ownerRef = useRef(owner);
+  const generationRef = useRef(0);
+  const ownsState = owner.symbol === normalizedSymbol
+    && owner.authenticated === isAuthenticated
+    && owner.session === ownerSessionRevision;
+  const requestActive = Boolean(normalizedSymbol) && isAuthenticated;
 
   const reload = useCallback(async () => {
     void sessionRevision;
+    const owned = ownerRef.current;
+    if (owned.symbol !== normalizedSymbol
+      || owned.authenticated !== isAuthenticated
+      || owned.session !== ownerSessionRevision) {
+      return;
+    }
+    const generation = ++generationRef.current;
     if (!normalizedSymbol || !isAuthenticated) {
       setOrderBook(null);
       setError(null);
@@ -158,11 +201,13 @@ export function useLiveOrderBook(symbol: string, depth: number) {
         limit: depth,
         levels: depth,
       });
+      if (generation !== generationRef.current) return;
       const next = normalizeOrderBook(response, normalizedSymbol);
       if (next) {
         setOrderBook(next);
       }
     } catch (err) {
+      if (generation !== generationRef.current) return;
       if (binaryTcpMarketStream.isSupported()) {
         const cachedDepth = binaryTcpMarketStream.getLatestDepth(normalizedSymbol);
         const warmBook = cachedDepth
@@ -177,18 +222,37 @@ export function useLiveOrderBook(symbol: string, depth: number) {
       setError(err instanceof ApiError ? err.message : 'Failed to load order book');
       setOrderBook(null);
     } finally {
-      setLoading(false);
+      if (generation === generationRef.current) setLoading(false);
     }
-  }, [normalizedSymbol, depth, isAuthenticated, sessionRevision]);
+  }, [normalizedSymbol, depth, isAuthenticated, sessionRevision, ownerSessionRevision]);
 
   useEffect(() => {
+    const stored = ownerRef.current;
+    if (stored.symbol !== normalizedSymbol
+      || stored.authenticated !== isAuthenticated
+      || stored.session !== ownerSessionRevision) {
+      const nextOwner: RequestOwner = {
+        symbol: normalizedSymbol,
+        authenticated: isAuthenticated,
+        session: ownerSessionRevision,
+      };
+      ownerRef.current = nextOwner;
+      setOwner(nextOwner);
+      setOrderBook(null);
+      setError(null);
+      setLoading(Boolean(normalizedSymbol) && isAuthenticated);
+    }
     void reload();
-  }, [reload]);
+    return () => {
+      generationRef.current += 1;
+    };
+  }, [reload, normalizedSymbol, isAuthenticated, ownerSessionRevision]);
 
   useEffect(() => {
     void sessionRevision;
     if (!normalizedSymbol || !isAuthenticated) return;
 
+    let active = true;
     let unsubscribeBinaryDepth: (() => void) | null = null;
     if (binaryTcpMarketStream.isSupported()) {
       const cached = binaryTcpMarketStream.getLatestDepth(normalizedSymbol);
@@ -201,6 +265,7 @@ export function useLiveOrderBook(symbol: string, depth: number) {
         }
       }
       unsubscribeBinaryDepth = binaryTcpMarketStream.onDepth(normalizedSymbol, (decoded) => {
+        if (!active) return;
         const next = decodedBinaryDepthToLiveOrderBook(decoded, normalizedSymbol, depth);
         if (next) {
           setOrderBook(next);
@@ -215,15 +280,22 @@ export function useLiveOrderBook(symbol: string, depth: number) {
     ws.connect();
     const channel = `depth.${normalizedSymbol}`;
     const unsubscribeWs = ws.subscribe(channel, (message) => {
+      if (!active) return;
       const next = normalizeOrderBook(message, normalizedSymbol);
       if (next) setOrderBook(next);
     });
 
     return () => {
+      active = false;
       if (unsubscribeBinaryDepth) unsubscribeBinaryDepth();
       unsubscribeWs();
     };
   }, [normalizedSymbol, depth, isAuthenticated, authToken, sessionRevision]);
 
-  return { orderBook, loading, error, reload };
+  return {
+    orderBook: ownsState ? orderBook : null,
+    loading: ownsState ? loading : requestActive,
+    error: ownsState ? error : null,
+    reload,
+  };
 }

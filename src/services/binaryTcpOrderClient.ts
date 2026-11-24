@@ -186,10 +186,13 @@ export const BINARY_ORDER_EXTRA_TAG_COMMENT = 0x01;
 export const BINARY_ORDER_EXTRA_TAG_MAGIC = 0x02;
 export const BINARY_ORDER_EXTRA_TAG_TRAILING_STOP = 0x03;
 export const BINARY_ORDER_EXTRA_TAG_TRAILING_STEP = 0x04;
+export const BINARY_ORDER_EXTRA_TAG_FILLING = 0x07;
 export const BINARY_ORDER_COMMENT_MAX_BYTES = 64;
 export const BINARY_ORDER_MAGIC_BYTE_LEN = 8;
 export const BINARY_ORDER_TRAILING_BYTE_LEN = 4;
 export const BINARY_ORDER_TRAILING_MAX_POINTS = 100_000;
+export const BINARY_ORDER_FILLING_BYTE_LEN = 1;
+export const BINARY_ORDER_FILLING_MAX = 2;
 export const BINARY_ORDER_EXTRAS_MAX_BYTES = 512;
 
 export const BINARY_ORDER_FLAGS = {
@@ -246,6 +249,8 @@ export interface BinaryTcpOrderParams {
   trailingStep?: number | null;
   /** Explicitly clears trailing stop on modify actions (sets CLEAR_TRAILING 0x0200 and TLV 0x03=0). */
   clearTrailing?: boolean;
+  /** Optional MT5 order fill policy (0=FOK, 1=IOC, 2=RETURN; encoded in TLV extras tag 0x07 for actions 1, 4 when `VITE_BINARY_ORDER_FILLING_TLV_ENABLED` is enabled). */
+  filling?: number | null;
   /** Idempotent client order ID (max 40 ASCII bytes; UUID v4 generated automatically if omitted). */
   clientOrderId?: string;
   /** Bearer/JWT token override (defaults to `getAccessToken()` from `brokerSession`). */
@@ -323,6 +328,24 @@ const utf8Decoder = new TextDecoder('utf-8');
 const EMPTY_BYTES = new Uint8Array(0);
 const DEFAULT_BINARY_ORDER_TIMEOUT_MS = 20_000;
 const UNIX_MS_THRESHOLD = 100_000_000_000;
+
+// Read once at module load (never per frame); defaults OFF so frames stay byte-identical until P07-6 ships.
+const BINARY_ORDER_FILLING_TLV_ENABLED: boolean = (() => {
+  const raw: unknown = import.meta.env?.VITE_BINARY_ORDER_FILLING_TLV_ENABLED;
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
+  }
+  return false;
+})();
+
+// Private pre-encoded 3-byte TLV 0x07 slices for valid filling values 0..2 (0-alloc fast path inside frame builders only).
+const PREENCODED_FILLING_TLVS: readonly Uint8Array<ArrayBuffer>[] = [
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 0]),
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 1]),
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 2]),
+];
 
 const perfNow = (): number => (
   typeof globalThis.performance?.now === 'function'
@@ -1418,6 +1441,11 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     }
   }
 
+  const canCarryFilling =
+    BINARY_ORDER_FILLING_TLV_ENABLED
+    && (action === BINARY_ORDER_ACTION_PLACE_MARKET || action === BINARY_ORDER_ACTION_PLACE_PENDING);
+  const hasFillingInput =
+    canCarryFilling && params.filling !== undefined && params.filling !== null;
   let extrasBytes = EMPTY_BYTES;
   if (
     (flags & (BINARY_ORDER_FLAG_HAS_EXTRAS | BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) !== 0
@@ -1426,6 +1454,7 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     || params.trailingStop !== undefined
     || params.trailingStep !== undefined
     || params.clearTrailing === true
+    || hasFillingInput
   ) {
     if ((flags & (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) === (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) {
       throw new BinaryTcpOrderError('HAS_TRAILING and CLEAR_TRAILING cannot both be set', {
@@ -1510,13 +1539,15 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
       }
     }
 
-    extrasBytes = encodeBinaryOrderExtrasTlv(
+    extrasBytes = encodeBinaryOrderExtrasTlvInternal(
       canCarryCommentMagic ? params.comment : undefined,
       canCarryCommentMagic ? params.magic : undefined,
       clientOrderId,
       action,
       tlvTrailingStop,
       tlvTrailingStep,
+      hasFillingInput ? params.filling : undefined,
+      true,
     );
   }
   if (extrasBytes.byteLength > 0) {
@@ -1551,18 +1582,15 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   };
 }
 
-/**
- * Validates and encodes optional `comment` (`0x01`, UTF-8 1..64 bytes, no NUL) and
- * `magic` (`0x02`, non-zero int64 LE, 8 bytes) into TLV bytes (without the outer `u16_le` length prefix).
- * Returns `EMPTY_BYTES` (0-alloc singleton) when neither entry is present.
- */
-export function encodeBinaryOrderExtrasTlv(
+function encodeBinaryOrderExtrasTlvInternal(
   rawComment?: string | null,
   rawMagic?: number | bigint | null,
   clientOrderId = '',
   action = 0,
   rawTrailingStop?: number | null,
   rawTrailingStep?: number | null,
+  rawFilling?: number | null,
+  allowSharedPreencoded = false,
 ): Uint8Array<ArrayBuffer> {
   let commentBytes: Uint8Array = EMPTY_BYTES;
   if (rawComment !== undefined && rawComment !== null) {
@@ -1698,19 +1726,48 @@ export function encodeBinaryOrderExtrasTlv(
     trailingStepVal = rawTrailingStep;
   }
 
+  let fillingVal: number | null = null;
+  if (rawFilling !== undefined && rawFilling !== null) {
+    if (
+      typeof rawFilling !== 'number'
+      || !Number.isInteger(rawFilling)
+      || rawFilling < 0
+      || rawFilling > BINARY_ORDER_FILLING_MAX
+    ) {
+      throw new BinaryTcpOrderError(
+        `Order filling mode must be an integer in 0..${BINARY_ORDER_FILLING_MAX}`,
+        {
+          status: 400,
+          code: 'INVALID_FILLING',
+          retryable: false,
+          clientOrderId,
+          action,
+        },
+      );
+    }
+    fillingVal = rawFilling;
+  }
+
   const hasComment = commentBytes.byteLength > 0;
   const hasMagic = magicBig !== null;
   const hasTrailingStop = trailingStopVal !== null;
   const hasTrailingStep = trailingStepVal !== null;
-  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep) {
+  const hasFilling = fillingVal !== null;
+  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep && !hasFilling) {
     return EMPTY_BYTES;
+  }
+  if (hasFilling && fillingVal !== null && !hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep) {
+    return allowSharedPreencoded
+      ? PREENCODED_FILLING_TLVS[fillingVal]
+      : PREENCODED_FILLING_TLVS[fillingVal].slice();
   }
 
   const extrasLen =
     (hasComment ? 2 + commentBytes.byteLength : 0)
     + (hasMagic ? 2 + BINARY_ORDER_MAGIC_BYTE_LEN : 0)
     + (hasTrailingStop ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0)
-    + (hasTrailingStep ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0);
+    + (hasTrailingStep ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0)
+    + (hasFilling ? 2 + BINARY_ORDER_FILLING_BYTE_LEN : 0);
   if (extrasLen > BINARY_ORDER_EXTRAS_MAX_BYTES) {
     throw new BinaryTcpOrderError(`Order extras TLV exceeds maximum ${BINARY_ORDER_EXTRAS_MAX_BYTES} bytes`, {
       status: 400,
@@ -1748,8 +1805,42 @@ export function encodeBinaryOrderExtrasTlv(
     view.setUint32(offset + 2, trailingStepVal >>> 0, true);
     offset += 2 + BINARY_ORDER_TRAILING_BYTE_LEN;
   }
+  if (hasFilling && fillingVal !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_FILLING;
+    tlv[offset + 1] = BINARY_ORDER_FILLING_BYTE_LEN;
+    tlv[offset + 2] = fillingVal & 0xff;
+  }
 
   return tlv;
+}
+
+/**
+ * Validates and encodes optional `comment` (`0x01`, UTF-8 1..64 bytes, no NUL),
+ * `magic` (`0x02`, non-zero int64 LE, 8 bytes), `trailingStop` (`0x03`, uint32 LE),
+ * `trailingStep` (`0x04`, uint32 LE), and `filling` (`0x07`, uint8 0..2) into TLV bytes
+ * (without the outer `u16_le` length prefix).
+ * Returns `EMPTY_BYTES` (0-alloc singleton) when no entry is present, and a fresh
+ * `Uint8Array` otherwise. Callers must treat the returned bytes as read-only.
+ */
+export function encodeBinaryOrderExtrasTlv(
+  rawComment?: string | null,
+  rawMagic?: number | bigint | null,
+  clientOrderId = '',
+  action = 0,
+  rawTrailingStop?: number | null,
+  rawTrailingStep?: number | null,
+  rawFilling?: number | null,
+): Uint8Array<ArrayBuffer> {
+  return encodeBinaryOrderExtrasTlvInternal(
+    rawComment,
+    rawMagic,
+    clientOrderId,
+    action,
+    rawTrailingStop,
+    rawTrailingStep,
+    rawFilling,
+    false,
+  );
 }
 
 const BINARY_ORDER_ORDER_CLEAR_STOP_LIMIT_MASK = BINARY_ORDER_FLAG_HAS_STOP_LIMIT;

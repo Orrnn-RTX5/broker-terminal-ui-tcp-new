@@ -1,5 +1,12 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.6] - 2026-11-24 (VERSION file; terminal UI)
+### Changed
+- **Depth of market and order ticket ladder keep to the current symbol and session:** when you switch symbol, log out or change account, the previous ladder and its error clear at once; a token refresh no longer makes a loaded ladder blink or clear; and late answers from a previous symbol, session or request can no longer overwrite the ladder on screen.
+- **MT5 "close by" deals in history:** deals marked as close-by (`entry_out_by` / `out_by`) now count as closing deals in deal history and on the chart, so close-by pairs show as closed positions with the right volume. Today's server still sends them as ordinary closing deals, so nothing changes for current data.
+### Added (switched off)
+- **Order fill type field:** the terminal can send the order fill type (FOK, IOC or Return) in the binary order message, but this is switched off in this version and every order message is unchanged. It will be switched on in a later version, together with server support.
+
 ## [1.2.5] - 2026-11-24 (VERSION file; terminal UI)
 ### Changed
 - **Shown price = execution price for the account:** Market Watch, the order ticket, the depth of market, the chart's Ask line, SL/TP checks and profit now show the same account spread markup that the trade engine applies, rounded the way the engine rounds on the market-order fill path (except the cases under Known limitations); cached and closed-market quotes are widened once from the raw price; deep depth levels follow the shown top, and a level whose shown price would be zero, negative or out of order is dropped.

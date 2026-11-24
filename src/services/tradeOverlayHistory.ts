@@ -597,7 +597,13 @@ const isEntryInDeal = (row: TradeOverlayHistoryRow): boolean => {
 
 const isEntryOutDeal = (row: TradeOverlayHistoryRow): boolean => {
   const entry = getDealEntryKind(row);
-  return entry === 'entry_out' || entry === 'out' || entry.endsWith('_out');
+  return (
+    entry === 'entry_out' ||
+    entry === 'out' ||
+    entry === 'entry_out_by' ||
+    entry === 'out_by' ||
+    entry.endsWith('_out')
+  );
 };
 
 const isEntryInOutDeal = (row: TradeOverlayHistoryRow): boolean => {
