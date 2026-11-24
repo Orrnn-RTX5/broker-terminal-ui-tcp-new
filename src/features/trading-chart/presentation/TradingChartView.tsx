@@ -17,7 +17,7 @@ import { activateActiveChartSource } from '../../../services/activeChartSource';
 import type { SymbolMarketStatusState } from '../../../hooks/useSymbolMarketStatus';
 import { getChartDirectionalQuoteColors, type ChartProperties } from '../../../store/useChartSettingsStore';
 import { isChartBackgroundLogoVisible } from '../../../utils/brokerWatermark';
-import type { ChartTemplate } from '../../../store/useTemplateStore';
+import { DEFAULT_TEMPLATE_COLORS, type ChartTemplate } from '../../../store/useTemplateStore';
 import type {
   ChartType,
   LivePriceOverlayColors,
@@ -690,7 +690,19 @@ return (
           showVolumes: chartSettings.showTickVolumes || chartSettings.showRealVolumes,
           indicators: currentIndicators,
           drawingTools: [],
-          colors: { background: '#0e0e12', grid: '#222226', candle: { up: '#00c896', down: '#ff4d4f', border: '#378658' }, volume: { up: '#00c896', down: '#ff4d4f' } }
+          colors: {
+            background: chartTheme?.background || chartSettings.colors?.background || DEFAULT_TEMPLATE_COLORS.background,
+            grid: chartSettings.colors?.grid || DEFAULT_TEMPLATE_COLORS.grid,
+            candle: {
+              up: chartTheme?.candleUp || chartSettings.colors?.bullCandle || DEFAULT_TEMPLATE_COLORS.candle.up,
+              down: chartTheme?.candleDown || chartSettings.colors?.bearCandle || DEFAULT_TEMPLATE_COLORS.candle.down,
+              border: chartTheme?.barUp || chartSettings.colors?.barUp || DEFAULT_TEMPLATE_COLORS.candle.border,
+            },
+            volume: {
+              up: chartTheme?.volumeLineUp || chartTheme?.candleUp || chartSettings.colors?.bullCandle || DEFAULT_TEMPLATE_COLORS.volume.up,
+              down: chartTheme?.volumeLineDown || chartTheme?.candleDown || chartSettings.colors?.bearCandle || DEFAULT_TEMPLATE_COLORS.volume.down,
+            },
+          },
         }}
         onLoadTemplate={handleLoadTemplate}
       />

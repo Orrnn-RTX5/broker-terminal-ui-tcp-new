@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useUiTranslation } from '../hooks/useUiTranslation';
 import { Icon } from './ui/Icon';
 import { isUnavailableDockSection, unavailableDockSections } from '../config/terminalToolAvailability';
+import { DEFAULT_COMPANY_URL, isDesktopExeRuntime, openCompanyInNewPage } from './layout/companyRuntime';
 import { RetainedLazyFeature } from '../startup/RetainedLazyFeature';
 import { useAppStore } from '../store/useAppStore';
 import { useToolboxTradeData } from '../hooks/useToolboxTradeData';
@@ -143,14 +144,15 @@ export function BottomDock({
     const bulkCloseCounts = useLiveBulkCloseCounts(toolboxTrade.positions);
 
     const [activeTab, setActiveTab] = useState<TabType>(() => {
+        const desktopExe = isDesktopExeRuntime();
         const requested = getRequestedBottomDockTab();
-        if (isAvailableTab(requested)) return requested;
+        if (isAvailableTab(requested) && !(desktopExe && requested === 'Company')) return requested;
         const stored = readSessionString(
             SESSION_VIEW_KEYS.bottomDockTab,
             TABS.map((candidate) => candidate.id),
             'Trade',
         );
-        return isAvailableTab(stored) ? stored : 'Trade';
+        return isAvailableTab(stored) && !(desktopExe && stored === 'Company') ? stored : 'Trade';
     });
     const [historyMounted, setHistoryMounted] = useState(activeTab === 'History');
     const historyAccountId = useAppStore(state => state.accountId);
@@ -235,14 +237,23 @@ export function BottomDock({
         const pendingTab = getRequestedBottomDockTab();
         if (pendingTab) {
             if (isAvailableTab(pendingTab)) {
-                // Navigation requests are external service state consumed on mount.
-                setActiveTab(pendingTab);
+                if (pendingTab === 'Company' && isDesktopExeRuntime()) {
+                    openCompanyInNewPage(DEFAULT_COMPANY_URL);
+                } else {
+                    // Navigation requests are external service state consumed on mount.
+                    setActiveTab(pendingTab);
+                }
             }
             acknowledgeBottomDockTab(pendingTab);
         }
         const handleOpenBottomDockTab = (event: Event) => {
             const requestedTab = (event as CustomEvent<{ tab?: TabType }>).detail?.tab;
             if (!isAvailableTab(requestedTab)) return;
+            if (requestedTab === 'Company' && isDesktopExeRuntime()) {
+                openCompanyInNewPage(DEFAULT_COMPANY_URL);
+                acknowledgeBottomDockTab(requestedTab);
+                return;
+            }
             setActiveTab(requestedTab);
             acknowledgeBottomDockTab(requestedTab);
         };
@@ -426,13 +437,15 @@ export function BottomDock({
                     <RetainedLazyFeature active={activeTab === 'News'}><MemoNewsTab active={activeTab === 'News'} /></RetainedLazyFeature>
                 </div>
 
-                <div
-                    className="h-full min-h-0"
-                    hidden={activeTab !== 'Company'}
-                    aria-hidden={activeTab !== 'Company'}
-                >
-                    <RetainedLazyFeature active={activeTab === 'Company'}><MemoCompanyTab active={activeTab === 'Company'} /></RetainedLazyFeature>
-                </div>
+                {!isDesktopExeRuntime() ? (
+                    <div
+                        className="h-full min-h-0"
+                        hidden={activeTab !== 'Company'}
+                        aria-hidden={activeTab !== 'Company'}
+                    >
+                        <RetainedLazyFeature active={activeTab === 'Company'}><MemoCompanyTab active={activeTab === 'Company'} /></RetainedLazyFeature>
+                    </div>
+                ) : null}
 
                 {/* Placeholder Tabs */}
                 {['Mailbox', 'Alerts'].includes(activeTab) && (
@@ -471,6 +484,10 @@ export function BottomDock({
                                 }}
                                 onClick={() => {
                                     if (unavailableReason) return;
+                                    if (tab.id === 'Company' && isDesktopExeRuntime()) {
+                                        openCompanyInNewPage(DEFAULT_COMPANY_URL);
+                                        return;
+                                    }
                                     setActiveTab(tab.id);
                                 }}
                                 className={`rtx-dock-tab inline-flex h-full items-center justify-center gap-1 px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative

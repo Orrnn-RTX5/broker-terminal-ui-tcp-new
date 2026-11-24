@@ -43,7 +43,7 @@ describe('NewsTab', () => {
         expect(JSON.parse(localStorage.getItem(NEWS_READ_STORAGE_KEY) ?? '[]')).toEqual(['2']);
     });
 
-    it('renders clean plain text without raw HTML tags and opens the article inside the app without redirecting', async () => {
+    it('renders clean plain text without raw HTML tags and omits the Open article button', async () => {
         fetchMock.mockResolvedValue([mk({
             body: '<ul><li>Item 1</li><li>Item 2</li></ul><p style="text-align: justify">Body <b>bold</b>&nbsp;text</p>',
             url: 'https://example.com/story',
@@ -57,25 +57,9 @@ describe('NewsTab', () => {
         expect(body.textContent).not.toContain('<ul>');
         expect(body.textContent).not.toContain('&nbsp;');
         expect(body.querySelector('b, ul, li, p')).toBeNull();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Open article' }));
-        expect(open).not.toHaveBeenCalled();
-        const iframe = screen.getByTestId('news-article-iframe') as HTMLIFrameElement;
-        expect(iframe.tagName).toBe('IFRAME');
-        expect(iframe).toHaveAttribute('src', 'https://example.com/story');
-        expect(screen.getByRole('status')).toHaveTextContent('Loading…');
-
-        fireEvent.load(iframe);
-        expect(screen.queryByRole('status')).toBeNull();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-        const reloadedIframe = screen.getByTestId('news-article-iframe');
-        expect(reloadedIframe).not.toBe(iframe);
-        expect(screen.getByRole('status')).toHaveTextContent('Loading…');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+        expect(screen.queryByRole('button', { name: 'Open article' })).toBeNull();
         expect(screen.queryByTestId('news-article-iframe')).toBeNull();
-        expect(screen.getByTestId('news-article-body')).toBeInTheDocument();
+        expect(open).not.toHaveBeenCalled();
     });
 
     it('filters by current symbol currencies and category', async () => {
@@ -152,11 +136,8 @@ describe('NewsTab', () => {
         await flush();
         expect(screen.getByText('No news')).toBeInTheDocument();
     });
-    it('uses a non-error icon for high-priority news and never opens external browser windows or unsafe URLs', async () => {
-        fetchMock.mockResolvedValue([
-            mk({ id: 1, priority: 2, title: 'Safe Story', url: 'https://example.com/1' }),
-            mk({ id: 2, priority: 0, title: 'Cred Story', url: 'https://user:pass@example.com/secret' }),
-        ]);
+    it('uses a non-error icon for high-priority news and never opens external article links', async () => {
+        fetchMock.mockResolvedValue([mk({ priority: 2, url: 'https://example.com/1' })]);
         const open = vi.spyOn(window, 'open').mockReturnValue(null);
         const openExternal = vi.fn();
         (window as { electron?: { shell?: { openExternal?: (url: string) => void } } }).electron = {
@@ -168,16 +149,11 @@ describe('NewsTab', () => {
             const importantBadge = screen.getByLabelText('Important');
             expect(importantBadge.querySelector('polygon')).not.toBeNull();
             expect(importantBadge.innerHTML).not.toContain('M8 2L1.5 13.5');
-
-            fireEvent.click(screen.getByText('Safe Story'));
-            fireEvent.click(screen.getByRole('button', { name: 'Open article' }));
-            expect(screen.getByTestId('news-article-iframe')).toHaveAttribute('src', 'https://example.com/1');
+            fireEvent.click(screen.getAllByRole('row')[1]);
+            expect(screen.queryByRole('button', { name: 'Open article' })).toBeNull();
+            expect(screen.queryByTestId('news-article-iframe')).toBeNull();
             expect(open).not.toHaveBeenCalled();
             expect(openExternal).not.toHaveBeenCalled();
-
-            fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-            fireEvent.click(screen.getByText('Cred Story'));
-            expect(screen.queryByRole('button', { name: 'Open article' })).toBeNull();
         } finally {
             delete (window as { electron?: unknown }).electron;
         }

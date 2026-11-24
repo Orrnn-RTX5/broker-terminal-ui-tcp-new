@@ -171,8 +171,12 @@ export const buildChartTheme = (
   gridType: ChartProperties['gridType'] = 'mt5',
   colorScheme?: ChartProperties['colorScheme'],
 ): TradingViewChartTheme => {
-  const candleUp = colors.bullCandle || colors.barUp || '#089981';
-  const candleDown = colors.bearCandle || colors.barDown || '#f23645';
+  const fallbackCandleUp = useReferenceLightSurface ? '#2563eb' : '#4597ff';
+  const fallbackCandleDown = useReferenceLightSurface ? '#dc2626' : '#ff5858';
+  const fallbackUpRgb = useReferenceLightSurface ? '37, 99, 235' : '69, 151, 255';
+  const fallbackDownRgb = useReferenceLightSurface ? '220, 38, 38' : '255, 88, 88';
+  const candleUp = colors.bullCandle || colors.barUp || fallbackCandleUp;
+  const candleDown = colors.bearCandle || colors.barDown || fallbackCandleDown;
   const barUp = colors.barUp || candleUp;
   const barDown = colors.barDown || candleDown;
   const backgroundLuminance = getColorLuminance(colors.background) ?? 0;
@@ -240,11 +244,11 @@ export const buildChartTheme = (
     areaTop: colorWithAlpha(line, areaFillOpacity, `rgba(41, 98, 255, ${areaFillOpacity})`),
     areaBottom: colorWithAlpha(line, 0, 'rgba(41, 98, 255, 0)'),
     areaUpLine: areaUp,
-    areaUpTop: colorWithAlpha(areaUp, areaFillOpacity, `rgba(8, 153, 129, ${areaFillOpacity})`),
-    areaUpBottom: colorWithAlpha(areaUp, 0, 'rgba(8, 153, 129, 0)'),
+    areaUpTop: colorWithAlpha(areaUp, areaFillOpacity, `rgba(${fallbackUpRgb}, ${areaFillOpacity})`),
+    areaUpBottom: colorWithAlpha(areaUp, 0, `rgba(${fallbackUpRgb}, 0)`),
     areaDownLine: areaDown,
-    areaDownTop: colorWithAlpha(areaDown, areaFillOpacity, `rgba(242, 54, 69, ${areaFillOpacity})`),
-    areaDownBottom: colorWithAlpha(areaDown, 0, 'rgba(242, 54, 69, 0)'),
+    areaDownTop: colorWithAlpha(areaDown, areaFillOpacity, `rgba(${fallbackDownRgb}, ${areaFillOpacity})`),
+    areaDownBottom: colorWithAlpha(areaDown, 0, `rgba(${fallbackDownRgb}, 0)`),
     volumeUp,
     volumeDown,
     volumeLineUp,

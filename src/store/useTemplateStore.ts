@@ -7,7 +7,11 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { ChartType, Timeframe } from '../types/chart';
-import type { ChartGridLineStyle, ChartGridType } from './useChartSettingsStore';
+import {
+  defaultChartProperties,
+  type ChartGridLineStyle,
+  type ChartGridType,
+} from './useChartSettingsStore';
 
 // Template interface matching chart configuration
 export interface ChartTemplate {
@@ -63,6 +67,20 @@ interface TemplateState {
 
 const DEFAULT_TEMPLATE_IDS = new Set(['default', 'clean-chart', 'technical-analysis']);
 
+export const DEFAULT_TEMPLATE_COLORS: ChartTemplate['colors'] = {
+  background: defaultChartProperties.colors.background,
+  grid: '#2b2b2b',
+  candle: {
+    up: defaultChartProperties.colors.bullCandle,
+    down: defaultChartProperties.colors.bearCandle,
+    border: defaultChartProperties.colors.barUp,
+  },
+  volume: {
+    up: defaultChartProperties.colors.bullCandle,
+    down: defaultChartProperties.colors.bearCandle,
+  },
+};
+
 // Built-in default templates (MT5-inspired)
 const defaultTemplates: ChartTemplate[] = [
   {
@@ -74,19 +92,7 @@ const defaultTemplates: ChartTemplate[] = [
     showVolumes: false,
     indicators: [],
     drawingTools: [],
-    colors: {
-      background: '#000000',
-      grid: '#2b2b2b',
-      candle: {
-        up: '#26a69a',
-        down: '#ef5350',
-        border: '#378658',
-      },
-      volume: {
-        up: '#26a69a',
-        down: '#ef5350',
-      },
-    },
+    colors: DEFAULT_TEMPLATE_COLORS,
     createdAt: Date.now(),
     isDefault: true,
   },
@@ -99,19 +105,7 @@ const defaultTemplates: ChartTemplate[] = [
     showVolumes: false,
     indicators: [],
     drawingTools: [],
-    colors: {
-      background: '#000000',
-      grid: '#2b2b2b',
-      candle: {
-        up: '#00ff00',
-        down: '#ff0000',
-        border: '#378658',
-      },
-      volume: {
-        up: '#26a69a',
-        down: '#ef5350',
-      },
-    },
+    colors: DEFAULT_TEMPLATE_COLORS,
     createdAt: Date.now(),
     isDefault: true,
   },
@@ -146,19 +140,7 @@ const defaultTemplates: ChartTemplate[] = [
       },
     ],
     drawingTools: [],
-    colors: {
-      background: '#000000',
-      grid: '#2b2b2b',
-      candle: {
-        up: '#26a69a',
-        down: '#ef5350',
-        border: '#378658',
-      },
-      volume: {
-        up: '#26a69a',
-        down: '#ef5350',
-      },
-    },
+    colors: DEFAULT_TEMPLATE_COLORS,
     createdAt: Date.now(),
     isDefault: true,
   },
@@ -245,7 +227,7 @@ export const useTemplateStore = create<TemplateState>()(
           const templates = Array.isArray(persistedState?.templates)
             ? persistedState.templates.map((template) => (
                 template?.isDefault && DEFAULT_TEMPLATE_IDS.has(template.id)
-                  ? { ...template, showVolumes: false }
+                  ? { ...template, showVolumes: false, colors: DEFAULT_TEMPLATE_COLORS }
                   : template
               ))
             : current.templates;

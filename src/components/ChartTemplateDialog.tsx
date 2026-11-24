@@ -9,7 +9,7 @@ import ReactDOM from 'react-dom';
 import React, { useState, useRef, useEffect, useId, useCallback } from 'react';
 import { useDialogFocusScope } from '../hooks/useDialogFocusScope';
 import { useFloatingPanelDrag } from '../hooks/useFloatingPanelDrag';
-import { useTemplateStore, type ChartTemplate } from '../store/useTemplateStore';
+import { DEFAULT_TEMPLATE_COLORS, useTemplateStore, type ChartTemplate } from '../store/useTemplateStore';
 import type { ChartType, Timeframe } from '../types/chart';
 import { Save, Download, X, CheckCircle, Trash2, Plus } from 'lucide-react';
 import './dialogs/legacy-action-sheets.css';
@@ -102,12 +102,7 @@ export const ChartTemplateDialog: React.FC<ChartTemplateDialogProps> = ({
       showVolumes: currentConfig.showVolumes,
       indicators: currentConfig.indicators || [],
       drawingTools: currentConfig.drawingTools || [],
-      colors: currentConfig.colors || {
-        background: '#000000',
-        grid: '#2b2b2b',
-        candle: { up: '#26a69a', down: '#ef5350', border: '#378658' },
-        volume: { up: '#26a69a', down: '#ef5350' },
-      },
+      colors: currentConfig.colors || DEFAULT_TEMPLATE_COLORS,
     });
 
     console.log('[ChartTemplateDialog] Saved template:', newTemplate);

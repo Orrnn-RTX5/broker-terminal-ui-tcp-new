@@ -238,6 +238,26 @@ describe('trading chart extracted modules', () => {
     expect(hollowTheme.volumeDown).toBe('rgba(248, 250, 252, 0.5)');
     expect(hollowTheme.volumeLineUp).toBe('#facc15');
     expect(hollowTheme.volumeLineDown).toBe('#f8fafc');
+
+    const darkFallbackTheme = buildChartTheme({
+      ...defaultChartProperties.colors,
+      bullCandle: '',
+      bearCandle: '',
+      barUp: '',
+      barDown: '',
+    }, true, false);
+    expect(darkFallbackTheme.candleUp).toBe('#4597ff');
+    expect(darkFallbackTheme.candleDown).toBe('#ff5858');
+
+    const lightFallbackTheme = buildChartTheme({
+      ...defaultChartProperties.colors,
+      bullCandle: '',
+      bearCandle: '',
+      barUp: '',
+      barDown: '',
+    }, true, true);
+    expect(lightFallbackTheme.candleUp).toBe('#2563eb');
+    expect(lightFallbackTheme.candleDown).toBe('#dc2626');
   });
 
   it('owns trade overlay clipping, tooltip placement, and palette selection', () => {

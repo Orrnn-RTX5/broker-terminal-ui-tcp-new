@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RetainedLazyFeature } from '../startup/RetainedLazyFeature';
-import { useTemplateStore, type ChartTemplate } from '../store/useTemplateStore';
+import { DEFAULT_TEMPLATE_COLORS, useTemplateStore, type ChartTemplate } from '../store/useTemplateStore';
 
 vi.mock('../hooks/useUiTranslation', () => ({ useUiTranslation: () => (text: string) => text }));
 
@@ -146,5 +146,44 @@ describe('retained lazy chart templates', () => {
     expect(merged.templates.find((t) => t.id === 'default')?.showVolumes).toBe(false);
     expect(merged.templates.find((t) => t.id === 'technical-analysis')?.showVolumes).toBe(false);
     expect(merged.templates.find((t) => t.id === 'custom-volume-on')?.showVolumes).toBe(true);
+    expect(merged.templates.find((t) => t.id === 'default')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
+    expect(merged.templates.find((t) => t.id === 'technical-analysis')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
+    expect(merged.templates.find((t) => t.id === 'custom-volume-on')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
+  });
+
+  it('defaults built-in chart templates and omitted save colors to blue and red candles', async () => {
+    expect(initialTemplates.filter((template) => template.isDefault).every((template) => (
+      template.colors.candle.up === '#4597ff'
+      && template.colors.candle.down === '#ff5858'
+      && template.colors.candle.border === '#4597ff'
+      && template.colors.volume.up === '#4597ff'
+      && template.colors.volume.down === '#ff5858'
+    ))).toBe(true);
+
+    const merge = useTemplateStore.persist.getOptions().merge!;
+    const legacyGreenColors = {
+      background: '#000000',
+      grid: '#2b2b2b',
+      candle: { up: '#26a69a', down: '#ef5350', border: '#378658' },
+      volume: { up: '#26a69a', down: '#ef5350' },
+    };
+    const merged = merge(
+      {
+        templates: [
+          { ...initialTemplates[0], id: 'default', isDefault: true, colors: legacyGreenColors },
+          { ...initialTemplates[0], id: 'custom-green', name: 'Custom Green', isDefault: false, colors: legacyGreenColors },
+        ],
+      },
+      useTemplateStore.getState(),
+    );
+
+    expect(merged.templates.find((t) => t.id === 'default')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
+    expect(merged.templates.find((t) => t.id === 'custom-green')?.colors).toEqual(legacyGreenColors);
+
+    render(<TemplateHost config={{ ...currentConfig, colors: undefined }} />);
+    await openFirstDialog('Open Save');
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Blue Red fallback' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(useTemplateStore.getState().templates[0]?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
   });
 });

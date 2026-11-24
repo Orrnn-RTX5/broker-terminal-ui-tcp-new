@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BottomDock } from './BottomDock';
 import { DockPanel } from './dock/DockPanel';
+import { SESSION_VIEW_KEYS } from '../services/sessionViewState';
 import { useBulkCloseConfirmStore } from '../store/useBulkCloseConfirmStore';
 
 const toolboxMocks = vi.hoisted(() => ({
@@ -242,5 +243,63 @@ describe('Toolbox header close control', () => {
         });
         expect(allBtn).not.toHaveClass('active-tab');
         expect(tradeTab).toHaveClass('active-tab');
+    });
+
+    it('redirects Company to a new page in desktop .exe runtime, while keeping web-tcp embedded in-app', async () => {
+        const w = window as unknown as {
+            rtx5Electron?: { isDesktop?: boolean; platform?: string };
+            electronAPI?: { isDesktop?: boolean; platform?: string };
+        };
+        const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+        try {
+            // 1. Web terminal (web-tcp on https://webterminal.orrnn.com): opens Company in-app, no redirect.
+            w.rtx5Electron = { isDesktop: true, platform: 'web-tcp' };
+            w.electronAPI = { isDesktop: true, platform: 'web-tcp' };
+            const webView = render(
+                <BottomDock
+                    height={300}
+                    onClosePosition={vi.fn()}
+                    onModifyPosition={vi.fn()}
+                />,
+            );
+            const webCompanyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
+            await act(async () => { fireEvent.click(webCompanyTab); });
+            expect(openSpy).not.toHaveBeenCalled();
+            expect(webCompanyTab).toHaveClass('active-tab');
+            expect(await screen.findByTestId('mock-company-tab')).toBeInTheDocument();
+            webView.unmount();
+
+            // 2. Desktop .exe (clientcore platform='win32'): redirects Company to a new page and keeps active tab.
+            w.rtx5Electron = { isDesktop: true, platform: 'win32' };
+            w.electronAPI = { isDesktop: true, platform: 'win32' };
+            sessionStorage.setItem(SESSION_VIEW_KEYS.bottomDockTab, 'Company');
+            const exeView = render(
+                <BottomDock
+                    height={300}
+                    onClosePosition={vi.fn()}
+                    onModifyPosition={vi.fn()}
+                />,
+            );
+            const tradeTab = screen.getByRole('button', { name: 'Trade — Open positions and live account summary' });
+            const exeCompanyTab = screen.getByRole('button', { name: 'Company — Broker company information' });
+            expect(tradeTab).toHaveClass('active-tab');
+            expect(screen.queryByTestId('mock-company-tab')).toBeNull();
+
+            await act(async () => { fireEvent.click(exeCompanyTab); });
+            expect(openSpy).toHaveBeenCalledTimes(1);
+            expect(openSpy).toHaveBeenCalledWith('https://orrnn.com/', '_blank', 'noopener,noreferrer');
+            expect(tradeTab).toHaveClass('active-tab');
+            expect(exeCompanyTab).not.toHaveClass('active-tab');
+            expect(screen.queryByTestId('mock-company-tab')).toBeNull();
+
+            window.dispatchEvent(new CustomEvent('rtx:open-bottom-dock-tab', { detail: { tab: 'Company' } }));
+            expect(openSpy).toHaveBeenCalledTimes(2);
+            expect(tradeTab).toHaveClass('active-tab');
+            exeView.unmount();
+        } finally {
+            delete w.rtx5Electron;
+            delete w.electronAPI;
+        }
     });
 });
