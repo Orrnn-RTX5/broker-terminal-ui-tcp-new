@@ -1,5 +1,14 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.5] - 2026-11-24 (VERSION file; terminal UI)
+### Changed
+- **Shown price = execution price for the account:** Market Watch, the order ticket, the depth of market, the chart's Ask line, SL/TP checks and profit now show the same account spread markup that the trade engine applies, rounded the way the engine rounds on the market-order fill path (except the cases under Known limitations); cached and closed-market quotes are widened once from the raw price; deep depth levels follow the shown top, and a level whose shown price would be zero, negative or out of order is dropped.
+### Known limitations (accepted by the owner for this release; later updates fix them)
+- Accounts filled outside the trade engine (an account with an A-book or hybrid override, or an account without a B-book override in a group with A-book or hybrid routing to an external liquidity provider, or any account when the broker has the fast trade path turned off) are filled without the symbol's fixed spread and spread balance, but this version still applies them to the shown price. On symbols with a fixed spread or a spread balance such accounts can see a price a few points worse than their fill (example: fixed spread 10, no markup: about 4 points on each side).
+- Accounts filled by the trade engine see their fill price, except in two cases: on symbols with a symbol-level spread difference the shown price does not include it yet (example: difference 10, no markup: the fill is about 5 points worse on each side than the price shown); and an account whose markup comes only from the platform-wide default group sees no markup (example: markup 4: the fill is about 2 points worse on each side than the price shown).
+- SL/TP and pending-order trigger prices are rounded once by the engine and can differ by 1 point on half-point ties; until the account's instrument list has loaded, prices are shown raw, and after the broker changes a markup the old markup is shown until the list is next refreshed.
+- Hidden markup that the broker sets on opening prices, and prices confirmed by a dealer, are not part of the shown price, so those fills can differ from it.
+
 ## [2.2.4] - 2026-11-05
 ### Added
 - **Live Version Display (`v2.2.4`)**: Unified live version display across Terminal Login Modal, About dialog, status bar, and native/web Binary TCP top toolbar via `VITE_APP_VERSION`, `package.json`, and `/api/tcp-client/status`.

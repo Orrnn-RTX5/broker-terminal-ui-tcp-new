@@ -34,10 +34,12 @@ const notify = (): void => {
 };
 
 const commit = (owner: string | null, map: SpreadMarkupMap): void => {
-  const changed = !areSpreadMarkupMapsEqual(activeMap, map);
+  const next = map.size > 0 ? map : EMPTY_SPREAD_MARKUP_MAP;
   activeOwner = map.size > 0 ? owner : null;
-  activeMap = map.size > 0 ? map : EMPTY_SPREAD_MARKUP_MAP;
-  if (changed) notify();
+  // An equal map keeps the current identity, so useSyncExternalStore subscribers do not re-render.
+  if (areSpreadMarkupMapsEqual(activeMap, next)) return;
+  activeMap = next;
+  notify();
 };
 
 const isCurrentAuthenticatedOwner = (owner: string): boolean => {

@@ -43,8 +43,8 @@ export const applySpreadMarkupToOrderBook = (
   if (!orderBook) return orderBook;
   const entry = markupMap.get(normalizeSpreadMarkupSymbol(orderBook.symbol));
   if (!entry) return orderBook;
-  const bids = applySpreadMarkupToBookLevels(orderBook.bids, 'bid', entry);
-  const asks = applySpreadMarkupToBookLevels(orderBook.asks, 'ask', entry);
+  const bids = applySpreadMarkupToBookLevels(orderBook.bids, 'bid', entry, orderBook.asks);
+  const asks = applySpreadMarkupToBookLevels(orderBook.asks, 'ask', entry, orderBook.bids);
   const bestBid = bids[0]?.price ?? 0;
   const bestAsk = asks[0]?.price ?? 0;
   const spread = bestBid > 0 && bestAsk > 0

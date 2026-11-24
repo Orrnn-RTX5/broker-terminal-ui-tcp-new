@@ -1,6 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { apiClient, type ApiRequestContext, type ApiRequestOptions } from '../api/client';
 import { API_V2_BASE_URL, toLocalDevProxyUrl } from '../config/api';
+import {
+  getAccountSpreadMarkupMap,
+  onAccountSpreadMarkupChange,
+} from '../services/accountSpreadMarkup';
 import {
   getAccessToken,
   getCommittedBrokerAccountSessionScope,
@@ -8,12 +12,13 @@ import {
   getServerUrl,
 } from '../services/brokerSession';
 import {
-  readMarketWatchQuotes,
+  readMarketWatchRawQuotes,
   rememberMarketWatchQuote,
 } from '../services/marketWatchQuoteCache';
 import { useAppStore } from '../store/useAppStore';
 import { asUnknownRecord, readBrokerTimestampMs } from '../utils/brokerStreamSemantics';
 import { normalizeExactBrokerSymbol } from '../utils/exactBrokerSymbol';
+import { applySpreadMarkupFromMap, type SpreadMarkupMap } from '../utils/spreadMarkup';
 
 export type MarketWatchLastPrice =
   | { kind: 'quote'; bid: number; ask: number; asOf: number }
@@ -85,6 +90,23 @@ export const resolveLastMarketWatchPrice = (
   return latest;
 };
 
+/**
+ * A closed-market quote widened by the account markup, exactly once. The pair it receives is
+ * always the broker (raw) pair, so the markup is never applied to a pair that already has it.
+ * Close prices and symbols without markup are returned unchanged.
+ */
+const withAccountSpreadMarkup = (
+  symbol: string,
+  price: MarketWatchLastPrice,
+  markups: SpreadMarkupMap,
+): MarketWatchLastPrice => {
+  if (price.kind !== 'quote' || markups.size === 0) return price;
+  const shown = applySpreadMarkupFromMap(symbol, { bid: price.bid, ask: price.ask }, markups);
+  return shown.bid === price.bid && shown.ask === price.ask
+    ? price
+    : { ...price, bid: shown.bid, ask: shown.ask };
+};
+
 /** Hydrate every requested export row while keeping recovery out of live stores. */
 export async function hydrateLastMarketWatchQuotes({
   scopeKey,
@@ -97,7 +119,7 @@ export async function hydrateLastMarketWatchQuotes({
   const ownsScope = () => !signal?.aborted
     && getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()) === scopeKey;
   if (!ownsScope()) return new Map<string, MarketWatchLastPrice>();
-  const cached = readMarketWatchQuotes(scopeKey, normalizedSymbols);
+  const cached = readMarketWatchRawQuotes(scopeKey, normalizedSymbols);
   const values = new Map<string, MarketWatchLastPrice>(
     Object.entries(cached).map(([symbol, quote]) => [symbol, { kind: 'quote' as const, ...quote }]),
   );
@@ -149,7 +171,7 @@ export async function hydrateLastMarketWatchQuotes({
       if (!ownsScope()) return;
       if (historicalQuote?.kind === 'quote') {
         rememberMarketWatchQuote(scopeKey, symbol, historicalQuote);
-        const retained = readMarketWatchQuotes(scopeKey, [symbol])[symbol];
+        const retained = readMarketWatchRawQuotes(scopeKey, [symbol])[symbol];
         values.set(symbol, { kind: 'quote', ...(retained ?? historicalQuote) });
         continue;
       }
@@ -161,7 +183,7 @@ export async function hydrateLastMarketWatchQuotes({
         });
         if (!ownsScope()) return;
         const close = resolveLastMarketWatchPrice(response, symbol, 'close');
-        const retained = readMarketWatchQuotes(scopeKey, [symbol])[symbol];
+        const retained = readMarketWatchRawQuotes(scopeKey, [symbol])[symbol];
         if (close && (!retained || close.asOf > retained.asOf)) values.set(symbol, close);
       } catch {
         // Export remains usable with the values that were available.
@@ -172,7 +194,12 @@ export async function hydrateLastMarketWatchQuotes({
   await Promise.all(Array.from({
     length: Math.min(LAST_MARKET_WATCH_PRICE_MAX_CONCURRENCY, normalizedSymbols.length),
   }, () => worker()));
-  return ownsScope() ? values : new Map<string, MarketWatchLastPrice>();
+  if (!ownsScope()) return new Map<string, MarketWatchLastPrice>();
+  // The export shows closed-market quotes with the account markup, applied once, as the rows do.
+  const markups = getAccountSpreadMarkupMap();
+  const shown = new Map<string, MarketWatchLastPrice>();
+  values.forEach((price, symbol) => shown.set(symbol, withAccountSpreadMarkup(symbol, price, markups)));
+  return shown;
 }
 
 export function useLastMarketWatchQuotes({ enabled, scopeKey, symbols, candleSymbols }: Options): ReadonlyMap<string, MarketWatchLastPrice> {
@@ -188,8 +215,14 @@ export function useLastMarketWatchQuotes({ enabled, scopeKey, symbols, candleSym
   });
   const loadedRef = useRef(loaded);
   const cached = useMemo(() => activeScope
-    ? readMarketWatchQuotes(activeScope, normalizedSymbols)
+    ? readMarketWatchRawQuotes(activeScope, normalizedSymbols)
     : {}, [activeScope, normalizedSymbols]);
+  // Read through the store so a catalogue markup change re-widens the closed-market fallback.
+  const spreadMarkupMap = useSyncExternalStore(
+    onAccountSpreadMarkupChange,
+    getAccountSpreadMarkupMap,
+    getAccountSpreadMarkupMap,
+  );
 
   useEffect(() => {
     if (loadedRef.current.scopeKey !== activeScope) {
@@ -257,7 +290,7 @@ export function useLastMarketWatchQuotes({ enabled, scopeKey, symbols, candleSym
         if (controller.signal.aborted) return;
         if (historicalQuote?.kind === 'quote') {
           rememberMarketWatchQuote(activeScope, symbol, historicalQuote);
-          const retained = readMarketWatchQuotes(activeScope, [symbol])[symbol];
+          const retained = readMarketWatchRawQuotes(activeScope, [symbol])[symbol];
           publish(symbol, { kind: 'quote', ...(retained ?? historicalQuote) });
           continue;
         }
@@ -268,7 +301,7 @@ export function useLastMarketWatchQuotes({ enabled, scopeKey, symbols, candleSym
           });
           if (controller.signal.aborted) return;
           const close = resolveLastMarketWatchPrice(response, symbol, 'close');
-          const retained = readMarketWatchQuotes(activeScope, [symbol])[symbol];
+          const retained = readMarketWatchRawQuotes(activeScope, [symbol])[symbol];
           if (close && (!retained || close.asOf > retained.asOf)) publish(symbol, close);
         } catch {
           // Existing backend quotes remain visible if optional history fails.
@@ -284,11 +317,13 @@ export function useLastMarketWatchQuotes({ enabled, scopeKey, symbols, candleSym
     if (!activeScope) return values;
     for (const symbol of normalizedSymbols) {
       const quote = cached[symbol];
-      if (quote) values.set(symbol, { kind: 'quote', ...quote });
+      if (quote) values.set(symbol, withAccountSpreadMarkup(symbol, { kind: 'quote', ...quote }, spreadMarkupMap));
       const history = loaded.scopeKey === activeScope ? loaded.values.get(symbol) : undefined;
       if (history && (history.kind === 'quote' || candleSet.has(symbol))
-        && (!quote || history.asOf >= quote.asOf)) values.set(symbol, history);
+        && (!quote || history.asOf >= quote.asOf)) {
+        values.set(symbol, withAccountSpreadMarkup(symbol, history, spreadMarkupMap));
+      }
     }
     return values;
-  }, [activeScope, cached, candleSet, loaded, normalizedSymbols]);
+  }, [activeScope, cached, candleSet, loaded, normalizedSymbols, spreadMarkupMap]);
 }

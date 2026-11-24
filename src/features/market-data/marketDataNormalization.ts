@@ -18,6 +18,8 @@ import { getPipSizeFromDigits, resolveSpecDigits } from '../../utils/symbolUtils
 import {
   buildSpreadMarkupMap,
   normalizeSpreadMarkupSymbol,
+  readNonNegativeSpreadPoints,
+  readSignedSpreadPoints,
   readSpreadMarkupPoints,
   type SpreadMarkupMap,
 } from '../../utils/spreadMarkup';
@@ -257,6 +259,10 @@ export const normalizeInstrument = (raw: unknown): MarketInstrument | null => {
     // FIX: Catalog quote seeds retain source time only when the backend sends it.
     timestamp: readSourceTimestamp(record),
     spreadMarkup: readSpreadMarkupPoints(record),
+    fixedSpreadPoints: readNonNegativeSpreadPoints(record, ['fixed_spread_points', 'fixedSpreadPoints']),
+    spreadBalancePoints: readSignedSpreadPoints(record, ['spread_balance_points', 'spreadBalancePoints']),
+    spreadDiffPoints: readSignedSpreadPoints(record, ['spread_diff_points', 'spreadDiffPoints']),
+    spreadDiffBalancePoints: readSignedSpreadPoints(record, ['spread_diff_balance_points', 'spreadDiffBalancePoints']),
   };
 };
 
@@ -277,6 +283,10 @@ export const buildAccountSpreadMarkupMap = (
     return {
       symbol: instrument.symbol,
       spreadMarkup: instrument.spreadMarkup,
+      fixedSpreadPoints: instrument.fixedSpreadPoints,
+      spreadBalancePoints: instrument.spreadBalancePoints,
+      spreadDiffPoints: instrument.spreadDiffPoints,
+      spreadDiffBalancePoints: instrument.spreadDiffBalancePoints,
       tickSize: instrument.tickSize ?? merged?.tickSize,
       digits: instrument.digits ?? merged?.digits,
     };

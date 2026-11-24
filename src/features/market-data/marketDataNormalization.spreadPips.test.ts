@@ -57,8 +57,8 @@ describe('order book spread pips come from broker digits only (TERM-DIGITS-WL)',
       spreadPips: null,
       timestamp: 1,
     }, map);
-    expect(widened?.spread).toBe(0.00022);
-    expect(widened?.spreadPips).toBeCloseTo(2.2, 10);
+    expect(widened?.spread).toBe(0.00017);
+    expect(widened?.spreadPips).toBeCloseTo(1.7, 10);
   });
 
   it('normalizes entry-list depth payloads (entries/levels with FIX entry_type or side) and top-of-book sizes', () => {

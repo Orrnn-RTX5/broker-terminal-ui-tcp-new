@@ -28,6 +28,14 @@ export interface MarketInstrument {
   timestamp?: number;
   /** Authenticated catalogue only: account group spread markup in points. */
   spreadMarkup?: number;
+  /** Authenticated catalogue only: MT5 IMTConSymbol::Spread (S) in points; 0 = floating. */
+  fixedSpreadPoints?: number;
+  /** Authenticated catalogue only: MT5 IMTConSymbol::SpreadBalance (SB) in points, signed. */
+  spreadBalancePoints?: number;
+  /** Authenticated catalogue only: MT5 IMTConGroupSymbol::SpreadDiff (D) in points, signed. */
+  spreadDiffPoints?: number;
+  /** Authenticated catalogue only: MT5 IMTConGroupSymbol::SpreadDiffBalance (B) in points, signed. */
+  spreadDiffBalancePoints?: number;
 }
 
 export interface MarketInstrumentsSnapshot {

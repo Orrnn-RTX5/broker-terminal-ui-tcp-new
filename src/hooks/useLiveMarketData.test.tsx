@@ -2328,8 +2328,8 @@ describe('account spread markup from the authenticated catalogue', () => {
     expect(result.current.authorizedInstruments).toEqual(expect.arrayContaining([
       expect.objectContaining({ symbol: 'XAUUSD', spreadMarkup: 5 }),
     ]));
-    expect(getAccountSpreadMarkup('XAUUSD')).toEqual({ points: 5, tickSize: 0.01, digits: 2 });
-    expect(markupAtSeed).toEqual({ points: 5, tickSize: 0.01, digits: 2 });
+    expect(getAccountSpreadMarkup('XAUUSD')).toMatchObject({ points: 5, tickSize: 0.01, digits: 2 });
+    expect(markupAtSeed).toMatchObject({ points: 5, tickSize: 0.01, digits: 2 });
     // The public catalogue can never contribute markup to an account.
     expect(getAccountSpreadMarkup('EURUSD')).toBeUndefined();
     unmount();
@@ -2359,9 +2359,9 @@ describe('account spread markup from the authenticated catalogue', () => {
       timestamp: 1,
     };
     const widened = applySpreadMarkupToOrderBook(book, map);
-    expect(widened?.bids[0].price).toBe(1.09995);
-    expect(widened?.asks[0].price).toBe(1.10017);
-    expect(widened?.spread).toBe(0.00022);
+    expect(widened?.bids[0].price).toBe(1.09997);
+    expect(widened?.asks[0].price).toBe(1.10014);
+    expect(widened?.spread).toBe(0.00017);
     expect(applySpreadMarkupToOrderBook(book, new Map())).toBe(book);
   });
 });

@@ -9,6 +9,12 @@ export interface MarketWatchQuote {
   ask: number;
   /** Original broker event time in milliseconds, not the local receipt time. */
   asOf: number;
+  /**
+   * Broker (raw) sides of a quote whose `bid`/`ask` already include the account spread
+   * markup (live funnel). Both or neither. Absent for a quote stored as its raw pair.
+   */
+  rawBid?: number;
+  rawAsk?: number;
 }
 
 interface StoredQuote extends MarketWatchQuote {
@@ -17,7 +23,12 @@ interface StoredQuote extends MarketWatchQuote {
   savedAt: number;
 }
 
-export const MARKET_WATCH_QUOTE_CACHE_STORAGE_KEY = 'rtx5_market_watch_quotes_v1';
+/**
+ * Versioned by key. Entries under the v1 key were stored with the markup applied before the
+ * P01 fix (full markup on both sides), so they are never read; ensureLoaded retires them.
+ */
+export const MARKET_WATCH_QUOTE_CACHE_STORAGE_KEY = 'rtx5_market_watch_quotes_v2';
+const LEGACY_MARKET_WATCH_QUOTE_CACHE_STORAGE_KEY = 'rtx5_market_watch_quotes_v1';
 export const MARKET_WATCH_QUOTE_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 export const MAX_MARKET_WATCH_QUOTE_CACHE_ENTRIES = 500;
 
@@ -49,6 +60,12 @@ const isQuote = (value: unknown): value is MarketWatchQuote => {
   return isPositiveFinite(quote.bid) && isPositiveFinite(quote.ask) && isPositiveFinite(quote.asOf);
 };
 
+/** Raw sides are optional and come as a pair: both positive, or neither. */
+const hasValidRawSides = (value: Partial<MarketWatchQuote>): boolean => (
+  (value.rawBid === undefined && value.rawAsk === undefined)
+  || (isPositiveFinite(value.rawBid) && isPositiveFinite(value.rawAsk))
+);
+
 const isStoredQuote = (value: unknown): value is StoredQuote => {
   if (!isQuote(value)) return false;
   const entry = value as Partial<StoredQuote>;
@@ -56,7 +73,8 @@ const isStoredQuote = (value: unknown): value is StoredQuote => {
   const symbol = normalizeSymbol(entry.symbol);
   return scopeKey.length > 0 && entry.scopeKey === scopeKey
     && symbol.length > 0 && entry.symbol === symbol
-    && isPositiveFinite(entry.savedAt);
+    && isPositiveFinite(entry.savedAt)
+    && hasValidRawSides(entry);
 };
 
 const collectEntries = (): StoredQuote[] => (
@@ -113,6 +131,11 @@ const ensureLoaded = (): void => {
   loadedFromStorage = true;
   const storage = getStorage();
   if (!storage) return;
+  try {
+    storage.removeItem(LEGACY_MARKET_WATCH_QUOTE_CACHE_STORAGE_KEY);
+  } catch {
+    // Retirement is best effort: the v1 key is never read.
+  }
 
   try {
     const raw = storage.getItem(MARKET_WATCH_QUOTE_CACHE_STORAGE_KEY);
@@ -143,9 +166,11 @@ const ensureLoaded = (): void => {
   }
 };
 
-export const readMarketWatchQuotes = (
+/** Reads stored entries; `pick` chooses the pair a reader receives. */
+const readStoredQuotes = (
   scopeKey: string,
   symbols: readonly string[],
+  pick: (entry: StoredQuote) => MarketWatchQuote,
 ): Record<string, MarketWatchQuote> => {
   ensureLoaded();
   const values: Record<string, MarketWatchQuote> = {};
@@ -160,10 +185,43 @@ export const readMarketWatchQuotes = (
       markDirty();
       return;
     }
-    values[key] = { bid: entry.bid, ask: entry.ask, asOf: entry.asOf };
+    values[key] = pick(entry);
   });
   return values;
 };
+
+/** The pair as stored: the display pair (bid/ask), which includes the markup for a live-funnel entry. */
+export const readMarketWatchQuotes = (
+  scopeKey: string,
+  symbols: readonly string[],
+): Record<string, MarketWatchQuote> => readStoredQuotes(
+  scopeKey,
+  symbols,
+  (entry) => ({ bid: entry.bid, ask: entry.ask, asOf: entry.asOf }),
+);
+
+/**
+ * The broker (raw) pair of each quote, before account markup: the raw sides when the live
+ * funnel widened the quote, otherwise the stored pair. A reader that shows the account markup
+ * applies it to this pair exactly once.
+ */
+export const readMarketWatchRawQuotes = (
+  scopeKey: string,
+  symbols: readonly string[],
+): Record<string, MarketWatchQuote> => readStoredQuotes(
+  scopeKey,
+  symbols,
+  (entry) => ({
+    bid: entry.rawBid ?? entry.bid,
+    ask: entry.rawAsk ?? entry.ask,
+    asOf: entry.asOf,
+  }),
+);
+
+const isSameQuoteSides = (quote: MarketWatchQuote, stored: MarketWatchQuote): boolean => (
+  quote.bid === stored.bid && quote.ask === stored.ask
+  && quote.rawBid === stored.rawBid && quote.rawAsk === stored.rawAsk
+);
 
 export const rememberMarketWatchQuote = (
   scopeKey: string,
@@ -174,11 +232,12 @@ export const rememberMarketWatchQuote = (
   const normalizedScopeKey = normalizeScopeKey(scopeKey);
   const normalizedSymbol = normalizeSymbol(symbol);
   if (!normalizedScopeKey || !normalizedSymbol || !isQuote(quote) || hasInvalidSourceTime(quote)) return false;
+  if (!hasValidRawSides(quote)) return false;
 
   const scopedEntries = entriesByScope.get(normalizedScopeKey) ?? new Map<string, StoredQuote>();
   const current = scopedEntries.get(normalizedSymbol);
   if (current && (quote.asOf < current.asOf
-    || (quote.asOf === current.asOf && quote.bid === current.bid && quote.ask === current.ask))) {
+    || (quote.asOf === current.asOf && isSameQuoteSides(quote, current)))) {
     return false;
   }
   scopedEntries.set(normalizedSymbol, {
@@ -187,6 +246,8 @@ export const rememberMarketWatchQuote = (
     bid: quote.bid,
     ask: quote.ask,
     asOf: quote.asOf,
+    rawBid: quote.rawBid,
+    rawAsk: quote.rawAsk,
     savedAt: Date.now(),
   });
   if (!current) entryCount += 1;

@@ -102,9 +102,9 @@ describe('account spread markup at the live-tick funnel', () => {
     const marketTick = useMarketDataStore.getState().symbolData.EURUSD?.currentTick as any;
     const cached = window.rtxTickCache.get('EURUSD') as any;
     for (const tick of [appTick, marketTick, cached]) {
-      expect(tick.bid).toBe(1.09995);
-      expect(tick.ask).toBe(1.10017);
-      expect(tick.spread).toBe(0.00022);
+      expect(tick.bid).toBe(1.09997);
+      expect(tick.ask).toBe(1.10014);
+      expect(tick.spread).toBe(0.00017);
       expect(tick.rawBid).toBe(1.1);
       expect(tick.rawAsk).toBe(1.10012);
     }
@@ -123,8 +123,8 @@ describe('account spread markup at the live-tick funnel', () => {
     flush();
 
     const tick = useAppStore.getState().ticks.EURUSD as any;
-    expect(tick.bid).toBe(1.0999);
-    expect(tick.ask).toBe(1.10022);
+    expect(tick.bid).toBe(1.09995);
+    expect(tick.ask).toBe(1.10017);
     expect(tick.rawBid).toBe(1.1);
   });
 

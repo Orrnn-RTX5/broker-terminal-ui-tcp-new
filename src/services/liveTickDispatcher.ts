@@ -459,6 +459,10 @@ const ingestLiveTick = (symbol: string, tick: LiveTick, feedActivity: boolean): 
         bid: fullTick.bid,
         ask: fullTick.ask,
         asOf: sourceTimestamp,
+        // Broker sides of a widened tick (undefined when no markup applied). The closed-market
+        // fallback re-applies the current markup to these, exactly once.
+        rawBid: fullTick.rawBid,
+        rawAsk: fullTick.rawAsk,
       });
     } catch (error) {
       console.error('[LiveTickDispatcher] Last quote cache write failed:', error);

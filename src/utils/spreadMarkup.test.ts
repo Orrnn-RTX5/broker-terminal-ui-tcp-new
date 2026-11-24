@@ -41,15 +41,15 @@ describe('buildSpreadMarkupMap', () => {
       { symbol: 'GBPUSD', spreadMarkup: 0, tickSize: 0.00001, digits: 5 },
       { symbol: 'USDJPY' },
     ]);
-    expect(map.get('EURUSD')).toEqual(EURUSD);
-    expect(map.get('US30')).toEqual({ points: 2, tickSize: 0.5, digits: 1 });
+    expect(map.get('EURUSD')).toMatchObject(EURUSD);
+    expect(map.get('US30')).toMatchObject({ points: 2, tickSize: 0.5, digits: 1 });
     expect(map.has('GBPUSD')).toBe(false);
     expect(map.has('USDJPY')).toBe(false);
   });
 
   it('falls back to 10^-digits when no tick size exists, and derives digits from tick size', () => {
-    expect(resolveSpreadMarkupEntry({ spreadMarkup: 4, digits: 3 })).toEqual({ points: 4, tickSize: 0.001, digits: 3 });
-    expect(resolveSpreadMarkupEntry({ spreadMarkup: 4, tickSize: 0.01 })).toEqual({ points: 4, tickSize: 0.01, digits: 2 });
+    expect(resolveSpreadMarkupEntry({ spreadMarkup: 4, digits: 3 })).toMatchObject({ points: 4, tickSize: 0.001, digits: 3 });
+    expect(resolveSpreadMarkupEntry({ spreadMarkup: 4, tickSize: 0.01 })).toMatchObject({ points: 4, tickSize: 0.01, digits: 2 });
     expect(resolveSpreadMarkupEntry({ spreadMarkup: 4 })).toBeNull();
   });
 
@@ -70,9 +70,9 @@ describe('buildSpreadMarkupMap', () => {
 describe('applySpreadMarkupToQuote', () => {
   it('widens bid down and ask up by markup x tick size, rounded to digits', () => {
     const quote = applySpreadMarkupToQuote({ symbol: 'EURUSD', bid: 1.1, ask: 1.10012, spread: 0.00012 }, EURUSD);
-    expect(quote.bid).toBe(1.09995);
-    expect(quote.ask).toBe(1.10017);
-    expect(quote.spread).toBe(0.00022);
+    expect(quote.bid).toBe(1.09997);
+    expect(quote.ask).toBe(1.10014);
+    expect(quote.spread).toBe(0.00017);
     expect(quote.rawBid).toBe(1.1);
     expect(quote.rawAsk).toBe(1.10012);
     expect(quote.spreadMarkup).toBe(5);
@@ -81,7 +81,7 @@ describe('applySpreadMarkupToQuote', () => {
   it('avoids float noise for prices that are not exactly representable', () => {
     const quote = applySpreadMarkupToQuote({ bid: 0.3, ask: 0.30003 }, { points: 1, tickSize: 0.00001, digits: 5 });
     expect(quote.bid).toBe(0.29999);
-    expect(quote.ask).toBe(0.30004);
+    expect(quote.ask).toBe(0.30003);
     expect(getSpreadMarkupOffset({ points: 3, tickSize: 0.1, digits: 1 })).toBe(0.3);
     expect(roundPriceToDigits(1.005 - 0.00001, 5)).toBe(1.00499);
   });
@@ -92,8 +92,8 @@ describe('applySpreadMarkupToQuote', () => {
     expect(twice).toEqual(once);
 
     const repriced = applySpreadMarkupToQuote(once, { ...EURUSD, points: 10 });
-    expect(repriced.bid).toBe(1.0999);
-    expect(repriced.ask).toBe(1.10022);
+    expect(repriced.bid).toBe(1.09995);
+    expect(repriced.ask).toBe(1.10017);
     expect(repriced.rawBid).toBe(1.1);
   });
 
@@ -113,13 +113,13 @@ describe('applySpreadMarkupToQuote', () => {
   it('only moves the sides that carry a price', () => {
     const quote = applySpreadMarkupToQuote({ bid: 0, ask: 1.2 }, EURUSD);
     expect(quote.bid).toBe(0);
-    expect(quote.ask).toBe(1.20005);
+    expect(quote.ask).toBe(1.20002);
     expect(applySpreadMarkupToQuote({ bid: 0, ask: 0 }, EURUSD)).toEqual({ bid: 0, ask: 0 });
   });
 
   it('looks the markup up by normalized symbol', () => {
     const map = buildSpreadMarkupMap([{ symbol: 'EURUSD', spreadMarkup: 5, tickSize: 0.00001, digits: 5 }]);
-    expect(applySpreadMarkupFromMap(' eurusd ', { bid: 1.1, ask: 1.1001 }, map).bid).toBe(1.09995);
+    expect(applySpreadMarkupFromMap(' eurusd ', { bid: 1.1, ask: 1.1001 }, map).bid).toBe(1.09997);
     const other = { bid: 1.3, ask: 1.3001 };
     expect(applySpreadMarkupFromMap('GBPUSD', other, map)).toBe(other);
   });
@@ -129,7 +129,7 @@ describe('raw quote helpers for raw-bid chart candles', () => {
   it('returns the feed sides of a widened quote and its bid offset', () => {
     const widened = applySpreadMarkupToQuote({ bid: 1.1, ask: 1.10012 }, EURUSD);
     expect(getRawQuoteSides(widened)).toMatchObject({ bid: 1.1, ask: 1.10012 });
-    expect(getQuoteBidMarkupOffset(widened)).toBe(0.00005);
+    expect(getQuoteBidMarkupOffset(widened)).toBe(0.00003);
   });
 
   it('passes raw quotes and missing quotes through', () => {
@@ -145,17 +145,20 @@ describe('applySpreadMarkupToBookLevels', () => {
   it('moves bid levels down and ask levels up', () => {
     const bids = [{ price: 1.1, volume: 1, total: 1 }, { price: 1.09999, volume: 2, total: 3 }];
     const asks = [{ price: 1.10012, volume: 1, total: 1 }];
-    expect(applySpreadMarkupToBookLevels(bids, 'bid', EURUSD).map((level) => level.price)).toEqual([1.09995, 1.09994]);
-    expect(applySpreadMarkupToBookLevels(asks, 'ask', EURUSD)[0]).toEqual({ price: 1.10017, volume: 1, total: 1 });
-    expect(applySpreadMarkupToBookLevels(bids, 'bid', undefined)).toBe(bids);
+    // Opposite side passed: the raw asks (ask top 1.10012). No crossing, so the bid top moves by the Bid share:
+    // m=5 (tick = point): bid 1.10000 - 3P = 1.09997 (askPts 2 -> ask 1.10014). Bid levels move by -3P: 1.09997, 1.09996.
+    expect(applySpreadMarkupToBookLevels(bids, 'bid', EURUSD, asks).map((level) => level.price)).toEqual([1.09997, 1.09996]);
+    // Opposite side passed: the raw bids (bid top 1.10000). Ask top 1.10012 + 2P = 1.10014.
+    expect(applySpreadMarkupToBookLevels(asks, 'ask', EURUSD, bids)[0]).toEqual({ price: 1.10014, volume: 1, total: 1 });
+    expect(applySpreadMarkupToBookLevels(bids, 'bid', undefined, asks)).toBe(bids); // no markup entry: same array
   });
 });
 
 describe('resolvePositionClosePrice', () => {
   it('closes BUY at bid and SELL at ask of the effective quote', () => {
     const quote = applySpreadMarkupToQuote({ bid: 1.1, ask: 1.10012 }, EURUSD);
-    expect(resolvePositionClosePrice('BUY', quote)).toBe(1.09995);
-    expect(resolvePositionClosePrice('sell', quote)).toBe(1.10017);
+    expect(resolvePositionClosePrice('BUY', quote)).toBe(1.09997);
+    expect(resolvePositionClosePrice('sell', quote)).toBe(1.10014);
   });
 
   it('falls back to last and then the other side', () => {
