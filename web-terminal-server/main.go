@@ -292,6 +292,7 @@ func main() {
 	exeDir := filepath.Dir(exePath)
 	cwd, _ := os.Getwd()
 	loadDotEnvFiles(cwd, exeDir)
+	initWebOriginPolicyFromEnv()
 
 	defaultTargetTCP := envOrDefault("BROKER_TCP_ADDR", "")
 	if defaultTargetTCP == "" || defaultTargetTCP == "127.0.0.1:4443" {
@@ -446,22 +447,7 @@ func main() {
 			}
 			log.Printf("[RTX5-Web-Terminal-TCP] Listening on 0.0.0.0:80 (HTTP -> HTTPS :443 Redirect)")
 			redirectSrv := &http.Server{
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-					if host == "" {
-						host = strings.TrimSpace(r.Host)
-					}
-					if idx := strings.IndexByte(host, ','); idx > 0 {
-						host = strings.TrimSpace(host[:idx])
-					}
-					if h, _, serr := net.SplitHostPort(host); serr == nil && h != "" {
-						host = h
-					}
-					if host == "" {
-						host = "tcp-terminal.orrnn.com"
-					}
-					http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusMovedPermanently)
-				}),
+				Handler:           http.HandlerFunc(httpToHTTPSRedirectHandler),
 				ReadHeaderTimeout: 10 * time.Second,
 				IdleTimeout:       60 * time.Second,
 			}

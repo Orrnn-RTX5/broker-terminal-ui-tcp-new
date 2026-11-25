@@ -38,8 +38,9 @@ var wsOrderFrameBufPool = sync.Pool{
 	},
 }
 
-// isAllowedWebTerminalOrigin unlocks browser WebSocket origins (http:// and https:// matching r.Host, X-Forwarded-Host, *.orrnn.com, or loopback)
-// so Chrome / Edge / Safari / Mobile browsers can open the 132-byte /__rtx5_binary_order_ws fast-lane directly.
+// isAllowedWebTerminalOrigin validates browser WebSocket origins (http:// and https:// matching r.Host,
+// X-Forwarded-Host, derived parent domain or RTX5_WEB_ALLOWED_ORIGIN_HOSTS, or loopback)
+// so browsers can open the 132-byte /__rtx5_binary_order_ws fast-lane and drawing sync WebSocket directly.
 func isAllowedWebTerminalOrigin(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -55,27 +56,17 @@ func isAllowedWebTerminalOrigin(r *http.Request) bool {
 	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
 		return false
 	}
-	host := strings.ToLower(u.Hostname())
-	reqHost := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Host")))
-	if reqHost == "" {
-		reqHost = strings.ToLower(strings.TrimSpace(r.Host))
-	}
-	if idx := strings.IndexByte(reqHost, ','); idx > 0 {
-		reqHost = strings.TrimSpace(reqHost[:idx])
-	}
-	if h, _, herr := net.SplitHostPort(reqHost); herr == nil && h != "" {
-		reqHost = h
-	}
-	if host != "127.0.0.1" && host != "localhost" && !strings.HasSuffix(host, ".orrnn.com") && host != "orrnn.com" && reqHost != "" && host != reqHost {
-		return false
-	}
 	if port := u.Port(); port != "" {
 		p, perr := strconv.Atoi(port)
 		if perr != nil || p < 1 || p > 65535 {
 			return false
 		}
 	}
-	return true
+	host := strings.ToLower(u.Hostname())
+	if host == "" || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, "..") {
+		return false
+	}
+	return isAllowedOriginHost(host, extractRequestHost(r))
 }
 
 func setBinaryOrderCORSHeaders(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,10 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.8] - 2026-11-25 (VERSION file; terminal web server)
+### Changed
+- White-label: the web terminal server no longer hardcodes a broker domain for its WebSocket Origin check (binary order lane and drawings). With no configuration it accepts the request host and origins on the same parent domain (with public-suffix guards); RTX5_WEB_ALLOWED_ORIGIN_HOSTS can replace that default. The port-80 redirect no longer falls back to a fixed host: it uses RTX5_WEB_PUBLIC_HOST, else answers 400.
+- No production configuration change is needed.
+
 ## [1.2.7] - 2026-11-25 (VERSION file; terminal UI)
 ### Added (switched off)
 - **Pending order expiry type field:** the terminal can send the order's expiry type (GTC, today, specified or specified day) with pending orders, switched OFF by default (`VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED`). With the switch off every order frame is byte-identical to 1.2.6; the switch stays off until the matching gateway release (P07-7a) is live.
