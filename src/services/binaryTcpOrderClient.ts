@@ -187,12 +187,19 @@ export const BINARY_ORDER_EXTRA_TAG_MAGIC = 0x02;
 export const BINARY_ORDER_EXTRA_TAG_TRAILING_STOP = 0x03;
 export const BINARY_ORDER_EXTRA_TAG_TRAILING_STEP = 0x04;
 export const BINARY_ORDER_EXTRA_TAG_FILLING = 0x07;
+export const BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE = 0x08;
 export const BINARY_ORDER_COMMENT_MAX_BYTES = 64;
 export const BINARY_ORDER_MAGIC_BYTE_LEN = 8;
 export const BINARY_ORDER_TRAILING_BYTE_LEN = 4;
 export const BINARY_ORDER_TRAILING_MAX_POINTS = 100_000;
 export const BINARY_ORDER_FILLING_BYTE_LEN = 1;
 export const BINARY_ORDER_FILLING_MAX = 2;
+export const BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN = 1;
+export const BINARY_ORDER_EXPIRY_TYPE_MAX = 3;
+export const BINARY_ORDER_EXPIRY_TYPE_GTC = 0;
+export const BINARY_ORDER_EXPIRY_TYPE_DAY = 1;
+export const BINARY_ORDER_EXPIRY_TYPE_SPECIFIED = 2;
+export const BINARY_ORDER_EXPIRY_TYPE_SPECIFIED_DAY = 3;
 export const BINARY_ORDER_EXTRAS_MAX_BYTES = 512;
 
 export const BINARY_ORDER_FLAGS = {
@@ -251,6 +258,8 @@ export interface BinaryTcpOrderParams {
   clearTrailing?: boolean;
   /** Optional MT5 order fill policy (0=FOK, 1=IOC, 2=RETURN; encoded in TLV extras tag 0x07 for actions 1, 4 when `VITE_BINARY_ORDER_FILLING_TLV_ENABLED` is enabled). */
   filling?: number | null;
+  /** Optional MT5 pending order expiry type (0=GTC, 1=DAY, 2=SPECIFIED, 3=SPECIFIED_DAY; encoded in TLV extras tag 0x08 for action 4, and for action 5 when `HAS_EXPIRATION` is set, when `VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED` is enabled). */
+  expiryType?: number | null;
   /** Idempotent client order ID (max 40 ASCII bytes; UUID v4 generated automatically if omitted). */
   clientOrderId?: string;
   /** Bearer/JWT token override (defaults to `getAccessToken()` from `brokerSession`). */
@@ -329,22 +338,38 @@ const EMPTY_BYTES = new Uint8Array(0);
 const DEFAULT_BINARY_ORDER_TIMEOUT_MS = 20_000;
 const UNIX_MS_THRESHOLD = 100_000_000_000;
 
-// Read once at module load (never per frame); defaults OFF so frames stay byte-identical until P07-6 ships.
-const BINARY_ORDER_FILLING_TLV_ENABLED: boolean = (() => {
-  const raw: unknown = import.meta.env?.VITE_BINARY_ORDER_FILLING_TLV_ENABLED;
+function parseModuleBooleanFlag(raw: unknown): boolean {
   if (typeof raw === 'boolean') return raw;
   if (typeof raw === 'string') {
     const normalized = raw.trim().toLowerCase();
     return normalized === 'true' || normalized === '1';
   }
   return false;
-})();
+}
+
+// Read once at module load (never per frame); defaults OFF so frames stay byte-identical until P07-6 ships.
+const BINARY_ORDER_FILLING_TLV_ENABLED: boolean = parseModuleBooleanFlag(
+  import.meta.env?.VITE_BINARY_ORDER_FILLING_TLV_ENABLED,
+);
+
+// Read once at module load (never per frame); defaults OFF so frames stay byte-identical until P07-7a ships.
+const BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED: boolean = parseModuleBooleanFlag(
+  import.meta.env?.VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED,
+);
 
 // Private pre-encoded 3-byte TLV 0x07 slices for valid filling values 0..2 (0-alloc fast path inside frame builders only).
 const PREENCODED_FILLING_TLVS: readonly Uint8Array<ArrayBuffer>[] = [
   new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 0]),
   new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 1]),
   new Uint8Array([BINARY_ORDER_EXTRA_TAG_FILLING, BINARY_ORDER_FILLING_BYTE_LEN, 2]),
+];
+
+// Private pre-encoded 3-byte TLV 0x08 slices for valid expiry types 0..3 (0-alloc fast path inside frame builders only).
+const PREENCODED_EXPIRY_TYPE_TLVS: readonly Uint8Array<ArrayBuffer>[] = [
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE, BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN, 0]),
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE, BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN, 1]),
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE, BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN, 2]),
+  new Uint8Array([BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE, BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN, 3]),
 ];
 
 const perfNow = (): number => (
@@ -563,6 +588,91 @@ export function isBinaryTcpOrderEnabled(): boolean {
     return Boolean(w.__RTX5_RUNTIME_CONFIG__ || w.rtx5Electron);
   }
   return true;
+}
+
+const DIALOG_EXPIRY_TYPE_BY_MODE = new Map<string, number>([
+  ['GTC', BINARY_ORDER_EXPIRY_TYPE_GTC],
+  ['Today', BINARY_ORDER_EXPIRY_TYPE_DAY],
+  ['Specified', BINARY_ORDER_EXPIRY_TYPE_SPECIFIED],
+  ['Specified day', BINARY_ORDER_EXPIRY_TYPE_SPECIFIED_DAY],
+]);
+
+const MODIFY_EXPIRY_TYPE_BY_TIF = new Map<string, number>([
+  ['DAY', BINARY_ORDER_EXPIRY_TYPE_DAY],
+  ['GTD', BINARY_ORDER_EXPIRY_TYPE_SPECIFIED],
+]);
+
+export function isBinaryOrderExpiryTypeTlvEnabled(): boolean {
+  return BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED;
+}
+
+/**
+ * Resolves pending-order `expiryType` (0..3) from explicit `expiryType`/`expiry_type` or
+ * OrderPanelDialog `expiration` mode (`GTC`, `Today`, `Specified`, `Specified day`).
+ * Returns `undefined` when `VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED` is off.
+ */
+export function resolvePlacePendingExpiryType(
+  expiryType?: number | null,
+  expiryTypeSnake?: number | null,
+  dialogExpiration?: string,
+): number | undefined {
+  if (!BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED) return undefined;
+  const explicit = expiryType !== undefined ? expiryType : expiryTypeSnake;
+  if (explicit !== undefined && explicit !== null) return explicit;
+  if (typeof dialogExpiration === 'string') {
+    return DIALOG_EXPIRY_TYPE_BY_MODE.get(dialogExpiration.trim());
+  }
+  return undefined;
+}
+
+/**
+ * Resolves pending-modify `expiryType` ONLY when `HAS_EXPIRATION` is set and
+ * `VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED` is on. Price/SL/TP-only and clear-to-GTC
+ * modifications (`hasExpiration === false`) return `undefined`.
+ */
+export function resolveModifyPendingExpiryType(
+  hasExpiration: boolean,
+  expiryType?: number | null,
+  expiryTypeSnake?: number | null,
+  timeInForce?: string,
+): number | undefined {
+  if (!BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED || !hasExpiration) return undefined;
+  const explicit = expiryType !== undefined ? expiryType : expiryTypeSnake;
+  if (explicit !== undefined && explicit !== null) return explicit;
+  if (typeof timeInForce === 'string') {
+    return MODIFY_EXPIRY_TYPE_BY_TIF.get(timeInForce.trim().toUpperCase());
+  }
+  return undefined;
+}
+
+function validatePendingExpiryTypeConsistency(
+  action: BinaryOrderAction,
+  expiryTypeVal: number,
+  expiration: number,
+  clientOrderId: string,
+): void {
+  if (expiryTypeVal === BINARY_ORDER_EXPIRY_TYPE_GTC && expiration > 0) {
+    throw new BinaryTcpOrderError('GTC pending order cannot specify an expiration timestamp', {
+      status: 400,
+      code: 'INVALID_EXPIRY_TYPE',
+      retryable: false,
+      clientOrderId,
+      action,
+    });
+  }
+  if (
+    action === BINARY_ORDER_ACTION_PLACE_PENDING
+    && (expiryTypeVal === BINARY_ORDER_EXPIRY_TYPE_SPECIFIED || expiryTypeVal === BINARY_ORDER_EXPIRY_TYPE_SPECIFIED_DAY)
+    && expiration <= 0
+  ) {
+    throw new BinaryTcpOrderError('Specified pending order expiryType requires a positive expiration timestamp', {
+      status: 400,
+      code: 'INVALID_EXPIRY_TYPE',
+      retryable: false,
+      clientOrderId,
+      action,
+    });
+  }
 }
 
 export function getActiveBinaryTcpOrderCount(): number {
@@ -1446,6 +1556,14 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     && (action === BINARY_ORDER_ACTION_PLACE_MARKET || action === BINARY_ORDER_ACTION_PLACE_PENDING);
   const hasFillingInput =
     canCarryFilling && params.filling !== undefined && params.filling !== null;
+  const canCarryExpiryType =
+    BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED
+    && (
+      action === BINARY_ORDER_ACTION_PLACE_PENDING
+      || (action === BINARY_ORDER_ACTION_MODIFY_PENDING && (flags & BINARY_ORDER_FLAG_HAS_EXPIRATION) !== 0)
+    );
+  const hasExpiryTypeInput =
+    canCarryExpiryType && params.expiryType !== undefined && params.expiryType !== null;
   let extrasBytes = EMPTY_BYTES;
   if (
     (flags & (BINARY_ORDER_FLAG_HAS_EXTRAS | BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) !== 0
@@ -1455,6 +1573,7 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
     || params.trailingStep !== undefined
     || params.clearTrailing === true
     || hasFillingInput
+    || hasExpiryTypeInput
   ) {
     if ((flags & (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) === (BINARY_ORDER_FLAG_HAS_TRAILING | BINARY_ORDER_FLAG_CLEAR_TRAILING)) {
       throw new BinaryTcpOrderError('HAS_TRAILING and CLEAR_TRAILING cannot both be set', {
@@ -1547,8 +1666,12 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
       tlvTrailingStop,
       tlvTrailingStep,
       hasFillingInput ? params.filling : undefined,
+      hasExpiryTypeInput ? params.expiryType : undefined,
       true,
     );
+    if (hasExpiryTypeInput) {
+      validatePendingExpiryTypeConsistency(action, Number(params.expiryType), expiration, clientOrderId);
+    }
   }
   if (extrasBytes.byteLength > 0) {
     flags |= BINARY_ORDER_FLAG_HAS_EXTRAS;
@@ -1582,6 +1705,27 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   };
 }
 
+function validateOptionalUint8Extra(
+  rawValue: number | null | undefined,
+  max: number,
+  label: string,
+  code: string,
+  clientOrderId: string,
+  action: number,
+): number | null {
+  if (rawValue === undefined || rawValue === null) return null;
+  if (typeof rawValue !== 'number' || !Number.isInteger(rawValue) || rawValue < 0 || rawValue > max) {
+    throw new BinaryTcpOrderError(`Order ${label} must be an integer in 0..${max}`, {
+      status: 400,
+      code,
+      retryable: false,
+      clientOrderId,
+      action,
+    });
+  }
+  return rawValue === 0 ? 0 : rawValue;
+}
+
 function encodeBinaryOrderExtrasTlvInternal(
   rawComment?: string | null,
   rawMagic?: number | bigint | null,
@@ -1590,6 +1734,7 @@ function encodeBinaryOrderExtrasTlvInternal(
   rawTrailingStop?: number | null,
   rawTrailingStep?: number | null,
   rawFilling?: number | null,
+  rawExpiryType?: number | null,
   allowSharedPreencoded = false,
 ): Uint8Array<ArrayBuffer> {
   let commentBytes: Uint8Array = EMPTY_BYTES;
@@ -1726,40 +1871,43 @@ function encodeBinaryOrderExtrasTlvInternal(
     trailingStepVal = rawTrailingStep;
   }
 
-  let fillingVal: number | null = null;
-  if (rawFilling !== undefined && rawFilling !== null) {
-    if (
-      typeof rawFilling !== 'number'
-      || !Number.isInteger(rawFilling)
-      || rawFilling < 0
-      || rawFilling > BINARY_ORDER_FILLING_MAX
-    ) {
-      throw new BinaryTcpOrderError(
-        `Order filling mode must be an integer in 0..${BINARY_ORDER_FILLING_MAX}`,
-        {
-          status: 400,
-          code: 'INVALID_FILLING',
-          retryable: false,
-          clientOrderId,
-          action,
-        },
-      );
-    }
-    fillingVal = rawFilling;
-  }
+  const fillingVal = validateOptionalUint8Extra(
+    rawFilling,
+    BINARY_ORDER_FILLING_MAX,
+    'filling mode',
+    'INVALID_FILLING',
+    clientOrderId,
+    action,
+  );
+  const expiryTypeVal = validateOptionalUint8Extra(
+    rawExpiryType,
+    BINARY_ORDER_EXPIRY_TYPE_MAX,
+    'expiry type',
+    'INVALID_EXPIRY_TYPE',
+    clientOrderId,
+    action,
+  );
 
   const hasComment = commentBytes.byteLength > 0;
   const hasMagic = magicBig !== null;
   const hasTrailingStop = trailingStopVal !== null;
   const hasTrailingStep = trailingStepVal !== null;
   const hasFilling = fillingVal !== null;
-  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep && !hasFilling) {
+  const hasExpiryType = expiryTypeVal !== null;
+  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep && !hasFilling && !hasExpiryType) {
     return EMPTY_BYTES;
   }
-  if (hasFilling && fillingVal !== null && !hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep) {
-    return allowSharedPreencoded
-      ? PREENCODED_FILLING_TLVS[fillingVal]
-      : PREENCODED_FILLING_TLVS[fillingVal].slice();
+  if (!hasComment && !hasMagic && !hasTrailingStop && !hasTrailingStep) {
+    if (hasFilling && fillingVal !== null && !hasExpiryType) {
+      return allowSharedPreencoded
+        ? PREENCODED_FILLING_TLVS[fillingVal]
+        : PREENCODED_FILLING_TLVS[fillingVal].slice();
+    }
+    if (hasExpiryType && expiryTypeVal !== null && !hasFilling) {
+      return allowSharedPreencoded
+        ? PREENCODED_EXPIRY_TYPE_TLVS[expiryTypeVal]
+        : PREENCODED_EXPIRY_TYPE_TLVS[expiryTypeVal].slice();
+    }
   }
 
   const extrasLen =
@@ -1767,7 +1915,8 @@ function encodeBinaryOrderExtrasTlvInternal(
     + (hasMagic ? 2 + BINARY_ORDER_MAGIC_BYTE_LEN : 0)
     + (hasTrailingStop ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0)
     + (hasTrailingStep ? 2 + BINARY_ORDER_TRAILING_BYTE_LEN : 0)
-    + (hasFilling ? 2 + BINARY_ORDER_FILLING_BYTE_LEN : 0);
+    + (hasFilling ? 2 + BINARY_ORDER_FILLING_BYTE_LEN : 0)
+    + (hasExpiryType ? 2 + BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN : 0);
   if (extrasLen > BINARY_ORDER_EXTRAS_MAX_BYTES) {
     throw new BinaryTcpOrderError(`Order extras TLV exceeds maximum ${BINARY_ORDER_EXTRAS_MAX_BYTES} bytes`, {
       status: 400,
@@ -1809,6 +1958,12 @@ function encodeBinaryOrderExtrasTlvInternal(
     tlv[offset] = BINARY_ORDER_EXTRA_TAG_FILLING;
     tlv[offset + 1] = BINARY_ORDER_FILLING_BYTE_LEN;
     tlv[offset + 2] = fillingVal & 0xff;
+    offset += 2 + BINARY_ORDER_FILLING_BYTE_LEN;
+  }
+  if (hasExpiryType && expiryTypeVal !== null) {
+    tlv[offset] = BINARY_ORDER_EXTRA_TAG_EXPIRY_TYPE;
+    tlv[offset + 1] = BINARY_ORDER_EXPIRY_TYPE_BYTE_LEN;
+    tlv[offset + 2] = expiryTypeVal & 0xff;
   }
 
   return tlv;
@@ -1839,6 +1994,7 @@ export function encodeBinaryOrderExtrasTlv(
     rawTrailingStop,
     rawTrailingStep,
     rawFilling,
+    undefined,
     false,
   );
 }

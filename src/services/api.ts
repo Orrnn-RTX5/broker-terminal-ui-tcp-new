@@ -193,6 +193,8 @@ import {
   BinaryTcpOrderError,
   createFastBinaryClientOrderId,
   isBinaryTcpOrderEnabled,
+  resolveModifyPendingExpiryType,
+  resolvePlacePendingExpiryType,
   sendBinaryTcpOrder,
   type BinaryOrderSubType,
   type BinaryTcpOrderParams,
@@ -2326,7 +2328,7 @@ export const ordersApi = {
   },
 
   async placePendingOrder(
-    data: endpoints.PendingOrderRequest,
+    data: endpoints.PendingOrderRequest & { expiryType?: number | null; expiry_type?: number | null },
     options: MarketOrderPlacementOptions = {},
   ): Promise<endpoints.Order> {
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
@@ -2395,6 +2397,7 @@ export const ordersApi = {
       throw new Error('TP must be zero (disabled) or a positive finite number');
     }
     const expiration = normalizePendingExpiration(rawExpiration);
+    const expiryType = resolvePlacePendingExpiryType(data.expiryType, data.expiry_type);
 
     const suppliedClientOrderId = typeof (data as { client_order_id?: unknown }).client_order_id === 'string'
       ? String((data as { client_order_id?: string }).client_order_id).trim()
@@ -2430,6 +2433,7 @@ export const ordersApi = {
       ...(sl > 0 ? { sl } : {}),
       ...(tp > 0 ? { tp } : {}),
       ...(expiration > 0 ? { expiration } : {}),
+      ...(expiryType !== undefined ? { expiryType } : {}),
       ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
       ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
       ...(trailingStopParam !== undefined ? { trailingStop: trailingStopParam } : {}),
@@ -2695,7 +2699,7 @@ export const ordersApi = {
 
   async modifyPendingOrder(
     orderId: string | number,
-    data: endpoints.ModifyPendingOrderRequest,
+    data: endpoints.ModifyPendingOrderRequest & { expiryType?: number | null; expiry_type?: number | null },
     options: MarketOrderPlacementOptions = {},
   ): Promise<endpoints.Order> {
     const { intentAtMs, sessionScope } = resolveActionIntentContext(options);
@@ -2840,6 +2844,12 @@ export const ordersApi = {
 
     const clientOrderId = suppliedClientOrderId || createFastBinaryClientOrderId();
     const accountLogin = tryResolveTradingLogin();
+    const expiryType = resolveModifyPendingExpiryType(
+      (flags & BINARY_ORDER_FLAG_HAS_EXPIRATION) !== 0,
+      data.expiryType,
+      data.expiry_type,
+      data.time_in_force,
+    );
     const binarySubmittedAtMs = Date.now();
     const binaryParams: BinaryTcpOrderParams = {
       action: BINARY_ORDER_ACTION_MODIFY_PENDING,
@@ -2851,6 +2861,7 @@ export const ordersApi = {
       ...(slParam !== undefined ? { sl: slParam } : {}),
       ...(tpParam !== undefined ? { tp: tpParam } : {}),
       ...(expirationParam !== undefined && expirationParam > 0 ? { expiration: expirationParam } : {}),
+      ...(expiryType !== undefined ? { expiryType } : {}),
       ...(normalizedComment !== undefined ? { comment: normalizedComment } : {}),
       ...(normalizedMagic !== undefined ? { magic: normalizedMagic } : {}),
       ...(trailingStopParam !== undefined ? { trailingStop: trailingStopParam } : {}),

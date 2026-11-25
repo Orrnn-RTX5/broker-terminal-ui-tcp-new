@@ -34,6 +34,8 @@ import {
   BINARY_ORDER_SUBTYPE_SELL_STOP_LIMIT,
   BinaryTcpOrderError,
   bindBinaryTcpAccountSub,
+  resolveModifyPendingExpiryType,
+  resolvePlacePendingExpiryType,
   sendBinaryTcpOrder,
   type BinaryOrderSubType,
   type BinaryTcpOrderParams,
@@ -203,6 +205,8 @@ export interface TradeSocketPlacePendingOrderPayload {
   tp?: number | null;
   expiration?: number | null;
   expiry?: number | null;
+  expiryType?: number | null;
+  expiry_type?: number | null;
   client_order_id?: string;
   clientOrderId?: string;
   authToken?: string | null;
@@ -218,8 +222,11 @@ export interface TradeSocketModifyPendingOrderPayload {
   price_tp?: number | null;
   sl?: number | null;
   tp?: number | null;
+  time_in_force?: 'GTC' | 'DAY' | 'GTD';
   expiration?: number | null;
   expiry?: number | null;
+  expiryType?: number | null;
+  expiry_type?: number | null;
   account_login?: number;
   accountLogin?: number;
   symbol?: string;
@@ -1515,6 +1522,7 @@ export class TradeWebSocketClient {
     if (sl > 0) flags |= BINARY_ORDER_FLAG_HAS_SL;
     if (tp > 0) flags |= BINARY_ORDER_FLAG_HAS_TP;
     if (expiration > 0) flags |= BINARY_ORDER_FLAG_HAS_EXPIRATION;
+    const expiryType = resolvePlacePendingExpiryType(payload.expiryType, payload.expiry_type);
 
     try {
       const resp = await sendBinaryTcpOrder({
@@ -1530,6 +1538,7 @@ export class TradeWebSocketClient {
         ...(sl > 0 ? { sl } : {}),
         ...(tp > 0 ? { tp } : {}),
         ...(expiration > 0 ? { expiration } : {}),
+        ...(expiryType !== undefined ? { expiryType } : {}),
         clientOrderId,
         authToken: payload.authToken !== undefined ? payload.authToken : this.resolveActiveAuthToken(),
         ...(payload.signal ? { signal: payload.signal } : {}),
@@ -1677,6 +1686,12 @@ export class TradeWebSocketClient {
 
     this.assertBinaryCommandReady(requestId, clientOrderId);
 
+    const expiryType = resolveModifyPendingExpiryType(
+      (flags & BINARY_ORDER_FLAG_HAS_EXPIRATION) !== 0,
+      data.expiryType,
+      data.expiry_type,
+      data.time_in_force,
+    );
     const accountLogin = explicitLogin ?? this.resolveSubscribedAccountLogin() ?? 0;
     try {
       const resp = await sendBinaryTcpOrder({
@@ -1689,6 +1704,7 @@ export class TradeWebSocketClient {
         ...(slParam !== undefined ? { sl: slParam } : {}),
         ...(tpParam !== undefined ? { tp: tpParam } : {}),
         ...(expirationParam !== undefined && expirationParam > 0 ? { expiration: expirationParam } : {}),
+        ...(expiryType !== undefined ? { expiryType } : {}),
         clearSl,
         clearTp,
         clientOrderId,

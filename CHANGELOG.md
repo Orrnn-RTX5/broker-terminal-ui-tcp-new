@@ -1,5 +1,9 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.7] - 2026-11-25 (VERSION file; terminal UI)
+### Added (switched off)
+- **Pending order expiry type field:** the terminal can send the order's expiry type (GTC, today, specified or specified day) with pending orders, switched OFF by default (`VITE_BINARY_ORDER_EXPIRY_TYPE_TLV_ENABLED`). With the switch off every order frame is byte-identical to 1.2.6; the switch stays off until the matching gateway release (P07-7a) is live.
+
 ## [1.2.6] - 2026-11-24 (VERSION file; terminal UI)
 ### Changed
 - **Depth of market and order ticket ladder keep to the current symbol and session:** when you switch symbol, log out or change account, the previous ladder and its error clear at once; a token refresh no longer makes a loaded ladder blink or clear; and late answers from a previous symbol, session or request can no longer overwrite the ladder on screen.

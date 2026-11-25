@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import {
   getActiveBinaryTcpOrderCount,
   isBinaryTcpOrderEnabled,
+  resolvePlacePendingExpiryType,
 } from '../../services/binaryTcpOrderClient';
 import type { DepthOrderRequest } from '../../components/DepthOfMarket';
 import type { SymbolMarketStatusState } from '../../hooks/useSymbolMarketStatus';
@@ -97,6 +98,7 @@ export interface OrderPanelSubmission {
   expiration?: string;
   expirationTimestamp?: number;
   expiry?: number;
+  expiryType?: number | null;
   comment?: string;
   intentAtMs?: number;
 }
@@ -481,6 +483,11 @@ export const useOrderExecution = ({
           return seconds > 0 ? seconds : undefined;
         };
         const pendingExpiry = toPendingExpirySeconds(order.expirationTimestamp ?? order.expiry ?? order.expiration);
+        const expiryType = resolvePlacePendingExpiryType(
+          order.expiryType,
+          undefined,
+          typeof order.expiration === 'string' ? order.expiration : undefined,
+        );
         const resolvedSl = order.priceSl ?? order.sl;
         const resolvedTp = order.priceTp ?? order.tp;
         await api.orders.placePendingOrder({
@@ -496,6 +503,7 @@ export const useOrderExecution = ({
           ...(resolvedSl && resolvedSl > 0 ? { price_sl: resolvedSl } : {}),
           ...(resolvedTp && resolvedTp > 0 ? { price_tp: resolvedTp } : {}),
           ...(pendingExpiry !== undefined ? { expiration: pendingExpiry } : {}),
+          ...(expiryType !== undefined ? { expiryType } : {}),
           ...(order.comment ? { comment: order.comment } : {}),
         }, { intentAtMs });
         if (!isTradeOperationContextCurrent(operationContext)) return;
