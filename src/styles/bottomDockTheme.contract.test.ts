@@ -117,4 +117,20 @@ describe('bottom dock dark surface contract', () => {
     expect(historyDownloaderCss).toMatch(/\.rtx-history-downloader__metrics > div \{[^}]*border-left: none;/);
     expect(historyDownloaderCss).toMatch(/\.rtx-history-symbol-row \{[^}]*border-left: none;[^}]*border-right: none;[^}]*border-bottom: 1px solid var\(--history-border\);/);
   });
+
+  it('uses balanced spacing and subtle translucent pill/border opacity for Dark Trade action buttons', () => {
+    const mt5SurfacesCss = readSource('src/styles/mt5-toolbox-surfaces.css');
+    expect(mt5SurfacesCss).toMatch(
+      /html:root:not\(\.rtx-skin-untitled-light\):not\(\.theme-light\) \.rtx-bottom-dock \.rtx-trade-table tbody tr \.rtx-trade-row-actions \{[\s\S]*?gap:\s*8px !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /html:root:not\(\.rtx-skin-untitled-light\):not\(\.theme-light\) \.rtx-bottom-dock \.rtx-trade-table tbody tr:not\(\.rtx-trade-row--selected\):not\(\[aria-selected='true'\]\) :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) \{[\s\S]*?background:\s*rgba\(56,\s*61,\s*72,\s*0\.58\) !important;[\s\S]*?border-color:\s*rgba\(148,\s*163,\s*184,\s*0\.2\) !important;[\s\S]*?color:\s*rgba\(241,\s*245,\s*249,\s*0\.74\) !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /html:root:not\(\.rtx-skin-untitled-light\):not\(\.theme-light\) \.rtx-bottom-dock \.rtx-trade-table tbody tr:not\(\.rtx-trade-row--selected\):not\(\[aria-selected='true'\]\) \.rtx-trade-close-button \{[\s\S]*?color:\s*rgba\(248,\s*113,\s*113,\s*0\.8\) !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /html:root:not\(\.rtx-skin-untitled-light\):not\(\.theme-light\) \.rtx-bottom-dock \.rtx-trade-table tbody tr:is\(\.rtx-trade-row--selected, \.rtx-trade-row\[aria-selected='true'\]\) :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) \{[\s\S]*?background:\s*transparent !important;[\s\S]*?border-color:\s*transparent !important;[\s\S]*?color:\s*#ffffff !important;/,
+    );
+  });
 });

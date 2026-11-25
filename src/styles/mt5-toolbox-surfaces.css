@@ -251,6 +251,73 @@ html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(.
   border-right-color: rgba(255, 255, 255, 0.1) !important;
 }
 
+/* Balanced Dark row action buttons matching Light: comfortable spacing with subtle pill and border opacity. */
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr .rtx-trade-row-actions {
+  gap: 8px !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr :is(.rtx-trade-action-button, .rtx-trade-close-button) {
+  height: 18px !important;
+  width: 19px !important;
+  border-radius: 3px !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr :is(.rtx-trade-action-button, .rtx-trade-close-button) svg {
+  width: 13px !important;
+  height: 13px !important;
+  stroke-width: 1.5 !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) {
+  background: rgba(56, 61, 72, 0.58) !important;
+  background-color: rgba(56, 61, 72, 0.58) !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  color: rgba(241, 245, 249, 0.74) !important;
+  box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-close-button {
+  color: rgba(248, 113, 113, 0.8) !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-action-button:not(.rtx-trade-close-button):not(:disabled):hover {
+  background: rgba(75, 82, 98, 0.92) !important;
+  background-color: rgba(75, 82, 98, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.45) !important;
+  color: #ffffff !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-close-button:not(:disabled):hover {
+  background: #dc2626 !important;
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) .rtx-trade-action-button:not(.rtx-trade-close-button):not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #ffffff !important;
+}
+
+html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:is(.rtx-trade-row--selected, .rtx-trade-row[aria-selected='true']) .rtx-trade-close-button:not(:disabled):hover {
+  background: #dc2626 !important;
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
 html:root:not(.rtx-skin-untitled-light):not(.theme-light) .rtx-bottom-dock :is(
   .rtx-trade-footer,
   .rtx-history-summary-bar,
@@ -1625,27 +1692,47 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   color: var(--rtx-toolbox-loss, #ea3323) !important;
 }
 
-/* Flat MT5 light row action buttons (unselected rows use clean borderless muted gray icons like MT5's flat X). */
+/* Balanced Light row action buttons: comfortable spacing with subtle pill and border opacity against #ffffff/#ebebeb rows. */
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr .rtx-trade-row-actions {
+  gap: 8px !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr :is(.rtx-trade-action-button, .rtx-trade-close-button) {
   height: 18px !important;
-  width: 18px !important;
+  width: 19px !important;
+  border-radius: 3px !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+}
+
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr :is(.rtx-trade-action-button, .rtx-trade-close-button) svg {
+  width: 13px !important;
+  height: 13px !important;
+  stroke-width: 1.5 !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) :is(.rtx-trade-action-button, .rtx-trade-close-button) {
-  background: transparent !important;
-  border-color: transparent !important;
-  color: #8c8c8c !important;
+  background: rgba(255, 255, 255, 0.58) !important;
+  background-color: rgba(255, 255, 255, 0.58) !important;
+  border-color: rgba(100, 116, 139, 0.24) !important;
+  color: rgba(30, 41, 59, 0.72) !important;
   box-shadow: none !important;
 }
 
+html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-close-button {
+  color: rgba(185, 28, 28, 0.75) !important;
+}
+
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-action-button:not(.rtx-trade-close-button):not(:disabled):hover {
-  background: rgba(0, 0, 0, 0.06) !important;
-  border-color: #c8c8c8 !important;
-  color: var(--rtx-toolbox-text, #000000) !important;
+  background: rgba(226, 232, 240, 0.92) !important;
+  background-color: rgba(226, 232, 240, 0.92) !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  color: #0f172a !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock .rtx-trade-table tbody tr:not(.rtx-trade-row--selected):not([aria-selected='true']) .rtx-trade-close-button:not(:disabled):hover {
   background: var(--rtx-toolbox-loss, #ea3323) !important;
+  background-color: var(--rtx-toolbox-loss, #ea3323) !important;
   border-color: var(--rtx-toolbox-loss, #ea3323) !important;
   color: #ffffff !important;
 }

@@ -119,6 +119,18 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
       /\.rtx-trade-table tbody tr:is\(\.rtx-trade-row--selected, \.rtx-trade-row\[aria-selected='true'\]\) :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) \{[\s\S]*?background:\s*transparent !important;[\s\S]*?color:\s*#ffffff !important;/,
     );
     expect(mt5SurfacesCss).toMatch(
+      /\.rtx-trade-table tbody tr \.rtx-trade-row-actions \{[\s\S]*?gap:\s*8px !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-trade-table tbody tr:not\(\.rtx-trade-row--selected\):not\(\[aria-selected='true'\]\) :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) \{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.58\) !important;[\s\S]*?border-color:\s*rgba\(100,\s*116,\s*139,\s*0\.24\) !important;[\s\S]*?color:\s*rgba\(30,\s*41,\s*59,\s*0\.72\) !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-trade-table tbody tr:not\(\.rtx-trade-row--selected\):not\(\[aria-selected='true'\]\) \.rtx-trade-close-button \{[\s\S]*?color:\s*rgba\(185,\s*28,\s*28,\s*0\.75\) !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /\.rtx-trade-table tbody tr :is\(\.rtx-trade-action-button, \.rtx-trade-close-button\) svg \{[\s\S]*?stroke-width:\s*1\.5 !important;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
       /\.rtx-pending-order-row\[aria-selected='true'\] \.rtx-pending-row-btn \{[\s\S]*?background:\s*#ffffff !important;[\s\S]*?color:\s*#1e293b !important;/,
     );
     expect(mt5SurfacesCss).toMatch(
