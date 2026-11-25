@@ -8,6 +8,7 @@ import { ArrowDownToLine, ArrowUpFromLine, FileCode } from 'lucide-react';
 import { ContextMenu, type ContextMenuItemConfig } from '../ui/ContextMenu';
 import { RetainedLazyFeature } from '../../startup/RetainedLazyFeature';
 import { openAccountFeature } from '../../startup/terminalFeatures';
+import { AccountDeleteConfirmPopover } from './AccountDeleteConfirmPopover';
 import { ChangePasswordDialog } from '../ChangePasswordDialog';
 import { api } from '../../services/api';
 import { getStoredBrokerServer } from '../../services/brokerServers';
@@ -290,11 +291,13 @@ export const NavigatorPanel: React.FC = () => {
     const [brokerActionMenu, setBrokerActionMenu] = useState<BrokerActionMenuState | null>(null);
     const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
     const [selectedAccountForPassword, setSelectedAccountForPassword] = useState<SavedAccount | null>(null);
+    const [accountPendingDelete, setAccountPendingDelete] = useState<{ account: SavedAccount; scopeKey: string } | null>(null);
     const [switchingLogin, setSwitchingLogin] = useState<number | null>(null);
     const [brokerLogoState, setBrokerLogoState] = useState<{ scope: string; logos: Record<string, BrokerLogoInfo> }>({ scope: '', logos: {} });
 
     const menuScopeKey = `${sessionScope}:${isAuthenticated}:${accountId}`;
     const activeBrokerActionMenu = brokerActionMenu?.scopeKey === menuScopeKey ? brokerActionMenu : null;
+    const activeAccountPendingDelete = accountPendingDelete?.scopeKey === menuScopeKey ? accountPendingDelete.account : null;
 
     useEffect(() => {
         localStorage.removeItem('rtx_saved_password');
@@ -745,14 +748,7 @@ export const NavigatorPanel: React.FC = () => {
             icon: <Icon name="trash" size="xs" className="text-red-400" />,
             shortcut: 'Delete',
             action: () => {
-                if (confirm(`Remove account ${acc.login} from saved list?`)) {
-                    removeSavedAccount(acc.login, acc.server, acc);
-                    // If deleting the currently active/authenticated account,
-                    // log out so charts stop and show the placeholder
-                    if (isAccountActive(acc)) {
-                        api.auth.logout();
-                    }
-                }
+                setAccountPendingDelete({ account: acc, scopeKey: menuScopeKey });
             }
         },
         { divider: true },
@@ -992,6 +988,22 @@ export const NavigatorPanel: React.FC = () => {
                 isOpen={changePasswordDialogOpen}
                 onClose={() => setChangePasswordDialogOpen(false)}
                 accountLogin={selectedAccountForPassword?.login.toString()}
+            />
+
+            <AccountDeleteConfirmPopover
+                accountLogin={activeAccountPendingDelete ? activeAccountPendingDelete.login : null}
+                onCancel={() => setAccountPendingDelete(null)}
+                onConfirm={() => {
+                    if (!activeAccountPendingDelete) return;
+                    const target = activeAccountPendingDelete;
+                    setAccountPendingDelete(null);
+                    removeSavedAccount(target.login, target.server, target);
+                    // If deleting the currently active/authenticated account,
+                    // log out so charts stop and show the placeholder
+                    if (isAccountActive(target)) {
+                        api.auth.logout();
+                    }
+                }}
             />
         </div>
     );

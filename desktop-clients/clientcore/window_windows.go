@@ -8,11 +8,41 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
 	"github.com/jchv/go-webview2"
 )
+
+var win32DpiAwarenessOnce sync.Once
+
+// EnableProcessDPIAwareness opts the Windows process into Per-Monitor V2 DPI
+// awareness before any HWND or WebView2 controller is created so Windows and
+// high-resolution external monitors render text crisply at native physical DPI
+// without DWM bitmap scaling blur.
+func EnableProcessDPIAwareness() {
+	win32DpiAwarenessOnce.Do(func() {
+		user32 := syscall.NewLazyDLL("user32.dll")
+		// DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (DPI_AWARENESS_CONTEXT)(-4)
+		if proc := user32.NewProc("SetProcessDpiAwarenessContext"); proc.Find() == nil {
+			const dpiAwarenessContextPerMonitorAwareV2 = ^uintptr(3)
+			if r, _, _ := proc.Call(dpiAwarenessContextPerMonitorAwareV2); r != 0 {
+				return
+			}
+		}
+		shcore := syscall.NewLazyDLL("shcore.dll")
+		if proc := shcore.NewProc("SetProcessDpiAwareness"); proc.Find() == nil {
+			const processPerMonitorDPIAware = 2
+			if hr, _, _ := proc.Call(processPerMonitorDPIAware); hr == 0 {
+				return
+			}
+		}
+		if proc := user32.NewProc("SetProcessDPIAware"); proc.Find() == nil {
+			_, _, _ = proc.Call()
+		}
+	})
+}
 
 // SetProcessAppUserModelID sets a dedicated Windows AppUserModelID via shell32.dll
 // so the Windows 10/11 Taskbar never groups RTX5 under a generic host icon.
@@ -110,6 +140,8 @@ func ApplyDarkTitlebarAndIcon(hwnd uintptr) {
 func (c *DesktopClient) runNativeWin32Window(urlStr string, profileName string, exeDir string, sigCh <-chan os.Signal) bool {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+
+	EnableProcessDPIAwareness()
 
 	appID := "RTX5.Desktop.NativeClient"
 	if kindStr := strings.TrimSpace(string(c.cfg.Kind)); kindStr != "" {

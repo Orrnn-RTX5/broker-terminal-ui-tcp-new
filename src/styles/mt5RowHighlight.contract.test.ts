@@ -62,20 +62,20 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
     expect(marketWatchDesktopCss).toContain('color: var(--mw-desktop-quote-down) !important;');
     expect(marketWatchDesktopCss).toContain('.rtx-market-watch__grid .rtx-market-watch__price--up,');
     expect(marketWatchDesktopCss).toContain('.rtx-market-watch__grid .rtx-market-watch__price--down,');
-    // Uniform 12px / 300 global typography matching Market Watch Symbol, Bid, Ask, and Daily Change cells.
+    // Uniform 12px / 400 global typography matching Market Watch Symbol, Bid, Ask, and Daily Change cells.
     expect(marketWatchDesktopCss).toMatch(
-      /\.rtx-market-watch__grid tbody td > span,\s*html:root \.rtx-market-watch\.rtx-market-watch--desktop \.rtx-market-watch__last-close > span \{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 300 !important;/,
+      /\.rtx-market-watch__grid tbody td > span,\s*html:root \.rtx-market-watch\.rtx-market-watch--desktop \.rtx-market-watch__last-close > span \{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 400 !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
-      /\.rtx-market-watch__grid tbody td > span\.rtx-market-watch__daily \{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 300 !important;[\s\S]*?letter-spacing: normal !important;/,
+      /\.rtx-market-watch__grid tbody td > span\.rtx-market-watch__daily \{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 400 !important;[\s\S]*?letter-spacing: normal !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
-      /\.rtx-market-watch__grid tbody td :is\(\s*\.rtx-market-watch__symbol,[\s\S]*?\.rtx-market-watch__price,[\s\S]*?\.rtx-market-watch__daily,[\s\S]*?\.rtx-market-watch__daily-price,[\s\S]*?\) \{[\s\S]*?--rtx-type-weight: 300;[\s\S]*?font-weight: 300 !important;/,
+      /\.rtx-market-watch__grid tbody td :is\(\s*\.rtx-market-watch__symbol,[\s\S]*?\.rtx-market-watch__price,[\s\S]*?\.rtx-market-watch__daily,[\s\S]*?\.rtx-market-watch__daily-price,[\s\S]*?\) \{[\s\S]*?--rtx-type-weight: 400;[\s\S]*?font-weight: 400 !important;/,
     );
     expect(marketWatchDesktopCss).not.toContain('font-size: 9.5px');
     expect(marketWatchDesktopCss).not.toMatch(/\.rtx-market-watch__grid tbody td[^}]*font-size: 10\.5px/);
     expect(lightTypographyCss).toMatch(
-      /\.rtx-market-watch__grid tbody td > span\.rtx-market-watch__daily,[\s\S]*?\.rtx-market-watch__daily-price[\s\S]*?--rtx-type-size: max\(12px, calc\(var\(--rtx-ui-font-size\) - 2px\)\);[\s\S]*?--rtx-type-weight: 300;/,
+      /\.rtx-market-watch__grid tbody td > span\.rtx-market-watch__daily,[\s\S]*?\.rtx-market-watch__daily-price[\s\S]*?--rtx-type-size: max\(12px, calc\(var\(--rtx-ui-font-size\) - 2px\)\);[\s\S]*?--rtx-type-weight: 400;/,
     );
     // Dark fallback in index.css and Details view in market-watch-views.css stay aligned with MT5 colors.
     expect(indexCss).toContain('var(--rtx-quote-up, var(--mw-desktop-quote-up, #1e95fe)) !important;');
@@ -109,7 +109,7 @@ describe('MT5 desktop alternating row and summary highlight contract', () => {
 
   it('applies MT5 #ffffff headers, #ffffff/#ebebeb alternating rows, #a0a0a0/#c8c8c8 dividers, official MT5 #0078d7 light selection with white text, bold #c8c8c8 summary bar, and #f0f0f0/#ffffff bottom tabs with #696969 separators across Trade to Close All', () => {
     expect(mt5SurfacesCss).toMatch(
-      /html:root:is\(\.rtx-advanced-view\.rtx-skin-untitled-light, \.rtx-skin-untitled-light, \.theme-light\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-row:\s*#ffffff;[\s\S]*?--rtx-toolbox-row-alt:\s*#ebebeb;[\s\S]*?--rtx-toolbox-selected:\s*#0078d7;[\s\S]*?--rtx-toolbox-summary:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-tabs:\s*#f0f0f0;[\s\S]*?--rtx-toolbox-border-header:\s*#a0a0a0;[\s\S]*?--rtx-toolbox-border-grid:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-border-tab:\s*#696969;[\s\S]*?--rtx-toolbox-tab-divider:\s*#696969;[\s\S]*?--rtx-toolbox-profit:\s*#0000ff;[\s\S]*?--rtx-toolbox-loss:\s*#ea3323;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-font-weight-body:\s*300;/,
+      /html:root:is\(\.rtx-advanced-view\.rtx-skin-untitled-light, \.rtx-skin-untitled-light, \.theme-light\) \.rtx-bottom-dock \{[\s\S]*?--rtx-toolbox-row:\s*#ffffff;[\s\S]*?--rtx-toolbox-row-alt:\s*#ebebeb;[\s\S]*?--rtx-toolbox-selected:\s*#0078d7;[\s\S]*?--rtx-toolbox-summary:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-tabs:\s*#f0f0f0;[\s\S]*?--rtx-toolbox-border-header:\s*#a0a0a0;[\s\S]*?--rtx-toolbox-border-grid:\s*#c8c8c8;[\s\S]*?--rtx-toolbox-border-tab:\s*#696969;[\s\S]*?--rtx-toolbox-tab-divider:\s*#696969;[\s\S]*?--rtx-toolbox-profit:\s*#0000ff;[\s\S]*?--rtx-toolbox-loss:\s*#ea3323;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-font-weight-body:\s*400;/,
     );
     // Light selected rows use official MT5 #0078d7 blue with crisp #ffffff white text across every cell and white-backed row buttons.
     expect(mt5SurfacesCss).toMatch(

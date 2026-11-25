@@ -565,6 +565,7 @@ func runInteractiveSetupWizard(zr *zip.Reader, meta SetupMeta, defaultInstallDir
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	clientcore.EnableProcessDPIAwareness()
 	clientcore.SetProcessAppUserModelID("RTX5.Desktop.SetupInstaller." + meta.ID)
 
 	baseProfileDir := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))

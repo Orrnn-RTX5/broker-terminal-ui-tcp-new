@@ -399,6 +399,47 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                     : undefined;
 
     const positionsRefreshTimerRef = useRef<number | null>(null);
+    const isMountedRef = useRef(true);
+    const latestOrderStateRef = useRef({
+        visible,
+        symbol,
+        volume,
+        isVolumeValid,
+        tradeAllowed,
+        marketOpenForTrading,
+        effectiveMarketStatus,
+        hasExecutablePrice,
+        isAuthenticated,
+        tick,
+        orderBlockedReason,
+        staleQuoteMessage,
+        getAccountLogin,
+    });
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        latestOrderStateRef.current = {
+            visible,
+            symbol,
+            volume,
+            isVolumeValid,
+            tradeAllowed,
+            marketOpenForTrading,
+            effectiveMarketStatus,
+            hasExecutablePrice,
+            isAuthenticated,
+            tick,
+            orderBlockedReason,
+            staleQuoteMessage,
+            getAccountLogin,
+        };
+    });
 
     useEffect(() => () => {
         if (positionsRefreshTimerRef.current !== null) {
@@ -427,7 +468,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     }, []);
 
     const placeOrder = useCallback(async (side: 'buy' | 'sell') => {
-        const intentAtMs = captureTradeOrderIntent();
+        let intentAtMs = captureTradeOrderIntent();
         if (!requireTradingAuth({
             source: 'one-click-trading',
             side: side.toUpperCase() as 'BUY' | 'SELL',
@@ -440,38 +481,66 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             window.dispatchEvent(new Event('rtx:requestTradeLogin'));
             return;
         }
+        let orderState: typeof latestOrderStateRef.current = {
+            visible,
+            symbol,
+            volume,
+            isVolumeValid,
+            tradeAllowed,
+            marketOpenForTrading,
+            effectiveMarketStatus,
+            hasExecutablePrice,
+            isAuthenticated,
+            tick,
+            orderBlockedReason,
+            staleQuoteMessage,
+            getAccountLogin,
+        };
         if (!isOneClickTradingAccepted()) {
-            void useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
-            return;
+            // Prevent a rapid double-click before the modal backdrop mounts
+            // from queuing a second trade behind the same disclaimer prompt.
+            if (useOneClickDisclaimerStore.getState().isOpen) return;
+            const clickedSymbol = symbol;
+            const preAcceptSessionScope = getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope());
+            const accepted = await useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
+            if (!accepted || !isMountedRef.current) return;
+            const postAcceptState = latestOrderStateRef.current;
+            if (!postAcceptState.visible || postAcceptState.symbol !== clickedSymbol) return;
+            if (getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()) !== preAcceptSessionScope) {
+                return;
+            }
+            if (!isOneClickTradingAccepted()) return;
+            intentAtMs = captureTradeOrderIntent();
+            orderState = postAcceptState;
         }
-        if (!tradeAllowed) {
-            setBlockedMessage(orderBlockedReason || staleQuoteMessage);
+        if (!orderState.tradeAllowed) {
+            setBlockedMessage(orderState.orderBlockedReason || orderState.staleQuoteMessage);
             return;
         }
         // The rendered status is already refreshed in the background. Never
         // put an HTTP market-status request in front of a one-click order;
         // the backend still performs the authoritative execution validation.
-        if (!marketOpenForTrading) {
-            setBlockedMessage(getMarketStatusTradeBlockMessage(effectiveMarketStatus, symbol));
+        if (!orderState.marketOpenForTrading) {
+            setBlockedMessage(getMarketStatusTradeBlockMessage(orderState.effectiveMarketStatus, orderState.symbol));
             return;
         }
-        if (!symbol.trim()) {
+        if (!orderState.symbol.trim()) {
             setBlockedMessage(tr('Please select a symbol before placing a trade.'));
             return;
         }
-        if (!isVolumeValid) {
+        if (!orderState.isVolumeValid) {
             setBlockedMessage(tr('The volume is invalid. Check the lot size and try again.'));
             return;
         }
-        if (!hasExecutablePrice) {
-            setBlockedMessage(tr('No live quote is available for {{symbol}}. Please wait for a fresh quote and try again.', { symbol }));
+        if (!orderState.hasExecutablePrice) {
+            setBlockedMessage(tr('No live quote is available for {{symbol}}. Please wait for a fresh quote and try again.', { symbol: orderState.symbol }));
             return;
         }
-        if (!isAuthenticated) {
+        if (!orderState.isAuthenticated) {
             setBlockedMessage(tr('Please sign in to place an order.'));
             return;
         }
-        const login = getAccountLogin();
+        const login = orderState.getAccountLogin();
         if (!login) {
             setBlockedMessage(tr('No trading account is selected. Please sign in again.'));
             return;
@@ -486,8 +555,8 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
         try {
             const orderPromise = api.orders.placeMarketOrder({
                 side,
-                symbol,
-                volume,
+                symbol: orderState.symbol,
+                volume: orderState.volume,
                 login,
             }, { intentAtMs });
             // Avoid synchronous React SyncLane state re-renders while the sub-1ms
@@ -497,7 +566,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
                 setError(null);
                 setFlashSide(side);
             }
-            const chartEntryPrice = getTradeEntryPriceFromQuote(tick, side.toUpperCase() as 'BUY' | 'SELL');
+            const chartEntryPrice = getTradeEntryPriceFromQuote(orderState.tick, side.toUpperCase() as 'BUY' | 'SELL');
             const chartEntryTime = new Date().toISOString();
             const result = await orderPromise;
             if (!ownsOrderSession()) return;
@@ -511,16 +580,16 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             // leave BUY/SELL looking blocked after a confirmed fill.
             setError(null);
             const immediatePosition = normalizeImmediatePosition(result, {
-                symbol,
+                symbol: orderState.symbol,
                 side: side.toUpperCase() as 'BUY' | 'SELL',
-                volume,
+                volume: orderState.volume,
                 chartEntryPrice: chartEntryPrice ?? undefined,
                 chartEntryTime,
             });
             if (immediatePosition) {
                 upsertImmediatePosition(immediatePosition);
             }
-            useLastSymbolStore.getState().setLastSymbol(symbol, side.toUpperCase() as 'BUY' | 'SELL');
+            useLastSymbolStore.getState().setLastSymbol(orderState.symbol, side.toUpperCase() as 'BUY' | 'SELL');
             import('../utils/audio').then((m) => m.playSystemSound(side === 'sell' ? 'sell' : 'buy')).catch(() => undefined);
             scheduleIdlePositionsReconcile();
         } catch (err: unknown) {
@@ -530,12 +599,12 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             }
             console.error('[OneClick] Trade failed:', err);
             setError(formatOrderError(err));
-            if (isStaleOrderError(err)) setBlockedMessage(staleQuoteMessage);
+            if (isStaleOrderError(err)) setBlockedMessage(orderState.staleQuoteMessage);
             setTimeout(() => setError(null), 5000);
         } finally {
             setTimeout(() => setFlashSide(null), 500);
         }
-    }, [disclaimerOwnerId, isAuthenticated, tradeAllowed, marketOpenForTrading, effectiveMarketStatus, isVolumeValid, hasExecutablePrice, volume, symbol, getAccountLogin, tick, bid, ask, tr, orderBlockedReason, staleQuoteMessage, scheduleIdlePositionsReconcile]);
+    }, [disclaimerOwnerId, visible, isAuthenticated, tradeAllowed, marketOpenForTrading, effectiveMarketStatus, isVolumeValid, hasExecutablePrice, volume, symbol, getAccountLogin, tick, bid, ask, tr, orderBlockedReason, staleQuoteMessage, scheduleIdlePositionsReconcile]);
 
     if (!visible || !symbol) return null;
 

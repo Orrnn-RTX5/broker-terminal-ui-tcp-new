@@ -1,0 +1,221 @@
+/* Institutional Compact Top-Center Account Removal Prompt
+   Clean two-section compact confirmation dialog anchored at top-center
+   with zero background blur or dim. */
+
+.rtx-account-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10070;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12px 12px 0;
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.rtx-desktop-shell-active .rtx-account-delete-backdrop {
+  padding-top: 44px;
+}
+
+.rtx-account-delete-popover {
+  --rtx-ad-surface: #16171c;
+  --rtx-ad-chrome: #1c1e25;
+  --rtx-ad-border: #2e313c;
+  --rtx-ad-border-top: #3d4250;
+  --rtx-ad-divider: #252731;
+  --rtx-ad-ink-primary: #f1f3f9;
+  --rtx-ad-ink-secondary: #9aa1b2;
+  display: flex;
+  flex-direction: column;
+  width: min(304px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  background: var(--rtx-ad-surface);
+  color: var(--rtx-ad-ink-primary);
+  border: 1px solid var(--rtx-ad-border);
+  border-top-color: var(--rtx-ad-border-top);
+  border-radius: 6px;
+  box-shadow:
+    0 18px 38px -8px rgba(0, 0, 0, 0.68),
+    0 4px 12px -2px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  font-family: var(--font-sans);
+  overflow: hidden;
+  user-select: none;
+}
+
+.rtx-account-delete-popover:focus {
+  outline: none;
+}
+
+/* ─── Body ─── */
+.rtx-account-delete-popover__body {
+  padding: 13px 14px 12px;
+  background: var(--rtx-ad-surface);
+}
+
+.rtx-account-delete-popover__title {
+  --rtx-ui-font-size: 12px;
+  --rtx-type-size: 12px;
+  --rtx-font-weight-body: 500;
+  --rtx-type-weight: 500;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--rtx-ad-ink-primary);
+}
+
+.rtx-account-delete-popover__message {
+  --rtx-ui-font-size: 11.5px;
+  --rtx-type-size: 11.5px;
+  --rtx-font-weight-body: 400;
+  --rtx-type-weight: 400;
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--rtx-ad-ink-secondary);
+}
+
+/* ─── Footer Actions ─── */
+.rtx-account-delete-popover__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--rtx-ad-chrome);
+  border-top: 1px solid var(--rtx-ad-divider);
+}
+
+.rtx-account-delete-popover__btn-cancel,
+.rtx-account-delete-popover__btn-confirm {
+  --rtx-ui-font-size: 11.5px;
+  --rtx-type-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 66px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 110ms ease, border-color 110ms ease, color 110ms ease;
+}
+
+.rtx-account-delete-popover__btn-cancel {
+  --rtx-font-weight-body: 500;
+  --rtx-type-weight: 500;
+  background: #22242c;
+  border: 1px solid #343846;
+  color: #e2e6ef;
+  font-weight: 500;
+}
+
+.rtx-account-delete-popover__btn-cancel:hover {
+  background: #2b2e38;
+  border-color: #464c5e;
+  color: #ffffff;
+}
+
+.rtx-account-delete-popover__btn-confirm {
+  --rtx-font-weight-body: 600;
+  --rtx-type-weight: 600;
+  min-width: 72px;
+  background: #dc2626;
+  border: 1px solid #b91c1c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.rtx-account-delete-popover__btn-confirm:hover {
+  background: #c8232c;
+  border-color: #991b1b;
+  color: #ffffff;
+}
+
+.rtx-account-delete-popover__btn-confirm:active {
+  transform: none !important;
+  background: #b91c1c;
+  border-color: #7f1d1d;
+}
+
+.rtx-account-delete-popover__btn-cancel:active {
+  transform: none !important;
+}
+
+.rtx-account-delete-popover button:focus-visible {
+  outline: 1.5px solid #4597ff;
+  outline-offset: 1px;
+}
+
+/* ─── Light Theme (Enterprise Light + Standard Light) ─── */
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover {
+  --rtx-ad-surface: var(--rtx-light-elevated, #ffffff);
+  --rtx-ad-chrome: var(--rtx-light-panel, #f8fafc);
+  --rtx-ad-border: var(--rtx-light-border-strong, #cbd5e1);
+  --rtx-ad-border-top: var(--rtx-light-border-strong, #cbd5e1);
+  --rtx-ad-divider: var(--rtx-light-border, #e2e8f0);
+  --rtx-ad-ink-primary: var(--rtx-light-text, #0f172a);
+  --rtx-ad-ink-secondary: var(--rtx-light-text-secondary, #475569);
+  background: var(--rtx-ad-surface) !important;
+  color: var(--rtx-ad-ink-primary) !important;
+  border: 1px solid var(--rtx-ad-border) !important;
+  box-shadow:
+    0 14px 32px -6px rgba(15, 23, 42, 0.16),
+    0 4px 10px -2px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__title {
+  color: var(--rtx-ad-ink-primary) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__message {
+  color: var(--rtx-ad-ink-secondary) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__body {
+  background: var(--rtx-ad-surface) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__actions {
+  background: var(--rtx-ad-chrome) !important;
+  border-top-color: var(--rtx-ad-divider) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__btn-cancel {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__btn-cancel:hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__btn-confirm {
+  background: var(--rtx-light-sell, #dc2626) !important;
+  border: 1px solid var(--rtx-light-sell, #dc2626) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.rtx-advanced-view.rtx-skin-untitled-light, .theme-light) .rtx-account-delete-popover__btn-confirm:hover {
+  background: var(--rtx-light-sell-hover, #b91c1c) !important;
+  border: 1px solid var(--rtx-light-sell-hover, #b91c1c) !important;
+  color: #ffffff !important;
+}

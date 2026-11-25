@@ -37,7 +37,6 @@ html:root .rtx-open-account-dialog[data-step] {
   color: var(--account-text);
   font-family: var(--rtx-ui-font-family, 'Segoe UI', sans-serif);
   --rtx-type-size: var(--rtx-ui-font-size, 14px);
-  -webkit-font-smoothing: antialiased;
   line-height: 1.45;
 }
 

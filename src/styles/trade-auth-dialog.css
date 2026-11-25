@@ -49,8 +49,6 @@
   display: flex;
   flex-direction: column;
   font-family: var(--rtx-ui-font-family, "Segoe UI", sans-serif);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'ss01' on, 'cv05' on;
   letter-spacing: 0.001em;
   line-height: 1.35;

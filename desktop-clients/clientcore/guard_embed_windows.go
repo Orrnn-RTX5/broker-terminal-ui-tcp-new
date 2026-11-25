@@ -46,6 +46,7 @@ func ensureEmbeddedGuardDLL() (string, error) {
 // fatalStartupError logs the error and shows a Win32 MessageBox so -H=windowsgui
 // binaries never exit silently when a startup check fails.
 func fatalStartupError(format string, args ...any) {
+	EnableProcessDPIAwareness()
 	msg := fmt.Sprintf(format, args...)
 	log.Println(msg)
 	user32 := syscall.NewLazyDLL("user32.dll")

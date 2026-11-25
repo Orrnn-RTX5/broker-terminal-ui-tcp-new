@@ -51,8 +51,8 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 #root {
@@ -100,8 +100,8 @@ html:not(.rtx-skin-untitled-light) :is(.rtx-bottom-dock, .rtx-bottom-dock__conte
   border-radius: 0 !important;
   box-shadow: none !important;
   text-shadow: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 .rtx-chart-panel {
@@ -1031,8 +1031,8 @@ html:not(.rtx-skin-untitled-light) .rtx-market-watch__grid {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   text-shadow: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 html:not(.rtx-skin-untitled-light) .rtx-market-watch__footer {
@@ -1126,8 +1126,8 @@ html:not(.rtx-skin-untitled-light) .navigator-panel__body {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   text-shadow: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 }
 
 html:not(.rtx-skin-untitled-light) .navigator-panel {
@@ -1666,4 +1666,16 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-values-tooltip__value[data-t
    builds (including the desktop shell) and Firefox 132+. */
 .rtx-secret-input {
   -webkit-text-security: disc;
+}
+
+@media (-webkit-min-device-pixel-ratio: 1.5), (min-resolution: 1.5dppx) {
+  html,
+  body,
+  #root,
+  html:not(.rtx-skin-untitled-light) :is(.rtx-bottom-dock, .rtx-bottom-dock__content),
+  html:not(.rtx-skin-untitled-light) :is(.rtx-market-watch, .rtx-market-watch__search, .rtx-market-watch__table, .rtx-market-watch__grid),
+  html:not(.rtx-skin-untitled-light) :is(.bg-\[\#131316\]:has(.navigator-panel), .bg-\[\#131316\]:has(.rtx-market-watch), .navigator-panel, .navigator-panel__body) {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }

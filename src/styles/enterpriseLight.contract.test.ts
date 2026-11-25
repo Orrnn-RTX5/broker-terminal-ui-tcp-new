@@ -254,9 +254,9 @@ describe('enterprise light visual-system contract', () => {
     expect(tokenValues.get('--rtx-light-ui-font-weight')).toBe('var(--rtx-font-weight-body)');
     expect(tokenValues.get('--rtx-light-type-body')).toBe('var(--rtx-ui-font-size)');
     expect(tokenValues.get('--rtx-light-type-caption')).toBe('var(--rtx-ui-font-size)');
-    expect(tokenValues.get('--rtx-light-weight-body')).toBe('300');
-    expect(tokenValues.get('--rtx-light-weight-control')).toBe('300');
-    expect(tokenValues.get('--rtx-light-weight-heading')).toBe('300');
+    expect(tokenValues.get('--rtx-light-weight-body')).toBe('400');
+    expect(tokenValues.get('--rtx-light-weight-control')).toBe('500');
+    expect(tokenValues.get('--rtx-light-weight-heading')).toBe('600');
     expect(readSource('src/authenticatedStyles.ts')).toContain("import './styles/light-typography.css';");
   });
 
@@ -328,13 +328,13 @@ describe('enterprise light visual-system contract', () => {
       /\[data-dock-panel\]:not\(\[data-dock-floating-panel='true'\]\) > div:first-child\s*\{[\s\S]*?border-top: 0 !important;[\s\S]*?border-left: 0 !important;[\s\S]*?border-right: 1px solid var\(--rtx-light-line-border, #64748b\) !important;[\s\S]*?border-bottom: 1px solid var\(--rtx-light-line-border, #64748b\) !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
-      /\.rtx-market-watch\.rtx-market-watch--desktop\s+\.rtx-market-watch__symbol\s*\{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 300 !important;/,
+      /\.rtx-market-watch\.rtx-market-watch--desktop\s+\.rtx-market-watch__symbol\s*\{[\s\S]*?font-size: 12px !important;[\s\S]*?font-weight: 400 !important;/,
     );
     expect(marketWatchDesktopCss).toMatch(
       /\.rtx-market-watch\.rtx-market-watch--desktop\s+\.rtx-market-watch__view-tabs\s+button\[aria-selected='true'\]\s*\{[\s\S]*?box-shadow:\s*none !important;/,
     );
     expect(lightTypographyCss).toMatch(
-      /\.rtx-market-watch__symbol,\s*\.rtx-market-watch__price \.price-big\s*\)\s*\{[\s\S]*?--rtx-type-size: max\(12px, calc\(var\(--rtx-ui-font-size\) - 2px\)\);[\s\S]*?--rtx-type-weight: 300;/,
+      /\.rtx-market-watch__symbol,\s*\.rtx-market-watch__price \.price-big\s*\)\s*\{[\s\S]*?--rtx-type-size: max\(12px, calc\(var\(--rtx-ui-font-size\) - 2px\)\);[\s\S]*?--rtx-type-weight: 400;/,
     );
     expect(chartThemeSource).toContain("scaleBorder: useReferenceLightSurface\n      ? '#64748b'");
   });
@@ -446,6 +446,50 @@ describe('enterprise light visual-system contract', () => {
     );
     expect(historyDownloaderCss).toMatch(
       /\.rtx-history-primary-button:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-strong, #1e4788\) !important;[\s\S]*?color: var\(--text-inverse, #ffffff\) !important;/,
+    );
+  });
+
+  it('keeps text crisp across Windows, big desktop displays, and Windows native executables', () => {
+    const appTypographyCss = readSource('src/styles/app-typography.css');
+    const lightTypographyCss = readSource('src/styles/light-typography.css');
+    const mt5SurfacesCss = readSource('src/styles/mt5-toolbox-surfaces.css');
+    const marketWatchDesktopCss = readSource('src/components/market-watch/market-watch-desktop.css');
+    const themeCss = readSource('src/styles/theme.css');
+    const winWindowSource = readSource('desktop-clients/clientcore/window_windows.go');
+    const winGuardSource = readSource('desktop-clients/clientcore/guard_embed_windows.go');
+    const winSetupSource = readSource('desktop-clients/cmd/rtx5-setup-installer/main.go');
+
+    for (const css of [appTypographyCss, lightTypographyCss, marketWatchDesktopCss]) {
+      expect(css).not.toMatch(/font-weight:\s*300\b/);
+      expect(css).not.toMatch(/--rtx-(?:font-weight|light-weight|type-weight)[^:]*:\s*300\b/);
+    }
+    expect(mt5SurfacesCss).not.toMatch(/--rtx-(?:font-weight|light-weight)-(?:body|control|heading):\s*300\b/);
+
+    expect(appTypographyCss).toMatch(
+      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*13px;[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*14px;/,
+    );
+    expect(lightTypographyCss).toMatch(
+      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*13px;[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*14px;/,
+    );
+    expect(mt5SurfacesCss).toMatch(
+      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-ui-font-size:\s*13px;/,
+    );
+
+    expect(appTypographyCss).toContain('-webkit-font-smoothing: auto;');
+    expect(appTypographyCss).toMatch(/@media \(-webkit-min-device-pixel-ratio: 1\.5\), \(min-resolution: 1\.5dppx\) \{[\s\S]*?-webkit-font-smoothing: antialiased;/);
+    expect(themeCss).toMatch(/\* \{[\s\S]*?-webkit-font-smoothing: auto;[\s\S]*?-moz-osx-font-smoothing: auto;/);
+    expect(themeCss).toMatch(/@media \(-webkit-min-device-pixel-ratio: 1\.5\), \(min-resolution: 1\.5dppx\) \{[\s\S]*?-webkit-font-smoothing: antialiased;/);
+
+    expect(winWindowSource).toContain('func EnableProcessDPIAwareness()');
+    expect(winWindowSource).toContain('SetProcessDpiAwarenessContext');
+    expect(winWindowSource).toContain('SetProcessDpiAwareness');
+    expect(winWindowSource).toContain('SetProcessDPIAware');
+    expect(winWindowSource.indexOf('EnableProcessDPIAwareness()')).toBeLessThan(
+      winWindowSource.indexOf('webview2.NewWithOptions'),
+    );
+    expect(winGuardSource).toContain('EnableProcessDPIAwareness()');
+    expect(winSetupSource.indexOf('clientcore.EnableProcessDPIAwareness()')).toBeLessThan(
+      winSetupSource.indexOf('webview2.NewWithOptions'),
     );
   });
 });

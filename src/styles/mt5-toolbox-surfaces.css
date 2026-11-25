@@ -888,12 +888,12 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   --rtx-light-type-caption: 11px;
   --rtx-light-toolbox-tab-size: 11px;
   --rtx-light-control-line-height: 17px;
-  --rtx-font-weight-body: 300;
-  --rtx-font-weight-control: 300;
-  --rtx-font-weight-heading: 300;
-  --rtx-light-weight-body: 300;
-  --rtx-light-weight-control: 300;
-  --rtx-light-weight-heading: 300;
+  --rtx-font-weight-body: 400;
+  --rtx-font-weight-control: 500;
+  --rtx-font-weight-heading: 600;
+  --rtx-light-weight-body: 400;
+  --rtx-light-weight-control: 500;
+  --rtx-light-weight-heading: 600;
   background: var(--rtx-toolbox-row) !important;
   color: var(--rtx-toolbox-text) !important;
 }
@@ -916,6 +916,38 @@ html:root.rtx-advanced-font-large:is(.rtx-advanced-view.rtx-skin-untitled-light,
   --rtx-light-type-caption: 12px;
   --rtx-light-toolbox-tab-size: 12px;
   --rtx-light-control-line-height: 18px;
+}
+
+@media (min-width: 1721px) and (min-height: 921px) {
+  html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+    --rtx-ui-font-size: 12px;
+    --rtx-ui-line-height: 18px;
+    --rtx-light-ui-font-size: 12px;
+    --rtx-light-type-body: 12px;
+    --rtx-light-type-caption: 12px;
+    --rtx-light-toolbox-tab-size: 12px;
+    --rtx-light-control-line-height: 18px;
+  }
+
+  html:root.rtx-advanced-font-small:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+    --rtx-ui-font-size: 11px;
+    --rtx-ui-line-height: 17px;
+    --rtx-light-ui-font-size: 11px;
+    --rtx-light-type-body: 11px;
+    --rtx-light-type-caption: 11px;
+    --rtx-light-toolbox-tab-size: 11px;
+    --rtx-light-control-line-height: 17px;
+  }
+
+  html:root.rtx-advanced-font-large:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
+    --rtx-ui-font-size: 13px;
+    --rtx-ui-line-height: 19px;
+    --rtx-light-ui-font-size: 13px;
+    --rtx-light-type-body: 13px;
+    --rtx-light-type-caption: 13px;
+    --rtx-light-toolbox-tab-size: 13px;
+    --rtx-light-control-line-height: 19px;
+  }
 }
 
 @media (min-resolution: 2dppx) {

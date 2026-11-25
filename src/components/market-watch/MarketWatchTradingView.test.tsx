@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -133,7 +133,7 @@ describe('MarketWatchTradingView', () => {
     expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
   });
 
-  it('shows the One Click Trading disclaimer popup on BUY/SELL before session acceptance', () => {
+  it('shows the One Click Trading disclaimer popup on BUY/SELL before session acceptance and executes on accept', async () => {
     useOneClickDisclaimerStore.getState().resetSessionAcceptance();
     render(<MarketWatchTradingView symbols={['EURUSD.RAW']} tradeSymbols={['EURUSD.RAW']} />);
 
@@ -141,12 +141,24 @@ describe('MarketWatchTradingView', () => {
     expect(screen.getByRole('dialog', { name: 'One Click Trading' })).toBeInTheDocument();
     expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'I Accept these Terms and Conditions' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'I Accept these Terms and Conditions' }));
+    });
     expect(screen.queryByRole('dialog', { name: 'One Click Trading' })).not.toBeInTheDocument();
     expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(true);
-    expect(mocks.placeMarketOrder).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.placeMarketOrder).toHaveBeenCalledTimes(1));
+    expect(mocks.placeMarketOrder).toHaveBeenNthCalledWith(
+      1,
+      { side: 'buy', symbol: 'EURUSD.RAW', volume: 0.01, login: 10001 },
+      expect.objectContaining({ intentAtMs: expect.any(Number) }),
+    );
 
     fireEvent.click(screen.getByText('SELL').closest('button')!);
-    expect(mocks.placeMarketOrder).toHaveBeenCalledTimes(1);
+    expect(mocks.placeMarketOrder).toHaveBeenCalledTimes(2);
+    expect(mocks.placeMarketOrder).toHaveBeenNthCalledWith(
+      2,
+      { side: 'sell', symbol: 'EURUSD.RAW', volume: 0.01, login: 10001 },
+      expect.objectContaining({ intentAtMs: expect.any(Number) }),
+    );
   });
 });

@@ -9,9 +9,9 @@ html:root.rtx-skin-untitled-light {
   --rtx-light-type-caption: var(--rtx-ui-font-size);
   --rtx-light-type-section: var(--rtx-ui-font-size);
   --rtx-light-type-title: var(--rtx-ui-font-size);
-  --rtx-light-weight-body: 300;
-  --rtx-light-weight-control: 300;
-  --rtx-light-weight-heading: 300;
+  --rtx-light-weight-body: 400;
+  --rtx-light-weight-control: 500;
+  --rtx-light-weight-heading: 600;
   --rtx-font-weight-body: var(--rtx-light-weight-body);
   --rtx-font-weight-control: var(--rtx-light-weight-control);
   --rtx-font-weight-heading: var(--rtx-light-weight-heading);
@@ -25,6 +25,20 @@ html:root.rtx-skin-untitled-light.rtx-advanced-font-small {
 
 html:root.rtx-skin-untitled-light.rtx-advanced-font-large {
   --rtx-ui-font-size: 13px;
+}
+
+@media (min-width: 1721px) and (min-height: 921px) {
+  html:root.rtx-skin-untitled-light {
+    --rtx-ui-font-size: 13px;
+  }
+
+  html:root.rtx-skin-untitled-light.rtx-advanced-font-small {
+    --rtx-ui-font-size: 12px;
+  }
+
+  html:root.rtx-skin-untitled-light.rtx-advanced-font-large {
+    --rtx-ui-font-size: 14px;
+  }
 }
 
 /* Shared controls, navigation and table data use the same base size. Explicit
@@ -144,7 +158,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
 ) {
   --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
-  --rtx-type-weight: 300;
+  --rtx-type-weight: 400;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid :is(
@@ -158,7 +172,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
 ) {
   --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
-  --rtx-type-weight: 300;
+  --rtx-type-weight: 400;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily,
@@ -167,7 +181,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily-price span {
   --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
-  --rtx-type-weight: 300;
+  --rtx-type-weight: 400;
 }
 
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop :is(

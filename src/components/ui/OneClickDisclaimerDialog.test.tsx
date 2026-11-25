@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const orderMocks = vi.hoisted(() => ({
@@ -129,28 +129,36 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     },
   );
 
-  it('preserves acceptance across page refresh / hard refresh (sessionStorage), and re-shows disclaimer when page or app is closed and reopened', () => {
+  it('preserves acceptance across page refresh / hard refresh (sessionStorage), and re-shows disclaimer when page or app is closed and reopened', async () => {
     const view = renderOneClick();
 
-    // 1. Fresh app open: first click shows the disclaimer without placing a trade
+    // 1. Fresh app open: first click shows the disclaimer without placing a trade yet
     fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
     expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
     expect(sessionStorage.getItem(ONE_CLICK_DISCLAIMER_SESSION_KEY)).toBeNull();
     expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
 
-    // 2. Accept: stores session acceptance in sessionStorage without executing the triggering click
-    fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    // 2. Accept: stores session acceptance in sessionStorage and immediately executes the triggering trade
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
     expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
     expect(sessionStorage.getItem(ONE_CLICK_DISCLAIMER_SESSION_KEY)).toBe('1');
     expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(true);
     expect(useSettingsStore.getState().trade.oneClickTrading).toBe(true);
-    expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+    await waitFor(() => expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(1));
+    expect(orderMocks.placeMarketOrder).toHaveBeenNthCalledWith(
+      1,
+      { side: 'buy', symbol: 'BTCUSD', volume: 0.01, login: 900001 },
+      { intentAtMs: expect.any(Number) },
+    );
 
-    // 3. Subsequent click in the same session executes immediately
+    // 3. Subsequent click in the same session executes immediately without re-prompting
     fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
     expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
-    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(1);
-    expect(orderMocks.placeMarketOrder).toHaveBeenCalledWith(
+    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(2);
+    expect(orderMocks.placeMarketOrder).toHaveBeenNthCalledWith(
+      2,
       { side: 'sell', symbol: 'BTCUSD', volume: 0.01, login: 900001 },
       { intentAtMs: expect.any(Number) },
     );
@@ -167,7 +175,7 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     const afterRefresh = renderOneClick();
     fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
     expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
-    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(2);
+    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(3);
 
     // 5. Simulate closing the tab/page or closing the application and reopening it:
     //    browser/Electron clears `sessionStorage` while `localStorage` remains -> disclaimer SHOWS again
@@ -182,7 +190,146 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     renderOneClick();
     fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
     expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
-    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(2);
+    expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
+    await waitFor(() => expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(4));
+    expect(orderMocks.placeMarketOrder).toHaveBeenNthCalledWith(
+      4,
+      { side: 'buy', symbol: 'BTCUSD', volume: 0.01, login: 900001 },
+      { intentAtMs: expect.any(Number) },
+    );
+  });
+
+  it('executes a pending SELL order with the entered lot size immediately upon accepting the disclaimer', async () => {
+    renderOneClick();
+
+    const volumeInput = screen.getByRole('spinbutton', { name: 'Lot size' });
+    fireEvent.change(volumeInput, { target: { value: '0.25' } });
+    fireEvent.blur(volumeInput);
+
+    fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
+    expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+    expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
+    expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
+    await waitFor(() => expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(1));
+    expect(orderMocks.placeMarketOrder).toHaveBeenCalledWith(
+      { side: 'sell', symbol: 'BTCUSD', volume: 0.25, login: 900001 },
+      { intentAtMs: expect.any(Number) },
+    );
+  });
+
+  it('executes only the latest trade after a prior disclaimer was canceled and never duplicates rapid double-clicks', async () => {
+    renderOneClick();
+
+    // Trigger SELL then cancel -> must never execute later
+    fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
+    expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    });
+    expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+
+    // Trigger BUY twice while disclaimer is open -> only 1 BUY order should run on Accept
+    const buyButton = screen.getByRole('button', { name: /^BUY BTCUSD/ });
+    fireEvent.click(buyButton);
+    fireEvent.click(buyButton);
+    expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
+    await waitFor(() => expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(1));
+    expect(orderMocks.placeMarketOrder).toHaveBeenCalledWith(
+      { side: 'buy', symbol: 'BTCUSD', volume: 0.01, login: 900001 },
+      { intentAtMs: expect.any(Number) },
+    );
+  });
+
+  it('does not execute the pending trade on accept if the quote becomes stale or the symbol changes while the disclaimer is open', async () => {
+    useAppStore.getState().setTicks({
+      BTCUSD: {
+        symbol: 'BTCUSD',
+        bid: 57952.35,
+        ask: 57967.43,
+        spread: 15.08,
+        digits: 2,
+        timestamp: Date.now(),
+      },
+      ETHUSD: {
+        symbol: 'ETHUSD',
+        bid: 3100.1,
+        ask: 3101.2,
+        spread: 1.1,
+        digits: 2,
+        timestamp: Date.now(),
+      },
+    });
+
+    const view = render(
+      <OneClickTrading
+        symbol="BTCUSD"
+        timeframe="M1"
+        visible
+        tradeAllowed
+        marketStatus={normalizeMarketStatus({ symbol: 'BTCUSD', status: 'open' })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
+    expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+
+    // Stale quote while disclaimer is open -> accept enables one-click but blocks execution
+    view.rerender(
+      <OneClickTrading
+        symbol="BTCUSD"
+        timeframe="M1"
+        visible
+        tradeAllowed={false}
+        marketStatus={normalizeMarketStatus({ symbol: 'BTCUSD', status: 'open' })}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeInTheDocument());
+    expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+
+    // Symbol changes while disclaimer is open -> accept must not trade the new symbol
+    act(() => {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    });
+    view.rerender(
+      <OneClickTrading
+        symbol="BTCUSD"
+        timeframe="M1"
+        visible
+        tradeAllowed
+        marketStatus={normalizeMarketStatus({ symbol: 'BTCUSD', status: 'open' })}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
+    expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+
+    view.rerender(
+      <OneClickTrading
+        symbol="ETHUSD"
+        timeframe="M1"
+        visible
+        tradeAllowed
+        marketStatus={normalizeMarketStatus({ symbol: 'ETHUSD', status: 'open' })}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+    });
+    expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
   });
 
   it('renders only one disclaimer dialog when globalHost is mounted alongside multiple OneClickTrading panels', () => {

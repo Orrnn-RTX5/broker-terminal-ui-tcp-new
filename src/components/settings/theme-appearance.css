@@ -25,7 +25,6 @@
   font-weight: 400 !important;
   line-height: 1.4 !important;
   letter-spacing: 0 !important;
-  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
@@ -441,7 +440,6 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-theme-color-control input.rt
   color: var(--text-primary, #f3f4f6) !important;
   font-family: var(--rtx-type-family) !important;
   overflow: hidden;
-  -webkit-font-smoothing: antialiased;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-theme-dialog,

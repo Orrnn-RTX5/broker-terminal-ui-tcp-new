@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -157,17 +159,61 @@ describe('Navigator account context menu', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
-    it('only removes the saved account after delete confirmation', () => {
-        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    it('shows a compact unblurred upper confirmation popup instead of browser confirm() when deleting an account', async () => {
+        const user = userEvent.setup();
+        const confirmSpy = vi.spyOn(window, 'confirm');
         render(<NavigatorPanel />);
+
+        // Clicking Delete in the context menu opens the compact upper popup without native confirm()
         fireEvent.click(within(rightClickAccount()).getByRole('menuitem', { name: 'DeleteDelete' }));
+        expect(confirmSpy).not.toHaveBeenCalled();
+
+        const popover = screen.getByRole('alertdialog', { name: 'Remove account 200003 from saved list?' });
+        const backdrop = screen.getByTestId('account-delete-backdrop');
+        expect(popover).toBeInTheDocument();
+        expect(popover).toHaveAccessibleDescription('Are you sure?');
+        expect(within(popover).queryByText('Remove Account')).not.toBeInTheDocument();
+        expect(within(popover).queryByRole('button', { name: 'Close dialog' })).not.toBeInTheDocument();
+        expect(backdrop).toBeInTheDocument();
+        expect(popover).toHaveFocus();
         expect(mocks.removeSavedAccount).not.toHaveBeenCalled();
         expect(mocks.logout).not.toHaveBeenCalled();
-        confirm.mockReturnValue(true);
+
+        // Cancel dismisses without deleting
+        await user.click(within(popover).getByRole('button', { name: 'Cancel' }));
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+        expect(mocks.removeSavedAccount).not.toHaveBeenCalled();
+        expect(mocks.logout).not.toHaveBeenCalled();
+
+        // Escape and outside-backdrop click also dismiss without deleting
         fireEvent.click(within(rightClickAccount()).getByRole('menuitem', { name: 'DeleteDelete' }));
+        await user.keyboard('{Escape}');
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+        expect(mocks.removeSavedAccount).not.toHaveBeenCalled();
+
+        fireEvent.click(within(rightClickAccount()).getByRole('menuitem', { name: 'DeleteDelete' }));
+        fireEvent.pointerDown(screen.getByTestId('account-delete-backdrop'));
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+        expect(mocks.removeSavedAccount).not.toHaveBeenCalled();
+
+        // Confirming Delete removes the saved account and logs out the active session
+        fireEvent.click(within(rightClickAccount()).getByRole('menuitem', { name: 'DeleteDelete' }));
+        const confirmPopover = screen.getByRole('alertdialog', { name: 'Remove account 200003 from saved list?' });
+        await user.click(within(confirmPopover).getByRole('button', { name: 'Delete' }));
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
         expect(mocks.removeSavedAccount).toHaveBeenCalledWith(200003, 'Orrnn', mocks.savedAccounts[0]);
         expect(mocks.logout).toHaveBeenCalledOnce();
-        confirm.mockRestore();
+        confirmSpy.mockRestore();
+    });
+
+    it('keeps the upper delete popup compact at top-center with zero background blur', () => {
+        const css = readFileSync(resolve(process.cwd(), 'src/styles/account-delete-popover.css'), 'utf8');
+        expect(css).toMatch(/\.rtx-account-delete-backdrop\s*\{[^}]*align-items:\s*flex-start;/);
+        expect(css).toMatch(/\.rtx-account-delete-backdrop\s*\{[^}]*justify-content:\s*center;/);
+        expect(css).toMatch(/\.rtx-account-delete-backdrop\s*\{[^}]*background:\s*transparent !important;/);
+        expect(css).toMatch(/\.rtx-account-delete-backdrop\s*\{[^}]*backdrop-filter:\s*none !important;/);
+        expect(css).toMatch(/\.rtx-account-delete-popover\s*\{[^}]*width:\s*min\(304px,\s*calc\(100vw - 24px\)\);/);
+        expect(css).toMatch(/\.rtx-account-delete-popover\s*\{[^}]*backdrop-filter:\s*none !important;/);
     });
 
     it('hides Open an Account from context menus once both demo and real accounts are created and logged in', () => {
