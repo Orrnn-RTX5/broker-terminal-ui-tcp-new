@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -395,5 +397,41 @@ describe('TradeAuthDialog', () => {
       if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
+  });
+
+  it('focuses the dialog shell on open instead of highlighting the primary action card and supports arrow navigation', () => {
+    const view = render(
+      <TradeAuthDialog
+        isOpen
+        intent={{ source: 'quick-trade', side: 'BUY', symbol: 'EURUSD', volume: 0.01 }}
+        onClose={vi.fn()}
+        onAuthenticated={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Account required to trade' });
+    const loginButton = screen.getByRole('button', { name: /log in to live account/i });
+    const demoButton = screen.getByRole('button', { name: /create demo account/i });
+
+    expect(document.activeElement).toBe(dialog);
+    expect(document.activeElement).not.toBe(loginButton);
+
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(loginButton);
+
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(demoButton);
+
+    view.unmount();
+  });
+
+  it('keeps BUY, SELL, and Action direction labels free of pill backgrounds and borders in dark and light themes', () => {
+    const authCss = readFileSync(resolve(process.cwd(), 'src/styles/trade-auth-dialog.css'), 'utf8');
+    const lightCss = readFileSync(resolve(process.cwd(), 'src/styles/enterprise-light.css'), 'utf8');
+
+    expect(authCss).toMatch(/\.rtx-auth-badge\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?box-shadow:\s*none;[\s\S]*?padding:\s*0;/);
+    expect(authCss).toMatch(/\.rtx-auth-badge--buy\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
+    expect(lightCss).toMatch(/\.rtx-auth-badge--buy\s*\{[\s\S]*?background:\s*transparent !important;[\s\S]*?box-shadow:\s*none !important;/);
+    expect(lightCss).toMatch(/\.rtx-auth-badge--sell\s*\{[\s\S]*?background:\s*transparent !important;[\s\S]*?box-shadow:\s*none !important;/);
   });
 });

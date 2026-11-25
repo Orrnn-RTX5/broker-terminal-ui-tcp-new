@@ -7,11 +7,6 @@
   box-shadow: var(--shadow-lg, 0 16px 36px rgba(0, 0, 0, 0.55)), 0 0 0 1px var(--border-primary, #262b38);
 }
 
-.rtx-dom-status-dot {
-  background: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.22);
-}
-
 /* ── Title-bar controls ─────────────────────────────────────────────── */
 .rtx-dom-icon-btn {
   display: flex;
@@ -102,62 +97,49 @@
 
 /* ── Ladder ─────────────────────────────────────────────────────────── */
 .rtx-dom-level {
+  background: transparent;
   cursor: pointer;
   transition: background 90ms ease;
 }
 .rtx-dom-level:hover {
-  background: var(--bg-quaternary, #232836) !important;
-}
-.rtx-dom-level--best-ask {
-  box-shadow: inset 3px 0 0 #ff5858;
-}
-.rtx-dom-level--best-bid {
-  box-shadow: inset 3px 0 0 #4597ff;
-}
-
-.rtx-dom-volbar {
-  border-radius: 0 2px 2px 0;
-  transition: width 150ms ease;
+  background: rgba(255, 255, 255, 0.035) !important;
 }
 
 .rtx-dom-vol-placeholder {
-  color: var(--text-tertiary, #64748b);
-  opacity: 0.35;
+  color: var(--text-tertiary, #50505a);
+  opacity: 0.55;
 }
 
 .rtx-dom-trade-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  width: 22px;
   height: 18px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   font-size: 10px;
   line-height: 1;
   cursor: pointer;
-  transition: background 100ms ease, border-color 100ms ease, color 100ms ease, transform 80ms ease;
+  transition: background 100ms ease, color 100ms ease;
 }
 .rtx-dom-trade-btn--sell {
   color: #ff5858;
-  background: rgba(255, 88, 88, 0.12);
-  border-color: rgba(255, 88, 88, 0.28);
+  background: transparent;
 }
 .rtx-dom-trade-btn--sell:hover {
-  color: #ffffff;
-  background: #ff5858;
-  border-color: #ff5858;
+  color: #ff7878;
+  background: rgba(255, 88, 88, 0.14);
 }
 .rtx-dom-trade-btn--buy {
   color: #4597ff;
-  background: rgba(69, 151, 255, 0.12);
-  border-color: rgba(69, 151, 255, 0.28);
+  background: transparent;
 }
 .rtx-dom-trade-btn--buy:hover {
-  color: #ffffff;
-  background: #4597ff;
-  border-color: #4597ff;
+  color: #6cb0ff;
+  background: rgba(69, 151, 255, 0.14);
 }
 .rtx-dom-trade-btn:focus-visible {
   outline: 1px solid #4597ff;
@@ -167,14 +149,14 @@
 .rtx-dom-spread__badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   font-size: 11px;
   font-weight: 600;
   line-height: 16px;
-  color: #e2e8f0;
-  background: rgba(148, 163, 184, 0.14);
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  color: var(--text-primary, #e2e2e8);
+  background: transparent;
 }
 
 /* ── Steppers (SL / Volume / TP) ────────────────────────────────────── */
@@ -353,11 +335,6 @@
     padding: 0 10px !important;
   }
 
-  .rtx-dom-status-dot {
-    width: 7px !important;
-    height: 7px !important;
-  }
-
   .rtx-depth-of-market__heading {
     --rtx-type-size: 12px;
     --rtx-type-weight: 600;
@@ -443,7 +420,7 @@
     --rtx-type-size: 10px;
     font-size: 10px !important;
     line-height: 14px;
-    padding: 0 6px;
+    padding: 0;
   }
 
   .rtx-dom-params-bar {

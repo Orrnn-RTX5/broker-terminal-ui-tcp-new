@@ -138,7 +138,6 @@ function TradeAuthFlow({
   const dialogId = useId();
   const dialogRef = useRef<HTMLElement>(null);
   const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
-  const primaryActionRef = useRef<HTMLButtonElement>(null);
   const demoRequestGenerationRef = useRef(0);
   const brokerId = brokerPolicy?.status === 'ready' ? brokerPolicy.brokerId : '';
   const brokerPolicyError = brokerPolicy?.status === 'error' ? brokerPolicy.error : undefined;
@@ -283,7 +282,10 @@ function TradeAuthFlow({
 
   useEffect(() => {
     if (!isOpen || mode !== 'choice' || (!brokerId && !desktop)) return;
-    primaryActionRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.contains(document.activeElement)) {
+      dialog.focus({ preventScroll: true });
+    }
   }, [brokerId, desktop, isOpen, mode]);
 
   const completeDemoSession = (response: Awaited<ReturnType<typeof registerRuntimeBrokerDemoAccount>>) => {
@@ -518,6 +520,7 @@ function TradeAuthFlow({
 
       <section
         ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="trade-auth-title"
@@ -560,7 +563,7 @@ function TradeAuthFlow({
           ) || []);
           const first = controls[0];
           const last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) {
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
             event.preventDefault();
             last?.focus();
           } else if (!event.shiftKey && document.activeElement === last) {
@@ -626,21 +629,20 @@ function TradeAuthFlow({
 
               <div className="rtx-auth-actions">
                 <button
-                  ref={primaryActionRef}
                   type="button"
                   className="rtx-auth-action rtx-auth-action--primary"
                   onClick={() => setMode('login')}
                   disabled={!desktop && !brokerId}
                 >
                   <span className="rtx-auth-action__icon" aria-hidden="true">
-                    <LogIn size={17} strokeWidth={1.9} />
+                    <LogIn size={16} strokeWidth={1.85} />
                   </span>
                   <span className="rtx-auth-action__copy">
                     <span className="rtx-auth-action__label">Log in to live account</span>
                     <span className="rtx-auth-action__description">Access your existing trading account</span>
                   </span>
                   <span className="rtx-auth-action__cta" aria-hidden="true">
-                    <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
+                    <ChevronRight size={15} strokeWidth={1.85} aria-hidden="true" />
                   </span>
                 </button>
 
@@ -652,7 +654,7 @@ function TradeAuthFlow({
                     disabled={!brokerId || demoNotOffered}
                   >
                     <span className="rtx-auth-action__icon" aria-hidden="true">
-                      <UserPlus size={17} strokeWidth={1.9} />
+                      <UserPlus size={16} strokeWidth={1.85} />
                     </span>
                     <span className="rtx-auth-action__copy">
                       <span className="rtx-auth-action__label">Create demo account</span>
@@ -661,7 +663,7 @@ function TradeAuthFlow({
                       </span>
                     </span>
                     <span className="rtx-auth-action__cta" aria-hidden="true">
-                      <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
+                      <ChevronRight size={15} strokeWidth={1.85} aria-hidden="true" />
                     </span>
                   </button>
                 )}

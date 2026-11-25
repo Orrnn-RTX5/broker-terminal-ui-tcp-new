@@ -1308,7 +1308,7 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note-icon {
-  color: var(--rtx-light-accent) !important;
+  color: color-mix(in srgb, var(--rtx-light-accent) 72%, var(--rtx-light-text-muted)) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note-text {
@@ -1316,20 +1316,26 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-order-note-text {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--buy {
-  background: rgba(4, 120, 87, 0.1) !important;
-  box-shadow: inset 0 0 0 1px rgba(4, 120, 87, 0.35) !important;
-  color: var(--color-profit) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: var(--rtx-light-buy, #2563eb) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--sell {
-  background: rgba(185, 28, 28, 0.1) !important;
-  box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.35) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
   color: var(--color-loss) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-badge--action {
-  background: var(--rtx-light-panel-header) !important;
-  box-shadow: inset 0 0 0 1px var(--rtx-light-border-strong) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
   color: var(--rtx-light-text-secondary) !important;
 }
 
@@ -1349,8 +1355,8 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary {
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--primary .rtx-auth-action__icon {
-  background: transparent !important;
-  border-color: transparent !important;
+  background: var(--rtx-light-accent-soft, #dce9fa) !important;
+  border: 1px solid color-mix(in srgb, var(--rtx-light-accent) 24%, transparent) !important;
   color: var(--rtx-light-accent) !important;
   box-shadow: none !important;
 }
@@ -1411,9 +1417,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-auth-action--secondary,
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--secondary .rtx-auth-action__icon {
-  background: transparent !important;
-  border-color: transparent !important;
-  color: var(--rtx-light-text-muted) !important;
+  background: var(--rtx-light-panel-header) !important;
+  border: 1px solid var(--rtx-light-border) !important;
+  color: var(--rtx-light-text-secondary) !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-action--secondary .rtx-auth-action__label {
@@ -1483,6 +1489,12 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-button:disabled {
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog :is(button, input):focus-visible {
   outline-color: var(--rtx-light-accent) !important;
+}
+
+html.rtx-advanced-view.rtx-skin-untitled-light .rtx-auth-dialog .rtx-auth-action:focus-visible {
+  outline: none !important;
+  border-color: var(--rtx-light-accent) !important;
+  box-shadow: 0 0 0 2px var(--rtx-light-focus-ring) !important;
 }
 
 /* Data Window receives stable hooks so its inline dark fallback cannot leak. */
@@ -2491,23 +2503,14 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-spread__badge {
   color: var(--rtx-light-text) !important;
-  background: #ffffff !important;
-  border-color: var(--rtx-light-border-strong, #cbd5e1) !important;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level {
   background: var(--rtx-light-panel) !important;
   border-color: var(--rtx-light-row-border, #e2e8f0) !important;
-}
-
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level--best-ask {
-  background: rgba(220, 38, 38, 0.06) !important;
-  box-shadow: inset 3px 0 0 var(--rtx-light-sell, #dc2626);
-}
-
-html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level--best-bid {
-  background: rgba(37, 99, 235, 0.06) !important;
-  box-shadow: inset 3px 0 0 var(--rtx-light-buy, #2563eb);
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-level:hover {
@@ -2528,26 +2531,26 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--sell {
   color: var(--rtx-light-sell, #dc2626) !important;
-  background: rgba(220, 38, 38, 0.08) !important;
-  border-color: rgba(220, 38, 38, 0.24) !important;
+  background: transparent !important;
+  border-color: transparent !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--sell:hover {
-  color: #ffffff !important;
-  background: var(--rtx-light-sell, #dc2626) !important;
-  border-color: var(--rtx-light-sell, #dc2626) !important;
+  color: var(--rtx-light-sell, #dc2626) !important;
+  background: rgba(220, 38, 38, 0.12) !important;
+  border-color: transparent !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--buy {
   color: var(--rtx-light-buy, #2563eb) !important;
-  background: rgba(37, 99, 235, 0.08) !important;
-  border-color: rgba(37, 99, 235, 0.24) !important;
+  background: transparent !important;
+  border-color: transparent !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market .rtx-dom-trade-btn--buy:hover {
-  color: #ffffff !important;
-  background: var(--rtx-light-buy, #2563eb) !important;
-  border-color: var(--rtx-light-buy, #2563eb) !important;
+  color: var(--rtx-light-buy, #2563eb) !important;
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: transparent !important;
 }
 
 html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-depth-of-market :is(

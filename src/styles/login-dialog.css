@@ -3,12 +3,16 @@
 }
 
 .rtx-login-save-password {
+  --rtx-ui-font-size: 12px;
+  --rtx-font-weight-body: 400;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  margin-top: 1px;
   color: var(--login-label, var(--text-primary));
   font-size: 12px;
-  line-height: 18px;
+  font-weight: 400;
+  line-height: 16px;
   cursor: pointer;
 }
 
@@ -21,10 +25,13 @@
 }
 
 .rtx-login-storage-note {
-  margin: -10px 0 0;
+  --rtx-ui-font-size: 11px;
+  --rtx-font-weight-body: 400;
+  margin: -4px 0 0;
   color: var(--login-muted, var(--text-secondary));
   font-size: 11px;
-  line-height: 16px;
+  font-weight: 400;
+  line-height: 15px;
 }
 
 .rtx-login-layer {
@@ -69,62 +76,62 @@
 
 /* Keep the portaled form consistent through the terminal's shared skin rules. */
 :is(html, html:root.rtx-advanced-view.rtx-skin-untitled-light) body .rtx-login-dialog.rtx-login-dialog--polished {
-  --login-surface: #1c1d21;
-  --login-surface-border: rgba(255, 255, 255, 0.1);
-  --login-field: #24262b;
-  --login-border: rgba(255, 255, 255, 0.1);
-  --login-divider: rgba(255, 255, 255, 0.08);
-  --login-text: #ffffff;
-  --login-muted: #9aa0a6;
-  --login-label: #e8eaed;
-  --login-accent: #1a73e8;
+  --login-surface: var(--bg-secondary, #131316);
+  --login-surface-border: var(--border-secondary, #333338);
+  --login-field: var(--bg-tertiary, #191a1e);
+  --login-border: var(--border-secondary, #333338);
+  --login-divider: var(--border-primary, #28282e);
+  --login-text: var(--text-primary, #e2e2e8);
+  --login-muted: color-mix(in srgb, var(--text-secondary, #808088) 78%, var(--text-primary, #e2e2e8));
+  --login-label: color-mix(in srgb, var(--text-secondary, #808088) 42%, var(--text-primary, #e2e2e8));
+  --login-accent: #2478d4;
   --login-accent-text: #ffffff;
-  --login-accent-hover: #1b66c9;
-  --login-accent-pressed: #1557b0;
-  --login-focus: #1a73e8;
-  --login-focus-ring: rgba(26, 115, 232, 0.35);
-  --login-soft: rgba(26, 115, 232, 0.12);
-  --login-hover: rgba(255, 255, 255, 0.08);
+  --login-accent-hover: #2c84e3;
+  --login-accent-pressed: #1d68bc;
+  --login-focus: #4597ff;
+  --login-focus-ring: rgba(69, 151, 255, 0.22);
+  --login-soft: rgba(69, 151, 255, 0.12);
+  --login-hover: var(--bg-quaternary, #222226);
   --login-online: #4ade80;
   --login-warning: #facc15;
   --login-error: #f87171;
   --login-error-bg: rgba(239, 68, 68, 0.1);
-  --login-border-hover: #5f6368;
-  --login-button-secondary-bg: #282a2e;
-  --login-button-secondary-border: #3c4043;
-  --login-button-secondary-text: #e8eaed;
-  --login-button-secondary-bg-hover: #32353b;
-  --login-button-secondary-border-hover: #4f535a;
+  --login-border-hover: var(--border-tertiary, #404048);
+  --login-button-secondary-bg: var(--bg-tertiary, #191a1e);
+  --login-button-secondary-border: var(--border-secondary, #333338);
+  --login-button-secondary-text: var(--text-primary, #e2e2e8);
+  --login-button-secondary-bg-hover: var(--bg-quaternary, #222226);
+  --login-button-secondary-border-hover: var(--border-tertiary, #404048);
   --login-button-secondary-text-hover: #ffffff;
-  --login-button-disabled-bg: #202225;
-  --login-button-disabled-border: #2c2f33;
-  --login-button-disabled-text: #7a8089;
+  --login-button-disabled-bg: var(--bg-tertiary, #191a1e);
+  --login-button-disabled-border: var(--border-primary, #28282e);
+  --login-button-disabled-text: color-mix(in srgb, var(--text-secondary, #808088) 60%, transparent);
   position: relative;
-  width: 400px;
-  max-width: min(400px, calc(100vw - 28px));
+  width: 384px;
+  max-width: min(384px, calc(100vw - 28px));
   max-height: calc(100dvh - 28px);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--login-surface) !important;
   border: 1px solid var(--login-surface-border) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
-  border-radius: 16px !important;
-  box-shadow: 
-    0 24px 48px -8px rgba(0, 0, 0, 0.75),
-    0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  border-top: 1px solid var(--border-tertiary, #404048) !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 20px 48px -10px rgba(0, 0, 0, 0.78),
+    0 4px 12px rgba(0, 0, 0, 0.45) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   color: var(--login-text) !important;
   font-family: var(--font-sans);
   color-scheme: dark;
-  animation: rtx-login-rise 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rtx-login-rise 160ms cubic-bezier(0.16, 1, 0.3, 1);
 
   .rtx-login-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 14px;
-    padding: 18px 22px;
+    gap: 12px;
+    padding: 13px 16px 11px;
     border-bottom: 1px solid var(--login-divider);
     position: relative;
   }
@@ -132,7 +139,7 @@
   .rtx-login-heading {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     min-width: 0;
   }
 
@@ -143,11 +150,13 @@
     border-radius: var(--radius-full);
     color: var(--text-secondary);
     display: inline-flex;
+    --rtx-ui-font-size: 10px;
+    --rtx-font-weight-body: 600;
     font-size: 10px;
     font-weight: var(--font-weight-bold);
     gap: 5px;
     letter-spacing: 0.06em;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     padding: 2px 7px;
     text-transform: uppercase;
   }
@@ -165,34 +174,39 @@
   }
 
   .rtx-login-title {
+    --rtx-ui-font-size: 15px;
+    --rtx-font-weight-body: 600;
     margin: 0;
-    font-size: 16px;
-    line-height: 22px;
+    font-size: 15px;
+    line-height: 19px !important;
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     color: var(--login-text);
   }
 
   .rtx-login-description {
-    margin: 3px 0 0;
-    font-size: 12.5px;
-    line-height: 18px;
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 400;
+    margin: 2px 0 0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
     color: var(--login-muted) !important;
   }
 
   .rtx-login-close {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     flex-shrink: 0;
     margin: -2px -4px 0 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: 5px;
     background: transparent !important;
     color: var(--login-muted) !important;
     cursor: pointer;
-    transition: all 130ms cubic-bezier(0.2, 0, 0, 1);
+    transition: background-color 120ms ease, color 120ms ease;
   }
 
   .rtx-login-close:hover {
@@ -202,28 +216,35 @@
     transform: none;
   }
 
+  .rtx-login-close:active {
+    transform: none !important;
+  }
+
   .rtx-login-form {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 20px 24px 24px;
+    gap: 10px;
+    padding: 13px 16px 14px;
   }
 
   .rtx-login-trade-notice {
-    margin: -4px 0 0;
-    padding: 12px 14px;
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 400;
+    margin: 0;
+    padding: 8px 11px;
     border: 1px solid color-mix(in srgb, var(--color-warning) 24%, transparent);
-    border-radius: 10px;
+    border-radius: 6px;
     background: color-mix(in srgb, var(--color-warning) 7%, transparent);
     color: var(--login-text) !important;
     font-size: 12px;
-    line-height: 1.5;
+    font-weight: 400;
+    line-height: 1.35;
   }
 
   .rtx-login-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
   }
 
@@ -236,10 +257,13 @@
   }
 
   .rtx-login-label {
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 500;
     color: var(--login-label) !important;
     font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.008em;
+    font-weight: 500;
+    line-height: 16px !important;
+    letter-spacing: 0.005em;
   }
 
   .rtx-login-control {
@@ -250,7 +274,7 @@
   .rtx-login-field-icon,
   .rtx-login-broker-logo {
     position: absolute;
-    inset-inline-start: 13px;
+    inset-inline-start: 11px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 1;
@@ -259,40 +283,47 @@
     transition: color 140ms ease;
   }
 
+  .rtx-login-field-icon {
+    width: 15px;
+    height: 15px;
+  }
+
   .rtx-login-control:focus-within .rtx-login-field-icon {
     color: var(--login-focus);
   }
 
   .rtx-login-broker-logo {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     object-fit: contain;
-    border-radius: 4px;
+    border-radius: 3px;
   }
 
   .rtx-login-input {
+    --rtx-ui-font-size: 13px;
+    --rtx-font-weight-body: 400;
     display: block;
     width: 100%;
     min-width: 0;
-    height: 42px;
-    padding: 0 13px;
-    padding-inline-start: 40px;
+    height: 35px;
+    padding: 0 11px;
+    padding-inline-start: 34px;
     background: var(--login-field) !important;
     border: 1px solid var(--login-border) !important;
-    border-radius: 8px;
+    border-radius: 5px;
     outline: none !important;
     box-shadow: none !important;
     color: var(--login-text) !important;
     font-family: inherit;
-    font-size: 13.5px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 400;
     font-variant-numeric: tabular-nums;
     transition: border-color 140ms ease, box-shadow 140ms ease;
   }
 
   .rtx-login-input::placeholder {
     color: var(--login-muted) !important;
-    opacity: 1 !important;
+    opacity: 0.85 !important;
   }
 
   .rtx-login-input:hover:not(:disabled) {
@@ -313,7 +344,7 @@
   }
 
   .rtx-login-input:is(:autofill, :-webkit-autofill):focus {
-    box-shadow: inset 0 0 0 100px var(--login-field), 0 0 0 3px var(--login-focus-ring) !important;
+    box-shadow: inset 0 0 0 100px var(--login-field), 0 0 0 2px var(--login-focus-ring) !important;
   }
 
   .rtx-login-input:disabled {
@@ -323,44 +354,53 @@
 
   .rtx-login-select,
   .rtx-login-server-input {
-    padding-inline-end: 40px;
+    padding-inline-end: 32px;
     appearance: none;
   }
 
   .rtx-login-password-input {
-    padding-inline-end: 74px;
+    padding-inline-end: 62px;
     appearance: none;
   }
 
   .rtx-login-password-actions {
     position: absolute;
-    inset-inline-end: 6px;
+    inset-inline-end: 5px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 1;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
   }
 
   .rtx-login-password-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     border: 0 !important;
-    border-radius: 6px;
+    border-radius: 4px;
     background: transparent !important;
     color: var(--login-muted) !important;
     cursor: pointer;
     transition: color 140ms ease, background-color 140ms ease;
   }
 
+  .rtx-login-password-toggle svg {
+    width: 15px;
+    height: 15px;
+  }
+
   .rtx-login-password-toggle:hover:not(:disabled) {
     background: var(--login-hover) !important;
     color: var(--login-text) !important;
+  }
+
+  .rtx-login-password-toggle:active:not(:disabled) {
+    transform: none !important;
   }
 
   .rtx-login-password-toggle.is-copied {
@@ -379,9 +419,11 @@
 
   .rtx-login-select-chevron {
     position: absolute;
-    inset-inline-end: 13px;
+    inset-inline-end: 10px;
     top: 50%;
-    margin-top: -8px;
+    margin-top: -7px;
+    width: 14px;
+    height: 14px;
     pointer-events: none;
     color: var(--login-muted);
     transition: transform 140ms ease, color 140ms ease;
@@ -393,11 +435,13 @@
 
   /* Server health reads as a quiet live indicator beside the field label. */
   .rtx-login-status {
+    --rtx-ui-font-size: 11px;
+    --rtx-font-weight-body: 600;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     font-size: 11px;
-    line-height: 16px;
+    line-height: 15px;
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--login-muted);
@@ -435,30 +479,32 @@
     gap: 2px;
     max-height: 172px;
     overflow-y: auto;
-    margin-top: 6px;
-    padding: 5px;
+    margin-top: 4px;
+    padding: 4px;
     border: 1px solid var(--border-secondary);
-    border-radius: 10px;
+    border-radius: 6px;
     background: var(--bg-tertiary);
-    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7);
   }
 
   .rtx-login-broker-option {
+    --rtx-ui-font-size: 12.5px;
+    --rtx-font-weight-body: 500;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     width: 100%;
-    padding: 8px 10px;
+    padding: 6px 9px;
     border: 0;
-    border-radius: 6px;
+    border-radius: 5px;
     text-align: start;
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 500;
     background: transparent !important;
     color: var(--login-label) !important;
     cursor: pointer;
-    transition: all 120ms ease;
+    transition: background-color 120ms ease, color 120ms ease;
   }
 
   .rtx-login-broker-option:hover,
@@ -468,65 +514,83 @@
   }
 
   .rtx-login-broker-region {
+    --rtx-ui-font-size: 11px;
+    --rtx-font-weight-body: 400;
     flex-shrink: 0;
     font-size: 11px;
+    font-weight: 400;
     color: var(--login-muted);
   }
 
   .rtx-login-brokers-empty {
-    padding: 10px;
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 400;
+    padding: 8px;
     color: var(--login-muted);
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: 400;
   }
 
   .rtx-login-offline,
   .rtx-login-error {
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 400;
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    gap: 7px;
     color: var(--login-error);
-    font-size: 12.5px;
-    line-height: 1.5;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.35;
   }
 
-  .rtx-login-offline { margin-top: 8px; }
+  .rtx-login-offline { margin-top: 6px; }
 
   .rtx-login-error {
-    padding: 11px 13px;
+    padding: 8px 11px;
     border: 1px solid color-mix(in srgb, var(--login-error) 35%, transparent);
-    border-radius: 10px;
+    border-radius: 6px;
     background: var(--login-error-bg);
     overflow-wrap: anywhere;
   }
 
   :is(.rtx-login-offline, .rtx-login-error) svg {
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 1.5px;
   }
 
   .rtx-login-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 4px;
-    padding-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 2px;
+    padding-top: 12px;
     border-top: 1px solid var(--login-divider);
   }
 
   .rtx-login-button {
-    display: flex;
+    --rtx-ui-font-size: 12.5px;
+    --rtx-font-weight-body: 500;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 9px;
-    min-height: 42px;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 13.5px;
-    line-height: 20px;
+    gap: 7px;
+    min-width: 82px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 15px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    line-height: 1;
     font-weight: 500;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.005em;
     cursor: pointer;
-    transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+
+  .rtx-login-button:active:not(:disabled) {
+    transform: none !important;
   }
 
   .rtx-login-button--secondary {
@@ -543,6 +607,7 @@
   }
 
   .rtx-login-button--primary {
+    --rtx-font-weight-body: 600;
     background: var(--login-accent) !important;
     border: 1px solid var(--login-accent) !important;
     color: var(--login-accent-text) !important;
@@ -554,13 +619,13 @@
     background: var(--login-accent-hover) !important;
     border-color: var(--login-accent-hover) !important;
     box-shadow: none !important;
-    transform: translateY(-1px);
+    transform: none;
   }
 
   .rtx-login-button--primary:active:not(:disabled) {
     background: var(--login-accent-pressed) !important;
     border-color: var(--login-accent-pressed) !important;
-    transform: translateY(1px);
+    transform: none;
   }
 
   /* A blocked submit reads as inert chrome, not a faded call to action. */
@@ -584,7 +649,7 @@
 
   button:focus-visible {
     outline: 2px solid var(--login-focus);
-    outline-offset: 3px;
+    outline-offset: 1px;
   }
 
   .rtx-login-spinner { animation: rtx-login-spin 1s linear infinite; }
@@ -633,7 +698,7 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-login-dialog.rtx-l
   background: var(--login-surface) !important;
   border: 1px solid var(--login-surface-border) !important;
   border-top: 1px solid var(--login-surface-border) !important;
-  border-radius: 12px !important;
+  border-radius: 8px !important;
   box-shadow:
     0 12px 32px -8px rgba(15, 23, 42, 0.18),
     0 2px 8px rgba(15, 23, 42, 0.08) !important;
@@ -641,55 +706,92 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-login-dialog.rtx-l
   -webkit-backdrop-filter: none !important;
   color-scheme: light;
 
-  /* Functional login text follows the terminal's light-theme roles, including
-     when this lazy-loaded dialog renders before the shared typography sheet. */
-  --rtx-type-size: var(--rtx-light-type-body, 14px);
-  --rtx-type-weight: var(--rtx-light-weight-body, 400);
+  /* Functional login text follows compact desktop terminal hierarchy cleanly. */
+  --rtx-ui-font-size: 12.5px;
+  --rtx-font-weight-body: 400;
+  --rtx-type-size: 12.5px;
+  --rtx-type-weight: 400;
   font-family: var(--rtx-ui-font-family, "Segoe UI", Tahoma, Arial, sans-serif);
-  font-size: var(--rtx-light-type-body, 14px);
-  font-weight: var(--rtx-light-weight-body, 400);
+  font-size: 12.5px;
+  font-weight: 400;
 
   .rtx-login-title {
-    --rtx-type-size: var(--rtx-light-type-title, 18px);
-    --rtx-type-weight: var(--rtx-light-weight-heading, 600);
-    font-size: var(--rtx-light-type-title, 18px);
-    font-weight: var(--rtx-light-weight-heading, 600);
-    line-height: 1.4;
+    --rtx-ui-font-size: 15px;
+    --rtx-font-weight-body: 600;
+    --rtx-type-size: 15px;
+    --rtx-type-weight: 600;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 19px !important;
+    letter-spacing: -0.015em;
+  }
+
+  .rtx-login-label {
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 500;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 500;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px !important;
     letter-spacing: normal;
   }
 
-  :is(.rtx-login-label, .rtx-login-button, .rtx-login-broker-option) {
-    --rtx-type-size: var(--rtx-light-type-body, 14px);
-    --rtx-type-weight: var(--rtx-light-weight-control, 500);
-    font-size: var(--rtx-light-type-body, 14px);
-    font-weight: var(--rtx-light-weight-control, 500);
-    line-height: 1.4;
+  :is(.rtx-login-button, .rtx-login-broker-option) {
+    --rtx-ui-font-size: 12.5px;
+    --rtx-font-weight-body: 500;
+    --rtx-type-size: 12.5px;
+    --rtx-type-weight: 500;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.25;
     letter-spacing: normal;
+  }
+
+  .rtx-login-button--primary {
+    --rtx-font-weight-body: 600;
+    --rtx-type-weight: 600;
+    font-weight: 600;
   }
 
   :is(.rtx-login-input, .rtx-login-brokers-empty, .rtx-login-save-password,
     .rtx-login-offline, .rtx-login-error, .rtx-login-trade-notice) {
-    --rtx-type-size: var(--rtx-light-type-body, 14px);
-    --rtx-type-weight: var(--rtx-light-weight-body, 400);
-    font-size: var(--rtx-light-type-body, 14px);
-    font-weight: var(--rtx-light-weight-body, 400);
-    line-height: 1.5;
+    --rtx-ui-font-size: 13px;
+    --rtx-font-weight-body: 400;
+    --rtx-type-size: 13px;
+    --rtx-type-weight: 400;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.35;
     letter-spacing: normal;
+  }
+
+  :is(.rtx-login-save-password, .rtx-login-offline, .rtx-login-error, .rtx-login-trade-notice) {
+    --rtx-ui-font-size: 12px;
+    font-size: 12px;
   }
 
   :is(.rtx-login-description, .rtx-login-storage-note, .rtx-login-broker-region,
     .rtx-login-status, .rtx-login-badge) {
-    --rtx-type-size: var(--rtx-light-type-caption, 12px);
-    --rtx-type-weight: var(--rtx-light-weight-body, 400);
-    font-size: var(--rtx-light-type-caption, 12px);
-    font-weight: var(--rtx-light-weight-body, 400);
-    line-height: 1.5;
+    --rtx-ui-font-size: 12px;
+    --rtx-font-weight-body: 400;
+    --rtx-type-size: 12px;
+    --rtx-type-weight: 400;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
     letter-spacing: normal;
   }
 
+  :is(.rtx-login-storage-note, .rtx-login-broker-region, .rtx-login-status) {
+    --rtx-ui-font-size: 11px;
+    font-size: 11px;
+  }
+
   :is(.rtx-login-status, .rtx-login-badge) {
-    --rtx-type-weight: var(--rtx-light-weight-control, 500);
-    font-weight: var(--rtx-light-weight-control, 500);
+    --rtx-font-weight-body: 600;
+    --rtx-type-weight: 600;
+    font-weight: 600;
   }
 
   .rtx-login-brokers {
@@ -709,20 +811,20 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light body .rtx-login-dialog.rtx-l
 
 @media (max-width: 480px), (max-height: 540px) {
   :is(html, html:root.rtx-advanced-view.rtx-skin-untitled-light) body .rtx-login-dialog.rtx-login-dialog--polished {
-    .rtx-login-header { padding: 18px 20px 16px; }
-    .rtx-login-form { padding: 0 20px 20px; gap: 14px; }
-    .rtx-login-actions { padding-top: 16px; }
+    .rtx-login-header { padding: 12px 14px 10px; }
+    .rtx-login-form { padding: 12px 14px 14px; gap: 9px; }
+    .rtx-login-actions { padding-top: 10px; }
   }
 }
 
 @media (max-height: 480px) {
   :is(html, html:root.rtx-advanced-view.rtx-skin-untitled-light) body .rtx-login-dialog.rtx-login-dialog--polished {
-    .rtx-login-header { padding: 14px 20px 12px; }
-    .rtx-login-form { padding-bottom: 16px; gap: 10px; }
-    .rtx-login-field { gap: 5px; }
-    .rtx-login-input { height: 40px; }
-    .rtx-login-actions { margin-top: 0; padding-top: 12px; }
-    .rtx-login-button { min-height: 38px; padding-block: 8px; }
+    .rtx-login-header { padding: 11px 14px 9px; }
+    .rtx-login-form { padding: 10px 14px 12px; gap: 8px; }
+    .rtx-login-field { gap: 3px; }
+    .rtx-login-input { height: 33px; }
+    .rtx-login-actions { margin-top: 0; padding-top: 10px; }
+    .rtx-login-button { min-height: 30px; height: 30px; padding-block: 0; }
   }
 }
 

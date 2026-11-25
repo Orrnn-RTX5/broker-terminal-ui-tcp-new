@@ -71,18 +71,7 @@ const C = {
   borderHover:     '#475569',
 
   profit:    '#4597ff',
-  profitDim: 'rgba(69, 151, 255, 0.22)',
-  profitBg:  'rgba(69, 151, 255, 0.10)',
   loss:      '#ff5858',
-  lossDim:   'rgba(255, 88, 88, 0.22)',
-  lossBg:    'rgba(255, 88, 88, 0.10)',
-
-  askBg:     'rgba(255, 88, 88, 0.04)',
-  askBgBest: 'rgba(255, 88, 88, 0.14)',
-  bidBg:     'rgba(69, 151, 255, 0.04)',
-  bidBgBest: 'rgba(69, 151, 255, 0.14)',
-
-  spreadBg:  '#1a1e29',
 };
 
 /* ─────────────────────────────────────────────────────────────────────── */
@@ -890,7 +879,7 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
     >
       {/* ── Title Bar ── */}
       <div
-        className="rtx-dom-titlebar flex min-h-[34px] items-center justify-between px-3 py-1 border-b shrink-0 cursor-move"
+        className="rtx-dom-titlebar flex min-h-[34px] items-center justify-between gap-2 px-3 py-1 border-b shrink-0 cursor-move"
         style={{
           background: 'var(--bg-tertiary)',
           borderColor: 'var(--border-primary)',
@@ -899,20 +888,17 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
         }}
         onMouseDown={onDragHandleMouseDown}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="rtx-dom-status-dot w-2 h-2 rounded-full shrink-0" />
-          <div className="flex items-baseline gap-1.5 min-w-0">
-            <span className="rtx-depth-of-market__heading uppercase tracking-normal shrink-0" style={{ color: C.textPrimary, fontSize: typography.fontSize, fontWeight: 600 }}>
-              {symbol}
+        <div className="flex items-baseline gap-1.5 min-w-0">
+          <span className="rtx-depth-of-market__heading uppercase tracking-normal shrink-0" style={{ color: C.textPrimary, fontSize: typography.fontSize, fontWeight: 600 }}>
+            {symbol}
+          </span>
+          {symbolDescription && (
+            <span className="rtx-dom-description text-[12px] leading-[18px] font-normal truncate" style={{ color: C.textSecondary, letterSpacing: 'normal' }}>
+              {tr(symbolDescription)}
             </span>
-            {symbolDescription && (
-              <span className="rtx-dom-description text-[12px] leading-[18px] font-normal truncate" style={{ color: C.textSecondary, letterSpacing: 'normal' }}>
-                {tr(symbolDescription)}
-              </span>
-            )}
-          </div>
+          )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <span className="rtx-dom-drag-hint" aria-hidden="true" title={tr("Drag to move")}>
             <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
               <circle cx="3" cy="3" r="1.1" /><circle cx="7" cy="3" r="1.1" />
@@ -979,27 +965,26 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
           >
             <div
               className="flex items-center justify-end pr-2 border-r uppercase"
-              style={{ borderColor: 'var(--border-primary)', color: C.textSecondary, letterSpacing: '0.05em' }}
+              style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}
               title={depthLevels.synthetic ? tr("No depth feed for this symbol — showing a price ladder around the live quote") : undefined}
             >
               {tr("Volume")}</div>
-            <div className="flex items-center justify-end pr-2.5 border-r uppercase" style={{ borderColor: 'var(--border-primary)', color: C.textSecondary, letterSpacing: '0.05em' }}>
+            <div className="flex items-center justify-end pr-2.5 border-r uppercase" style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}>
               {tr("Price")}</div>
-            <div className="flex items-center justify-center uppercase" style={{ color: C.textSecondary, letterSpacing: '0.05em' }}>
+            <div className="flex items-center justify-center uppercase" style={{ color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}>
               {tr("Trade")}</div>
           </div>
 
           {/* Scrollable Price Levels */}
           <div className="rtx-dom-ladder-scroll flex-1 overflow-y-auto overflow-x-hidden" style={{ background: 'var(--bg-secondary)' }}>
             {depthLevels.asks.length === 0 && depthLevels.bids.length === 0 && (
-              <div className="flex items-center justify-center h-full px-3 text-center text-[13px] leading-[20px] font-normal" style={{ color: C.textTertiary }}>
+              <div className="flex items-center justify-center h-full px-3 text-center text-[13px] leading-[20px] font-normal" style={{ color: 'var(--text-tertiary, #50505a)' }}>
                 {depthLoading ? tr("Loading market depth...") : depthError || tr("No market depth available")}
               </div>
             )}
             {/* ── ASK (Sell) rows ── */}
             {depthLevels.asks.map((level, i) => {
               const isNearSpread = i === depthLevels.asks.length - 1;
-              const volPct = depthLevels.maxVolume > 0 ? (level.volume / depthLevels.maxVolume) * 100 : 0;
               const [priceBase, pricePips] = splitLadderPrice(level.price, digits);
               return (
                 <div
@@ -1008,24 +993,38 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                   style={{
                     gridTemplateColumns: ladderColumns,
                     height: ROW_H,
-                    background: isNearSpread ? C.askBgBest : C.askBg,
                     borderBottom: '1px solid var(--border-primary)',
                   }}
                   onClick={() => onPlaceOrder?.(buildDepthOrderRequest('SELL', level.price, volume, depthExecutionForLevel('SELL', level.price, bestBid, bestAsk), digits, sl, tp))}
                   onMouseDown={e => e.stopPropagation()}
                 >
-                  <div className="relative flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
-                    <div className="rtx-dom-volbar absolute left-0 top-0 bottom-0" style={{ width: `${volPct}%`, background: C.lossDim }} />
+                  <div className="flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
                     {level.volume > 0 ? (
-                      <span className="relative z-10 text-[12px]" style={{ fontFamily: MONO, color: C.loss, opacity: isNearSpread ? 1 : 0.8 }}>
+                      <span
+                        className="text-[12px]"
+                        style={{
+                          fontFamily: MONO,
+                          color: C.loss,
+                          fontWeight: isNearSpread ? 500 : 400,
+                          opacity: isNearSpread ? 1 : 0.85,
+                        }}
+                      >
                         {level.volume.toFixed(2)}
                       </span>
                     ) : (
-                      <span className="rtx-dom-vol-placeholder relative z-10 text-[11px]" style={{ fontFamily: MONO }}>—</span>
+                      <span className="rtx-dom-vol-placeholder text-[11px]" style={{ fontFamily: MONO }}>—</span>
                     )}
                   </div>
                   <div className="flex items-center justify-end pr-2.5 border-r" style={{ borderColor: 'var(--border-primary)' }}>
-                    <span className="rtx-dom-price rtx-dom-price--ask" style={{ fontFamily: MONO, fontSize: typography.fontSize, color: C.loss }}>
+                    <span
+                      className="rtx-dom-price rtx-dom-price--ask"
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: typography.fontSize,
+                        fontWeight: isNearSpread ? 500 : 400,
+                        color: C.loss,
+                      }}
+                    >
                       {priceBase}<span className="rtx-dom-price__pips" style={{ fontWeight: 600 }}>{pricePips}</span>
                     </span>
                   </div>
@@ -1038,8 +1037,8 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                       title={tr("Sell @ {{value0}}", { value0: formatPrice(level.price, digits ?? undefined) })}
                       aria-label={tr("Sell @ {{value0}}", { value0: formatPrice(level.price, digits ?? undefined) })}
                     >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                        <path d="M2 3.5L5 6.8L8 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                        <path d="M2 3.25L5 6.75L8 3.25Z" fill="currentColor" />
                       </svg>
                     </button>
                   </div>
@@ -1053,12 +1052,12 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                 className="rtx-depth-of-market__row rtx-dom-spread flex items-center justify-center gap-2"
                 style={{
                   height: ROW_H,
-                  background: 'var(--bg-quaternary)',
-                  borderBottom: '1px solid var(--border-secondary)',
-                  borderTop: '1px solid var(--border-secondary)',
+                  background: 'var(--bg-tertiary)',
+                  borderBottom: '1px solid var(--border-primary)',
+                  borderTop: '1px solid var(--border-primary)',
                 }}
               >
-                <span className="rtx-dom-spread__label uppercase" style={{ color: C.textSecondary, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em' }}>
+                <span className="rtx-dom-spread__label uppercase" style={{ color: 'var(--text-secondary, #808088)', fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em' }}>
                   {tr("Spread")}</span>
                 <span className="rtx-dom-spread__badge uppercase" style={{ fontFamily: MONO }}>
                   {digits === null
@@ -1071,7 +1070,6 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
             {/* ── BID (Buy) rows ── */}
             {depthLevels.bids.map((level, i) => {
               const isNearSpread = i === 0;
-              const volPct = depthLevels.maxVolume > 0 ? (level.volume / depthLevels.maxVolume) * 100 : 0;
               const [priceBase, pricePips] = splitLadderPrice(level.price, digits);
               return (
                 <div
@@ -1080,24 +1078,38 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                   style={{
                     gridTemplateColumns: ladderColumns,
                     height: ROW_H,
-                    background: isNearSpread ? C.bidBgBest : C.bidBg,
                     borderBottom: '1px solid var(--border-primary)',
                   }}
                   onClick={() => onPlaceOrder?.(buildDepthOrderRequest('BUY', level.price, volume, depthExecutionForLevel('BUY', level.price, bestBid, bestAsk), digits, sl, tp))}
                   onMouseDown={e => e.stopPropagation()}
                 >
-                  <div className="relative flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
-                    <div className="rtx-dom-volbar absolute left-0 top-0 bottom-0" style={{ width: `${volPct}%`, background: C.profitDim }} />
+                  <div className="flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
                     {level.volume > 0 ? (
-                      <span className="relative z-10 text-[12px]" style={{ fontFamily: MONO, color: C.profit, opacity: isNearSpread ? 1 : 0.8 }}>
+                      <span
+                        className="text-[12px]"
+                        style={{
+                          fontFamily: MONO,
+                          color: C.profit,
+                          fontWeight: isNearSpread ? 500 : 400,
+                          opacity: isNearSpread ? 1 : 0.85,
+                        }}
+                      >
                         {level.volume.toFixed(2)}
                       </span>
                     ) : (
-                      <span className="rtx-dom-vol-placeholder relative z-10 text-[11px]" style={{ fontFamily: MONO }}>—</span>
+                      <span className="rtx-dom-vol-placeholder text-[11px]" style={{ fontFamily: MONO }}>—</span>
                     )}
                   </div>
                   <div className="flex items-center justify-end pr-2.5 border-r" style={{ borderColor: 'var(--border-primary)' }}>
-                    <span className="rtx-dom-price rtx-dom-price--bid" style={{ fontFamily: MONO, fontSize: typography.fontSize, color: C.profit }}>
+                    <span
+                      className="rtx-dom-price rtx-dom-price--bid"
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: typography.fontSize,
+                        fontWeight: isNearSpread ? 500 : 400,
+                        color: C.profit,
+                      }}
+                    >
                       {priceBase}<span className="rtx-dom-price__pips" style={{ fontWeight: 600 }}>{pricePips}</span>
                     </span>
                   </div>
@@ -1110,8 +1122,8 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                       title={tr("Buy @ {{value0}}", { value0: formatPrice(level.price, digits ?? undefined) })}
                       aria-label={tr("Buy @ {{value0}}", { value0: formatPrice(level.price, digits ?? undefined) })}
                     >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                        <path d="M2 6.5L5 3.2L8 6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                        <path d="M2 6.75L5 3.25L8 6.75Z" fill="currentColor" />
                       </svg>
                     </button>
                   </div>

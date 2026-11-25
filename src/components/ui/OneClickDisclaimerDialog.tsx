@@ -45,7 +45,6 @@ export function OneClickDisclaimerDialog({ globalHost = false, ownerId }: OneCli
   );
 
   const dialogRef = useRef<HTMLDivElement>(null);
-  const acceptBtnRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const contentId = useId();
 
@@ -53,7 +52,6 @@ export function OneClickDisclaimerDialog({ globalHost = false, ownerId }: OneCli
     isOpen: shouldRender,
     dialogRef,
     onClose: onCancel,
-    initialFocusRef: acceptBtnRef,
   });
   const { dragStyle, dragHandleProps } = useDraggableSheet({
     isOpen: shouldRender,
@@ -160,7 +158,6 @@ export function OneClickDisclaimerDialog({ globalHost = false, ownerId }: OneCli
             {tr('Cancel')}
           </button>
           <button
-            ref={acceptBtnRef}
             type="button"
             onClick={onAccept}
             className="rtx-oct-disclaimer-dialog__btn-accept"

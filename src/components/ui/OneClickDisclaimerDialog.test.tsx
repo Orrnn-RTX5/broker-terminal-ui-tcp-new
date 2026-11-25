@@ -259,4 +259,14 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     expect(css).not.toContain('.rtx-oct-disclaimer-dialog__points');
     expect(css).not.toContain('.rtx-oct-disclaimer-dialog__notice');
   });
+
+  it('focuses the dialog container on open instead of highlighting the accept button', () => {
+    renderOneClick();
+    fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
+
+    const dialog = screen.getByRole('dialog', { name: DIALOG_NAME });
+    const acceptButton = screen.getByRole('button', { name: ACCEPT_LABEL });
+    expect(document.activeElement).toBe(dialog);
+    expect(document.activeElement).not.toBe(acceptButton);
+  });
 });

@@ -134,4 +134,25 @@ describe('Depth of Market typography', () => {
       useChartSettingsStore.setState(initialSettings);
     }
   });
+
+  it('renders the title bar without a green status dot next to the symbol heading', () => {
+    const view = render(<DepthOfMarket symbol="EURUSD" />);
+
+    expect(view.container.querySelector('.rtx-dom-titlebar .rtx-depth-of-market__heading')?.textContent).toBe('EURUSD');
+    expect(view.container.querySelector('.rtx-dom-status-dot')).toBeNull();
+  });
+
+  it('renders ask and bid ladder rows without row backgrounds or volume fill bars, preserving colored text', () => {
+    const view = render(<DepthOfMarket symbol="BTCUSD" />);
+    const askRow = view.container.querySelector<HTMLElement>('.rtx-dom-level--ask');
+    const bidRow = view.container.querySelector<HTMLElement>('.rtx-dom-level--bid');
+    const askPrice = view.container.querySelector<HTMLElement>('.rtx-dom-price--ask');
+    const bidPrice = view.container.querySelector<HTMLElement>('.rtx-dom-price--bid');
+
+    expect(askRow?.style.background).toBe('');
+    expect(bidRow?.style.background).toBe('');
+    expect(view.container.querySelector('.rtx-dom-volbar')).toBeNull();
+    expect(askPrice?.style.color).toBe('rgb(255, 88, 88)');
+    expect(bidPrice?.style.color).toBe('rgb(69, 151, 255)');
+  });
 });

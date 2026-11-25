@@ -24,11 +24,16 @@
   background: var(--bg-secondary, #131316);
   color: var(--text-primary, #e2e2e8);
   border: 1px solid var(--border-secondary, #333338);
-  border-radius: 4px;
+  border-top-color: var(--border-tertiary, #404048);
+  border-radius: 6px;
   box-shadow: var(--shadow-xl, 0 20px 44px rgba(0, 0, 0, 0.72)), 0 2px 10px rgba(0, 0, 0, 0.35);
   font-family: var(--font-sans);
   overflow: hidden;
   user-select: none;
+}
+
+.rtx-oct-disclaimer-dialog:focus {
+  outline: none;
 }
 
 /* ─── Header ─── */
@@ -59,10 +64,12 @@
 }
 
 .rtx-oct-disclaimer-dialog__title {
+  --rtx-ui-font-size: 12.5px;
+  --rtx-font-weight-body: 600;
   --rtx-type-size: 12.5px;
-  --rtx-type-weight: 500;
+  --rtx-type-weight: 600;
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.25;
   color: var(--text-primary, #e2e2e8);
   white-space: nowrap;
@@ -90,8 +97,14 @@
   color: var(--text-primary, #e2e2e8);
 }
 
+.rtx-oct-disclaimer-dialog__close:active {
+  transform: none !important;
+}
+
 /* ─── Flat Document Body (No Scrollbar at Normal Desktop/Laptop Heights) ─── */
 .rtx-oct-disclaimer-dialog__body {
+  --rtx-ui-font-size: 12px;
+  --rtx-font-weight-body: 400;
   --rtx-type-size: 12px;
   --rtx-type-weight: 400;
   flex: 1 1 auto;
@@ -99,32 +112,36 @@
   overflow: hidden;
   padding: 12px 16px;
   background: var(--bg-secondary, #131316);
-  color: var(--text-primary, #e2e2e8);
+  color: color-mix(in srgb, var(--text-primary, #e2e2e8) 86%, var(--text-secondary, #808088));
   font-size: 12px;
   font-weight: 400;
-  line-height: 1.44;
+  line-height: 1.32;
   user-select: text;
 }
 
 .rtx-oct-disclaimer-dialog__body :is(p, li) {
+  --rtx-ui-font-size: 12px;
+  --rtx-font-weight-body: 400;
   --rtx-type-size: 12px;
   --rtx-type-weight: 400;
-  line-height: 1.44;
+  line-height: 1.32;
 }
 
 .rtx-oct-disclaimer-dialog__heading {
+  --rtx-ui-font-size: 13px;
+  --rtx-font-weight-body: 600;
   --rtx-type-size: 13px;
   --rtx-type-weight: 600;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   text-align: center;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 17px !important;
   color: var(--text-primary, #e2e2e8);
 }
 
 .rtx-oct-disclaimer-dialog__body p {
-  margin: 0 0 8px;
+  margin: 0 0 5px;
 }
 
 .rtx-oct-disclaimer-dialog__body p:last-child {
@@ -132,18 +149,18 @@
 }
 
 .rtx-oct-disclaimer-dialog__list-intro {
-  margin-bottom: 3px !important;
+  margin-bottom: 2px !important;
 }
 
 .rtx-oct-disclaimer-dialog__list {
   list-style: none;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   padding: 0;
 }
 
 .rtx-oct-disclaimer-dialog__list li {
-  margin: 0 0 2px;
-  padding: 0;
+  margin: 0 0 1px;
+  padding: 0 0 0 10px;
 }
 
 .rtx-oct-disclaimer-dialog__list li:last-child {
@@ -151,6 +168,9 @@
 }
 
 .rtx-oct-disclaimer-dialog__warning {
+  --rtx-font-weight-body: 500;
+  --rtx-type-weight: 500;
+  font-weight: 500;
   color: var(--text-primary, #f4f4f5);
 }
 
@@ -168,20 +188,21 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 10px 16px 12px;
+  padding: 9px 16px 10px;
   background: var(--bg-tertiary, #191a1e);
   border-top: 1px solid var(--border-primary, #28282e);
 }
 
 .rtx-oct-disclaimer-dialog__btn-cancel,
 .rtx-oct-disclaimer-dialog__btn-accept {
+  --rtx-ui-font-size: 12px;
   --rtx-type-size: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: 28px;
   padding: 0 14px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -190,6 +211,7 @@
 }
 
 .rtx-oct-disclaimer-dialog__btn-cancel {
+  --rtx-font-weight-body: 500;
   --rtx-type-weight: 500;
   min-width: 78px;
   background: var(--bg-quaternary, #222226);
@@ -205,6 +227,7 @@
 }
 
 .rtx-oct-disclaimer-dialog__btn-accept {
+  --rtx-font-weight-body: 600;
   --rtx-type-weight: 600;
   background: #4597ff;
   border: 1px solid #3183ff;
