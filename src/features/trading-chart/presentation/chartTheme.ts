@@ -5,8 +5,8 @@ import { getChartGridLineColors } from '../../../utils/chartGridStyle';
 export type ChartColorPalette = ChartProperties['colors'];
 
 export const MINUTE_SEPARATOR_PIXEL_DEDUP_DISTANCE = 10;
-export const CHART_AXIS_FONT_FAMILY = '"Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif';
-export const LIGHT_CHART_AXIS_FONT_FAMILY = '"Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif';
+export const CHART_AXIS_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif';
+export const LIGHT_CHART_AXIS_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif';
 export const CHART_AXIS_FONT_SIZE = 12;
 export const CHART_PRICE_SCALE_MIN_WIDTH = 72;
 

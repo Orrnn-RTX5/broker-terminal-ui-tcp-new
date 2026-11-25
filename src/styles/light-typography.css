@@ -27,7 +27,8 @@ html:root.rtx-skin-untitled-light.rtx-advanced-font-large {
   --rtx-ui-font-size: 13px;
 }
 
-@media (min-width: 1721px) and (min-height: 921px) {
+@media (min-width: 1601px) and (min-height: 821px),
+       (max-resolution: 1.49dppx) and (min-width: 1280px) and (min-height: 680px) {
   html:root.rtx-skin-untitled-light {
     --rtx-ui-font-size: 13px;
   }
@@ -156,7 +157,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
   .rtx-market-watch__symbol,
   .rtx-market-watch__price .price-big
 ) {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
   --rtx-type-weight: 400;
 }
@@ -170,7 +171,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
   .rtx-market-watch__last-close,
   .rtx-market-watch__last-close span
 ) {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
   --rtx-type-weight: 400;
 }
@@ -179,7 +180,7 @@ html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .r
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily span,
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily-price,
 html:root.rtx-skin-untitled-light .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily-price span {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: max(12px, calc(var(--rtx-ui-font-size) - 2px));
   --rtx-type-weight: 400;
 }

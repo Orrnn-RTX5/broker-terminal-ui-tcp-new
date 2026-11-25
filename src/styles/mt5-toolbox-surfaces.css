@@ -918,7 +918,8 @@ html:root.rtx-advanced-font-large:is(.rtx-advanced-view.rtx-skin-untitled-light,
   --rtx-light-control-line-height: 18px;
 }
 
-@media (min-width: 1721px) and (min-height: 921px) {
+@media (min-width: 1601px) and (min-height: 821px),
+       (max-resolution: 1.49dppx) and (min-width: 1280px) and (min-height: 680px) {
   html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-bottom-dock {
     --rtx-ui-font-size: 12px;
     --rtx-ui-line-height: 18px;

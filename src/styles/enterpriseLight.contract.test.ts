@@ -455,9 +455,11 @@ describe('enterprise light visual-system contract', () => {
     const mt5SurfacesCss = readSource('src/styles/mt5-toolbox-surfaces.css');
     const marketWatchDesktopCss = readSource('src/components/market-watch/market-watch-desktop.css');
     const themeCss = readSource('src/styles/theme.css');
+    const chartThemeSource = readSource('src/features/trading-chart/presentation/chartTheme.ts');
     const winWindowSource = readSource('desktop-clients/clientcore/window_windows.go');
     const winGuardSource = readSource('desktop-clients/clientcore/guard_embed_windows.go');
     const winSetupSource = readSource('desktop-clients/cmd/rtx5-setup-installer/main.go');
+    const winManifestSource = readSource('desktop-clients/assets/rtx5.exe.manifest');
 
     for (const css of [appTypographyCss, lightTypographyCss, marketWatchDesktopCss]) {
       expect(css).not.toMatch(/font-weight:\s*300\b/);
@@ -465,14 +467,21 @@ describe('enterprise light visual-system contract', () => {
     }
     expect(mt5SurfacesCss).not.toMatch(/--rtx-(?:font-weight|light-weight)-(?:body|control|heading):\s*300\b/);
 
-    expect(appTypographyCss).toMatch(
-      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*13px;[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*14px;/,
+    expect(appTypographyCss).toContain(
+      '--rtx-ui-font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;',
     );
-    expect(lightTypographyCss).toMatch(
-      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*13px;[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*14px;/,
+    expect(chartThemeSource).toContain(
+      "'-apple-system, BlinkMacSystemFont, \"Plus Jakarta Sans Variable\", \"Segoe UI\", Arial, sans-serif'",
     );
+    expect(appTypographyCss).toContain('font-weight: var(--rtx-type-weight, var(--rtx-font-weight-body)) !important;');
+    expect(appTypographyCss).toContain('text-rendering: auto;');
+    expect(themeCss).toContain('text-rendering: auto;');
+
+    const expectedDesktopQuery = /@media \(min-width: 1601px\) and \(min-height: 821px\),\s*\(max-resolution: 1\.49dppx\) and \(min-width: 1280px\) and \(min-height: 680px\) \{[\s\S]*?--rtx-ui-font-size:\s*13px;[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*14px;/;
+    expect(appTypographyCss).toMatch(expectedDesktopQuery);
+    expect(lightTypographyCss).toMatch(expectedDesktopQuery);
     expect(mt5SurfacesCss).toMatch(
-      /@media \(min-width: 1721px\) and \(min-height: 921px\) \{[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-ui-font-size:\s*13px;/,
+      /@media \(min-width: 1601px\) and \(min-height: 821px\),\s*\(max-resolution: 1\.49dppx\) and \(min-width: 1280px\) and \(min-height: 680px\) \{[\s\S]*?--rtx-ui-font-size:\s*12px;[\s\S]*?--rtx-ui-font-size:\s*11px;[\s\S]*?--rtx-ui-font-size:\s*13px;/,
     );
 
     expect(appTypographyCss).toContain('-webkit-font-smoothing: auto;');
@@ -480,7 +489,9 @@ describe('enterprise light visual-system contract', () => {
     expect(themeCss).toMatch(/\* \{[\s\S]*?-webkit-font-smoothing: auto;[\s\S]*?-moz-osx-font-smoothing: auto;/);
     expect(themeCss).toMatch(/@media \(-webkit-min-device-pixel-ratio: 1\.5\), \(min-resolution: 1\.5dppx\) \{[\s\S]*?-webkit-font-smoothing: antialiased;/);
 
+    expect(winManifestSource).toContain('<dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>');
     expect(winWindowSource).toContain('func EnableProcessDPIAwareness()');
+    expect(winWindowSource).toContain('func installWin32DpiHandler(');
     expect(winWindowSource).toContain('SetProcessDpiAwarenessContext');
     expect(winWindowSource).toContain('SetProcessDpiAwareness');
     expect(winWindowSource).toContain('SetProcessDPIAware');

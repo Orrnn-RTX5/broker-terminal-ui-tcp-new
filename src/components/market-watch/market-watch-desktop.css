@@ -218,11 +218,11 @@ html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__last-cl
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__symbol {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: 12px;
   --rtx-type-weight: 400;
   padding: 0 !important;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif !important;
   font-size: 12px !important;
   font-weight: 400 !important;
   line-height: 20px !important;
@@ -231,10 +231,10 @@ html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__symbol 
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tbody td > span.rtx-market-watch__daily {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: 12px;
   --rtx-type-weight: 400;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif !important;
   font-size: 12px !important;
   font-weight: 400 !important;
   letter-spacing: normal !important;
@@ -243,10 +243,10 @@ html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tb
 }
 
 html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid[data-wide='true'] tbody td > span.rtx-market-watch__daily {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-size: 12px;
   --rtx-type-weight: 400;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif !important;
   font-size: 12px !important;
   font-weight: 400 !important;
   letter-spacing: normal !important;
@@ -273,9 +273,9 @@ html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__grid tb
   .rtx-market-watch__daily-price,
   .rtx-market-watch__daily-price span
 ) {
-  --rtx-type-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif;
+  --rtx-type-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif;
   --rtx-type-weight: 400;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", Arial, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans Variable", "Segoe UI", Arial, sans-serif !important;
   font-weight: 400 !important;
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
@@ -635,7 +635,7 @@ html:root .rtx-market-watch.rtx-market-watch--desktop :is(.rtx-market-watch-deta
   opacity: 1;
 }
 
-@media (max-height: 920px), (max-width: 1720px) {
+@media (max-height: 820px), (max-width: 1600px) {
   html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__header {
     height: 20px !important;
     min-height: 20px !important;
@@ -734,7 +734,8 @@ html:root .rtx-market-watch.rtx-market-watch--desktop :is(.rtx-market-watch-deta
   }
 }
 
-@media (min-width: 1721px) and (min-height: 921px) {
+@media (min-width: 1601px) and (min-height: 821px),
+       (max-resolution: 1.49dppx) and (min-width: 1280px) and (min-height: 680px) {
   html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__title-clock,
   html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__title-clock :is(span, time),
   html:root .rtx-market-watch.rtx-market-watch--desktop .rtx-market-watch__view-tabs button,

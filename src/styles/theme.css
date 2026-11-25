@@ -216,7 +216,7 @@ body {
   letter-spacing: -0.006em;
   font-optical-sizing: auto;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  text-rendering: auto;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;

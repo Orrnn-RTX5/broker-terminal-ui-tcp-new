@@ -15,7 +15,79 @@ import (
 	"github.com/jchv/go-webview2"
 )
 
-var win32DpiAwarenessOnce sync.Once
+var (
+	win32DpiAwarenessOnce sync.Once
+	win32SubclassOnce     sync.Once
+	win32SubclassProcPtr  uintptr
+	win32OrigWndProcs     sync.Map
+	user32DpiDLL          = syscall.NewLazyDLL("user32.dll")
+	procCallWindowProcW   = user32DpiDLL.NewProc("CallWindowProcW")
+	procDefWindowProcW    = user32DpiDLL.NewProc("DefWindowProcW")
+	procSetWindowPos      = user32DpiDLL.NewProc("SetWindowPos")
+	procSetWindowLongPtr  = user32DpiDLL.NewProc("SetWindowLongPtrW")
+)
+
+func init() {
+	EnableProcessDPIAwareness()
+}
+
+func win32DpiWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
+	const (
+		wmNcDestroy   = 0x0082
+		wmDpiChanged  = 0x02E0
+		swpNoZOrder   = 0x0004
+		swpNoActivate = 0x0010
+	)
+	if orig, ok := win32OrigWndProcs.Load(hwnd); ok {
+		origProc := orig.(uintptr)
+		if msg == wmDpiChanged && lParam != 0 {
+			rectPtr := *(*unsafe.Pointer)(unsafe.Pointer(&lParam))
+			suggested := (*[4]int32)(rectPtr)
+			width := suggested[2] - suggested[0]
+			height := suggested[3] - suggested[1]
+			if width > 0 && height > 0 {
+				_, _, _ = procSetWindowPos.Call(
+					hwnd,
+					0,
+					uintptr(suggested[0]),
+					uintptr(suggested[1]),
+					uintptr(width),
+					uintptr(height),
+					uintptr(swpNoZOrder|swpNoActivate),
+				)
+			}
+			_, _, _ = procCallWindowProcW.Call(origProc, hwnd, msg, wParam, lParam)
+			return 0
+		}
+		if msg == wmNcDestroy {
+			win32OrigWndProcs.Delete(hwnd)
+		}
+		ret, _, _ := procCallWindowProcW.Call(origProc, hwnd, msg, wParam, lParam)
+		return ret
+	}
+	ret, _, _ := procDefWindowProcW.Call(hwnd, msg, wParam, lParam)
+	return ret
+}
+
+func installWin32DpiHandler(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	if _, exists := win32OrigWndProcs.Load(hwnd); exists {
+		return
+	}
+	win32SubclassOnce.Do(func() {
+		win32SubclassProcPtr = syscall.NewCallback(win32DpiWndProc)
+	})
+	if win32SubclassProcPtr == 0 {
+		return
+	}
+	const gwlpWndProc = ^uintptr(3) // -4
+	prev, _, _ := procSetWindowLongPtr.Call(hwnd, gwlpWndProc, win32SubclassProcPtr)
+	if prev != 0 && prev != win32SubclassProcPtr {
+		win32OrigWndProcs.Store(hwnd, prev)
+	}
+}
 
 // EnableProcessDPIAwareness opts the Windows process into Per-Monitor V2 DPI
 // awareness before any HWND or WebView2 controller is created so Windows and
@@ -135,6 +207,7 @@ func ApplyDarkTitlebarAndIcon(hwnd uintptr) {
 		_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, hSmall)
 		_, _, _ = procSetClassLongPtrW.Call(hwnd, gclpHIconSm, hSmall)
 	}
+	installWin32DpiHandler(hwnd)
 }
 
 func (c *DesktopClient) runNativeWin32Window(urlStr string, profileName string, exeDir string, sigCh <-chan os.Signal) bool {
@@ -202,6 +275,7 @@ func (c *DesktopClient) applyWin32WindowIconAndMaximize(hwnd uintptr) {
 
 	// Apply PE RT_GROUP_ICON ID 1 + rtx5.ico fallback + dark titlebar
 	ApplyDarkTitlebarAndIcon(hwnd)
+	installWin32DpiHandler(hwnd)
 
 	// Maximize window (SW_MAXIMIZE = 3)
 	_, _, _ = procShowWindow.Call(hwnd, 3)
