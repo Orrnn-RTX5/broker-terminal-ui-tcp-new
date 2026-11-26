@@ -1,1 +1,0 @@
-import{n as e}from"./dealingApi-D-Q6MOzM.js";import{n as t}from"./dealingQueueStore-DO_J3QX0.js";var n=async({wasOnline:n,apiClient:r=e,store:i=t}={})=>{let a=!!n,o=a?await r.stopDealingSession():await r.startDealingSession(),s={...o&&typeof o==`object`?o:{},online:a?!1:o?.online===void 0||!!o.online};return i.getState().setSession(s),s};export{n as t};

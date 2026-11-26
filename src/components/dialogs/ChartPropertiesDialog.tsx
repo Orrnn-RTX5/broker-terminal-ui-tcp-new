@@ -618,12 +618,12 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                   <div className="flex flex-col gap-2 flex-1">
                     <div className="rtx-cp-fieldset flex flex-col gap-1 p-2 border border-[#38383f] bg-white/[0.015] rounded relative">
                       <label className="rtx-cp-radio-row flex items-center gap-2 cursor-pointer">
-                         <input type="radio" name="chartType" className="rtx-cp-radio accent-blue-500 bg-[#2b2b2b]" checked={selectedChartType === 'bar'} onChange={() => updateActiveChartType('Bar', 'bar')} />
-                         <span className="rtx-cp-radio-label text-[12px] text-[#ccc]">{tr("Bar chart")}</span>
-                      </label>
-                      <label className="rtx-cp-radio-row flex items-center gap-2 cursor-pointer">
                          <input type="radio" name="chartType" className="rtx-cp-radio accent-blue-500 bg-[#2b2b2b]" checked={selectedChartType === 'candlestick'} onChange={() => updateActiveChartType('Candlesticks', 'candlestick')} />
                          <span className="rtx-cp-radio-label text-[12px] text-[#ccc]">{tr("Candlesticks")}</span>
+                      </label>
+                      <label className="rtx-cp-radio-row flex items-center gap-2 cursor-pointer">
+                         <input type="radio" name="chartType" className="rtx-cp-radio accent-blue-500 bg-[#2b2b2b]" checked={selectedChartType === 'bar'} onChange={() => updateActiveChartType('Bar', 'bar')} />
+                         <span className="rtx-cp-radio-label text-[12px] text-[#ccc]">{tr("Bar chart")}</span>
                       </label>
                       <label className="rtx-cp-radio-row flex items-center gap-2 cursor-pointer">
                          <input type="radio" name="chartType" className="rtx-cp-radio accent-blue-500 bg-[#2b2b2b]" checked={selectedChartType === 'line'} onChange={() => updateActiveChartType('Line', 'line')} />

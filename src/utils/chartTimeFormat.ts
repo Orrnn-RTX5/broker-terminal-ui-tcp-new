@@ -365,7 +365,13 @@ export const getTradingChartInitialLogicalRange = ({
   };
 };
 
+export const DEFAULT_CHART_RIGHT_OFFSET_BARS = 3;
+
 export const getTradingChartShiftRightOffset = (
   timeframe: string,
   enabled: boolean,
-): number => (enabled ? getTimeframeLayoutConfig(timeframe).chartShiftRightOffset : 0);
+): number => (
+  enabled
+    ? getTimeframeLayoutConfig(timeframe).chartShiftRightOffset
+    : DEFAULT_CHART_RIGHT_OFFSET_BARS
+);

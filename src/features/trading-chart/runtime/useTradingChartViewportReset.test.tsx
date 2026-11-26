@@ -7,6 +7,7 @@ import { defaultChartProperties } from '../../../store/useChartSettingsStore';
 import { useChartZoomStore } from '../../../store/useChartZoomStore';
 import type { Timeframe } from '../../../types/chart';
 import type { LogicalRangeLike } from '../../../utils/candleHistory';
+import { DEFAULT_CHART_RIGHT_OFFSET_BARS } from '../../../utils/chartTimeFormat';
 import { shouldScrollToRealtime } from './chartRuntime';
 import { useTradingChartViewportReset } from './useTradingChartViewportReset';
 
@@ -45,14 +46,15 @@ describe('latest candle viewport', () => {
   it.each(['M1', 'H1', 'D1', 'W1', 'MN'] as Timeframe[])('starts %s at the latest candle and follows live updates with either shift setting', (timeframe) => {
     for (const chartShift of [false, true]) {
       const fixture = createFixture(chartShift, timeframe);
+      const expectedOffset = chartShift ? 8 : DEFAULT_CHART_RIGHT_OFFSET_BARS;
       act(() => {
         expect(fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, timeframe)).toBe(true);
       });
-      expect(fixture.timeScale.scrollPosition()).toBe(chartShift ? 8 : 0);
+      expect(fixture.timeScale.scrollPosition()).toBe(expectedOffset);
       expect(fixture.getRange().from).toBeLessThan(499);
-      expect(fixture.getRange().to).toBeGreaterThanOrEqual(499);
+      expect(fixture.getRange().to).toBeGreaterThanOrEqual(499 + DEFAULT_CHART_RIGHT_OFFSET_BARS);
       expect(fixture.remembered.current).toEqual(fixture.getRange());
-      expect(shouldScrollToRealtime(fixture.chart, true, true, chartShift ? 8 : 0)).toBe(true);
+      expect(shouldScrollToRealtime(fixture.chart, true, true, expectedOffset)).toBe(true);
     }
   });
 
@@ -63,14 +65,14 @@ describe('latest candle viewport', () => {
     fixture.settingsRef.current = { ...fixture.settingsRef.current, chartShift: true };
     act(() => { fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
     expect(fixture.timeScale.scrollPosition()).toBe(8);
-    expect(fixture.getRange().to - fixture.getRange().from).toBe(originalSpan + 8);
+    expect(fixture.getRange().to - fixture.getRange().from).toBe(originalSpan + (8 - DEFAULT_CHART_RIGHT_OFFSET_BARS));
   });
 
-  it('keeps the first sparse live candle inside the plot and leaves an empty chart alone', () => {
+  it('keeps the first sparse live candle inside the plot with right gap and leaves an empty chart alone', () => {
     const fixture = createFixture(false);
     fixture.setLatestIndex(0);
     act(() => { fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 1, 'M1'); });
-    expect(fixture.getRange().to).toBe(0);
+    expect(fixture.getRange().to).toBe(DEFAULT_CHART_RIGHT_OFFSET_BARS);
     expect(fixture.getRange().from).toBeLessThan(0);
     fixture.timeScale.setVisibleLogicalRange.mockClear();
     act(() => { expect(fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 0, 'M1')).toBe(false); });
@@ -81,7 +83,7 @@ describe('latest candle viewport', () => {
     const fixture = createFixture(false, 'M1');
     act(() => { fixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
     // (1000px container - 60px price scale) / 10px TARGET_BAR_PX = 94 visible bars
-    expect(fixture.getRange()).toEqual({ from: 406, to: 499 });
+    expect(fixture.getRange()).toEqual({ from: 406, to: 499 + DEFAULT_CHART_RIGHT_OFFSET_BARS });
 
     // barSpacing must be explicitly reset to TARGET_BAR_PX (10) AFTER
     // setVisibleLogicalRange so the candle width is always the same on
@@ -105,11 +107,11 @@ describe('latest candle viewport', () => {
     }));
     act(() => { wideFixture.result.current.applyInitialVisibleLogicalRange(fixture.chart, 500, 'M1'); });
     // (1920px container - 60px price scale) / 10px TARGET_BAR_PX = 186 visible bars
-    expect(fixture.getRange()).toEqual({ from: 314, to: 499 });
+    expect(fixture.getRange()).toEqual({ from: 314, to: 499 + DEFAULT_CHART_RIGHT_OFFSET_BARS });
 
     // Zooming away and triggering Reset Layout restores the exact same 10px candle density.
     act(() => { fixture.timeScale.setVisibleLogicalRange({ from: 470, to: 499 }); });
     act(() => { window.dispatchEvent(new Event('resetLayout')); });
-    expect(fixture.getRange()).toEqual({ from: 314, to: 499 });
+    expect(fixture.getRange()).toEqual({ from: 314, to: 499 + DEFAULT_CHART_RIGHT_OFFSET_BARS });
   });
 });

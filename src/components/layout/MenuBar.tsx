@@ -670,8 +670,8 @@ export const MenuBar = ({
                 ]
             },
             { divider: true, label: '' },
-            { label: t('menu.charts.barChart'), icon: <Icon name="bar-chart" size="sm" />, checked: menuChartType === 'bar', checkRole: 'radio', ...terminalShortcut('charts.bar-chart') },
             { label: t('menu.charts.candlesticks'), icon: <Icon name="candlestick" size="sm" />, checked: menuChartType === 'candlestick', checkRole: 'radio', ...terminalShortcut('charts.candlestick') },
+            { label: t('menu.charts.barChart'), icon: <Icon name="bar-chart" size="sm" />, checked: menuChartType === 'bar', checkRole: 'radio', ...terminalShortcut('charts.bar-chart') },
             { label: t('menu.charts.lineChart'), icon: <Icon name="line-chart" size="sm" />, checked: menuChartType === 'line', checkRole: 'radio', ...terminalShortcut('charts.line-chart') },
             { label: t('menu.charts.areaChart'), icon: <Icon name="area-chart" size="sm" />, checked: menuChartType === 'area', checkRole: 'radio', ...terminalShortcut('charts.area-chart') },
             { divider: true, label: '' },

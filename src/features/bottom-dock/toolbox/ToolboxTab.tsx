@@ -39,8 +39,8 @@ export function ToolboxTab() {
         {
             category: 'Charts',
             items: [
-                { name: 'Bar Chart', shortcutId: 'charts.bar-chart', icon: 'bar-chart' },
                 { name: 'Candlesticks', shortcutId: 'charts.candlestick', icon: 'candlestick' },
+                { name: 'Bar Chart', shortcutId: 'charts.bar-chart', icon: 'bar-chart' },
                 { name: 'Line Chart', shortcutId: 'charts.line-chart', icon: 'line-chart' },
                 { name: 'Area Chart', shortcutId: 'charts.area-chart', icon: 'area-chart' },
                 { name: 'Indicators', shortcutId: 'charts.indicator-list', icon: 'line-chart' },

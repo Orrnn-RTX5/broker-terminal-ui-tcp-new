@@ -672,8 +672,8 @@ const drawCrispPillRect = (
 type MiniChartDisplayType = 'bar' | 'candlestick' | 'line' | 'dot' | 'area' | 'hlc';
 
 const MINI_CHART_TYPE_OPTIONS: ReadonlyArray<{ id: MiniChartDisplayType; label: string }> = [
-  { id: 'bar', label: 'Bar chart' },
   { id: 'candlestick', label: 'Candlestick chart' },
+  { id: 'bar', label: 'Bar chart' },
   { id: 'line', label: 'Line chart' },
   { id: 'dot', label: 'Dot chart' },
   { id: 'area', label: 'Area chart' },

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TickMarkType, type UTCTimestamp } from 'lightweight-charts';
 import {
+  DEFAULT_CHART_RIGHT_OFFSET_BARS,
   getChartDisplayOffsetSeconds,
   getLocalChartDisplayOffsetSeconds,
   getTradingChartDefaultRightPadBars,
@@ -143,11 +144,14 @@ describe('chartTimeFormat', () => {
     expect(getTradingChartDefaultVisibleBars('M1')).toBe(30);
     expect(getTradingChartDefaultRightPadBars('M1')).toBe(8);
     expect(getTradingChartShiftRightOffset('M1', true)).toBe(8);
-    expect(getTradingChartShiftRightOffset('M1', false)).toBe(0);
+    expect(getTradingChartShiftRightOffset('M1', false)).toBe(DEFAULT_CHART_RIGHT_OFFSET_BARS);
 
     expect(getTradingChartDefaultVisibleBars('M5')).toBe(30);
     expect(getTradingChartDefaultRightPadBars('M5')).toBe(8);
     expect(getTradingChartShiftRightOffset('H1', true)).toBe(8);
+    expect(getTradingChartShiftRightOffset('D1', false)).toBe(DEFAULT_CHART_RIGHT_OFFSET_BARS);
+    expect(getTradingChartShiftRightOffset('W1', false)).toBe(DEFAULT_CHART_RIGHT_OFFSET_BARS);
+    expect(getTradingChartShiftRightOffset('MN', false)).toBe(DEFAULT_CHART_RIGHT_OFFSET_BARS);
   });
 
   it('keeps intraday initial ranges anchored with right-side future space', () => {

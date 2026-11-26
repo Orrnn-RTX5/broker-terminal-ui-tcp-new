@@ -388,10 +388,14 @@ describe('MenuBar hamburger launcher', () => {
             '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]',
         ));
         const chartItemNames = chartItems.map(item => item.getAttribute('aria-label'));
+        const candlesticksIndex = chartItemNames.indexOf('menu.charts.candlesticks');
+        const barIndex = chartItemNames.indexOf('menu.charts.barChart');
         const lineIndex = chartItemNames.indexOf('menu.charts.lineChart');
         const areaIndex = chartItemNames.indexOf('menu.charts.areaChart');
 
-        expect(lineIndex).toBeGreaterThanOrEqual(0);
+        expect(candlesticksIndex).toBeGreaterThanOrEqual(0);
+        expect(barIndex).toBe(candlesticksIndex + 1);
+        expect(lineIndex).toBe(barIndex + 1);
         expect(areaIndex).toBe(lineIndex + 1);
 
         fireEvent.click(within(chartsMenu).getByRole('menuitemradio', { name: 'menu.charts.lineChart' }));

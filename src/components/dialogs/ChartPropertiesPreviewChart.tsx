@@ -664,17 +664,6 @@ export const ChartPropertiesPreviewChart: React.FC<ChartPropertiesPreviewChartPr
         >
           {hudSummary}
         </text>
-        {chartType !== 'line' && chartType !== 'area' && plotRight > 190 && (
-          <polyline
-            data-testid="cp-preview-line"
-            fill="none"
-            stroke={effectiveColors.lineChart}
-            strokeWidth="1.5"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            points={`${plotRight - 36},11 ${plotRight - 28},7 ${plotRight - 21},10 ${plotRight - 13},5 ${plotRight - 6},8`}
-          />
-        )}
 
         {/* Right Price Scale & Bottom Time Scale Gutters */}
         <rect x={plotRight} y={0} width={axisWidth} height={height} fill={previewTheme.background} fillOpacity="0.92" />

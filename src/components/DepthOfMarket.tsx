@@ -583,21 +583,6 @@ function DOMToolbar({ chartMode, crosshair, onChartModeChange, onToggleCrosshair
     >
       <div className="flex items-center gap-1.5">
         <div className="rtx-dom-toolbar-group" role="group" aria-label={tr("Chart mode")}>
-          {/* Bar Chart (OHLC) */}
-          <button
-            type="button"
-            className={iconBtn(chartMode === 'bar')}
-            onClick={() => onChartModeChange('bar')}
-            title={tr("Bar Chart (OHLC)")}
-            aria-label={tr("Bar Chart (OHLC)")}
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M3.5 3.5V12.5M1.75 6.25H3.5M3.5 9.75H5.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
-              <path d="M8 2.25V13.75M6.25 8.5H8M8 5.25H9.75" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
-              <path d="M12.5 4V12M10.75 6H12.5M12.5 9.25H14.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
-            </svg>
-          </button>
-
           {/* Candlestick */}
           <button
             type="button"
@@ -613,6 +598,21 @@ function DOMToolbar({ chartMode, crosshair, onChartModeChange, onToggleCrosshair
               <rect x="6.7" y="4.3" width="2.6" height="6.3" rx="0.45" stroke="currentColor" strokeWidth="1.2" fill="none" />
               <path d="M12.5 3.2V12.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
               <rect x="11.2" y="5.8" width="2.6" height="4.6" rx="0.45" fill="currentColor" />
+            </svg>
+          </button>
+
+          {/* Bar Chart (OHLC) */}
+          <button
+            type="button"
+            className={iconBtn(chartMode === 'bar')}
+            onClick={() => onChartModeChange('bar')}
+            title={tr("Bar Chart (OHLC)")}
+            aria-label={tr("Bar Chart (OHLC)")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M3.5 3.5V12.5M1.75 6.25H3.5M3.5 9.75H5.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+              <path d="M8 2.25V13.75M6.25 8.5H8M8 5.25H9.75" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+              <path d="M12.5 4V12M10.75 6H12.5M12.5 9.25H14.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
             </svg>
           </button>
 

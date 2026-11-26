@@ -225,7 +225,7 @@ describe('Chart Properties grid settings', () => {
       const firstBearCandleRect = screen.getByTestId('cp-preview-candles').querySelector('rect[data-trend="bear"]')!;
       expect(firstBullCandleRect).toHaveAttribute('fill', '#10b981');
       expect(firstBearCandleRect).toHaveAttribute('fill', '#f43f5e');
-      expect(screen.getByTestId('cp-preview-line')).toHaveAttribute('stroke', '#a855f7');
+      expect(screen.queryByTestId('cp-preview-line')).not.toBeInTheDocument();
       expect(screen.queryByTestId('cp-preview-volumes')).not.toBeInTheDocument();
       expect(screen.getByTestId('cp-preview-bid-line')).toHaveAttribute('stroke', '#22d3ee');
       expect(screen.queryByTestId('cp-preview-ask-line')).not.toBeInTheDocument();
@@ -248,6 +248,11 @@ describe('Chart Properties grid settings', () => {
           stopLevels: '#ef4444',
         },
       });
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Common' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Line chart' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'Colors' }));
+      expect(screen.getByTestId('cp-preview-line')).toHaveAttribute('stroke', '#a855f7');
 
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(useChartSettingsStore.getState().symbolProperties.EURUSD.colorScheme).toBe('Blue and Red');

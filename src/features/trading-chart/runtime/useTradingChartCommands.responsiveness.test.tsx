@@ -8,6 +8,7 @@ import { captureHistoryGapRequestScope } from '../../../services/chartHistoryGap
 import * as chartHistoryLoader from '../../../services/chartHistoryLoader';
 import type { OHLCData } from '../../../types/chartData';
 import type { ChartType } from '../../../types/chart';
+import { DEFAULT_CHART_RIGHT_OFFSET_BARS } from '../../../utils/chartTimeFormat';
 import { useTradingChartCommands } from './useTradingChartCommands';
 
 type Options = Parameters<typeof useTradingChartCommands>[0];
@@ -75,13 +76,22 @@ describe('chart controls immediate feedback', () => {
     if (type === 'SET_CHART_SHIFT') expect(timeScale.applyOptions).toHaveBeenCalledWith(expect.objectContaining({ rightOffset: 8 }));
   });
 
-  it('removes the right-side gap and snaps back to the live edge when Chart Shift is disabled', () => {
+  it('keeps the baseline candle-to-scale gap and snaps back to the live edge when Chart Shift is disabled', () => {
     const { options, timeScale, chart } = createHarness({ ctxChartShiftRef: ref(true) });
     act(() => {
       commandBus.dispatch({ type: 'SET_CHART_SHIFT', payload: { enabled: false, targetContextId: 'chart-a' } });
     });
     expect(options.ctxChartShiftRef.current).toBe(false);
-    expect(timeScale.applyOptions).toHaveBeenCalledWith(expect.objectContaining({ rightOffset: 0 }));
+    expect(timeScale.applyOptions).toHaveBeenCalledWith(expect.objectContaining({ rightOffset: DEFAULT_CHART_RIGHT_OFFSET_BARS }));
+    expect(options.scrollToLatestCandleNow).toHaveBeenCalledExactlyOnceWith(chart);
+  });
+
+  it('keeps the baseline candle-to-scale gap when jumping to the latest candle without Chart Shift', () => {
+    const { options, timeScale, chart } = createHarness({ ctxChartShiftRef: ref(false) });
+    act(() => {
+      commandBus.dispatch({ type: 'JUMP_TO_LATEST_CANDLE', payload: { targetContextId: 'chart-a' } });
+    });
+    expect(timeScale.applyOptions).toHaveBeenCalledWith(expect.objectContaining({ rightOffset: DEFAULT_CHART_RIGHT_OFFSET_BARS }));
     expect(options.scrollToLatestCandleNow).toHaveBeenCalledExactlyOnceWith(chart);
   });
 

@@ -915,8 +915,8 @@ const MainToolbar = ({
 
                         {/* Group 3: Chart Types */}
                         <MT5Group label={tr("Chart type")} role="radiogroup">
-                            <CommandIconButton icon="bar-chart" title="Bar Chart" active={toolbarState.chartType === 'bar'} selectionRole="radio" onClick={() => dispatchTargetedChartType('bar')} />
                             <CommandIconButton icon="candlestick" title="Candlesticks" active={toolbarState.chartType === 'candlestick'} selectionRole="radio" onClick={() => dispatchTargetedChartType('candlestick')} />
+                            <CommandIconButton icon="bar-chart" title="Bar Chart" active={toolbarState.chartType === 'bar'} selectionRole="radio" onClick={() => dispatchTargetedChartType('bar')} />
                             <CommandIconButton icon="line-chart" title={tr("Line Chart")} active={toolbarState.chartType === 'line'} selectionRole="radio" onClick={() => dispatchTargetedChartType('line')} />
                             <CommandIconButton icon="area-chart" title={tr("Area Chart")} active={toolbarState.chartType === 'area'} selectionRole="radio" onClick={() => dispatchTargetedChartType('area')} />
                         </MT5Group>

@@ -1,0 +1,1 @@
+import{a as e}from"./rolldown-runtime-CW0mqCbX.js";import{i as t}from"./react-vendor-BlJBx7Wz.js";var n=e(t(),1),r=n.createContext(null),i=()=>{let e=n.useContext(r);if(!e)throw Error(`useToast must be used inside <ToastProvider>`);return e};export{i as n,r as t};

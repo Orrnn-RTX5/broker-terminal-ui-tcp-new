@@ -98,12 +98,21 @@ describe('ChartContextMenu chart types', () => {
     fireEvent.click(lineItem);
     await waitFor(() => expect(onChangeChartType).toHaveBeenCalledWith('line'));
   });
-  it('renders chart type shortcuts Alt+1 through Alt+4 in order', () => {
+  it('renders Candlesticks before Bar Chart while keeping shortcuts Alt+1 through Alt+4', () => {
     renderMenu('line');
-    expect(screen.getByText('Bar Chart').parentElement).toHaveTextContent('Alt+1');
-    expect(screen.getByText('Candlesticks').parentElement).toHaveTextContent('Alt+2');
-    expect(screen.getByText('Line Chart').parentElement).toHaveTextContent('Alt+3');
-    expect(screen.getByText('Area Chart').parentElement).toHaveTextContent('Alt+4');
+    const candlesticks = screen.getByText('Candlesticks');
+    const barChart = screen.getByText('Bar Chart');
+    const lineChart = screen.getByText('Line Chart');
+    const areaChart = screen.getByText('Area Chart');
+
+    expect(barChart.parentElement).toHaveTextContent('Alt+1');
+    expect(candlesticks.parentElement).toHaveTextContent('Alt+2');
+    expect(lineChart.parentElement).toHaveTextContent('Alt+3');
+    expect(areaChart.parentElement).toHaveTextContent('Alt+4');
+
+    expect(candlesticks.compareDocumentPosition(barChart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(barChart.compareDocumentPosition(lineChart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(lineChart.compareDocumentPosition(areaChart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

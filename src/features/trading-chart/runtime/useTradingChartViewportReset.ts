@@ -63,8 +63,8 @@ export function useTradingChartViewportReset({
     });
     if (!initialRange) return false;
 
-    // Logical indexes start at zero. Keep the last actual candle fully inside
-    // the plot, with extra space only when the user enables Chart Shift.
+    // Logical indexes start at zero. Keep a clean breathing gap between the
+    // latest candle and the right price scale, and widen it when Chart Shift is enabled.
     const rightOffset = getTradingChartShiftRightOffset(activeTimeframe, chartSettingsRef.current.chartShift);
     const liveRange = { from: initialRange.from, to: totalBars - 1 + rightOffset };
     const timeScale = chart.timeScale();

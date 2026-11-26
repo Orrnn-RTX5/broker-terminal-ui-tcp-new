@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IChartApi } from 'lightweight-charts';
 import { shouldScrollToRealtime } from '../features/trading-chart/runtime/chartRuntime';
+import { DEFAULT_CHART_RIGHT_OFFSET_BARS } from '../utils/chartTimeFormat';
 import {
   getLeftVisibleTimeFromLogicalRange,
   getVisibleLogicalRangeAnchoredToTime,
@@ -32,7 +33,7 @@ const createFixture = (rightOffset: number, scrollPosition = rightOffset) => {
 };
 
 describe('full chart render live viewport', () => {
-  it.each([0, 8])('follows a delayed snapshot adding eleven bars with right offset %s and keeps the zoom', (rightOffset) => {
+  it.each([0, DEFAULT_CHART_RIGHT_OFFSET_BARS, 8])('follows a delayed snapshot adding eleven bars with right offset %s and keeps the zoom', (rightOffset) => {
     const fixture = createFixture(rightOffset);
     const nextCandles = [
       ...fixture.candles,
@@ -71,7 +72,7 @@ describe('full chart render live viewport', () => {
     expect(result.range).toEqual({ from: 68, to: 98.5 });
   });
 
-  it.each([0, 8])('keeps a sparse refresh baseline at the live edge when history ends on the same candle (offset %s)', (rightOffset) => {
+  it.each([0, DEFAULT_CHART_RIGHT_OFFSET_BARS, 8])('keeps a sparse refresh baseline at the live edge when history ends on the same candle (offset %s)', (rightOffset) => {
     const latest = { time: 7_000 };
     const previousRange = { from: rightOffset - 56, to: rightOffset };
     const nextCandles = [

@@ -13,6 +13,16 @@ const chartTypeGroup = toolbarSource.slice(
 );
 
 describe('TopToolbar chart type controls', () => {
+  it('places Candlesticks before Bar Chart and Line Chart', () => {
+    const candlesticksIndex = chartTypeGroup.indexOf('title="Candlesticks"');
+    const barIndex = chartTypeGroup.indexOf('title="Bar Chart"');
+    const lineIndex = chartTypeGroup.indexOf('title={tr("Line Chart")}');
+
+    expect(candlesticksIndex).toBeGreaterThan(-1);
+    expect(barIndex).toBeGreaterThan(candlesticksIndex);
+    expect(lineIndex).toBeGreaterThan(barIndex);
+  });
+
   it('keeps Line distinct and places Area immediately after it', () => {
     const lineIndex = chartTypeGroup.indexOf('title={tr("Line Chart")}');
     const areaIndex = chartTypeGroup.indexOf('title={tr("Area Chart")}');

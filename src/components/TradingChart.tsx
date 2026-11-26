@@ -1602,7 +1602,7 @@ export const TradingChart = React.memo(function TradingChart({
 
   const getLatestCandleScrollOffset = useCallback((): number => {
     const activeTf = prevTimeframeRef.current || timeframe;
-    return ctxChartShiftRef.current ? getTradingChartShiftRightOffset(activeTf, true) : 0;
+    return getTradingChartShiftRightOffset(activeTf, ctxChartShiftRef.current);
   }, [timeframe]);
 
   const scrollToLatestCandleNow = useCallback((chart: IChartApi | null = chartRef.current): void => {

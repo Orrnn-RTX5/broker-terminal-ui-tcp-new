@@ -923,20 +923,20 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
 
             {/* ── Chart Types ── */}
             <MenuItem
-                icon={<BarChart2 size={13} strokeWidth={1.5} style={{ color: currentChartType === 'bar' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
-                label={tr("Bar Chart")}
-                shortcut="Alt+1"
-                checked={currentChartType === 'bar'}
-                active={currentChartType === 'bar'}
-                onClick={() => closeThen(() => { onChangeChartType('bar'); })}
-            />
-            <MenuItem
                 icon={<CandlestickChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'candlestick' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
                 label={tr("Candlesticks")}
                 shortcut="Alt+2"
                 checked={currentChartType === 'candlestick'}
                 active={currentChartType === 'candlestick'}
                 onClick={() => closeThen(() => { onChangeChartType('candlestick'); })}
+            />
+            <MenuItem
+                icon={<BarChart2 size={13} strokeWidth={1.5} style={{ color: currentChartType === 'bar' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Bar Chart")}
+                shortcut="Alt+1"
+                checked={currentChartType === 'bar'}
+                active={currentChartType === 'bar'}
+                onClick={() => closeThen(() => { onChangeChartType('bar'); })}
             />
             <MenuItem
                 icon={<LineChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'line' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
