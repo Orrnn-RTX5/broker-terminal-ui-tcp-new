@@ -61,7 +61,8 @@ describe('terminal top chrome background contract', () => {
     expect(scrollingStripIndex).toBeGreaterThan(menuIndex);
     expect(desktopScrollingStripIndex).toBeGreaterThan(menuIndex);
     expect(desktopQuickActionsIndex).toBeGreaterThan(desktopScrollingStripIndex);
-    expect(topToolbarSource).toContain('className="min-w-[24px] flex-1 self-stretch"');
+    // 0ec4a611 lets the toolbar drag spacer shrink so a narrow chrome row does not overflow.
+    expect(topToolbarSource).toContain('className="min-w-0 flex-1 self-stretch"');
     expect(menuBarSource).toContain("WebkitAppRegion: 'no-drag'");
   });
 

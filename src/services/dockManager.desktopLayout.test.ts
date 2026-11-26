@@ -59,11 +59,11 @@ const createPreviousDesktopLayout = () => ({
   version: '2.6',
 });
 
-const createPreviousSidebarLayout = () => {
+const createPreviousSidebarLayout = (marketWatchRatio = 0.5, navigatorRatio = 0.5) => {
   const layout = new DockManager().getLayout();
   const root = layout.root as any;
-  root.children[0].children[0].ratio = 0.5;
-  root.children[0].children[1].ratio = 0.5;
+  root.children[0].children[0].ratio = marketWatchRatio;
+  root.children[0].children[1].ratio = navigatorRatio;
   root.children[1].children[0].props = { symbol: 'BTCUSD', timeframe: 'M5', preserved: true };
   layout.floatingPanels = [{
     id: 'floating-news', type: 'panel', ratio: 1, isFloating: true,
@@ -82,7 +82,8 @@ describe('desktop dock defaults', () => {
   it('preserves the established browser workspace proportions', () => {
     const root = new DockManager().getLayout().root as any;
     expect(root.children.map((child: any) => child.ratio)).toEqual([0.20, 0.80]);
-    expect(root.children[0].children.map((child: any) => child.ratio)).toEqual([0.38, 0.62]);
+    // 0ec4a611 set the default sidebar split to 0.48/0.52 and the migration marker to dock-layout-balanced-sidebar-v2.
+    expect(root.children[0].children.map((child: any) => child.ratio)).toEqual([0.48, 0.52]);
     expect(root.children[1].children.map((child: any) => child.ratio)).toEqual([0.75, 0.25]);
   });
 
@@ -98,7 +99,7 @@ describe('desktop dock defaults', () => {
     expect(leftSidebar.ratio).toBe(0.20);
     expect(leftSidebar.direction).toBe('vertical');
     expect(leftSidebar.children.map((child: any) => child.id)).toEqual(['market-watch', 'navigator']);
-    expect(leftSidebar.children.map((child: any) => child.ratio)).toEqual([0.38, 0.62]);
+    expect(leftSidebar.children.map((child: any) => child.ratio)).toEqual([0.48, 0.52]);
 
     expect(centerMain.ratio).toBe(0.80);
     expect(centerMain.direction).toBe('vertical');
@@ -121,7 +122,7 @@ describe('desktop dock defaults', () => {
     expect(root.direction).toBe('horizontal');
     expect(root.children.map((child: any) => child.id)).toEqual(['left-sidebar', 'center-main']);
     expect(root.children[0].ratio).toBe(0.20);
-    expect(root.children[0].children.map((child: any) => child.ratio)).toEqual([0.38, 0.62]);
+    expect(root.children[0].children.map((child: any) => child.ratio)).toEqual([0.48, 0.52]);
     expect(root.children[1].ratio).toBe(0.80);
     expect(root.children[1].children.map((child: any) => child.id)).toEqual(['chart-live', 'toolbox']);
     expect(root.children[1].children.map((child: any) => child.ratio)).toEqual([0.75, 0.25]);
@@ -168,22 +169,27 @@ describe('desktop dock defaults', () => {
   });
 });
 
-describe('compact Market Watch sidebar migration', () => {
-  it.each(['browser', 'desktop'])('migrates the old equal split once in %s without changing chart, Toolbox, or floating state', platform => {
+describe('balanced Market Watch sidebar migration', () => {
+  it.each([
+    { platform: 'browser', previousRatios: [0.5, 0.5] as const },
+    { platform: 'desktop', previousRatios: [0.5, 0.5] as const },
+    { platform: 'browser', previousRatios: [0.38, 0.62] as const },
+    { platform: 'desktop', previousRatios: [0.38, 0.62] as const },
+  ])('migrates the old $previousRatios split once in $platform without changing chart, Toolbox, or floating state', ({ platform, previousRatios }) => {
     if (platform === 'desktop') installElectronBridge();
-    const storageKey = `dock-layout-sidebar-${platform}`;
-    const previous = createPreviousSidebarLayout();
+    const storageKey = `dock-layout-sidebar-${platform}-${previousRatios.join('-')}`;
+    const previous = createPreviousSidebarLayout(previousRatios[0], previousRatios[1]);
     localStorage.setItem(storageKey, JSON.stringify(previous));
     const expected = structuredClone(previous);
     const expectedSidebar = expected.root.children[0] as any;
-    expectedSidebar.children[0].ratio = 0.38;
-    expectedSidebar.children[1].ratio = 0.62;
+    expectedSidebar.children[0].ratio = 0.48;
+    expectedSidebar.children[1].ratio = 0.52;
 
     const manager = new DockManager();
     expect(manager.loadFromStorage(storageKey)).toBe(true);
     expect(manager.getLayout()).toEqual(expected);
     expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual(expected);
-    expect(localStorage.getItem(`dock-layout-compact-sidebar-v1:${storageKey}`)).toBe('1');
+    expect(localStorage.getItem(`dock-layout-balanced-sidebar-v2:${storageKey}`)).toBe('1');
   });
 
   it('preserves customized sidebar ratios', () => {
@@ -205,7 +211,7 @@ describe('compact Market Watch sidebar migration', () => {
     localStorage.setItem(storageKey, JSON.stringify(createPreviousSidebarLayout()));
     const manager = new DockManager();
     expect(manager.loadFromStorage(storageKey)).toBe(true);
-    expect(localStorage.getItem(`dock-layout-compact-sidebar-v1:${storageKey}`)).toBe('1');
+    expect(localStorage.getItem(`dock-layout-balanced-sidebar-v2:${storageKey}`)).toBe('1');
 
     const resized = manager.getLayout();
     const sidebar = resized.root.children[0] as any;

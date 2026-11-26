@@ -64,13 +64,14 @@ describe('TradingChart initial viewport contract', () => {
 
   it('wires the uncached-history decision into the authoritative history render', () => {
     const initialHistoryStart = historyLoadingSource.indexOf('// Update chart - live data');
-    const initialHistoryEnd = historyLoadingSource.indexOf('// Set current forming candle', initialHistoryStart);
+    // cfcdfec placed the forming-candle comment before this reset decision.
+    const initialHistoryEnd = historyLoadingSource.indexOf("reason: 'initial-history'", initialHistoryStart);
     const initialHistoryRender = historyLoadingSource.slice(initialHistoryStart, initialHistoryEnd);
 
     expect(initialHistoryStart).toBeGreaterThan(-1);
     expect(initialHistoryEnd).toBeGreaterThan(initialHistoryStart);
     expect(initialHistoryRender).toContain('shouldResetInitialHistoryVisibleRange({');
-    expect(initialHistoryRender).toContain('hydratedFromCache: hydratedFromCache || (');
+    expect(initialHistoryRender).toContain('hydratedFromCache: hydratedFullViewportFromCache || (');
     expect(initialHistoryRender).toContain('resetVisibleRange: shouldResetVisibleRange');
   });
 

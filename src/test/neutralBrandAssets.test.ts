@@ -20,9 +20,15 @@ describe('neutral brand assets', () => {
   });
 
   it('points the splash and the logo fallback at the generic icon', () => {
-    expect(read('desktop-splash.html').toString()).toContain('src="./dist/brand/terminal-icon.png"');
-    expect(read('src/components/BrokerLogoImage.tsx').toString()).toContain("toPublicAssetPath('brand/terminal-icon.png')");
-    for (const file of ['desktop-splash.html', 'index.html', 'src/components/WelcomeTerminal.tsx', 'src/components/BrokerLogoImage.tsx']) {
+    // Electron desktop-splash.html was removed; the logo fallback stays on the generic icon.
+    const logoSource = read('src/components/BrokerLogoImage.tsx').toString();
+    expect(logoSource).toContain("toPublicAssetPath('brand/terminal-icon.png')");
+    const placeholderMatch = logoSource.match(/export const isPlaceholderBrokerLogoUrl =[\s\S]*?;\r?\n/);
+    expect(placeholderMatch).not.toBeNull();
+    expect(placeholderMatch![0]).toMatch(/brand\\\/rtx5-app-icon\\\.png/);
+    const logoRest = logoSource.replace(placeholderMatch![0], '');
+    expect(logoRest, 'src/components/BrokerLogoImage.tsx').not.toMatch(/rtx5-app-icon|rtx5-login-wordmark/);
+    for (const file of ['index.html', 'src/components/WelcomeTerminal.tsx']) {
       expect(read(file).toString(), file).not.toMatch(/rtx5-app-icon|rtx5-login-wordmark/);
     }
   });

@@ -36,8 +36,13 @@ it('the production candle push refreshes drawing OHLCV and coalesces rapid ticks
     getTradingChartShiftRightOffset, prevTimeframeRef: { current: 'M1' }, timeframe: 'M1',
     updateDrawingCandle, lastRenderedCandlesRef: candles,
     drawingRuntimeContextRef: { current: { symbol: 'XAUUSD', timeframe: 'M1' } },
-    drawingRenderFrameRef: pending, drawingRenderSettledFrameRef: { current: null }, scheduleDrawingRenderAfterChartData: schedule,
-    updateLegendDOM: vi.fn(), getDisplayVolume: (c: typeof first) => c.volume, chartSettingsRef: { current: {} },
+    drawingRenderFrameRef: pending, drawingRenderSettledFrameRef: { current: null },
+    // cfcdfec schedules drawings and legend updates through runtime refs after a live candle push.
+    getActiveTimeframe: () => 'M1', chartRef: { current: null }, autoScrollEnabledRef: { current: false },
+    shouldScrollToRealtime: () => false,
+    runtimeCallbacksRef: { current: { scheduleDrawingRenderAfterChartData: schedule } },
+    updateLegendDOMRef: { current: vi.fn() },
+    getDisplayVolume: (c: typeof first) => c.volume, chartSettingsRef: { current: {} },
   });
   const tick = { ...first, close: 103, volume: 5 };
   push(tick, false); push({ ...tick, close: 104, volume: 8 }, false);
@@ -57,7 +62,9 @@ it('a price-only axis repaint also schedules drawings after the chart transform'
     repaintLivePriceOverlayGeometry: vi.fn(), repaintTradeOverlayGeometryRef: { current: vi.fn() },
     drawingRenderFrameRef: drawingFrame, drawingRenderSettledFrameRef: { current: null },
     drawingManager: { hasRenderableContent: () => true }, drawingManagerOverlayContainer: document.createElement('div'),
-    drawingRuntimeContextRef: { current: { symbol: 'EURUSD', timeframe: 'H1' } }, scheduleDrawingRenderAfterChartData: schedule,
+    drawingRuntimeContextRef: { current: { symbol: 'EURUSD', timeframe: 'H1' } },
+    // cfcdfec schedules drawings through runtimeCallbacksRef after a price-axis transform.
+    runtimeCallbacksRef: { current: { scheduleDrawingRenderAfterChartData: schedule } },
   });
   queue(); queue();
   expect(frameCallbacks).toHaveLength(1);

@@ -492,7 +492,14 @@ describe('EnhancedWebSocketService trade state ownership', () => {
 
 describe('EnhancedWebSocketService connection startup', () => {
   beforeEach(() => {
-    (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__ = { BACKEND_TARGET: 'desktop' };
+    // cfcdfec: desktop EnhancedWebSocketService never constructs WebSocket; this suite covers the web broker socket.
+    (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__ = {
+      BACKEND_TARGET: 'web',
+      API_HOST: 'https://example.test',
+      WS_HOST: 'wss://example.test',
+      BROKER_ID: 'enhanced-ws-test',
+      DEFAULT_MT5_SERVER: 'broker-server-3',
+    };
     ConnectingWebSocket.instances = [];
     localStorage.clear();
     sessionStorage.clear();
@@ -713,49 +720,43 @@ describe('EnhancedWebSocketService connection startup', () => {
     expect(ConnectingWebSocket.instances).toHaveLength(1);
   });
 
-  it('keeps independently URL-keyed services alive at the same time', () => {
+  it('collapses caller URLs onto a single canonical web broker service', () => {
+    // cfcdfec: web mode collapses caller URLs onto one canonical broker socket.
     const firstUrl = 'wss://one.example.test/ws/v2';
     const secondUrl = 'wss://two.example.test/ws/v2';
     const first = getEnhancedWebSocketService(firstUrl);
     const second = getEnhancedWebSocketService(secondUrl);
 
-    expect(first).not.toBe(second);
-    localStorage.setItem('ws_url', firstUrl);
+    expect(first).toBe(second);
     first.connect();
-    const firstSocket = ConnectingWebSocket.instances[0];
-    localStorage.setItem('ws_url', secondUrl);
     second.connect();
 
-    expect(ConnectingWebSocket.instances).toHaveLength(2);
-    expect(firstSocket.readyState).toBe(ConnectingWebSocket.CONNECTING);
-    expect(new URL(ConnectingWebSocket.instances[0].url).host).toBe('one.example.test');
-    expect(new URL(ConnectingWebSocket.instances[1].url).host).toBe('two.example.test');
+    expect(ConnectingWebSocket.instances).toHaveLength(1);
+    expect(ConnectingWebSocket.instances[0].readyState).toBe(ConnectingWebSocket.CONNECTING);
+    expect(new URL(ConnectingWebSocket.instances[0].url).host).toBe('example.test');
     expect(getEnhancedWebSocketService(firstUrl)).toBe(first);
     expect(getEnhancedWebSocketService(secondUrl)).toBe(second);
   });
 
-  it('evicts an abandoned URL-keyed service but preserves a shared consumer', async () => {
-    const abandonedUrl = 'wss://abandoned.example.test/ws/v2';
+  it('keeps the canonical web service alive while subscribed and evicts it on final release', async () => {
+    // cfcdfec: one web socket stays up while a subscriber remains, then closes on the last release.
     const sharedUrl = 'wss://shared.example.test/ws/v2';
-    const abandoned = getEnhancedWebSocketService(abandonedUrl);
     const shared = getEnhancedWebSocketService(sharedUrl);
     const unsubscribe = shared.subscribe('ticks.EURUSD', vi.fn());
 
-    abandoned.connect();
     shared.connect();
-    releaseEnhancedWebSocketService(abandoned);
     releaseEnhancedWebSocketService(shared);
     await Promise.resolve();
 
-    expect(ConnectingWebSocket.instances[0].readyState).toBe(ConnectingWebSocket.CLOSED);
-    expect(ConnectingWebSocket.instances[1].readyState).toBe(ConnectingWebSocket.CONNECTING);
-    expect(getEnhancedWebSocketService(abandonedUrl)).not.toBe(abandoned);
+    expect(ConnectingWebSocket.instances).toHaveLength(1);
+    expect(ConnectingWebSocket.instances[0].readyState).toBe(ConnectingWebSocket.CONNECTING);
     expect(getEnhancedWebSocketService(sharedUrl)).toBe(shared);
 
     unsubscribe();
     releaseEnhancedWebSocketService(shared);
     await Promise.resolve();
-    expect(ConnectingWebSocket.instances[1].readyState).toBe(ConnectingWebSocket.CLOSED);
+    expect(ConnectingWebSocket.instances[0].readyState).toBe(ConnectingWebSocket.CLOSED);
+    expect(getEnhancedWebSocketService(sharedUrl)).not.toBe(shared);
   });
 
   it('times out and retries a socket that never finishes opening', () => {

@@ -2,7 +2,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { loadPublicQuotes } from './publicMarket';
 
 const runtime = vi.hoisted(() => ({ host: 'https://nexa.orrnn.com' }));
-vi.mock('../config/backendTarget.js', () => ({ getPublicBackendTarget: () => runtime.host, getRuntimeBrokerConfiguration: () => ({ brokerId: 'Fixture', publicMarketApi: 'mt5-bridge-v1' }) }));
+// cfcdfec / 17f3f20: backendTarget.js exports isDesktopBackendTarget; spread the real module and override only the public broker target.
+vi.mock('../config/backendTarget.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../config/backendTarget.js')>(),
+  getPublicBackendTarget: () => runtime.host,
+  getRuntimeBrokerConfiguration: () => ({ brokerId: 'Fixture', publicMarketApi: 'mt5-bridge-v1' }),
+}));
 vi.mock('../config/localDevProxy', () => ({ toLocalDevProxyUrl: (url: string) => url }));
 vi.mock('../api/brokerRequestGuard', () => ({ assertBrokerRequestAllowed: () => undefined }));
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });

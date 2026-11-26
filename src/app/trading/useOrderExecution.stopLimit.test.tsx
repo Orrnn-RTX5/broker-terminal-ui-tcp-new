@@ -97,8 +97,9 @@ describe('useOrderExecution pending sweep (stop-limit / expiry / comment, never 
       price_tp: 4185,
       expiration: 1770000000,
       comment: 'sweep-dialog',
-    });
-    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123);
+    }, expect.objectContaining({ intentAtMs: expect.any(Number) })); // cfcdfec8
+    // 66b3a86: binary and REST refreshes both skip history on this path.
+    expect(controller.refreshOrdersAndHistory).toHaveBeenCalledWith(123, { skipHistory: true });
   });
 
   it('fails closed without sending when the stop-limit price is missing', async () => {

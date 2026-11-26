@@ -112,6 +112,7 @@ type QuoteSocketManagerInternals = Pick<QuoteSocketManager, keyof QuoteSocketMan
   sendUnsubscribe: (symbols: string[]) => void;
   pendingSubscriptions: Set<string>;
   subscribedSymbols: Set<string>;
+  activeTransport: 'feed' | 'v2';
 };
 
 const internals = (manager: QuoteSocketManager): QuoteSocketManagerInternals =>
@@ -247,6 +248,8 @@ describe('QuoteSocketManager public v2 per-symbol protocol', () => {
       send,
       close: vi.fn(),
     } as unknown as WebSocket;
+    // cfcdfec: activeTransport defaults to 'feed' until connect(); this socket is the public v2 channel.
+    internals(manager).activeTransport = 'v2';
 
     internals(manager).sendUnsubscribe(['EURUSD', 'XAUUSD']);
 

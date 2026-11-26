@@ -142,12 +142,13 @@ describe('JournalTab', () => {
         const typeSelect = screen.getByRole('combobox', { name: 'Journal type' });
         const modeSelect = screen.getByRole('combobox', { name: 'Journal mode' });
         const searchInput = screen.getByRole('textbox', { name: 'Filter journal messages' });
-        const timeButton = screen.getByRole('button', { name: 'Today' });
+        // 7c10304f: journal time filters are tabs (aria-selected), not pressed buttons.
+        const timeButton = screen.getByRole('tab', { name: 'Today' });
 
         expect(typeSelect).toHaveClass('rtx-journal-control', 'h-7', 'text-[13px]');
         expect(modeSelect).toHaveClass('rtx-journal-control', 'h-7', 'text-[13px]');
         expect(searchInput).toHaveClass('rtx-journal-control', 'h-7', 'text-[13px]');
-        expect(timeButton).toHaveClass('rtx-journal-control', 'h-[22px]', 'text-[12px]');
+        expect(timeButton).toHaveClass('rtx-journal-control', 'rtx-journal-time-btn', 'rtx-trade-subtab-btn');
         expect(typeSelect.closest('.rtx-journal-toolbar')).not.toBeNull();
     });
 
@@ -801,12 +802,12 @@ describe('JournalTab', () => {
 
         render(<JournalTab />);
         expect(await screen.findByText('Recent order filled')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'All' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'All' }));
         expect(screen.getByText('Older connection event')).toBeInTheDocument();
 
-        const twoHourButton = screen.getByRole('button', { name: '2h' });
+        const twoHourButton = screen.getByRole('tab', { name: '2h' });
         fireEvent.click(twoHourButton);
-        expect(twoHourButton).toHaveAttribute('aria-pressed', 'true');
+        expect(twoHourButton).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByText('Recent order filled')).toBeInTheDocument();
         expect(screen.queryByText('Older connection event')).not.toBeInTheDocument();
 
@@ -864,9 +865,9 @@ describe('JournalTab', () => {
         expect(await screen.findByText('Journal row 999')).toBeInTheDocument();
         expect(screen.getAllByTestId('journal-rendered-row').length).toBeLessThan(50);
 
-        const allButton = screen.getByRole('button', { name: 'All' });
+        const allButton = screen.getByRole('tab', { name: 'All' });
         fireEvent.click(allButton);
-        expect(allButton).toHaveAttribute('aria-pressed', 'true');
+        expect(allButton).toHaveAttribute('aria-selected', 'true');
         expect(await screen.findByText('1000 records')).toBeInTheDocument();
         expect(screen.getAllByTestId('journal-rendered-row').length).toBeLessThan(50);
         expect(journalHarness.getLogs).toHaveBeenCalledTimes(1);
@@ -1053,9 +1054,9 @@ describe('JournalTab', () => {
         render(<JournalTab />);
         expect(await screen.findByText('Journal row 30 minutes old')).toBeInTheDocument();
 
-        expect(screen.queryByRole('button', { name: '3h' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: '6h' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Month' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: '3h' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: '6h' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Month' })).not.toBeInTheDocument();
 
         const cases = [
             { range: '2h', included: logs.slice(0, 2), excluded: logs.slice(2) },
@@ -1065,7 +1066,7 @@ describe('JournalTab', () => {
         ];
 
         for (const [index, testCase] of cases.entries()) {
-            fireEvent.click(screen.getByRole('button', { name: testCase.range }));
+            fireEvent.click(screen.getByRole('tab', { name: testCase.range }));
             fireEvent.click(screen.getByRole('button', { name: 'Copy filtered journal' }));
 
             await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledTimes(index + 1));
@@ -1094,7 +1095,7 @@ describe('JournalTab', () => {
         fireEvent.change(typeSelect, { target: { value: '6' } });
         await waitFor(() => expect(journalHarness.getLogs).toHaveBeenCalledTimes(2));
         await screen.findByText('Needle trade accepted');
-        fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Today' }));
         fireEvent.change(screen.getByPlaceholderText(/Filter messages/i), { target: { value: 'needle' } });
         fireEvent.click(screen.getByRole('button', { name: 'Copy filtered journal' }));
 

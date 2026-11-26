@@ -5,7 +5,8 @@ import type { MarketWatchLastPrice } from '../../../hooks/useLastMarketWatchQuot
 
 export const CORE_DEFAULT_SYMBOLS = ['XAUUSD', 'BTCUSD', 'EURUSD'];
 export const DEFAULT_SYMBOLS = [...CORE_DEFAULT_SYMBOLS, 'GBPUSD', 'USDJPY'];
-export const DEFAULT_DISPLAY_SYMBOLS = [...CORE_DEFAULT_SYMBOLS];
+// cfcdfec8 / 7c10304f: flagship core order of DEFAULT_SYMBOLS, capped at 7.
+export const DEFAULT_DISPLAY_SYMBOLS = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'BTCUSD'];
 
 export interface MockMarketInstrument {
   symbol: string;

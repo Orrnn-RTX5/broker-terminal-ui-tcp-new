@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   publicCatalog: vi.fn(() => new Promise<unknown>(() => {})),
@@ -27,6 +27,11 @@ vi.mock('./i18n', () => ({ i18nReady: Promise.resolve() }));
 vi.mock('./authenticatedStyles', () => ({}));
 
 describe('early public market prefetch', () => {
+  beforeEach(() => {
+    mocks.desktop = false;
+    vi.clearAllMocks();
+  });
+
   it('starts public discovery beside module loading without gating the terminal on it', async () => {
     vi.resetModules();
     const { preloadAuthenticatedTerminal } = await import('./AppShell');
@@ -38,14 +43,15 @@ describe('early public market prefetch', () => {
     expect(mocks.welcomeLoaded).not.toHaveBeenCalled();
   });
 
-  it('keeps desktop login module loading free of public market requests', async () => {
+  // d8401251: desktop opens the public workspace before login, same as web.
+  it('starts public discovery while desktop login modules load', async () => {
     mocks.desktop = true;
     mocks.publicCatalog.mockClear();
     mocks.publicHistory.mockClear();
     vi.resetModules();
     const { preloadAuthenticatedTerminal } = await import('./AppShell');
     await preloadAuthenticatedTerminal();
-    expect(mocks.publicCatalog).not.toHaveBeenCalled();
-    expect(mocks.publicHistory).not.toHaveBeenCalled();
+    expect(mocks.publicCatalog).toHaveBeenCalledWith('https://nexa.orrnn.com');
+    expect(mocks.publicHistory).toHaveBeenCalledOnce();
   });
 });

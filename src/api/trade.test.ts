@@ -22,8 +22,13 @@ const jsonResponse = (body: unknown, init: ResponseInit = {}) =>
     ...init,
   });
 
+const nonInternalFetchCalls = () =>
+  // cfcdfec: desktop auth:token-updated also POSTs /__rtx5_binary_account_sub; ignore that internal call.
+  vi.mocked(fetch).mock.calls
+    .filter((entry) => !String(entry[0] ?? '').includes('/__rtx5_binary_account_sub'));
+
 const lastFetchCall = () => {
-  const call = vi.mocked(fetch).mock.calls.at(-1);
+  const call = nonInternalFetchCalls().at(-1);
   if (!call) throw new Error('Expected fetch to be called');
   return {
     url: String(call[0]),
@@ -182,7 +187,7 @@ describe('trade v2 API contract calls', () => {
     await expect(authV2Api.exchangeWebTerminalSso('Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa'))
       .resolves.toMatchObject({ access_token: 'sso-access-token' });
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(nonInternalFetchCalls()).toHaveLength(1);
     expect(lastFetchCall().url).toContain('/auth/sso/exchange');
     expect(lastFetchCall().body).toEqual({
       token: 'Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa',
@@ -225,7 +230,7 @@ describe('trade v2 API contract calls', () => {
       status: 400,
     } satisfies Partial<ApiError>);
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(nonInternalFetchCalls()).toHaveLength(1);
     expect(lastFetchCall().body).toEqual({
       login: 100001,
       password: 'FixturePassword123',
@@ -284,7 +289,7 @@ describe('trade v2 API contract calls', () => {
       status,
     } satisfies Partial<ApiError>);
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(nonInternalFetchCalls()).toHaveLength(1);
   });
 
   it('does not clear a newer token when an older protected request returns 401 late', async () => {
@@ -348,7 +353,7 @@ describe('trade v2 API contract calls', () => {
       await rejection;
       body.resolve({ ok: true });
 
-      expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+      expect(nonInternalFetchCalls()).toHaveLength(1);
     },
   );
 
@@ -1060,7 +1065,7 @@ describe('trade v2 API contract calls', () => {
       message: 'Gateway candles unavailable',
     } satisfies Partial<ApiError>);
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(nonInternalFetchCalls()).toHaveLength(1);
     expect(lastFetchCall().url).toBe(`${RTX5_API_URL}/api/v2/candles/EURUSD?timeframe=H1&limit=5`);
   });
 
@@ -1342,7 +1347,7 @@ describe('web-tcp SSO exchange', () => {
     await expect(authV2Api.exchangeWebTerminalSso(SSO_TOKEN, undefined, 'test-broker'))
       .resolves.toMatchObject({ access_token: 'sso-access-token' });
 
-    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(nonInternalFetchCalls()).toHaveLength(1);
     expect(lastFetchCall().url).toContain('/auth/sso/exchange');
     expect(lastFetchCall().body).toEqual({ token: SSO_TOKEN, broker_id: 'test-broker' });
     expect(localStorage.getItem('auth_token')).toBe('sso-access-token');

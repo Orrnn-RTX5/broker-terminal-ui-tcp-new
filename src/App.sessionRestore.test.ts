@@ -68,6 +68,8 @@ const createRestoreHarness = () => {
     chartDataService: { preloadStartupHistory: vi.fn() },
     useAppStore: { getState: () => state, setState: vi.fn() },
     getStoredTokenExpiryMs: () => null,
+    // cfcdfec8: restore reads token_expires_at through parseStoredTokenExpiryMs.
+    parseStoredTokenExpiryMs: () => null,
     // Module-level imports/helpers referenced inside the extracted effect.
     getStoredAuthToken: () => localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'),
     getCommittedBrokerAccountSessionScope: () => scope,

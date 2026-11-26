@@ -25,10 +25,15 @@ describe('authenticated startup trade-snapshot ownership contract', () => {
     expect(heartbeat).not.toContain('api.positions.getPositions(loginId)');
 
     expect(refresh).toContain('getSessionTradeSnapshotRequests(login)');
-    expect(refresh.indexOf('await startupRequests.positionsResultPromise'))
-      .toBeLessThan(refresh.indexOf('await startupRequests.accountResultPromise'));
-    expect(refresh.indexOf('commitPositions('))
-      .toBeLessThan(refresh.indexOf('await metricsPromise'));
+    const positionsAwait = refresh.indexOf('await startupRequests.positionsResultPromise');
+    const accountMetricsAwait = refresh.indexOf('await Promise.all([');
+    const accountMetricsJoin = refresh.slice(accountMetricsAwait, refresh.indexOf(']);', accountMetricsAwait));
+    expect(positionsAwait).toBeGreaterThan(-1);
+    expect(accountMetricsAwait).toBeGreaterThan(positionsAwait);
+    expect(accountMetricsJoin).toContain('startupRequests.accountResultPromise');
+    expect(accountMetricsJoin).toContain('metricsPromise');
+    expect(refresh.indexOf('commitPositions(')).toBeGreaterThan(positionsAwait);
+    expect(refresh.indexOf('commitPositions(')).toBeLessThan(accountMetricsAwait);
     expect(refresh).toContain('`/account/${login}/metrics`');
     expect(refresh).not.toContain('`/account/${login}`');
     expect(refresh).not.toContain('`/positions/${login}`');

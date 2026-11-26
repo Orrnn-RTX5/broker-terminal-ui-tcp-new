@@ -43,11 +43,13 @@ describe('Modify SL/TP feedback source contract (T6)', () => {
     expect(failureBranch).toContain("'error',");
   });
 
-  it('modify success path is unchanged: silent with a positions refresh', () => {
-    expect(successBranch).toContain('await tradingV2Api.modifyPosition(id,');
-    expect(successBranch).toContain('price_sl: sl,');
-    expect(successBranch).toContain('price_tp: tp,');
-    expect(successBranch).toContain('refreshPositions(getLiveTradingLogin() || undefined);');
+  it('modify success stays silent, patches SL/TP, and refreshes positions on the REST path', () => {
+    // cfcdfec8: modifyPosition takes { intentAtMs }; the store patch uses nextSl/nextTp.
+    expect(successBranch).toContain('await api.positions.modifyPosition(id, sl, tp, { intentAtMs });');
+    expect(successBranch).toContain('price_sl: nextSl,');
+    expect(successBranch).toContain('price_tp: nextTp,');
+    expect(successBranch).toContain('scheduleIdlePostTradeSync(loginId, false);');
+    expect(successBranch).toContain('postTradeRefresh.refreshPositions(loginId || undefined);');
     // No success toast was added; success stays silent.
     expect(successBranch).not.toContain('publishOrderFeedback(');
   });

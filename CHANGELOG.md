@@ -1,5 +1,10 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.17] - 2026-11-26 (VERSION file; terminal UI)
+### Tests
+- No change to the terminal itself. The remaining pre-existing failing tests from the test-environment and stale-expectation backlog are fixed: chart runtime, overlays and drawing tools; trade socket, WebSocket, API, public market, positions store and chart data; Market Watch, Journal, History, session and order execution contracts; desktop shell, startup and style contracts.
+- Tests for the removed Docker image and Electron shell were replaced by tests of the current code: runtime configuration validation (secrets kept out of the published configuration, HTML escaping), and Go tests for loopback origin rewriting, origin sanitising in the TCP protocol package, and file-path containment.
+
 ## [1.2.16] - 2026-11-26 (VERSION file; terminal UI)
 ### Fixed
 - **Order ticket, pending orders:** the minimum stop distance is measured in points (stops level x 10^-digits) on the Buy/Sell buttons, the same as on submit. Before, symbols with a tick size larger than one point (for example tick 0.05 on 2 digits) could keep the pending buttons disabled for a valid price. The price spinner, depth ladder and chart still step by the broker tick.

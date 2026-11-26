@@ -139,7 +139,7 @@ describe('SymbolsDialog chart opening', () => {
     render(<SymbolsDialog isOpen onClose={vi.fn()} instruments={[{ symbol: brokerSymbol }]} />);
 
     expect(screen.getByRole('dialog')).toHaveStyle({
-      left: '16px', top: '16px', width: '779px', height: '473px',
+      left: '49px', top: '36px', width: '714px', height: '434px',
     });
     expectDialogInsideViewport();
 

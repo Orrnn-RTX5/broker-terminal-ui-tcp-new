@@ -14,6 +14,7 @@ import {
 } from './brokerSession';
 import { API_V2_BASE_URL } from '../config/api';
 import { TradeWebSocketClient } from '../api/tradeSocket';
+import { binaryTcpMarketStream } from './binaryTcpMarketStream';
 
 class FakeWebSocket {
   static CONNECTING = 0;
@@ -76,6 +77,17 @@ const setDesktopRuntime = () => {
     BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live', PUBLIC_CANDLE_BRIDGE: true,
   };
 };
+
+// Web REST/WS coverage only: desktop fetchCandles requests /api/v2/binary-candles first (cfcdfec).
+const setWebRuntime = () => {
+  (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__ = {
+    BACKEND_TARGET: 'web', API_HOST: 'https://broker.example', WS_HOST: 'wss://broker.example',
+    BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live', PUBLIC_CANDLE_BRIDGE: true,
+  };
+};
+
+const expectedWebGuestCandleUrl = (symbol = 'EUR/USD', timeframe = 'M15', limit = 50) =>
+  `https://broker.example/api/v2/candles/${encodeURIComponent(symbol)}?timeframe=${timeframe}&limit=${limit}`;
 
 const expectedCandleUrl = () =>
   `${(buildBrokerApiV2() || API_V2_BASE_URL).replace(/\/$/, '')}/candles/EUR%2FUSD?timeframe=M15&limit=50`;
@@ -140,6 +152,34 @@ const withWindowLocation = (
   }
 };
 
+const stopBinaryTcpMarketStreamForTests = () => {
+  const stream = binaryTcpMarketStream as unknown as {
+    reconnectTimer: ReturnType<typeof setTimeout> | null;
+    deferredFlushTimer: ReturnType<typeof setTimeout> | null;
+    tickListeners: Set<unknown>;
+    directChartTickListeners: Map<string, Set<unknown>>;
+    candleListeners: Map<string, Set<unknown>>;
+    depthListeners: Map<string, Set<unknown>>;
+    tradeEventListeners: Set<unknown>;
+    stateListeners: Set<unknown>;
+    running: boolean;
+    connected: boolean;
+  };
+  stream.tickListeners.clear();
+  stream.directChartTickListeners.clear();
+  stream.candleListeners.clear();
+  stream.depthListeners.clear();
+  stream.tradeEventListeners.clear();
+  stream.stateListeners.clear();
+  if (stream.deferredFlushTimer !== null) {
+    clearTimeout(stream.deferredFlushTimer);
+    stream.deferredFlushTimer = null;
+  }
+  binaryTcpMarketStream.forceReconnect();
+  stream.running = false;
+  stream.connected = false;
+};
+
 describe('trade candle normalization and websocket cleanup', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -153,6 +193,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   afterEach(() => {
+    stopBinaryTcpMarketStreamForTests();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -416,6 +457,9 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('prefers authenticated TEST v2 OHLC and does not query the public bridge when v2 is valid', async () => {
+    setWebRuntime();
+    // cfcdfec: the web active broker is the deployment BROKER_ID, not localStorage broker_id.
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'TEST';
     localStorage.setItem('broker_id', 'TEST');
     localStorage.setItem('auth_token', makeJwt({ broker_id: 'TEST', account_login: 1001 }));
     const authenticatedCandles = [
@@ -442,8 +486,11 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('refreshes from the broker instead of reusing a stale in-memory snapshot', async () => {
+    setWebRuntime();
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'TEST';
     localStorage.setItem('broker_id', 'TEST');
-    localStorage.setItem('auth_token', makeJwt({ broker_id: 'TEST', account_login: 1001 }));
+    const token = makeJwt({ broker_id: 'TEST', account_login: 1001 });
+    localStorage.setItem('auth_token', token);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -471,11 +518,29 @@ describe('trade candle normalization and websocket cleanup', () => {
         { time: 1788508800, open: 4474.2, high: 4475.1, low: 4473.9, close: 4475, volume: 22 },
       ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/candles'))).toBe(false);
   });
 
   it('keeps same-key requests independent when an older request is aborted', async () => {
+    setWebRuntime();
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'TEST';
     localStorage.setItem('broker_id', 'TEST');
-    localStorage.setItem('auth_token', makeJwt({ broker_id: 'TEST', account_login: 1001 }));
+    const token = makeJwt({ broker_id: 'TEST', account_login: 1001 });
+    localStorage.setItem('auth_token', token);
     const firstController = new AbortController();
     const secondController = new AbortController();
     const abortError = new Error('Aborted');
@@ -510,11 +575,29 @@ describe('trade candle normalization and websocket cleanup', () => {
     await expect(first).rejects.toMatchObject({ name: 'AbortError' });
     await expect(second).resolves.toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/candles'))).toBe(false);
   });
 
   it('does not reuse an in-memory candle snapshot across account sessions', async () => {
+    setWebRuntime();
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'TEST';
     localStorage.setItem('broker_id', 'TEST');
-    localStorage.setItem('auth_token', makeJwt({ broker_id: 'TEST', account_login: 1001 }));
+    const firstToken = makeJwt({ broker_id: 'TEST', account_login: 1001 });
+    localStorage.setItem('auth_token', firstToken);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -532,18 +615,39 @@ describe('trade candle normalization and websocket cleanup', () => {
 
     const service = new ChartDataService();
     await service.fetchCandles({ symbol: 'XAUUSD', timeframe: 'M1', count: 5000 });
-    localStorage.setItem('auth_token', makeJwt({ broker_id: 'fxtrust', account_login: 1002 }));
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'fxtrust';
+    localStorage.setItem('broker_id', 'fxtrust');
+    const secondToken = makeJwt({ broker_id: 'fxtrust', account_login: 1002 });
+    localStorage.setItem('auth_token', secondToken);
 
     await expect(service.fetchCandles({ symbol: 'XAUUSD', timeframe: 'M1', count: 5000 }))
       .resolves.toEqual([
         { time: 1788508800, open: 4480, high: 4481, low: 4479, close: 4480.5, volume: 22 },
       ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${firstToken}` },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://broker.example/api/v2/candles/XAUUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${secondToken}` },
+      }),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/candles'))).toBe(false);
   });
 
   it('allows candle requests when the auth token broker matches the active broker', async () => {
+    setWebRuntime();
+    (window as RuntimeWindow).__RTX_RUNTIME_CONFIG__!.BROKER_ID = 'myprop-trade';
     localStorage.setItem('broker_id', 'myprop-trade');
-    localStorage.setItem('auth_token', makeJwt({ broker_id: 'myprop-trade', account_login: 200002 }));
+    const token = makeJwt({ broker_id: 'myprop-trade', account_login: 200002 });
+    localStorage.setItem('auth_token', token);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -556,9 +660,17 @@ describe('trade candle normalization and websocket cleanup', () => {
     await expect(service.fetchCandles({ symbol: 'GBPUSD', timeframe: 'M1', count: 5000 }))
       .resolves.toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://broker.example/api/v2/candles/GBPUSD?timeframe=M1&limit=5000',
+      expect.objectContaining({
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/candles'))).toBe(false);
   });
 
   it('builds M1 May-range candle requests with Unix-second from/to parameters', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -584,6 +696,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('normalizes outgoing candle aliases, millisecond cursors, and max limits', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -692,6 +805,17 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('forces WSS for candle /ws/v2 when HTTPS frontend has an HTTP broker server', () => {
+    setDesktopRuntime();
+    withWindowProtocol('https:', () => {
+      localStorage.setItem('server_url', 'http://broker.example.com');
+      localStorage.setItem('auth_token', 'jwt-token');
+
+      expect(buildBrokerWsV2Uri('jwt-token')).toBe('wss://broker.example.com/ws/v2?token=jwt-token');
+    });
+  });
+
+  it('uses the configured WSS candle stream on HTTPS web runtime without binding a mismatched HTTP server token', async () => {
+    setWebRuntime();
     withWindowProtocol('https:', () => {
       localStorage.setItem('server_url', 'http://broker.example.com');
       localStorage.setItem('auth_token', 'jwt-token');
@@ -703,10 +827,56 @@ describe('trade candle normalization and websocket cleanup', () => {
         onCandle: vi.fn(),
       });
 
-      expect(buildBrokerWsV2Uri('jwt-token')).toBe('wss://broker.example.com/ws/v2?token=jwt-token');
-      expect(FakeWebSocket.instances[0].url).toBe('wss://broker.example.com/ws/v2?token=jwt-token');
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(FakeWebSocket.instances[0].url).toBe('wss://broker.example/ws/v2');
       subscription.close();
     });
+    await Promise.resolve();
+  });
+
+  it('uses the configured WSS candle stream with the bound token on HTTPS web runtime', async () => {
+    setWebRuntime();
+    withWindowProtocol('https:', () => {
+      localStorage.setItem('server_url', 'https://broker.example');
+      localStorage.setItem('auth_token', 'jwt-token');
+      const service = new ChartDataService();
+
+      const subscription = service.subscribeCandles({
+        symbol: 'eur/usd',
+        timeframe: '15m',
+        onCandle: vi.fn(),
+      });
+
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(FakeWebSocket.instances[0].url).toBe('wss://broker.example/ws/v2?token=jwt-token');
+      subscription.close();
+    });
+    await Promise.resolve();
+  });
+
+  it('subscribes desktop candle streams via binaryTcpMarketStream without opening a WebSocket', async () => {
+    const ensureStartedSpy = vi
+      .spyOn(binaryTcpMarketStream as unknown as { ensureStarted: () => void }, 'ensureStarted')
+      .mockImplementation(() => {});
+    const onCandleSpy = vi.spyOn(binaryTcpMarketStream, 'onCandle');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    localStorage.setItem('auth_token', 'jwt-token');
+    const service = new ChartDataService();
+
+    const subscription = service.subscribeCandles({
+      symbol: 'eur/usd',
+      timeframe: '15m',
+      onCandle: vi.fn(),
+    });
+
+    expect(onCandleSpy).toHaveBeenCalledWith('EUR/USD', expect.any(Function));
+    expect(ensureStartedSpy).toHaveBeenCalled();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    subscription.close();
+    await Promise.resolve();
   });
 
   it('forces WSS for stored candle ws_url on HTTPS frontends', () => {
@@ -718,6 +888,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('loads public feed candles without an auth token', async () => {
+    setWebRuntime();
     localStorage.setItem('server_url', 'https://broker.example.com');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -731,7 +902,8 @@ describe('trade candle normalization and websocket cleanup', () => {
     await expect(service.fetchCandles({ symbol: 'EUR/USD', timeframe: 'M15', count: 50 })).resolves.toHaveLength(1);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(expectedPublicCandleUrl());
+    // cfcdfec: web guests load public /api/v2/candles, not the v1 bridge.
+    expect(fetchMock.mock.calls[0][0]).toBe(expectedWebGuestCandleUrl());
   });
 
   it('accepts broker MN1 metadata as the monthly timeframe without weakening selection validation', async () => {
@@ -749,6 +921,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('skips the protected core candle endpoint when no auth token is available', async () => {
+    setWebRuntime();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -761,11 +934,13 @@ describe('trade candle normalization and websocket cleanup', () => {
     await expect(service.fetchCandles({ symbol: 'EUR/USD', timeframe: 'M15', count: 50 })).resolves.toHaveLength(1);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(expectedPublicCandleUrl());
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('/api/v2/candles');
+    // cfcdfec: web guests load public /api/v2/candles first; that call is not the authenticated core.
+    expect(fetchMock.mock.calls[0][0]).toBe(expectedWebGuestCandleUrl());
+    expect((fetchMock.mock.calls[0][1] as { headers?: Record<string, string> }).headers?.Authorization).toBeUndefined();
   });
 
   it('returns empty when the authenticated v2 candle response normalizes to empty', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -789,6 +964,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('falls back to public feed candles when authenticated v2 candles fail', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -815,6 +991,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('rejects malformed 200 candle responses when no valid fallback is available', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -836,6 +1013,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('rejects parsed v2 candle responses with unknown object shapes', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -851,6 +1029,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('rejects non-empty v2 candle arrays when every row is invalid', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -873,6 +1052,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('rejects token-present malformed core candles when public fallback is empty', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -899,6 +1079,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('accepts parsed core candle bars before trying public fallback', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -923,6 +1104,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('returns empty after an empty v2 candle alias response', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
@@ -943,6 +1125,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('loads public feed candles when no auth token is available', async () => {
+    setWebRuntime();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -956,10 +1139,12 @@ describe('trade candle normalization and websocket cleanup', () => {
       .resolves.toHaveLength(1);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(expectedPublicCandleUrl());
+    // cfcdfec: web guests load public /api/v2/candles, not the v1 bridge.
+    expect(fetchMock.mock.calls[0][0]).toBe(expectedWebGuestCandleUrl());
   });
 
   it('times out a socket stuck in CONNECTING and reconnects after backoff', () => {
+    setWebRuntime();
     vi.useFakeTimers();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
@@ -985,6 +1170,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('reports stream readiness only after the exact subscription acknowledgement', () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
     const onConnected = vi.fn();
@@ -1015,6 +1201,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('treats exact candle data as readiness when the acknowledgement is absent', () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
     const onConnected = vi.fn();
@@ -1040,6 +1227,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('retries a missing acknowledgement three times on the same socket before reconnecting', () => {
+    setWebRuntime();
     vi.useFakeTimers();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
@@ -1076,6 +1264,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('reconnects an open candle stream after heartbeat activity times out', () => {
+    setWebRuntime();
     vi.useFakeTimers();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
@@ -1109,6 +1298,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('never reconnects after an intentional candle stream close', async () => {
+    setWebRuntime();
     vi.useFakeTimers();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
@@ -1137,9 +1327,11 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('unsubscribes and closes candle streams without leaking the channel', async () => {
-    localStorage.setItem('auth_token', 'jwt-token');
-    localStorage.setItem('server_url', 'https://broker.example.com');
+    setWebRuntime();
+    localStorage.setItem('server_url', 'https://broker.example');
     localStorage.setItem('ws_url', 'ws://broker.example.com/ws/feed');
+    localStorage.setItem('auth_token', 'jwt-token');
+    // cfcdfec: web candle streams use the canonical broker socket and ignore stored server_url and ws_url.
     const service = new ChartDataService();
 
     const subscription = service.subscribeCandles({
@@ -1149,7 +1341,7 @@ describe('trade candle normalization and websocket cleanup', () => {
     });
 
     const ws = FakeWebSocket.instances[0];
-    expect(ws.url).toBe('ws://broker.example.com/ws/v2?token=jwt-token');
+    expect(ws.url).toBe('wss://broker.example/ws/v2?token=jwt-token');
     ws.open();
     expect(parseSent(ws)).toEqual([
       { action: 'auth', token: 'jwt-token' },
@@ -1163,6 +1355,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('requires matching symbol and timeframe metadata for channel-less candle stream messages', () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
     const onSnapshot = vi.fn();
@@ -1204,6 +1397,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('preserves a dot-suffixed broker symbol in subscribe, routing, and unsubscribe channels', async () => {
+    setWebRuntime();
     localStorage.setItem('auth_token', 'jwt-token');
     const service = new ChartDataService();
     const onCandle = vi.fn();
@@ -1239,8 +1433,11 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('subscribes once per trade socket channel and removes the websocket subscription after the last handler', () => {
+    setWebRuntime();
+    localStorage.setItem('auth_token', 'jwt-token');
+    // cfcdfec: web trade sockets accept only the configured broker /ws/v2 and the bound session token.
     const client = new TradeWebSocketClient({
-      url: 'wss://backend.orrnn.com/ws/v2',
+      url: 'wss://broker.example/ws/v2',
       token: 'jwt-token',
       reconnect: false,
     });
@@ -1273,8 +1470,11 @@ describe('trade candle normalization and websocket cleanup', () => {
   });
 
   it('supports depth websocket subscriptions and infers depth channels from order book messages', () => {
+    setWebRuntime();
+    localStorage.setItem('auth_token', 'jwt-token');
+    // cfcdfec: web trade sockets accept only the configured broker /ws/v2 and the bound session token.
     const client = new TradeWebSocketClient({
-      url: 'wss://backend.orrnn.com/ws/v2',
+      url: 'wss://broker.example/ws/v2',
       token: 'jwt-token',
       reconnect: false,
     });

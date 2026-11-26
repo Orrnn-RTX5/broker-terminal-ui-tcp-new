@@ -451,7 +451,10 @@ describe('instant startup shell source contract', () => {
   it('uses HTTP caching without a service worker competing with rapid relaunches', () => {
     const bootstrap = readSource('src/bootstrap.tsx');
     const viteConfig = readSource('vite.config.ts');
-    const nginx = readSource('nginx.conf');
+    const server = readSource('web-terminal-server/main.go');
+    const serveIndexMatch = server.match(/func \(c \*WebTerminalServer\) serveIndexHTML\([\s\S]*?\n\}/);
+    const serveSpaMatch = server.match(/func \(c \*WebTerminalServer\) serveEmbeddedSPA\([\s\S]*?\n\}/);
+    const serveLogoMatch = server.match(/func \(c \*WebTerminalServer\) serveEmbeddedBrokerLogo\([\s\S]*?\n\}/);
 
     expect(bootstrap).not.toContain('serviceWorker.register');
     expect(viteConfig).not.toContain('instantShellServiceWorkerPlugin');
@@ -459,7 +462,15 @@ describe('instant startup shell source contract', () => {
     expect(viteConfig).toContain('retiredServiceWorkerDevPlugin()');
     expect(viteConfig).toContain("pathname !== '/sw.js'");
     expect(viteConfig).toContain('Service worker retired');
-    expect(nginx).toContain('location ~ ^/(brand|login)/');
-    expect(nginx).toContain('stale-while-revalidate=2592000');
+    expect(serveIndexMatch).not.toBeNull();
+    expect(serveIndexMatch![0]).toContain('w.Header().Set("Cache-Control", "no-store")');
+    expect(serveIndexMatch![0]).toContain('w.Header().Set("Referrer-Policy", "no-referrer")');
+    expect(serveLogoMatch).not.toBeNull();
+    expect(serveLogoMatch![0]).toContain('w.Header().Set("Cache-Control", "no-cache, must-revalidate")');
+    expect(serveSpaMatch).not.toBeNull();
+    expect(serveSpaMatch![0]).toContain('cleanPath == "brand/terminal-icon.png"');
+    expect(serveSpaMatch![0]).toContain('c.serveEmbeddedBrokerLogo(w, r)');
+    expect(serveSpaMatch![0]).toContain('http.ServeContent(w, r, st.Name(), st.ModTime(), rs)');
+    expect(serveSpaMatch![0]).not.toContain('no-store');
   });
 });

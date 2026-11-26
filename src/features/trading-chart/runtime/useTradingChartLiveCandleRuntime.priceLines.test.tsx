@@ -1,19 +1,38 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as accountSpreadMarkup from '../../../services/accountSpreadMarkup';
+import { binaryTcpMarketStream, type DecodedBinaryTick } from '../../../services/binaryTcpMarketStream';
 import { candleAggregationService } from '../../../services/candleAggregationService';
 import type { LiveTick } from '../../../services/liveTickDispatcher';
 import type { Candle } from '../../../types/chart';
 import { getTimeframePeriodSeconds } from '../../../utils/timeframeBoundary';
-import { LIVE_CHART_UPDATE_INTERVAL_MS } from './chartRuntime';
 import { useTradingChartLiveCandleRuntime } from './useTradingChartLiveCandleRuntime';
+
+// Web ingest is onQuoteSnapshot. Desktop onDirectChartTick has its own cases below.
+const desktopTarget = vi.hoisted(() => ({ value: false }));
+const transport = vi.hoisted(() => ({
+  quoteHandlers: [] as Array<(tick: LiveTick) => void>,
+  directListeners: [] as Array<(tick: DecodedBinaryTick) => void>,
+}));
 
 vi.mock('../../../services/chartDataService', () => ({
   chartDataService: { subscribeCandles: () => ({ close: vi.fn() }) },
 }));
 vi.mock('../../../services/quoteSocketManager', () => ({
-  getQuoteSocketManager: () => ({ onQuoteSnapshot: () => vi.fn() }),
+  getQuoteSocketManager: () => ({
+    onQuoteSnapshot: (_symbol: string, handler: (tick: LiveTick) => void) => {
+      transport.quoteHandlers.push(handler);
+      return () => {
+        transport.quoteHandlers = transport.quoteHandlers.filter(entry => entry !== handler);
+      };
+    },
+  }),
 }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({ ticks: {} }) } }));
+vi.mock('../../../config/backendTarget.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../config/backendTarget.js')>(),
+  isDesktopBackendTarget: () => desktopTarget.value,
+}));
 
 type Options = Parameters<typeof useTradingChartLiveCandleRuntime>[0];
 const ref = <T,>(current: T) => ({ current });
@@ -53,20 +72,56 @@ const quote = (overrides: Partial<LiveTick> = {}): LiveTick => ({
   symbol: 'BTCUSD', bid: 101, ask: 101.2, timestamp: currentTime + 10,
   ...overrides,
 } as LiveTick);
+// cfcdfec: ingest is event-driven. The model updates on the callback; ASK/LAST paint on the next VSync frame.
+const emitQuote = (tick: LiveTick): void => {
+  act(() => {
+    for (const handler of transport.quoteHandlers) handler(tick);
+  });
+};
+const directTick = (overrides: Partial<DecodedBinaryTick> = {}): DecodedBinaryTick => ({
+  symbol: 'BTCUSD',
+  bid: 101,
+  ask: 101.2,
+  spread: 0.2,
+  timestamp: currentTime + 10,
+  sourceTimestamp: currentTime + 10,
+  sequence: 1,
+  ...overrides,
+});
+const emitDirectTick = (tick: DecodedBinaryTick): void => {
+  act(() => {
+    for (const listener of transport.directListeners) listener(tick);
+  });
+};
+// Paint is requestAnimationFrame. One frame flushes it. The 100ms watchdog is not this path.
+const flushLivePaint = (): void => {
+  act(() => { vi.advanceTimersToNextFrame(); });
+};
 const pollQuote = (tick: LiveTick, symbol = tick.symbol): void => {
   window.rtxTickCache.set(symbol, tick);
-  act(() => { vi.advanceTimersByTime(LIVE_CHART_UPDATE_INTERVAL_MS); });
+  emitQuote(tick);
+  flushLivePaint();
 };
 
 let previousTickCache: Window['rtxTickCache'];
 beforeEach(() => {
   vi.useFakeTimers();
+  desktopTarget.value = false;
+  transport.quoteHandlers = [];
+  transport.directListeners = [];
+  vi.spyOn(binaryTcpMarketStream, 'onDirectChartTick').mockImplementation((_symbol, listener) => {
+    transport.directListeners.push(listener);
+    return () => {
+      transport.directListeners = transport.directListeners.filter(entry => entry !== listener);
+    };
+  });
   previousTickCache = window.rtxTickCache;
   window.rtxTickCache = new Map();
   candleAggregationService.getSymbols().forEach(symbol => candleAggregationService.clearSymbol(symbol));
 });
 afterEach(() => {
   window.rtxTickCache = previousTickCache;
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -113,7 +168,8 @@ describe('validated quote price-line painting', () => {
     pollQuote(quote());
     expect(options.syncSupplementalPriceLines).not.toHaveBeenCalled();
     expect(options.currentCandleRef.current?.close).toBe(100);
-    expect(options.setApiError).toHaveBeenCalledWith(expect.stringContaining('outside the candle range'));
+    // cfcdfec: a scale or safety rejection returns before the candle update and no longer calls setApiError.
+    expect(options.setApiError).not.toHaveBeenCalled();
     view.unmount();
   });
 
@@ -169,16 +225,58 @@ describe('validated quote price-line painting', () => {
     view.unmount();
   });
 
+  it('paints desktop markup as the executable ASK and the binary tick bid as the raw LAST', () => {
+    desktopTarget.value = true;
+    const widen = vi.spyOn(accountSpreadMarkup, 'applyAccountSpreadMarkup').mockImplementation((
+      _symbol,
+      quote,
+    ) => ({ ...quote, bid: 100.9, ask: 101.3 }));
+    const options = createOptions();
+    const view = renderHook(() => useTradingChartLiveCandleRuntime(options));
+    expect(transport.directListeners).toHaveLength(1);
+    expect(transport.quoteHandlers).toHaveLength(0);
+    const tick = directTick({ bid: 101, ask: 101.2, sequence: 4 });
+    emitDirectTick(tick);
+    flushLivePaint();
+    expect(widen).toHaveBeenCalledWith('BTCUSD', expect.objectContaining({ bid: 101, ask: 101.2 }));
+    expect(options.syncSupplementalPriceLines).toHaveBeenCalledExactlyOnceWith(101.3, 101);
+    expect(options.currentCandleRef.current?.close).toBe(101);
+    view.unmount();
+  });
+
+  it('treats a NaN desktop source timestamp as missing and paints the receipt timestamp', () => {
+    desktopTarget.value = true;
+    const options = createOptions();
+    const view = renderHook(() => useTradingChartLiveCandleRuntime(options));
+    expect(transport.directListeners).toHaveLength(1);
+    emitDirectTick(directTick({ sourceTimestamp: Number.NaN, timestamp: currentTime + 10, bid: 101, ask: 101.2 }));
+    flushLivePaint();
+    expect(options.syncSupplementalPriceLines).toHaveBeenCalledExactlyOnceWith(101.2, 101);
+    expect(options.currentCandleRef.current?.close).toBe(101);
+    emitDirectTick(directTick({
+      sourceTimestamp: currentTime - 5,
+      timestamp: currentTime + 10,
+      bid: 104,
+      ask: 104.2,
+      sequence: 2,
+    }));
+    flushLivePaint();
+    expect(options.syncSupplementalPriceLines).toHaveBeenCalledOnce();
+    expect(options.currentCandleRef.current?.close).toBe(101);
+    view.unmount();
+  });
+
   it('holds ASK and LAST behind the selection gate and paints them after history opens it', () => {
     const options = createOptions();
     options.chartSelectionPresentationRef.current.livePaintAllowed = false;
     options.requestChartDataRender = vi.fn();
     const view = renderHook(() => useTradingChartLiveCandleRuntime(options));
-    pollQuote(quote());
+    // cfcdfec: the model commits on the tick. ASK/LAST stay queued until the VSync frame, so the gate can open first.
+    emitQuote(quote());
     expect(options.syncSupplementalPriceLines).not.toHaveBeenCalled();
     expect(options.currentCandleRef.current?.close).toBe(101);
     options.chartSelectionPresentationRef.current.livePaintAllowed = true;
-    act(() => { vi.advanceTimersByTime(LIVE_CHART_UPDATE_INTERVAL_MS); });
+    flushLivePaint();
     expect(options.syncSupplementalPriceLines).toHaveBeenCalledExactlyOnceWith(101.2, 101);
     expect(options.liveCandleMutationGenerationRef.current).toBe(1);
     view.unmount();
@@ -189,11 +287,14 @@ describe('validated quote price-line painting', () => {
     options.chartSelectionPresentationRef.current.livePaintAllowed = false;
     options.requestChartDataRender = vi.fn();
     const view = renderHook(() => useTradingChartLiveCandleRuntime(options));
-    pollQuote(quote());
+    // cfcdfec parks supplemental lines when the gate is closed. The next VSync rechecks them; nothing polls.
+    emitQuote(quote());
+    flushLivePaint();
     expect(options.syncSupplementalPriceLines).not.toHaveBeenCalled();
     vi.mocked(options.validateRenderedCandlesAgainstLivePrice).mockReturnValue(false);
     options.chartSelectionPresentationRef.current.livePaintAllowed = true;
-    act(() => { vi.advanceTimersByTime(2 * LIVE_CHART_UPDATE_INTERVAL_MS); });
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    flushLivePaint();
     expect(options.syncSupplementalPriceLines).not.toHaveBeenCalled();
     expect(options.validateRenderedCandlesAgainstLivePrice).toHaveBeenCalledTimes(2);
     expect(options.liveCandleMutationGenerationRef.current).toBe(1);

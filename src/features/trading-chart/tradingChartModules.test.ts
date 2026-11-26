@@ -126,12 +126,13 @@ describe('trading chart extracted modules', () => {
     };
     const container = { offsetWidth: 1_000 };
 
+    // 7c10304 raised TARGET_BAR_PX from 7 to 10, so floor(900 / 10) is 90.
     expect(computeAdaptiveVisibleBars(
       container as HTMLElement,
       chart as never,
       500,
       20,
-    )).toBe(128);
+    )).toBe(90);
     expect(computeAdaptiveVisibleBars(container as HTMLElement, chart as never, 0, 20)).toBe(0);
     expect(shouldBuildVolumeData({ showTickVolumes: false, showRealVolumes: true })).toBe(true);
     expect(shouldScrollToRealtime(chart as never, true, true)).toBe(true);

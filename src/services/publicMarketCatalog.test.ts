@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadPublicMarketCatalog, preloadPublicMarketCatalog } from './publicMarketCatalog';
 import { loadPublicQuotes } from './publicMarket';
 
-vi.mock('../config/backendTarget.js', () => ({ getPublicBackendTarget: () => 'https://nexa.orrnn.com', getRuntimeBrokerConfiguration: () => ({ brokerId: 'Fixture', publicMarketApi: 'mt5-bridge-v1' }) }));
+// cfcdfec / 17f3f20: backendTarget.js exports isDesktopBackendTarget; spread the real module and override only the public broker target.
+vi.mock('../config/backendTarget.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../config/backendTarget.js')>(),
+  getPublicBackendTarget: () => 'https://nexa.orrnn.com',
+  getRuntimeBrokerConfiguration: () => ({ brokerId: 'Fixture', publicMarketApi: 'mt5-bridge-v1' }),
+}));
 vi.mock('../config/localDevProxy', () => ({ toLocalDevProxyUrl: (url: string) => url }));
 // Transport-sharing unit tests; deployment ownership is covered by brokerRequestIsolation.test.ts.
 vi.mock('../api/brokerRequestGuard', () => ({ assertBrokerRequestAllowed: () => undefined }));

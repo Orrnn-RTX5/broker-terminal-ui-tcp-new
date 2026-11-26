@@ -239,7 +239,8 @@ describe('cTrader-style position controls contract', () => {
     expect(appSource).toContain("import { getSharedChartTrade } from './utils/tradeShareLink';");
     expect(appSource).toContain('const sharedTradeLinkAppliedRef = useRef(false);');
     expect(appSource).toContain('handleSymbolSelect(sharedTrade.symbol);');
-    expect(appSource).toContain('setTimeframe(sharedTrade.timeframe as Timeframe);');
+    // f7b2582d commits the shared timeframe instead of calling setTimeframe.
+    expect(appSource).toContain('commitSelectedTimeframe(sharedTrade.timeframe);');
   });
 
   it('retains missing overlays until authoritative closure instead of inferring a fill from a crossed level', () => {
@@ -293,6 +294,7 @@ describe('cTrader-style position controls contract', () => {
     expect(closeGuard).toBeGreaterThan(closeAwait);
     expect(reverseOrder).toBeGreaterThan(closeGuard);
     // Close returns a boolean so reverse can sequence without showing a single-close success sheet.
-    expect(appSource).toContain('const handleClosePosition = async (\n    id: number,\n    { showFailureFeedback = true }: { showFailureFeedback?: boolean } = {},\n  ): Promise<boolean> => {');
+    // cfcdfec accepts an optional close intent timestamp on the handler.
+    expect(appSource).toContain('const handleClosePosition = async (\n    id: number,\n    {\n      showFailureFeedback = true,\n      intentAtMs: providedIntentAtMs,\n    }: { showFailureFeedback?: boolean; intentAtMs?: number } = {},\n  ): Promise<boolean> => {');
   });
 });

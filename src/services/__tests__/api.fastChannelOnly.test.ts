@@ -62,7 +62,6 @@ import {
   FAST_CHANNEL_NOT_CONFIGURED_MESSAGE,
   FAST_CHANNEL_UNAVAILABLE_MESSAGE,
   FAST_CHANNEL_UNCERTAIN_MESSAGE,
-  TRAILING_STOP_REST_EXCEPTION,
 } from '../api';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -397,64 +396,5 @@ describe('Terminal UI fast-channel-only order routing (LANE M2)', () => {
     });
   });
 
-  describe('TRAILING_STOP_REST_EXCEPTION (only allowed REST exception)', () => {
-    it('routes trailing_stop / trailing_step orders to REST when TRAILING_STOP_REST_EXCEPTION is enabled', async () => {
-      expect(TRAILING_STOP_REST_EXCEPTION).toBe(true);
-      mocks.restPlaceOrder.mockResolvedValueOnce({
-        id: '9001',
-        ticket: 9001,
-        symbol: 'EURUSD',
-        side: 'buy',
-        volume: 0.1,
-        price_open: 1.085,
-      });
-      mocks.restPlacePendingOrder.mockResolvedValueOnce({
-        id: '9002',
-        ticket: 9002,
-        symbol: 'EURUSD',
-        side: 'buy',
-        type: 'buy_limit',
-        volume: 0.1,
-        price: 1.08,
-      });
-      mocks.restModifyPosition.mockResolvedValueOnce({
-        id: '70001',
-        ticket: 70001,
-        symbol: 'EURUSD',
-      });
-      mocks.restModifyPendingOrder.mockResolvedValueOnce({
-        id: '50001',
-        ticket: 50001,
-        symbol: 'EURUSD',
-      });
-
-      await api.orders.placeMarketOrder({
-        login: 100001,
-        symbol: 'EURUSD',
-        side: 'buy',
-        volume: 0.1,
-        trailing_stop: 15,
-      });
-      expect(mocks.restPlaceOrder).toHaveBeenCalledTimes(1);
-
-      await api.orders.placePendingOrder({
-        login: 100001,
-        symbol: 'EURUSD',
-        side: 'buy',
-        type: 'buy_limit',
-        volume: 0.1,
-        price: 1.08,
-        trailing_step: 5,
-      });
-      expect(mocks.restPlacePendingOrder).toHaveBeenCalledTimes(1);
-
-      await api.positions.modifyPosition(70001, { trailing_stop: 20 });
-      expect(mocks.restModifyPosition).toHaveBeenCalledTimes(1);
-
-      await api.orders.modifyPendingOrder(50001, { trailing_stop: 25 });
-      expect(mocks.restModifyPendingOrder).toHaveBeenCalledTimes(1);
-
-      expect(mocks.sendBinaryTcpOrder).not.toHaveBeenCalled();
-    });
-  });
+  // cc09dd9: trailing stops use the fast binary channel; TRAILING_STOP_REST_EXCEPTION was removed (see api.trailingStop.test.ts).
 });

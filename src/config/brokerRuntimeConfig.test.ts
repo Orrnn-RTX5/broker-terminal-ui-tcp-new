@@ -207,4 +207,195 @@ describe('broker-neutral complete runtime configuration', () => {
       { ...fixture(), DEFAULT_CHART_SYMBOL: 'XAUUSD' },
     ])?.CONFIG_ERRORS).toContain('Conflicting deployment runtime configuration sources.')
   })
+
+  it('validates BROKER_LOGO_URL HTTPS/no-credentials and preserves query and fragment', () => {
+    const logoUrl = 'https://images.independent.test/brand/@2x.svg?v=2#icon'
+    const valid = validateBrokerRuntimeConfig({ ...fixture('https://api.independent.test'), BROKER_LOGO_URL: logoUrl })
+    expect(valid.valid).toBe(true)
+    expect(valid.brokerLogoUrl).toBe(logoUrl)
+    expect(validateBrokerRuntimeConfig({
+      ...fixture('https://api.independent.test'),
+      VITE_BROKER_LOGO_URL: 'https://images.independent.test/vite-logo.svg',
+    }).brokerLogoUrl).toBe('https://images.independent.test/vite-logo.svg')
+
+    for (const badLogo of [
+      'https://private:password@images.independent.test/logo.svg',
+      'http://images.independent.test/logo.svg',
+      'javascript:alert(1)',
+      'not-a-url',
+    ]) {
+      const invalid = validateBrokerRuntimeConfig({ ...fixture('https://api.independent.test'), BROKER_LOGO_URL: badLogo })
+      expect(invalid.valid, badLogo).toBe(false)
+      expect(invalid.errors.join(' ')).toContain('BROKER_LOGO_URL')
+    }
+  })
+
+  it.each(['invalid\nbroker', 'invalid\rbroker', 'invalid\tbroker', 'invalid\u0001broker', 'invalid\u007fbroker'])('rejects control characters in BROKER_ID %j', (badBrokerId) => {
+    const result = validateBrokerRuntimeConfig({ ...fixture('https://api.independent.test'), BROKER_ID: badBrokerId })
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('BROKER_ID must not contain control characters.')
+  })
+
+  it.each([
+    ['API_HOST', 'https://api.independent.test#hash', 'API_HOST'],
+    ['API_HOST', 'https://api.independent.test:99999', 'API_HOST'],
+    ['API_HOST', 'https://localhost', 'API_HOST'],
+    ['WS_HOST', 'wss://api.independent.test/badpath', 'WS_HOST: must be an origin without an API path'],
+    ['DISCOVERY_BASE_URL', 'http://directory.independent.test', 'DISCOVERY_BASE_URL'],
+    ['BROKER_ALLOWED_ORIGINS', 'https://good.test,http://bad.test', 'BROKER_ALLOWED_ORIGINS'],
+    ['BROKER_ALLOWED_ORIGINS', 'https://good.test,https://user:secret@bad.test', 'BROKER_ALLOWED_ORIGINS'],
+    ['USE_MOCK_DISCOVERY', 'true', 'Mock discovery is unavailable in production deployments.'],
+    ['PUBLIC_MARKET_API', 'unknown-contract', 'PUBLIC_MARKET_API must be gateway-v2 or mt5-bridge-v1.'],
+    ['BACKEND_TARGET', 'desktop', 'Web container deployments must use BACKEND_TARGET=web.'],
+    ['BACKEND_TARGET', 'invalid', 'BACKEND_TARGET is not a supported transport mode.'],
+    ['DEFAULT_CHART_SYMBOL', 'TOOLONGTOOLONGTOOLONGTOOLONG', 'DEFAULT_CHART_SYMBOL'],
+  ] as const)('rejects invalid deployment setting %s=%s', (key, value, expectedError) => {
+    const result = validateBrokerRuntimeConfig({ ...fixture('https://api.independent.test'), [key]: value })
+    expect(result.valid).toBe(false)
+    expect(result.errors.join(' ')).toContain(expectedError)
+  })
+
+  it('handles desktop mode options, EXTRA_BROKER_DISCOVERY_URLS, and WS_HOST allowed paths', () => {
+    const localDesktop = validateBrokerRuntimeConfig(
+      {
+        ...fixture('http://127.0.0.1:8090'),
+        CONFIG_SOURCE: 'runtime',
+        BACKEND_TARGET: 'direct',
+        WS_HOST: 'ws://127.0.0.1:8090/ws/feed',
+        EXTRA_BROKER_DISCOVERY_URLS: 'https://dir1.independent.test, https://dir2.independent.test',
+      },
+      { desktop: true, allowLocal: true },
+    )
+    expect(localDesktop.valid).toBe(true)
+    expect(localDesktop.pinned).toBe(false)
+    expect(localDesktop.extraDiscoveryUrls).toEqual(['https://dir1.independent.test', 'https://dir2.independent.test'])
+
+    const viteExtraDesktop = validateBrokerRuntimeConfig(
+      {
+        ...fixture('http://127.0.0.1:8090'),
+        CONFIG_SOURCE: 'runtime',
+        BACKEND_TARGET: 'desktop',
+        WS_HOST: 'ws://127.0.0.1:8090/ws/v2',
+        VITE_EXTRA_BROKER_DISCOVERY_URLS: 'https://vite-dir.independent.test',
+      },
+      { desktop: true, allowLocal: true },
+    )
+    expect(viteExtraDesktop.valid).toBe(true)
+    expect(viteExtraDesktop.extraDiscoveryUrls).toEqual(['https://vite-dir.independent.test'])
+
+    const remoteDesktopWithoutAllowLocal = validateBrokerRuntimeConfig(
+      { ...fixture('https://api.independent.test'), CONFIG_SOURCE: 'runtime', BACKEND_TARGET: 'desktop' },
+      { desktop: true },
+    )
+    expect(remoteDesktopWithoutAllowLocal.valid).toBe(true)
+    expect(remoteDesktopWithoutAllowLocal.pinned).toBe(false)
+    expect(remoteDesktopWithoutAllowLocal.errors.join(' ')).not.toContain('loopback')
+    expect(remoteDesktopWithoutAllowLocal.errors).toEqual([])
+
+    const loopbackCleartextConfig = {
+      ...fixture('http://127.0.0.1:8090'),
+      CONFIG_SOURCE: 'runtime',
+      BACKEND_TARGET: 'desktop',
+      WS_HOST: 'ws://127.0.0.1:8090/ws/v2',
+    }
+    const loopbackCleartextWithoutAllowLocal = validateBrokerRuntimeConfig(
+      loopbackCleartextConfig,
+      { desktop: true },
+    )
+    expect(loopbackCleartextWithoutAllowLocal.valid).toBe(false)
+    expect(loopbackCleartextWithoutAllowLocal.errors).toEqual([
+      'API_HOST: must use HTTPS',
+      'API_HOST_EXT: must use HTTPS',
+      'WS_HOST: must use WSS',
+    ])
+    const loopbackCleartextWithAllowLocal = validateBrokerRuntimeConfig(
+      loopbackCleartextConfig,
+      { desktop: true, allowLocal: true },
+    )
+    expect(loopbackCleartextWithAllowLocal.valid).toBe(true)
+    expect(loopbackCleartextWithAllowLocal.errors).toEqual([])
+
+    const loopbackHttpsConfig = {
+      ...fixture('https://127.0.0.1:8090'),
+      CONFIG_SOURCE: 'runtime',
+      BACKEND_TARGET: 'desktop',
+      WS_HOST: 'wss://127.0.0.1:8090/ws/v2',
+    }
+    const loopbackHttpsWithoutAllowLocal = validateBrokerRuntimeConfig(
+      loopbackHttpsConfig,
+      { desktop: true },
+    )
+    expect(loopbackHttpsWithoutAllowLocal.valid).toBe(false)
+    expect(loopbackHttpsWithoutAllowLocal.errors).toEqual([
+      'API_HOST: loopback is permitted only in explicit development or desktop mode',
+      'API_HOST_EXT: loopback is permitted only in explicit development or desktop mode',
+      'WS_HOST: loopback is permitted only in explicit development or desktop mode',
+    ])
+    const loopbackHttpsWithAllowLocal = validateBrokerRuntimeConfig(
+      loopbackHttpsConfig,
+      { desktop: true, allowLocal: true },
+    )
+    expect(loopbackHttpsWithAllowLocal.valid).toBe(true)
+    expect(loopbackHttpsWithAllowLocal.errors).toEqual([])
+
+    const nonDesktopExtra = validateBrokerRuntimeConfig({
+      ...fixture('https://api.independent.test'),
+      EXTRA_BROKER_DISCOVERY_URLS: 'https://dir1.independent.test',
+    })
+    expect(nonDesktopExtra.valid).toBe(true)
+    expect(nonDesktopExtra.pinned).toBe(true)
+    expect(nonDesktopExtra.extraDiscoveryUrls).toEqual([])
+  })
+
+  it('validates PUBLIC_MARKET_API enum, discovery alias agreement, and self-contained validator parity', () => {
+    const base = {
+      CONFIG_SOURCE: 'deployment',
+      BACKEND_TARGET: 'web',
+      API_HOST: 'https://api.independent.test',
+      WS_HOST: 'wss://api.independent.test',
+      BROKER_ID: 'independent-broker',
+      DEFAULT_MT5_SERVER: 'Independent Trading',
+    }
+    expect(validateBrokerRuntimeConfig(base).publicMarketApi).toBe('gateway-v2')
+    expect(validateBrokerRuntimeConfig({ ...base, PUBLIC_MARKET_API: 'mt5-bridge-v1' })).toMatchObject({
+      valid: true,
+      publicMarketApi: 'mt5-bridge-v1',
+    })
+    expect(validateBrokerRuntimeConfig({ ...base, VITE_PUBLIC_MARKET_API: 'mt5-bridge-v1' })).toMatchObject({
+      valid: true,
+      publicMarketApi: 'mt5-bridge-v1',
+    })
+
+    const mismatchedDiscovery = validateBrokerRuntimeConfig({
+      ...base,
+      DISCOVERY_BASE_URL: 'https://directory-one.independent.test',
+      VITE_BROKER_DISCOVERY_URL: 'https://directory-two.independent.test',
+    })
+    expect(mismatchedDiscovery.valid).toBe(false)
+    expect(mismatchedDiscovery.errors).toContain('DISCOVERY_BASE_URL and BROKER_DISCOVERY_URL must identify the same catalog.')
+
+    const context: {
+      window: { __RTX_VALIDATE_BROKER_CONFIG__?: (cfg: Record<string, unknown>) => { valid: boolean } }
+      URL: typeof URL
+    } = { window: {}, URL }
+    runInNewContext(renderBrokerRuntimeValidator(), context)
+    const runValidator = context.window.__RTX_VALIDATE_BROKER_CONFIG__!
+    expect(runValidator({ ...base, BROKER_ID: 'bad\nbroker' }).valid).toBe(false)
+    expect(runValidator({ ...base, USE_MOCK_DISCOVERY: 'true' }).valid).toBe(false)
+    expect(runValidator({ ...base, PUBLIC_MARKET_API: 'unknown-contract' }).valid).toBe(false)
+    expect(runValidator({ ...base, BACKEND_TARGET: 'desktop' }).valid).toBe(false)
+    expect(runValidator({ ...base, BACKEND_TARGET: 'invalid' }).valid).toBe(false)
+    expect(runValidator({ ...base, WS_HOST: 'wss://api.independent.test/badpath' }).valid).toBe(false)
+    expect(runValidator({ ...base, BROKER_ALLOWED_ORIGINS: 'https://good.test,http://bad.test' }).valid).toBe(false)
+    expect(runValidator({ ...base, BROKER_LOGO_URL: 'http://images.independent.test/logo.svg' }).valid).toBe(false)
+    expect(runValidator({ ...base, DESKTOP_RELEASE_API_URL: 'http://releases.independent.test/latest' }).valid).toBe(false)
+    expect(runValidator({ ...base, DEFAULT_CHART_SYMBOL: 'TOOLONGTOOLONGTOOLONGTOOLONG' }).valid).toBe(false)
+    expect(runValidator({
+      ...base,
+      BROKER_ALLOWED_ORIGINS: 'https://cdn.independent.test',
+      BROKER_LOGO_URL: 'https://cdn.independent.test/logo.svg',
+      DESKTOP_RELEASE_API_URL: 'https://releases.independent.test/api/latest?channel=stable',
+      DEFAULT_CHART_SYMBOL: 'EURUSD.R',
+    }).valid).toBe(true)
+  })
 })

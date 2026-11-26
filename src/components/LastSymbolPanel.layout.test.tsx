@@ -107,7 +107,8 @@ describe('LastSymbolPanel enterprise layout', () => {
     const panel = screen.getByRole('region', { name: 'Last symbol trader' });
     expect(panel).toHaveStyle({
       left: `${Math.round((window.innerWidth - 368) / 2 * 1.25) / 1.25}px`,
-      top: `${Math.round((window.innerHeight - 461) / 2 * 1.25) / 1.25}px`,
+      // Laptop viewports use 30% of the free height, then snap to physical pixels.
+      top: `${Math.round(Math.max(42, (window.innerHeight - 461) * 0.3) * 1.25) / 1.25}px`,
     });
     expect(panel.style.transform).toBe('');
   });

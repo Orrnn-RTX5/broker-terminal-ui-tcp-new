@@ -41,7 +41,7 @@ describe('Electron desktop quick-actions toolbar contract', () => {
         expect(topToolbarSource).not.toContain('<WebDrawingToolsRail');
         expect(appSource).toContain('WebDrawingToolsRail,');
         expect(appSource).not.toContain('isWebDrawingToolsRuntime,');
-        expect(appSource).toContain('<WebDrawingToolsRail selectedSymbol={desktopToolbarSymbol} />');
+        expect(appSource).toMatch(/<WebDrawingToolsRail\s+selectedSymbol=\{desktopToolbarSymbol\}/);
         expect(appSource).toContain('<WebDrawingToolsRail selectedSymbol={desktopToolbarSymbol} orientation="horizontal" />');
         expect(appSource).toContain('<WebDrawingSelectionToolbar />');
     });
@@ -74,7 +74,7 @@ describe('Electron desktop quick-actions toolbar contract', () => {
         );
         expect(appSource).toContain('setSelectedSymbol(renderedChartSymbol);');
         expect(appSource).toContain('symbol={desktopToolbarSymbol}');
-        expect(appSource).toContain('<WebDrawingToolsRail selectedSymbol={desktopToolbarSymbol} />');
+        expect(appSource).toMatch(/<WebDrawingToolsRail\s+selectedSymbol=\{desktopToolbarSymbol\}/);
         expect(appSource).toContain('${desktopToolbarSymbol},${tf}`');
         expect(appSource).toContain('marketStatus={desktopToolbarMarketStatus}');
     });

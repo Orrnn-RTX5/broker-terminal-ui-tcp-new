@@ -23,6 +23,8 @@ describe('HistoryTab inline Deposit & Withdrawal records and real-time updates',
 
   beforeEach(() => {
     localStorage.clear();
+    // 7c10304f: period tabs persist in sessionStorage and must not leak across cases.
+    sessionStorage.clear();
     resetTerminalHistorySession();
     clearTradeHistoryRequestCache();
     useAppStore.getState().reset();
@@ -59,6 +61,7 @@ describe('HistoryTab inline Deposit & Withdrawal records and real-time updates',
     cleanup();
     useAppStore.getState().reset();
     localStorage.clear();
+    sessionStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -77,10 +80,10 @@ describe('HistoryTab inline Deposit & Withdrawal records and real-time updates',
     expect(screen.queryByRole('button', { name: /Deposit History/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Withdrawal History/i })).toBeNull();
 
-    // Boxed History filter contains Today, Last Hour, Last 24 Hours, 14 Days, 6 Months
-    const filterBox = screen.getByRole('group', { name: 'History time filters' });
-    expect(filterBox).toHaveClass('rtx-history-filter-box');
-    expect(within(filterBox).getAllByRole('button').map((btn) => btn.textContent)).toEqual([
+    // 7c10304f: history time filters are a tablist, not a button group.
+    const filterBox = screen.getByRole('tablist', { name: 'History time filters' });
+    expect(filterBox).toHaveClass('rtx-history-toolbar', 'rtx-trade-view-bar');
+    expect(within(filterBox).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Today',
       'Last Hour',
       'Last 24 Hours',
@@ -107,7 +110,7 @@ describe('HistoryTab inline Deposit & Withdrawal records and real-time updates',
     expect(summary).toHaveTextContent('Balance: 9 500.00');
 
     // Period filtering applies directly to inline deposits & withdrawals
-    fireEvent.click(within(filterBox).getByRole('button', { name: '14 Days' }));
+    fireEvent.click(within(filterBox).getByRole('tab', { name: '14 Days' }));
     expect(screen.getByText('1 records')).toBeInTheDocument();
     expect(within(tableRegion).getByTitle('Ticket: 12')).toBeInTheDocument();
     expect(within(tableRegion).queryByTitle('Ticket: 10')).toBeNull();

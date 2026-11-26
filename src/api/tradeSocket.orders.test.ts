@@ -98,7 +98,7 @@ const filledData = {
 
 const createOpenClient = (options: Partial<TradeSocketOptions> = {}) => {
   const client = new TradeWebSocketClient({
-    url: 'wss://fxtrustbrokerbackend.orrnn.com/ws/v2',
+    url: 'wss://broker.example/ws/v2',
     token: 'trader-jwt',
     reconnect: false,
     ...options,
@@ -116,12 +116,14 @@ describe('TradeWebSocketClient market orders', () => {
     FakeWebSocket.instances = [];
     localStorage.clear();
     sessionStorage.clear();
+    // cfcdfec: desktop connect() uses Pure Binary TCP and never opens a WebSocket; this suite covers the web order socket.
     (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown> }).__RTX_RUNTIME_CONFIG__ = {
-      backendTarget: 'desktop', API_HOST: 'https://broker.example', WS_HOST: 'wss://broker.example',
-      BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live',
+      BACKEND_TARGET: 'web', API_HOST: 'https://broker.example', API_HOST_EXT: 'https://broker.example',
+      WS_HOST: 'wss://broker.example', BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live',
     };
     localStorage.setItem('server_url', 'https://broker.example');
     localStorage.setItem('broker_id', 'Fixture');
+    localStorage.setItem('auth_token', 'trader-jwt');
     clearTradeOrderLatencySamples();
     setVisibilityState('visible');
     vi.spyOn(Math, 'random').mockReturnValue(0);
@@ -788,7 +790,7 @@ describe('TradeWebSocketClient market orders', () => {
   it('keeps reconnect backoff across short-lived opens and resets it after a stable open', () => {
     vi.useFakeTimers();
     const client = new TradeWebSocketClient({
-      url: 'wss://fxtrustbrokerbackend.orrnn.com/ws/v2',
+      url: 'wss://broker.example/ws/v2',
       token: 'trader-jwt',
       reconnect: true,
     });
@@ -821,7 +823,7 @@ describe('TradeWebSocketClient market orders', () => {
   it('pauses trade reconnects while hidden and resumes once visible', () => {
     vi.useFakeTimers();
     const client = new TradeWebSocketClient({
-      url: 'wss://fxtrustbrokerbackend.orrnn.com/ws/v2',
+      url: 'wss://broker.example/ws/v2',
       token: 'trader-jwt',
       reconnect: true,
     });

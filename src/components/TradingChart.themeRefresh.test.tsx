@@ -61,6 +61,11 @@ describe('chart theme refresh ordering', () => {
         areaTrendDirectionRef: { current: 'up' }, requestChartDataRender: vi.fn(),
         schedulePeriodSeparatorRender: vi.fn(), symbol: 'BTCUSD', timeframe: 'M1', updateLegendDOM: vi.fn(),
         drawingRuntimeContextRef: { current: { contextId: 'chart-a' } }, requestChartTradeOverlayRefresh,
+        // 0e044a40: theme layout effect depends on brokerWatermarkVersion and reads price-scale width.
+        brokerWatermarkVersion: 0,
+        chartSettingsRef: { current: { showGrid: false } },
+        readChartPriceScaleMinWidth: () => 72,
+        applyLivePriceHorizontalGeometry: vi.fn(),
       };
       const runEffects = new Function(...Object.keys(stableScope), 'chartTheme', effectScript);
       const Harness = ({ theme }: { theme: typeof themes.dark }) => {

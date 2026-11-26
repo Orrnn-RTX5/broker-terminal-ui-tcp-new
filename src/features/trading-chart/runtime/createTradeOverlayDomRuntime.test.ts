@@ -267,7 +267,7 @@ describe('SL/TP chart controls', () => {
     expect(modifyPosition).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('shares SL/TP label colors with docked shortcuts and price-axis badges, light=%s', lightSurface => {
+  it.each([false, true])('keeps role chips and axis badges on the trade palette while dark dock chips use #ff9800 and #089981, light=%s', lightSurface => {
     const { host, options, runtime } = createRuntime(lightSurface);
     options.seriesRef.current = {
       priceFormatter: () => ({ format: (price: number) => price.toFixed(2) }),
@@ -277,8 +277,10 @@ describe('SL/TP chart controls', () => {
       const color = role === 'SL'
         ? (lightSurface ? '#664300' : '#fbbf24')
         : (lightSurface ? '#05564f' : '#4ade80');
+      // 0ec4a611: dark dock chips use #ff9800/#089981; role chips and axis badges keep the trade palette.
+      const dockColor = lightSurface ? color : (role === 'TP' ? '#089981' : '#ff9800');
       runtime.createLevelControlsForTrade(trade, role, { sl: 87000, tp: 85118.19 });
-      expect(host.querySelector(`.rtx-trade-dock-chip--${role.toLowerCase()}`)).toHaveStyle({ color });
+      expect(host.querySelector(`.rtx-trade-dock-chip--${role.toLowerCase()}`)).toHaveStyle({ color: dockColor });
       expect(host.querySelector(`.rtx-trade-controls--${role.toLowerCase()} .rtx-trade-chip--role`)).toHaveStyle({ color });
       const axisBadge = host.querySelector<HTMLElement>(`[data-trade-axis-key='${trade.key}:${role.toLowerCase()}']`)!;
       expect(axisBadge).toHaveStyle({ color });
@@ -302,9 +304,9 @@ describe('SL/TP chart controls', () => {
   });
 
   it.each([
-    { side: 'BUY' as const, lineColor: '#ea580c', orderType: 'buy_limit' },
-    { side: 'SELL' as const, lineColor: '#a855f7', orderType: 'sell_limit' },
-  ])('renders a deep orange line for pending BUY and a purple line for pending SELL (%s)', ({ side, lineColor, orderType }) => {
+    { side: 'BUY' as const, lineColor: '#2962ff', volumeColor: '#72b0ff', orderType: 'buy_limit' },
+    { side: 'SELL' as const, lineColor: '#ef4444', volumeColor: '#ff8589', orderType: 'sell_limit' },
+  ])('renders a blue line for pending BUY and a red line for pending SELL (%s)', ({ side, lineColor, volumeColor, orderType }) => {
     const { host, options, runtime } = createRuntime(false);
     options.seriesRef.current = {
       priceFormatter: () => ({ format: (price: number) => price.toFixed(2) }),
@@ -318,9 +320,10 @@ describe('SL/TP chart controls', () => {
     };
     runtime.createEntryPriceLevels([pendingOrder], new Set([pendingOrder.key]));
     runtime.createEntryControlsForTrade(pendingOrder, { sl: 0, tp: 0 });
+    // 66b3a864: pending lines and axis badges use #2962ff/#ef4444; the volume chip keeps the dark pending palette.
     expect(host.querySelector('.rtx-trade-level-line--entry')).toHaveStyle({ borderTopColor: lineColor });
     expect(host.querySelector<HTMLElement>(`[data-trade-axis-key='${pendingOrder.key}:entry']`)).toHaveStyle({ color: lineColor });
-    expect(host.querySelector<HTMLElement>('.rtx-trade-controls--entry .rtx-trade-chip--volume')).toHaveStyle({ color: lineColor });
+    expect(host.querySelector<HTMLElement>('.rtx-trade-controls--entry .rtx-trade-chip--volume')).toHaveStyle({ color: volumeColor });
   });
 
   it.each(['BUY', 'SELL'] as const)('renders the dark %s entry price-axis box with a subtle light border and without a colored shadow or gradient background', side => {
@@ -494,8 +497,9 @@ describe('SL/TP chart controls', () => {
     const historyLine = overlay.querySelector<HTMLElement>('.rtx-trade-history-line');
     expect(historyLine).not.toBeNull();
     expect(historyLine!.style.height).toBe('0.75px');
+    // 0e044a40: jsdom 31 serializes the dash gradient with explicit color stops.
     expect(historyLine!.style.backgroundImage).toBe(
-      'repeating-linear-gradient(to right, rgb(41, 98, 255) 0 3px, transparent 3px 5px)',
+      'repeating-linear-gradient(to right, rgb(41, 98, 255) 0px, rgb(41, 98, 255) 3px, transparent 3px, transparent 5px)',
     );
     expect(historyLine!.style.backgroundRepeat).toBe('repeat-x');
     expect(historyLine!.style.backgroundColor).toBe('');
@@ -562,9 +566,9 @@ describe('SL/TP chart controls', () => {
 
     hitArea.dispatchEvent(new MouseEvent('mouseenter'));
     expect(tooltip.style.display).toBe('block');
-    expect((tooltip.children[0] as HTMLElement).style.display).toBe('block');
-    expect(tooltip.children[0].textContent).toBe('SELL 0.01 lots #9302300');
-    expect(tooltip.children[1].textContent).toBe('Add stop loss and take profit');
+    // 0ec4a611: entry hover is compact, so the summary is hidden and the hint shows the volume line.
+    expect((tooltip.children[0] as HTMLElement).style.display).toBe('none');
+    expect(tooltip.children[1].textContent).toBe('SELL 0.01 lots #9302300');
 
     hitArea.dispatchEvent(new MouseEvent('mouseleave'));
     expect(tooltip.style.display).toBe('none');
@@ -575,7 +579,8 @@ describe('SL/TP chart controls', () => {
     tpChip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     expect(tooltip.style.display).toBe('block');
     expect((tooltip.children[0] as HTMLElement).style.display).toBe('none');
-    expect(tooltip.children[1].textContent).toBe('Drag to add TP');
+    // 0ec4a611: dock-chip hover uses the compact hint "Drag to add profit" / "Drag to add stop loss".
+    expect(tooltip.children[1].textContent).toBe('Drag to add profit');
 
     tpChip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: entryBar }));
     expect(tooltip.style.display).toBe('none');
@@ -583,7 +588,7 @@ describe('SL/TP chart controls', () => {
     slChip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     expect(tooltip.style.display).toBe('block');
     expect((tooltip.children[0] as HTMLElement).style.display).toBe('none');
-    expect(tooltip.children[1].textContent).toBe('Drag to add SL');
+    expect(tooltip.children[1].textContent).toBe('Drag to add stop loss');
 
     slChip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: entryBar }));
     expect(tooltip.style.display).toBe('none');

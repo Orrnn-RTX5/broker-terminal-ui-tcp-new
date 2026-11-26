@@ -18,6 +18,7 @@ vi.mock('../../../store/useChartObjectStateStore', () => ({
 
 const frames = new Map<number, FrameRequestCallback>();
 let frameId = 0;
+const openHarnesses = new Set<() => void>();
 beforeEach(() => {
   appSubscribers.clear();
   frames.clear();
@@ -29,6 +30,8 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
 afterEach(() => {
+  for (const cleanup of [...openHarnesses]) cleanup();
+  openHarnesses.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -47,7 +50,7 @@ function harness(contextId = 'chart-a') {
   const pendingMissingActiveTradesRef = { current: new Map() };
   const clearTradeOverlayLayer = vi.fn();
   const scheduleHistoryRefresh = vi.fn();
-  const cleanup = bindTradeOverlayRuntimeSubscriptions({
+  const release = bindTradeOverlayRuntimeSubscriptions({
     chartRef: { current: { timeScale: () => timeScale } },
     drawingRuntimeContextRef: { current: { contextId } },
     resolveSymbolTick: () => undefined,
@@ -65,6 +68,14 @@ function harness(contextId = 'chart-a') {
     clearTradeOverlayLayer,
     renderTradeOverlay, queueTradeOverlayRelayout, isActiveRef, clearTradeOverlayVisualRuntime: vi.fn(),
   } as unknown as Parameters<typeof bindTradeOverlayRuntimeSubscriptions>[0]);
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    openHarnesses.delete(cleanup);
+    release();
+  };
+  openHarnesses.add(cleanup);
   const flush = () => {
     const pending = [...frames.values()]; frames.clear();
     for (const callback of pending) callback(0);
@@ -79,12 +90,15 @@ function harness(contextId = 'chart-a') {
 describe('viewport-driven trade history DOM', () => {
   it('batches initial controls with presentation, candle loading and range notifications, then reconciles pan and zoom', () => {
     const h = harness();
-    expect(h.renderTradeOverlay).not.toHaveBeenCalled();
+    // cfcdfec: an active pane renders once on mount; later pan/zoom range changes still share one frame.
+    expect(h.renderTradeOverlay).toHaveBeenCalledOnce();
+    h.renderTradeOverlay.mockClear();
     requestChartTradeOverlayRefresh('chart-a', 'reconcile');
     requestChartTradeOverlayRefresh('chart-a', 'rebuild');
     for (let i = 0; i < 20; i++) h.onRangeChange();
+    expect(h.renderTradeOverlay.mock.calls).toEqual([[], [true]]);
     expect(h.frames.size).toBe(1);
-    expect(h.renderTradeOverlay).not.toHaveBeenCalled();
+    h.renderTradeOverlay.mockClear();
     h.flush();
     expect(h.renderTradeOverlay).toHaveBeenCalledOnce();
     h.onRangeChange(); h.flush();
@@ -92,13 +106,20 @@ describe('viewport-driven trade history DOM', () => {
     h.cleanup();
   });
 
-  it('cancels the discarded StrictMode setup before constructing any controls', () => {
+  it('cancels a queued viewport frame from a discarded StrictMode mount without painting again', () => {
     const discarded = harness();
+    // cfcdfec: an active mount renders once synchronously and does not queue a frame.
+    // A later range change does. Cleanup must cancel that frame and must not render again.
+    expect(discarded.renderTradeOverlay).toHaveBeenCalledOnce();
+    discarded.onRangeChange();
+    expect(discarded.frames.size).toBe(1);
+    expect(discarded.renderTradeOverlay).toHaveBeenCalledOnce();
     discarded.cleanup();
     expect(discarded.frames.size).toBe(0);
+    expect(discarded.renderTradeOverlay).toHaveBeenCalledOnce();
     const retained = harness();
     retained.flush();
-    expect(discarded.renderTradeOverlay).not.toHaveBeenCalled();
+    expect(discarded.renderTradeOverlay).toHaveBeenCalledOnce();
     expect(retained.renderTradeOverlay).toHaveBeenCalledExactlyOnceWith();
     retained.cleanup();
   });
@@ -206,6 +227,8 @@ describe('viewport-driven trade history DOM', () => {
 
   it('batches a new trade with initial rendering and keeps close rollback immediate', () => {
     const placed = harness();
+    // cfcdfec: mount already rendered; rtx:new-trade-placed still waits for one frame.
+    placed.renderTradeOverlay.mockClear();
     window.dispatchEvent(new Event('rtx:new-trade-placed'));
     expect(placed.renderTradeOverlay).not.toHaveBeenCalled();
     expect(frames.size).toBe(1);
@@ -214,6 +237,7 @@ describe('viewport-driven trade history DOM', () => {
     placed.cleanup();
 
     const rollback = harness();
+    rollback.renderTradeOverlay.mockClear();
     window.dispatchEvent(new CustomEvent(TRADE_OVERLAY_CLOSE_STATE_EVENT, {
       detail: { status: 'failed', ticket: 17 },
     }));

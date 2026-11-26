@@ -103,22 +103,26 @@ describe('MarketWatchPanel watchlist:addSymbol (T11 Show symbol)', () => {
   it('shows the event symbol on a built-in watchlist where the store-only add is invisible', () => {
     watchlistState.activeWatchlistId = 'majors';
     watchlistState.watchlists = [{ id: 'majors', symbols: [], isDefault: true }];
+    // cfcdfec8: ETHUSD is flagship core, so the built-in grid already shows it.
+    // SOLUSD stays off that grid until the event appends it.
+    setMarketCatalog(['BTCUSD', 'SOLUSD']);
     const onSymbolSelect = vi.fn();
     const { container } = render(
-      <MarketWatchPanel allSymbols={['BTCUSD', 'ETHUSD']} selectedSymbol="BTCUSD" onSymbolSelect={onSymbolSelect} />,
+      <MarketWatchPanel allSymbols={['BTCUSD', 'SOLUSD']} selectedSymbol="BTCUSD" onSymbolSelect={onSymbolSelect} />,
     );
     const before = getRenderedRowSymbols(container);
     expect(before).toContain('BTCUSD');
-    expect(before).not.toContain('ETHUSD');
+    // cfcdfec8: ETHUSD is a flagship core symbol, so this case uses SOLUSD.
+    expect(before).not.toContain('SOLUSD');
 
-    fireAddSymbol('ethusd');
+    fireAddSymbol('solusd');
 
     // Built-in watchlists render manual symbols, not the persisted list, so
     // the store-only SymbolsDialog add alone is a NO-OP here. The listener
     // must make the symbol visible without touching the persisted list.
     expect(watchlistState.addSymbolToWatchlist).not.toHaveBeenCalled();
-    expect(getRenderedRowSymbols(container)).toContain('ETHUSD');
-    expect(onSymbolSelect).toHaveBeenCalledWith('ETHUSD');
+    expect(getRenderedRowSymbols(container)).toContain('SOLUSD');
+    expect(onSymbolSelect).toHaveBeenCalledWith('SOLUSD');
   });
 
   it('ignores unknown symbols and malformed events gracefully', () => {

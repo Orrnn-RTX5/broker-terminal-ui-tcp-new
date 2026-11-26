@@ -83,6 +83,7 @@ describe('useOrderExecution DOM stop side (T17)', () => {
     }));
 
     expect(api.orders.placePendingOrder).toHaveBeenCalledOnce();
+    // cfcdfec8: pending orders carry intentAtMs for end-to-end latency.
     expect(api.orders.placePendingOrder).toHaveBeenCalledWith(expect.objectContaining({
       login: 123,
       symbol: 'EURUSD',
@@ -90,7 +91,7 @@ describe('useOrderExecution DOM stop side (T17)', () => {
       volume: 0.2,
       type: 'buy_stop',
       price: 1.105,
-    }));
+    }), expect.objectContaining({ intentAtMs: expect.any(Number) }));
   });
 
   it('places sell_stop for stop-side DOM SELL clicks with derived price', async () => {
@@ -113,7 +114,7 @@ describe('useOrderExecution DOM stop side (T17)', () => {
       volume: 0.3,
       type: 'sell_stop',
       price: 1.085,
-    }));
+    }), expect.objectContaining({ intentAtMs: expect.any(Number) }));
   });
 
   it('keeps limit-side DOM clicks as buy_limit/sell_limit', async () => {
@@ -130,7 +131,7 @@ describe('useOrderExecution DOM stop side (T17)', () => {
       side: 'buy',
       type: 'buy_limit',
       price: 1.095,
-    }));
+    }), expect.objectContaining({ intentAtMs: expect.any(Number) }));
 
     vi.clearAllMocks();
     vi.mocked(api.orders.placePendingOrder).mockResolvedValue({ ticket: 100 } as never);
@@ -145,7 +146,7 @@ describe('useOrderExecution DOM stop side (T17)', () => {
       side: 'sell',
       type: 'sell_limit',
       price: 1.105,
-    }));
+    }), expect.objectContaining({ intentAtMs: expect.any(Number) }));
   });
 
   it('fail-closed on unparseable DOM price: user-visible error, nothing sent', async () => {

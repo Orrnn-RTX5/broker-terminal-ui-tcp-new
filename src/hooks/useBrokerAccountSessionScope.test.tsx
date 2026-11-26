@@ -100,7 +100,8 @@ describe('committed broker/account chart scope', () => {
     }));
     await flushHistoryOwner();
 
-    expect(onScope).toHaveBeenLastCalledWith('anonymous|||');
+    // 17f3f205: an unauthenticated scope still hydrates stored broker_id and server_url.
+    expect(onScope).toHaveBeenLastCalledWith('anonymous||broker-a|https://broker-a.example');
     expect(localStorage.getItem('rtx_committed_broker_account_scope_v1')).toBeNull();
     onAbort.mockClear();
     onClear.mockClear();

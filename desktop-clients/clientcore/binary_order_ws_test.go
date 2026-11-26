@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -586,4 +587,71 @@ func BenchmarkHTTPBinaryOrderFallback(b *testing.B) {
 	}
 	elapsed := time.Since(start)
 	b.ReportMetric(float64(elapsed.Microseconds())/float64(b.N), "us/order")
+}
+
+func TestIsLoopbackOrderOriginEdgeCases(t *testing.T) {
+	if isLoopbackOrderOrigin(nil) {
+		t.Fatal("expected nil request to be rejected")
+	}
+
+	allowed := []string{
+		"",
+		"   ",
+		"http://127.0.0.1",
+		"http://127.0.0.1:1",
+		"http://127.0.0.1:18403",
+		"http://127.0.0.1:65535",
+		"http://localhost",
+		"http://localhost:5173",
+		"http://LOCALHOST:8080",
+	}
+	for _, orig := range allowed {
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18403/__rtx5_binary_order_ws", nil)
+		if orig != "" {
+			req.Header.Set("Origin", orig)
+		}
+		if !isLoopbackOrderOrigin(req) {
+			t.Fatalf("expected loopback Origin %q to be allowed", orig)
+		}
+	}
+
+	rejected := []string{
+		"https://127.0.0.1:18403",
+		"https://localhost:5173",
+		"ws://127.0.0.1:18403",
+		"file://",
+		"file://localhost",
+		"http://user:pass@127.0.0.1:18403",
+		"http://user@localhost:5173",
+		"http://127.0.0.1:0",
+		"http://127.0.0.1:65536",
+		"http://127.0.0.1:abc",
+		"http://[::1]:5173",
+		"http://sub.localhost:5173",
+		"http://127.0.0.1.evil.com:8080",
+		"https://evil.example.com",
+		"null",
+		"://bad-url",
+	}
+	for _, orig := range rejected {
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18403/__rtx5_binary_order_ws", nil)
+		req.Header.Set("Origin", orig)
+		if isLoopbackOrderOrigin(req) {
+			t.Fatalf("expected Origin %q to be rejected", orig)
+		}
+	}
+
+	// Verify websocket.Upgrader enforcement rejects disallowed loopback variants over HTTP upgrade.
+	h := startWSOrderTestHarness(t)
+	defer h.cleanup()
+	for _, badOrigin := range []string{"https://127.0.0.1:18403", "http://user:pass@localhost:5173", "http://[::1]:5173"} {
+		conn, resp, err := websocket.DefaultDialer.Dial(h.fastWSURL, http.Header{"Origin": []string{badOrigin}})
+		if err == nil {
+			_ = conn.Close()
+			t.Fatalf("expected WS upgrade for %q to fail", badOrigin)
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+	}
 }

@@ -244,6 +244,7 @@ describe('trend drawing input priority', () => {
     const overlay = document.createElement('div');
     const findClosestTradeLevel = vi.fn(() => ({ tradeObj: { key: 'trade:1', entryPrice: 100 }, grabbedType: 'ENTRY' }));
     const beginPointerCapture = vi.fn();
+    const dismissActiveLevelTooltips = vi.fn();
     const handler = execute(`let dragState = null, dragLineOverlay = null, dragBadgeOverlay = null, dragZoneOverlay = null;
       const isInsideTradePlot = ${tradePlotBounds};
       return ${tradePointerHandler};`, {
@@ -257,6 +258,8 @@ describe('trend drawing input priority', () => {
       hideDraggedLevelControls: vi.fn(), getPriceScaleOffset: () => 40,
       getTradeOverlayCardPalette: () => ({ background: '#000', border: '#555', text: '#fff', shadow: '' }),
       isChartSurfaceLight: () => false, TRADE_LEVEL_BADGE_LEFT_INSET_PX: 12, overlayRef: { current: overlay },
+      // 7c10304 dismisses the active level tooltip when a trade-level press is captured.
+      dismissActiveLevelTooltips,
     });
     setTrendDrawingInputActive(container, true);
     const drawingPress = new MouseEvent('pointerdown', { button: 0, cancelable: true });
@@ -264,6 +267,7 @@ describe('trend drawing input priority', () => {
     expect(drawingPress.defaultPrevented).toBe(false);
     expect(findClosestTradeLevel).not.toHaveBeenCalled();
     expect(beginPointerCapture).not.toHaveBeenCalled();
+    expect(dismissActiveLevelTooltips).not.toHaveBeenCalled();
     expect(overlay.children).toHaveLength(0);
 
     setTrendDrawingInputActive(container, false);
@@ -272,6 +276,7 @@ describe('trend drawing input priority', () => {
     expect(tradePress.defaultPrevented).toBe(true);
     expect(findClosestTradeLevel).toHaveBeenCalledOnce();
     expect(beginPointerCapture).toHaveBeenCalledOnce();
+    expect(dismissActiveLevelTooltips).toHaveBeenCalledExactlyOnceWith({ tradeKey: 'trade:1', role: 'ENTRY' });
     expect(overlay.children).toHaveLength(3);
   });
 });

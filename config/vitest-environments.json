@@ -68,7 +68,6 @@
     "src/startup/terminalPreload.test.ts",
     "src/styles/enterpriseLight.contract.test.ts",
     "src/test/commandBus.test.ts",
-    "src/test/electronBrokerWebSocketOrigin.test.ts",
     "src/test/timeframeBoundary.test.ts",
     "src/utils/accountSymbolUniverse.test.ts",
     "src/utils/brokerStreamSemantics.test.ts",

@@ -8,6 +8,10 @@ const bottomDockSource = readFileSync(resolve(process.cwd(), 'src/components/Bot
 const bulkStart = appSource.indexOf("const handleCloseBulk = async (type: 'ALL' | 'WINNERS' | 'LOSERS'");
 const bulkEnd = appSource.indexOf('// Connect to WebSocket using centralized hook', bulkStart);
 const bulkHandler = appSource.slice(bulkStart, bulkEnd);
+const binaryBulkStart = bulkHandler.indexOf('if (isBinaryTcpOrderEnabled()) {');
+const restBulkStart = bulkHandler.indexOf('const selectMatchingCandidates = (openPositions: readonly Position[]) =>');
+const binaryBulk = bulkHandler.slice(binaryBulkStart, restBulkStart);
+const restBulk = bulkHandler.slice(restBulkStart);
 
 const startedStart = bulkHandler.indexOf('onCandidatesStarted: (candidates) => {');
 const startedEnd = bulkHandler.indexOf('onTicketConfirmed: (ticketId) => {', startedStart);
@@ -76,7 +80,21 @@ describe('Close All source contract', () => {
     expect(candidatesStartedHandler).not.toContain('setPositions');
     expect(candidatesStartedHandler).not.toContain('markLocalTradeMutation');
     expect(candidatesStartedHandler).not.toContain('dispatchTradeOverlayCloseState');
-    expect(bulkHandler).not.toContain("'pending'");
+    // cfcdfec8: the binary fast-lane marks pending before closeBulk; REST still waits for confirmation.
+    expect(binaryBulkStart).toBeGreaterThan(-1);
+    expect(restBulkStart).toBeGreaterThan(binaryBulkStart);
+    expect(binaryBulk.indexOf('markLocalTradeMutation(candidateIds);')).toBeLessThan(
+      binaryBulk.indexOf('await api.positions.closeBulk('),
+    );
+    expect(binaryBulk.indexOf("dispatchTradeOverlayCloseState(candidateIds, 'pending', { snapshots });")).toBeLessThan(
+      binaryBulk.indexOf('await api.positions.closeBulk('),
+    );
+    expect(binaryBulk.indexOf('await api.positions.closeBulk(')).toBeLessThan(
+      binaryBulk.indexOf('useAppStore.getState().setPositions('),
+    );
+    expect(binaryBulk).toContain('return;');
+    expect(restBulk).toContain('await closePositionsLocalFirst({');
+    expect(restBulk).not.toContain("'pending'");
 
     expect(bulkHandler).toContain('onTicketConfirmed: (ticketId) => {');
     expect(bulkHandler).toContain('markLocalTradeMutation([ticketId]);');
@@ -86,8 +104,12 @@ describe('Close All source contract', () => {
   });
 
   it('leaves failed tickets open and reports them', () => {
-    expect(bulkHandler).not.toContain('clearOptimisticClosedTickets');
-    expect(bulkHandler).not.toContain("'failed'");
+    const binaryCatch = binaryBulk.slice(binaryBulk.indexOf('} catch (err) {'));
+    expect(binaryCatch).toContain('clearOptimisticClosedTickets(candidateIds, closeMarkerScope);');
+    expect(binaryCatch).toContain("dispatchTradeOverlayCloseState(candidateIds, 'failed');");
+    expect(binaryCatch).not.toContain('setPositions(');
+    expect(restBulk).not.toContain('clearOptimisticClosedTickets');
+    expect(restBulk).not.toContain("'failed'");
     expect(bulkHandler).toContain("feedbackLabel('closed')");
     expect(bulkHandler).toContain('${confirmedTicketIds.length}/${closeResult.attemptedTicketIds.length}');
     expect(bulkHandler).toContain('${failedTicketIds.length} — ${failureMessage}');

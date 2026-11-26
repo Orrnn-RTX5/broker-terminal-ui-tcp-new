@@ -222,13 +222,17 @@ describe('TradingChart interaction-priority contract', () => {
   });
 
   it('keeps tick ingestion running while chart painting is deferred', () => {
-    const tickLoopStart = source.indexOf('const interval = setInterval(() => {');
-    const tickLoopEnd = source.indexOf('}, LIVE_CHART_UPDATE_INTERVAL_MS);', tickLoopStart);
-    const tickLoop = source.slice(tickLoopStart, tickLoopEnd);
+    // cfcdfec removed the 50ms setInterval; ticks ingest through ingestLiveChartTick.
+    const tickLoopStart = liveCandleSource.indexOf('const ingestLiveChartTick =');
+    const tickLoopEnd = liveCandleSource.indexOf('// Subscribe directly to raw Binary TCP ticks', tickLoopStart);
+    const tickLoop = liveCandleSource.slice(tickLoopStart, tickLoopEnd);
+    const flushStart = liveCandleSource.indexOf('const flushVSyncLivePaint =');
+    const flushEnd = liveCandleSource.indexOf('const runWatchdogPaint =', flushStart);
+    const flush = liveCandleSource.slice(flushStart, flushEnd);
+    const tickKeyReturn = tickLoop.indexOf('if (tickKey === lastTickKey) return;');
 
     expect(tickLoopStart).toBeGreaterThan(-1);
     expect(tickLoopEnd).toBeGreaterThan(tickLoopStart);
-    expect(tickLoop).toContain('Model ingestion must never pause for a pan');
     expect(tickLoop).not.toMatch(/if\s*\([^)]*isChartInteractionActiveRef\.current[^)]*\)\s*return/);
     expect(tickLoop).not.toMatch(/if\s*\([^)]*!isActiveRef\.current[^)]*\)\s*return/);
     expect(tickLoop).toContain('applyTickToFormingCandle(currentCandleRef.current, price)');
@@ -237,14 +241,17 @@ describe('TradingChart interaction-priority contract', () => {
     expect(tickLoop).toContain('candleAggregationService.processTick');
     expect(tickLoop).toContain('const m1DerivedCandle = latestAggregatedCandle');
     expect(tickLoop).toContain('const derivedCurrentCandle: Candle | null');
-    expect(tickLoop).toContain('repaintLivePriceOverlayOrDefer(currentCandleRef.current)');
-    expect(tickLoop.indexOf('synchronizeChartMarketClock(tick?.sourceTimestamp ?? tick?.timestamp)'))
-      .toBeLessThan(tickLoop.indexOf('if (tickKey === lastTickKey) return;'));
+    expect(tickLoop).toContain('scheduleVSyncLivePaint(isNewBar)');
+    expect(tickLoop.indexOf('synchronizeChartMarketClock(rawTimestampMs)'))
+      .toBeLessThan(tickKeyReturn);
     expect(tickLoop.indexOf('reconcileSynchronizedCandleBoundary()'))
-      .toBeLessThan(tickLoop.indexOf('if (tickKey === lastTickKey) return;'));
-    expect(tickLoop).toContain('tick.sourceTimestamp ?? tick.timestamp');
+      .toBeLessThan(tickKeyReturn);
+    expect(tickKeyReturn).toBeGreaterThan(-1);
     expect(tickLoop).toContain('getTimeframePeriodSeconds(');
     expect(tickLoop).toContain('brokerTimeOffsetSecRef.current');
+    expect(flushStart).toBeGreaterThan(-1);
+    expect(flushEnd).toBeGreaterThan(flushStart);
+    expect(flush).toContain('repaintLivePriceOverlayOrDefer(active);');
   });
 
   it('releases hidden-tab runtime and restores only visible chart work', () => {
@@ -258,7 +265,17 @@ describe('TradingChart interaction-priority contract', () => {
     expect(liveEffect).toContain("const streamTimeframe: AggTimeframe = 'M1';");
     expect(liveEffect).toContain('candleAggregationService.reconcileServerCandle(');
     expect(liveEffect).toContain("classifiedCandle.closed === true");
-    expect(liveEffect).toContain('clearInterval(interval);');
+    // ec44d2a added clearRafWatchdog; cfcdfec unsubscribes the tick source instead of clearInterval.
+    // flushVSyncLivePaint and the watchdog also clear the frame. Only this cleanup calls unsubscribeTickSource.
+    const cleanupCall = liveEffect.indexOf('unsubscribeTickSource();');
+    const cleanupStart = liveEffect.lastIndexOf('return () => {', cleanupCall);
+    const cleanup = liveEffect.slice(cleanupStart, cleanupCall + 'unsubscribeTickSource();'.length);
+    expect(cleanupCall).toBeGreaterThan(-1);
+    expect(cleanupStart).toBeGreaterThan(-1);
+    expect(cleanupStart).toBeLessThan(cleanupCall);
+    expect(cleanup).toContain('clearRafWatchdog();');
+    expect(cleanup).toContain('window.cancelAnimationFrame(rafPaintId)');
+    expect(cleanup).toContain('unsubscribeTickSource();');
     expect(liveEffect).toContain('candleStream.close();');
     expect(liveEffect).toContain('getTimeframePeriodSeconds(');
     expect(liveEffect).toContain('return currentPeriod.startTime;');
@@ -479,10 +496,14 @@ describe('TradingChart interaction-priority contract', () => {
     expect(helperEnd).toBeGreaterThan(helperStart);
     expect(helper).toContain('if (!canPaintLiveChart())');
     expect(helper).toContain('requestDeferredLivePaint()');
-    expect(helper).toContain('repaintLivePriceOverlayFromCurrentPrice(c)');
+    // cfcdfec calls the overlay repaint through the optional runtime callback.
+    expect(helper).toContain('runtimeCallbacksRef.current.repaintLivePriceOverlayFromCurrentPrice?.(c)');
     expect(serverCandleStart).toBeGreaterThan(-1);
     expect(serverCandleEnd).toBeGreaterThan(serverCandleStart);
-    expect(serverCandle.match(/repaintLivePriceOverlayOrDefer\(/g)).toHaveLength(4);
+    // cfcdfec paints forming server candles through scheduleVSyncLivePaint; one closed candle still defers directly.
+    expect(serverCandle.match(/repaintLivePriceOverlayOrDefer\(/g)).toHaveLength(1);
+    expect(serverCandle.match(/scheduleVSyncLivePaint\(false\)/g)).toHaveLength(1);
+    expect(serverCandle.match(/scheduleVSyncLivePaint\(true\)/g)).toHaveLength(2);
     expect(serverCandle).not.toContain('repaintLivePriceOverlayFromCurrentPrice(');
     expect(snapshotStart).toBeGreaterThan(-1);
     expect(snapshotEnd).toBeGreaterThan(snapshotStart);
@@ -503,14 +524,15 @@ describe('TradingChart interaction-priority contract', () => {
 
     expect(quoteTickStart).toBeGreaterThan(-1);
     expect(quoteTickEnd).toBeGreaterThan(quoteTickStart);
+    // cfcdfec spreads the forming-candle envelope instead of assigning it directly.
     expect(
       quoteTickPath.match(
-        /currentCandleRef\.current = mergeFormingCandleEnvelope\(\s*currentCandleRef\.current,\s*derivedCurrentCandle,\s*\)/g,
+        /\.\.\.mergeFormingCandleEnvelope\(currentCandleRef\.current, derivedCurrentCandle\)/g,
       ),
     ).toHaveLength(2);
     expect(quoteTickPath).not.toContain('currentCandleRef.current = derivedCurrentCandle;');
     expect(serverCandle).toContain(
-      'currentCandleRef.current = mergeFormingCandleEnvelope(currentCandleRef.current, c)',
+      '...mergeFormingCandleEnvelope(currentCandleRef.current, c)',
     );
     const canonicalAssignment = serverCandle.indexOf(
       'c = resolveCanonicalServerCandle(currentCandleRef.current, c)',
@@ -645,7 +667,8 @@ describe('TradingChart interaction-priority contract', () => {
     expect(drag).not.toContain('flushPostInteractionWork');
     expect(tradeRuntimeSource).toContain('const repaintTradeOverlayGeometry = () => updateLabelPositions(false);');
     expect(tradeRuntimeSource).toContain('repaintTradeOverlayGeometryRef.current = repaintTradeOverlayGeometry;');
-    expect(source).toContain('if (refreshMetrics) {');
+    // 9a26d88f guards live trade-control metric updates on a non-empty updater list.
+    expect(source).toContain('if (refreshMetrics && tradeControlLiveUpdatersRef.current.length > 0) {');
 
     expect(heldMoveStart).toBeGreaterThan(-1);
     expect(heldMoveEnd).toBeGreaterThan(heldMoveStart);
@@ -863,20 +886,32 @@ describe('TradingChart interaction-priority contract', () => {
   });
 
   it('deduplicates an exact raw quote before price compatibility validation', () => {
-    const tickLoopStart = source.indexOf('const interval = setInterval(() => {');
-    const tickLoopEnd = source.indexOf('}, LIVE_CHART_UPDATE_INTERVAL_MS);', tickLoopStart);
-    const tickLoop = source.slice(tickLoopStart, tickLoopEnd);
-    const timestampIndex = tickLoop.indexOf('const rawTickTimestamp = Number(tick.sourceTimestamp ?? tick.timestamp);');
-    // The key uses the raw feed sides (not the spread-markup widened quote).
-    const keyIndex = tickLoop.indexOf('const tickKey = `${rawTickTimestamp}:${candleQuote.bid}:${candleQuote.ask ?? candleQuote.bid}:${price}`;');
+    // cfcdfec dedupes ingestLiveChartTick on the raw bid/ask key before price validation.
+    const tickLoopStart = liveCandleSource.indexOf('const ingestLiveChartTick =');
+    const tickLoopEnd = liveCandleSource.indexOf('// Subscribe directly to raw Binary TCP ticks', tickLoopStart);
+    const tickLoop = liveCandleSource.slice(tickLoopStart, tickLoopEnd);
+    const seqKey = tickLoop.indexOf('`seq:${sequence}:${rawBid}:${rawAsk}`');
+    const timeKey = tickLoop.indexOf('`${rawTimestampMs}:${rawBid}:${rawAsk}:${price}`');
+    const duplicateReturnIndex = tickLoop.indexOf('if (tickKey === lastTickKey) return;');
     const reconciliationIndex = tickLoop.indexOf('validateRenderedCandlesAgainstLivePrice(price, activeTf)');
+    const subscribeStart = liveCandleSource.indexOf('// Subscribe directly to raw Binary TCP ticks', tickLoopStart);
+    const subscribeEnd = liveCandleSource.indexOf('// Seed once immediately', subscribeStart);
+    const subscribe = liveCandleSource.slice(subscribeStart, subscribeEnd);
+    const desktopTimestamp = subscribe.indexOf('rawTimestampMs: bt.sourceTimestamp || bt.timestamp');
+    const webTimestamp = subscribe.indexOf('rawTimestampMs: Number(tick.sourceTimestamp ?? tick.timestamp)');
 
-    expect(timestampIndex).toBeGreaterThan(-1);
-    expect(keyIndex).toBeGreaterThan(timestampIndex);
-    expect(reconciliationIndex).toBeGreaterThan(keyIndex);
-    expect(tickLoop).toContain('if (tickKey === lastTickKey) return;');
-    expect(tickLoop).toContain('let ts = rawTickTimestamp;');
+    expect(tickLoopStart).toBeGreaterThan(-1);
+    expect(tickLoopEnd).toBeGreaterThan(tickLoopStart);
+    expect(seqKey).toBeGreaterThan(-1);
+    expect(timeKey).toBeGreaterThan(seqKey);
+    expect(duplicateReturnIndex).toBeGreaterThan(timeKey);
+    expect(reconciliationIndex).toBeGreaterThan(duplicateReturnIndex);
+    expect(tickLoop).toContain('let ts = rawTimestampMs;');
     expect(tickLoop).not.toContain('price.toFixed(5)');
+    expect(subscribeStart).toBe(tickLoopEnd);
+    expect(subscribeEnd).toBeGreaterThan(subscribeStart);
+    expect(desktopTimestamp).toBeGreaterThan(-1);
+    expect(webTimestamp).toBeGreaterThan(desktopTimestamp);
   });
 
   it('coalesces legend writes to the latest frame and skips identical strings', () => {

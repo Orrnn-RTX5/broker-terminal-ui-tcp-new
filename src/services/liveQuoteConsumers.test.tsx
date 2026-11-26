@@ -92,13 +92,15 @@ describe('live quote consumers (array mode)', () => {
       combinedPnL: 0,
     });
     flushSync(() => { root.render(createElement(BulkCloseConfirmDialog)); });
-    expect(host.textContent).toContain('+0.00');
+    // 66b3a86: zero P/L has no plus sign, and the combined +70.00 summary was removed.
+    const pnlCells = Array.from(host.querySelectorAll('.rtx-bulk-close-dialog__cell-pnl')).map((cell) => cell.textContent?.trim());
+    expect(pnlCells).toEqual(['0.00', '0.00']);
+    expect(host.textContent).not.toContain('+0.00');
 
     setLiveQuote({ symbol: 'EURUSD', bid: 1.085, ask: 1.0852 });
     setLiveQuote({ symbol: 'GBPUSD', bid: 1.2678, ask: 1.268 });
     flushSync(() => { flushFrames(); });
 
-    expect(host.textContent).toContain('+70.00');
     expect(host.textContent).toContain('+50.00');
     expect(host.textContent).toContain('+20.00');
   });

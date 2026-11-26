@@ -11,7 +11,10 @@ const jsonResponse = (body: unknown, init: ResponseInit = {}) =>
   });
 
 const lastFetchCall = () => {
-  const call = vi.mocked(fetch).mock.calls.at(-1);
+  // cfcdfec: desktop auth:token-updated also POSTs /__rtx5_binary_account_sub; ignore that internal call.
+  const call = vi.mocked(fetch).mock.calls
+    .filter((entry) => !String(entry[0] ?? '').includes('/__rtx5_binary_account_sub'))
+    .at(-1);
   if (!call) throw new Error('Expected fetch to be called');
   return {
     url: String(call[0]),
@@ -509,6 +512,8 @@ describe('normalizeJournalResponse', () => {
         datetime: 1787639000,
         source: 'gateway',
         message: 'Position opened',
+        // cfcdfec: normalizeJournalResponse derives datetime_ms as datetime seconds * 1000.
+        datetime_ms: 1787639000000,
       }],
     });
   });

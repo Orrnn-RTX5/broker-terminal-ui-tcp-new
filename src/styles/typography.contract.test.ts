@@ -219,7 +219,9 @@ describe('enterprise typography contract', () => {
     expect(optionsDialogSource).toContain('text-[14px] font-normal');
     expect(optionsDialogSource).toContain('text-[12px] font-normal');
     expect(openAccountDialogSource).toContain('text-[14px] font-normal');
-    expect(openAccountDialogSource).toContain('rtx-reading-text');
+    // 7c10304f moved open-account option copy onto rtx-open-account-dialog__option-desc.
+    expect(openAccountDialogSource).toContain('rtx-open-account-dialog__option-desc');
+    expect(readSource('src/components/dialogs/open-account-dialog.css')).toMatch(/\.rtx-open-account-dialog__option-desc\s*\{[^}]*--rtx-type-size: 12px;/);
     expect(loginDialogSource).toContain('rtx-login-label text-[14px] leading-5 font-medium');
     expect(loginDialogSource).toContain('rtx-dialog-title');
     expect(welcomeSource).toContain('fontSize: 14');

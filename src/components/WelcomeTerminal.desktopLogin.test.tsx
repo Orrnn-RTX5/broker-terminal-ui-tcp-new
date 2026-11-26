@@ -345,10 +345,10 @@ describe('desktop broker directory login', () => {
     render(<WelcomeTerminal onLogin={vi.fn()} />);
     await screen.findByText('Checking');
     selectBroker(gta.broker_name);
-    await screen.findByText('Broker temporarily unavailable');
+    await screen.findByText('Broker server unreachable');
     await act(async () => oldHealth.resolve(json({ status: 'ok' })));
     expect(loginButton()).toBeDisabled();
-    expect(screen.getByText('Broker temporarily unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Broker server unreachable')).toBeInTheDocument();
   });
 
   it('turns a timeout into Unavailable and allows a fresh retry', async () => {
@@ -359,7 +359,7 @@ describe('desktop broker directory login', () => {
     });
     render(<WelcomeTerminal onLogin={vi.fn()} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(8001); });
-    expect(screen.getByText('Broker temporarily unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Broker server unreachable')).toBeInTheDocument();
     expect(loginButton()).toBeDisabled();
     fetchMock.mockResolvedValue(json({ status: 'ok' }));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Retry' })));

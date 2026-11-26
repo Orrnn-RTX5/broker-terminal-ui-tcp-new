@@ -72,18 +72,29 @@ describe('T5 bulk pending cancel — one confirm, sequential cancels', () => {
 describe('T5 cancel core — no confirm, no swallow, refresh never blanks the list', () => {
   it('carries no confirmation dialog; per-ticket transport mints each Idempotency-Key', () => {
     expect(coreHandler).not.toContain('showConfirm');
-    expect(coreHandler).toContain('await api.orders.cancelOrder(orderId);');
+    // cfcdfec8: cancelOrder takes { intentAtMs } for latency measurement.
+    expect(coreHandler).toContain('await api.orders.cancelOrder(orderId, { intentAtMs });');
     // The cancel itself is unguarded: a rejection propagates to the caller.
     expect(coreHandler).not.toContain('cancelOrder(orderId).catch');
     expect(coreHandler).not.toContain('try {');
   });
 
-  it('fails closed without an account and replaces rows only from the backend payload', () => {
+  it('fails closed without an account; binary drops the ticket locally, REST replaces only from the backend payload', () => {
     expect(coreHandler).toContain(
       "throw new Error('No trading account is selected. Please sign in again.');",
     );
-    expect(coreHandler).toContain('useAppStore.getState().setOrders(ordersPayload as any);');
-    expect(coreHandler).not.toContain('.filter(');
+    const binaryStart = coreHandler.indexOf('if (isBinaryTcpOrderEnabled()) {');
+    const restStart = coreHandler.indexOf('refreshHistoryAfterFill(loginId, undefined, { skipHistory: true });');
+    const binaryBranch = coreHandler.slice(binaryStart, restStart);
+    const restBranch = coreHandler.slice(restStart);
+    expect(binaryStart).toBeGreaterThan(-1);
+    expect(restStart).toBeGreaterThan(binaryStart);
+    expect(binaryBranch).toContain('.filter(');
+    expect(binaryBranch).toContain('scheduleIdlePostTradeSync(loginId, true);');
+    expect(binaryBranch).toContain('return;');
+    expect(binaryBranch).not.toContain('getPendingOrders(');
+    expect(restBranch).toContain('useAppStore.getState().setOrders(ordersPayload as any);');
+    expect(restBranch).not.toContain('.filter(');
   });
 
   it('a failed post-cancel refresh keeps existing rows instead of blanking them', () => {

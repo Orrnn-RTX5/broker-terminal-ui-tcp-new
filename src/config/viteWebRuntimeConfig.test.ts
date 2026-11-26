@@ -198,27 +198,167 @@ describe('environment-based web runtime configuration', () => {
     const source = renderWebRuntimeConfig(createWebRuntimeConfig({
       ...achieverEnvironment,
       DATABASE_PASSWORD: 'database-secret',
+      MANAGER_PASSWORD: 'manager-secret',
+      BACKEND_PASSWORD: 'backend-secret',
+      PRIVATE_KEY: 'private-key-secret',
+      VITE_ADMIN_PASSWORD: 'admin-password-secret',
       FEED_BROKER_TOKEN: 'server-only-secret',
       VITE_FEED_BROKER_TOKEN: 'retired-feed-secret',
       VITE_UNRELATED_SECRET: 'unrelated-secret',
       PATH: 'private-machine-path',
     }))
-    for (const value of ['database-secret', 'server-only-secret', 'retired-feed-secret', 'unrelated-secret', 'private-machine-path']) {
+    for (const value of [
+      'database-secret',
+      'manager-secret',
+      'backend-secret',
+      'private-key-secret',
+      'admin-password-secret',
+      'server-only-secret',
+      'retired-feed-secret',
+      'unrelated-secret',
+      'private-machine-path',
+    ]) {
       expect(source).not.toContain(value)
     }
-    expect(source).not.toContain('FEED_BROKER_TOKEN')
+    expect(source).not.toMatch(/FEED_BROKER_TOKEN|MANAGER_PASSWORD|BACKEND_PASSWORD|PRIVATE_KEY|ADMIN_PASSWORD/)
+    const runtime = executeConfig(source).RUNTIME_CONFIG as Record<string, unknown>
+    expect(runtime.FEED_BROKER_TOKEN).toBeUndefined()
+    expect(runtime.MANAGER_PASSWORD).toBeUndefined()
+    expect(runtime.BACKEND_PASSWORD).toBeUndefined()
+    expect(runtime.PRIVATE_KEY).toBeUndefined()
   })
 
-  it('escapes source text while preserving the exact configured value', () => {
-    const server = 'Broker "A" \\ </script>\n\u2028\u2029'
+  it('escapes source text without raw < while preserving hostile multiline and control characters', () => {
+    const hostile = `broker'\\"</ScRiPt><script data-injected>window.injected=true</script><!--\r\n\t\b\f\u0001\u2028\u2029\n`
     const source = renderWebRuntimeConfig(createWebRuntimeConfig({
-      ...achieverEnvironment,
-      VITE_DEFAULT_MT5_SERVER: server,
+      BACKEND_TARGET: 'web',
+      API_HOST: 'https://api.independent-broker.test',
+      WS_HOST: 'wss://api.independent-broker.test',
+      BROKER_ID: 'independent-broker',
+      DEFAULT_MT5_SERVER: hostile,
+      BROKER_NAME: hostile,
     }))
+    expect(source).not.toContain('<')
     expect(source).not.toContain('</script>')
     expect(source).not.toContain('\u2028')
     expect(source).not.toContain('\u2029')
-    expect(executeConfig(source).RUNTIME_CONFIG).toEqual(expect.objectContaining({ DEFAULT_MT5_SERVER: server.trim() }))
+    const win = executeConfig(source) as {
+      RUNTIME_CONFIG?: { DEFAULT_MT5_SERVER?: string; BROKER_NAME?: string }
+      injected?: unknown
+    }
+    expect(win.RUNTIME_CONFIG?.DEFAULT_MT5_SERVER).toBe(hostile.trim())
+    expect(win.RUNTIME_CONFIG?.BROKER_NAME).toBe(hostile.trim())
+    expect(win.injected).toBeUndefined()
+  })
+
+  it('maps remaining API, WebSocket, discovery, candle, and presentation aliases with precedence', () => {
+    const base = {
+      BROKER_ID: 'independent-broker',
+      DEFAULT_MT5_SERVER: 'Independent Trading',
+    }
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_V2_URL: 'https://api-v2.independent.test/',
+      WS_HOST: 'wss://api-v2.independent.test',
+    })).toMatchObject({ API_HOST: 'https://api-v2.independent.test', CONFIG_ERRORS: [] })
+
+    expect(createWebRuntimeConfig({
+      ...base,
+      VITE_API_V2_URL: 'https://vite-api-v2.independent.test/',
+      WS_HOST: 'wss://vite-api-v2.independent.test',
+    })).toMatchObject({ API_HOST: 'https://vite-api-v2.independent.test', CONFIG_ERRORS: [] })
+
+    const aliased = createWebRuntimeConfig({
+      ...base,
+      API_V2_URL: 'https://primary.independent.test',
+      VITE_API_HOST: 'https://fallback.independent.test',
+      RTX5_WS_URL: 'wss://stream.independent.test/ws/feed',
+      FIX_WS_URL: 'wss://ignored.independent.test',
+      SHARED_DISCOVERY_BASE_URL: 'https://catalog.independent.test/',
+      VITE_SHARED_DISCOVERY_BASE_URL: 'https://ignored-catalog.independent.test',
+      BROKER_ALLOWED_ORIGINS: 'https://stream.independent.test',
+      PUBLIC_CANDLE_BRIDGE: 'yes',
+      PUBLIC_MARKET_API: 'mt5-bridge-v1',
+      BROKER_NAME: 'Independent Broker',
+      BROKER_LOGO_URL: 'https://images.independent.test/logo.svg?v=2#icon',
+      BROKER_LOGIN_HERO_URL: 'https://images.independent.test/hero.webp',
+      BROKER_LOGIN_HERO_MOBILE_URL: 'https://images.independent.test/mobile.jpg',
+      BROKER_TERMS_URL: 'https://independent.test/terms',
+    })
+    expect(aliased).toMatchObject({
+      API_HOST: 'https://primary.independent.test',
+      WS_HOST: 'wss://stream.independent.test',
+      DISCOVERY_BASE_URL: 'https://catalog.independent.test',
+      BROKER_DISCOVERY_URL: 'https://catalog.independent.test',
+      PUBLIC_CANDLE_BRIDGE: true,
+      PUBLIC_MARKET_API: 'mt5-bridge-v1',
+      BROKER_NAME: 'Independent Broker',
+      BROKER_LOGO_URL: 'https://images.independent.test/logo.svg?v=2#icon',
+      BROKER_LOGIN_HERO_URL: 'https://images.independent.test/hero.webp',
+      BROKER_LOGIN_HERO_MOBILE_URL: 'https://images.independent.test/mobile.jpg',
+      BROKER_TERMS_URL: 'https://independent.test/terms',
+      CONFIG_ERRORS: [],
+    })
+
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_HOST: 'https://alias.independent.test',
+      FIX_WS_URL: 'wss://alias.independent.test/ws/v2',
+      VITE_SHARED_DISCOVERY_BASE_URL: 'https://vite-catalog.independent.test/',
+      VITE_PUBLIC_CANDLE_BRIDGE: 'true',
+      VITE_PUBLIC_MARKET_API: 'mt5-bridge-v1',
+    })).toMatchObject({
+      WS_HOST: 'wss://alias.independent.test',
+      DISCOVERY_BASE_URL: 'https://vite-catalog.independent.test',
+      PUBLIC_CANDLE_BRIDGE: true,
+      PUBLIC_MARKET_API: 'mt5-bridge-v1',
+      CONFIG_ERRORS: [],
+    })
+
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_HOST: 'https://feed.independent.test',
+      WS_HOST: 'wss://feed.independent.test',
+      FEED_WS_URL: 'https://feed1.independent.test/',
+      FEED_WS_HOST: 'https://feed2.independent.test/',
+      VITE_FEED_WS_URL: 'https://feed3.independent.test/',
+      VITE_FEED_WS_HOST: 'https://feed4.independent.test/',
+      EXTRA_BROKER_DISCOVERY_URLS: 'https://extra1.independent.test',
+      VITE_EXTRA_BROKER_DISCOVERY_URLS: 'https://extra2.independent.test',
+    })).toMatchObject({
+      FEED_WS_URL: 'wss://feed1.independent.test',
+      EXTRA_BROKER_DISCOVERY_URLS: 'https://extra1.independent.test',
+    })
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_HOST: 'https://feed.independent.test',
+      WS_HOST: 'wss://feed.independent.test',
+      FEED_WS_HOST: 'http://feed2.independent.test/',
+      VITE_FEED_WS_URL: 'https://feed3.independent.test/',
+      VITE_EXTRA_BROKER_DISCOVERY_URLS: 'https://extra2.independent.test',
+    })).toMatchObject({
+      FEED_WS_URL: 'ws://feed2.independent.test',
+      EXTRA_BROKER_DISCOVERY_URLS: 'https://extra2.independent.test',
+    })
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_HOST: 'https://feed.independent.test',
+      WS_HOST: 'wss://feed.independent.test',
+      FEED_WS_URL: '',
+      VITE_FEED_WS_URL: 'https://feed3.independent.test/',
+      VITE_FEED_WS_HOST: 'https://feed4.independent.test/',
+      EXTRA_BROKER_DISCOVERY_URLS: '',
+      VITE_EXTRA_BROKER_DISCOVERY_URLS: 'https://extra2.independent.test',
+    })).toMatchObject({
+      FEED_WS_URL: '',
+      EXTRA_BROKER_DISCOVERY_URLS: '',
+    })
+    expect(createWebRuntimeConfig({
+      ...base,
+      API_HOST: 'https://feed.independent.test',
+      WS_HOST: 'wss://feed.independent.test',
+      VITE_FEED_WS_HOST: 'https://feed4.independent.test/',
+    }).FEED_WS_URL).toBe('wss://feed4.independent.test')
   })
 
   it.each([
@@ -239,34 +379,128 @@ describe('environment-based web runtime configuration', () => {
     expect(runtime.__RUNTIME_CONFIG__).toBe(desktopConfig)
   })
 
-  it('serves uncached generated JavaScript before the public development file', () => {
-    const plugin = webRuntimeConfigPlugin(achieverEnvironment)
+  it('serves uncached runtime config and validator assets before the public development file', () => {
+    const plugin = webRuntimeConfigPlugin({
+      VITE_BACKEND_TARGET: 'web',
+      VITE_BACKEND_URL: 'https://api.independent-broker.test',
+      VITE_BROKER_DISCOVERY_URL: 'https://directory.independent-broker.test',
+      VITE_BROKER_ID: 'independent-broker',
+      VITE_DEFAULT_MT5_SERVER: 'Independent Broker',
+    })
     const use = vi.fn()
     const server = { middlewares: { use } } as unknown as ViteDevServer
     if (typeof plugin.configureServer !== 'function') throw new Error('Missing development hook')
     plugin.configureServer.call({} as never, server)
     const middleware = use.mock.calls[0][0]
-    const res = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
+
+    for (const url of ['/runtime-config.js?t=123', '/runtime-config-validator.js?t=123']) {
+      const res = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
+      const next = vi.fn()
+      middleware({ url, method: 'GET' } as IncomingMessage, res as unknown as ServerResponse, next)
+      expect(next).not.toHaveBeenCalled()
+      expect(res.statusCode).toBe(200)
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/javascript; charset=utf-8')
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, max-age=0')
+
+      const headRes = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
+      middleware({ url, method: 'HEAD' } as IncomingMessage, headRes as unknown as ServerResponse, next)
+      expect(headRes.statusCode).toBe(200)
+      expect(headRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, max-age=0')
+      expect(headRes.end).toHaveBeenCalledWith(undefined)
+
+      if (url.startsWith('/runtime-config.js')) {
+        expect(executeConfig(res.end.mock.calls[0][0]).RUNTIME_CONFIG).toEqual(expect.objectContaining({ BROKER_ID: 'independent-broker' }))
+      } else {
+        const validatorCtx: {
+          window: {
+            __RTX_SELECT_BROKER_CONFIG__?: unknown
+            __RTX_VALIDATE_BROKER_CONFIG__?: (cfg: Record<string, unknown>) => { valid: boolean }
+          }
+          URL: typeof URL
+        } = { window: {}, URL }
+        runInNewContext(res.end.mock.calls[0][0], validatorCtx)
+        expect(typeof validatorCtx.window.__RTX_SELECT_BROKER_CONFIG__).toBe('function')
+        expect(typeof validatorCtx.window.__RTX_VALIDATE_BROKER_CONFIG__).toBe('function')
+        expect(validatorCtx.window.__RTX_VALIDATE_BROKER_CONFIG__!({ BROKER_ID: 'bad\nbroker' }).valid).toBe(false)
+      }
+    }
+
+    const nextRes = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
     const next = vi.fn()
-    middleware({ url: '/runtime-config.js?t=123', method: 'GET' } as IncomingMessage, res as unknown as ServerResponse, next)
-
-    expect(next).not.toHaveBeenCalled()
-    expect(res.statusCode).toBe(200)
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, max-age=0')
-    expect(executeConfig(res.end.mock.calls[0][0]).RUNTIME_CONFIG).toEqual(expect.objectContaining({ BROKER_ID: 'achiever-financials' }))
-
-    middleware({ url: '/api/login', method: 'GET' } as IncomingMessage, res as unknown as ServerResponse, next)
+    middleware({ url: '/api/login', method: 'GET' } as IncomingMessage, nextRes as unknown as ServerResponse, next)
     expect(next).toHaveBeenCalledOnce()
+
+    for (const [url, method] of [
+      ['/runtime-config.js', 'POST'],
+      ['/runtime-config.js', 'OPTIONS'],
+      ['/runtime-config-validator.js', 'POST'],
+      ['/runtime-config-validator.js', 'DELETE'],
+    ]) {
+      const skippedRes = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
+      const skippedNext = vi.fn()
+      middleware({ url, method } as IncomingMessage, skippedRes as unknown as ServerResponse, skippedNext)
+      expect(skippedNext).toHaveBeenCalledOnce()
+      expect(skippedRes.setHeader).not.toHaveBeenCalled()
+      expect(skippedRes.end).not.toHaveBeenCalled()
+    }
   })
 
-  it('emits the selected build configuration without replacing it during preview', () => {
-    const plugin = webRuntimeConfigPlugin(achieverEnvironment)
+  it('disables local nginx desktop rewrite when VITE_LOCAL_NGINX_PREVIEW is false', () => {
+    const plugin = webRuntimeConfigPlugin({
+      VITE_BACKEND_TARGET: 'desktop',
+      VITE_API_HOST: 'https://trivanta.orrnn.com',
+      VITE_BROKER_ID: 'trivanta-markets',
+      VITE_LOCAL_NGINX_PREVIEW: ' false ',
+    })
+    const use = vi.fn()
+    if (typeof plugin.configureServer !== 'function') throw new Error('Missing development hook')
+    plugin.configureServer.call({} as never, { middlewares: { use } } as unknown as ViteDevServer)
+    const middleware = use.mock.calls[0][0]
+    const devRes = { setHeader: vi.fn(), end: vi.fn(), statusCode: 0 }
+    middleware({ url: '/runtime-config.js', method: 'GET' } as IncomingMessage, devRes as unknown as ServerResponse, vi.fn())
+    const location = { protocol: 'http:', hostname: '127.0.0.1', origin: 'http://127.0.0.1:5173' }
+    expect(executeConfig(devRes.end.mock.calls[0][0], { location }).RUNTIME_CONFIG).toEqual(
+      expect.objectContaining({ API_HOST: 'https://trivanta.orrnn.com', BROKER_ID: 'trivanta-markets', BACKEND_TARGET: 'desktop' }),
+    )
+
+    const emitFile = vi.fn()
+    if (typeof plugin.generateBundle !== 'function') throw new Error('Missing build hook')
+    plugin.generateBundle.call({ emitFile } as unknown as Rolldown.PluginContext, {} as never, {}, true)
+    const emitted = emitFile.mock.calls.find(([asset]) => asset.fileName === 'runtime-config.js')![0]
+    expect(executeConfig(emitted.source, { location }).RUNTIME_CONFIG).toEqual(
+      expect.objectContaining({ API_HOST: 'https://trivanta.orrnn.com', BROKER_ID: 'trivanta-markets', BACKEND_TARGET: 'desktop' }),
+    )
+  })
+
+  it('emits both runtime-config.js and runtime-config-validator.js without preview override', () => {
+    const plugin = webRuntimeConfigPlugin({
+      VITE_BACKEND_TARGET: 'web',
+      VITE_BACKEND_URL: 'https://api.independent-broker.test',
+      VITE_BROKER_DISCOVERY_URL: 'https://directory.independent-broker.test',
+      VITE_BROKER_ID: 'independent-broker',
+      VITE_DEFAULT_MT5_SERVER: 'Independent Broker',
+    })
     const emitFile = vi.fn()
     if (typeof plugin.generateBundle !== 'function') throw new Error('Missing build hook')
     plugin.generateBundle.call({ emitFile } as unknown as Rolldown.PluginContext, {} as never, {}, true)
 
     expect(emitFile).toHaveBeenCalledWith(expect.objectContaining({ type: 'asset', fileName: 'runtime-config.js' }))
-    expect(executeConfig(emitFile.mock.calls.find(([asset]) => asset.fileName === 'runtime-config.js')![0].source).RUNTIME_CONFIG).toEqual(expect.objectContaining({ BROKER_ID: 'achiever-financials' }))
+    expect(emitFile).toHaveBeenCalledWith(expect.objectContaining({ type: 'asset', fileName: 'runtime-config-validator.js' }))
+
+    const configAsset = emitFile.mock.calls.find(([asset]) => asset.fileName === 'runtime-config.js')![0]
+    expect(executeConfig(configAsset.source).RUNTIME_CONFIG).toEqual(expect.objectContaining({ BROKER_ID: 'independent-broker' }))
+
+    const validatorAsset = emitFile.mock.calls.find(([asset]) => asset.fileName === 'runtime-config-validator.js')![0]
+    const validatorCtx: {
+      window: {
+        __RTX_SELECT_BROKER_CONFIG__?: unknown
+        __RTX_VALIDATE_BROKER_CONFIG__?: (cfg: Record<string, unknown>) => { valid: boolean }
+      }
+      URL: typeof URL
+    } = { window: {}, URL }
+    runInNewContext(validatorAsset.source, validatorCtx)
+    expect(typeof validatorCtx.window.__RTX_SELECT_BROKER_CONFIG__).toBe('function')
+    expect(typeof validatorCtx.window.__RTX_VALIDATE_BROKER_CONFIG__).toBe('function')
     expect(plugin.configurePreviewServer).toBeUndefined()
   })
 })

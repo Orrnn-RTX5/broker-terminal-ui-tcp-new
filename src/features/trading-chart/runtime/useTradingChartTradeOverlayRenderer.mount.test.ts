@@ -249,7 +249,8 @@ describe('useTradingChartTradeOverlayRenderer mounted', () => {
     expect(syncDigits).toContain('prevSymbolRef.current.trim().toUpperCase() !== activeSymbol');
     expect(syncDigits).toContain('observedPriceDigitsRef.current === null || inferred > observedPriceDigitsRef.current');
     expect(syncDigits).not.toContain('inferred !== observedPriceDigitsRef.current');
-    expect(syncDigits).toContain('prev.scopeKey === activeScopeKey && prev.digits !== null && prev.digits >= nextObservedDigits');
+    // cfcdfec wraps the monotonic digits predicate across lines.
+    expect(syncDigits.replace(/\s+/g, ' ')).toContain('prev.scopeKey === activeScopeKey && prev.digits !== null && prev.digits >= nextObservedDigits');
     expect(formatEffect).toContain('if (dataWindowHoverTimeRef.current === null) {');
   });
 

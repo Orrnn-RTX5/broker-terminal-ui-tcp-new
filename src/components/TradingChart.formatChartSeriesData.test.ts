@@ -296,11 +296,13 @@ describe('TradingView-style area trend coloring', () => {
 
 describe('formatChartSeriesData market gap separators', () => {
   it('keeps the visible right edge during wheel zoom without implicit live-bar shifting', () => {
+    // cfcdfec keeps every bottom time-axis label at regular weight.
     expect(TRADING_CHART_TIME_SCALE_LIVE_SHIFT_OPTIONS).toEqual({
       shiftVisibleRangeOnNewBar: false,
       allowShiftVisibleRangeOnWhitespaceReplacement: false,
       uniformDistribution: true,
       rightBarStaysOnScroll: true,
+      allowBoldLabels: false,
     });
   });
 
@@ -359,7 +361,7 @@ describe('formatChartSeriesData market gap separators', () => {
     )).toEqual({ from: 3, to: 5 });
   });
 
-  it('does not time-anchor sparse startup ranges that begin before the first candle', () => {
+  it('anchors a sparse pre-first-candle startup range when previousCandleCount is omitted, and returns null when the count passes the guard', () => {
     const mnCandles = [utcSeconds(2026, 5, 1)].map(time => ({ time }));
     const sparseStartupRange = { from: -4, to: 1.5 };
 
@@ -369,10 +371,22 @@ describe('formatChartSeriesData market gap separators', () => {
     );
 
     expect(leftVisibleTime).toBeNull();
+    // 0ec4a611 anchors a null left time with previousRange.from < 0 onto the right edge.
     expect(getVisibleLogicalRangeAnchoredToTime(
       mnCandles,
       leftVisibleTime,
       sparseStartupRange,
+    )).toEqual({ from: -5.5, to: 0 });
+    expect(getVisibleLogicalRangeAnchoredToTime(
+      mnCandles,
+      leftVisibleTime,
+      sparseStartupRange,
+      {
+        wasFollowing: false,
+        previousLatestTime: null,
+        rightOffset: 0,
+        previousCandleCount: Math.ceil(sparseStartupRange.to - sparseStartupRange.from) + 1,
+      },
     )).toBeNull();
   });
 

@@ -279,7 +279,8 @@ describe('BottomDock History live-deal integration', () => {
         fireEvent.click(screen.getByRole('button', { name: 'History — Closed orders and account history' }));
         const summary = await screen.findByRole('group', { name: 'History financial summary' });
         await waitFor(() => expect(summary).toHaveTextContent('Profit: 104.00 Credit: 0.00 Deposit: 1 000.00 Withdrawal: -20.00 Balance: —'));
-        fireEvent.click(screen.getByRole('button', { name: '14 Days' }));
+        // 7c10304f: history period presets are tabs, not buttons.
+        fireEvent.click(screen.getByRole('tab', { name: '14 Days' }));
         expect(summary).toHaveTextContent('Profit: 4.00 Credit: 0.00 Deposit: 0.00 Withdrawal: -20.00 Balance: —');
     });
 
@@ -390,7 +391,7 @@ describe('BottomDock History live-deal integration', () => {
         renderHistoryDock();
         fireEvent.click(screen.getByRole('button', { name: 'History — Closed orders and account history' }));
         await screen.findByText('4 records');
-        fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Today' }));
         expect(screen.getByText('2 records')).toBeInTheDocument();
         expect(screen.getByTitle('Ticket: 640001')).toBeInTheDocument();
         expect(screen.getByTitle('Ticket: 640002')).toBeInTheDocument();
@@ -439,19 +440,19 @@ describe('BottomDock History live-deal integration', () => {
         await screen.findByText('5 records');
         const scroller = screen.getByLabelText('History records');
         scroller.scrollTop = 900;
-        fireEvent.click(screen.getByRole('button', { name: 'Last Hour' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Last Hour' }));
         expect(screen.getByText('1 records')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Last Hour' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('tab', { name: 'Last Hour' })).toHaveAttribute('aria-selected', 'true');
         expect(scroller.scrollTop).toBe(0);
         expect(container.querySelector('[title="Ticket: 630001"]')).not.toBeNull();
         expect(container.querySelector('[title="Ticket: 630002"]')).toBeNull();
         expect(screen.getByRole('group', { name: 'History financial summary' })).toHaveTextContent('Profit: 10.00');
-        fireEvent.click(screen.getByRole('button', { name: 'Last 24 Hours' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Last 24 Hours' }));
         expect(screen.getByText('2 records')).toBeInTheDocument();
         expect(screen.getByRole('group', { name: 'History financial summary' })).toHaveTextContent('Profit: 30.00');
-        fireEvent.click(screen.getByRole('button', { name: '14 Days' }));
+        fireEvent.click(screen.getByRole('tab', { name: '14 Days' }));
         expect(screen.getByText('3 records')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: '6 Months' }));
+        fireEvent.click(screen.getByRole('tab', { name: '6 Months' }));
         expect(screen.getByText('4 records')).toBeInTheDocument();
         expect(container.querySelector('[title="Ticket: 630004"]')).not.toBeNull();
         expect(container.querySelector('[title="Ticket: 630005"]')).toBeNull();

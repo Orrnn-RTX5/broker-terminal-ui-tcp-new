@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commitBrokerAccountSessionScope } from '../services/brokerSession';
+import { flushTradeHistoryLevelCache, resetTradeHistoryLevelCacheForTests } from '../utils/tradeHistoryLevelCache';
 
 import {
   getPositionCloseScope,
@@ -209,9 +210,14 @@ describe('useAppStore setPositions burst merge', () => {
 
 describe('position history cache work', () => {
   const cacheKey = 'rtx5_trade_history_levels_v1';
-  const readPositionCache = () => JSON.parse(localStorage.getItem(cacheKey) || '{}')['200001:position:301'];
+  // Memory cache survives localStorage.clear(), and localStorage writes wait 500ms (tradeHistoryLevelCache.ts).
+  const readPositionCache = (login = '200001') => {
+    flushTradeHistoryLevelCache();
+    return JSON.parse(localStorage.getItem(cacheKey) || '{}')[`${login}:position:301`];
+  };
 
   beforeEach(() => {
+    resetTradeHistoryLevelCacheForTests();
     localStorage.clear();
     useAppStore.getState().reset();
     useAppStore.setState({ accountId: '200001' });
@@ -221,6 +227,7 @@ describe('position history cache work', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    resetTradeHistoryLevelCacheForTests();
     useAppStore.getState().reset();
     commitBrokerAccountSessionScope({ authenticated: false, brokerId: '', serverUrl: '' });
     localStorage.clear();
@@ -251,14 +258,16 @@ describe('position history cache work', () => {
   it('seeds a new account even when its first row has the same ticket and values', () => {
     useAppStore.setState({ accountId: '200002' });
     useAppStore.getState().setPositions([...useAppStore.getState().positions]);
-    expect(JSON.parse(localStorage.getItem(cacheKey) || '{}')['200002:position:301']).toMatchObject({ sl: 79000, tp: 83000 });
+    expect(readPositionCache('200002')).toMatchObject({ sl: 79000, tp: 83000 });
   });
 
   it('rechecks unchanged rows after a broker ownership change', () => {
-    const getItem = vi.spyOn(Storage.prototype, 'getItem');
+    // Drop the beforeEach seed. levelsChanged would not schedule a second write for the same row.
+    resetTradeHistoryLevelCacheForTests();
+    localStorage.removeItem(cacheKey);
     commitBrokerAccountSessionScope({ authenticated: false, brokerId: 'broker-b', serverUrl: 'https://broker-b.test' });
     useAppStore.getState().setPositions([...useAppStore.getState().positions]);
-    expect(getItem.mock.calls.filter(([key]) => key === cacheKey)).toHaveLength(1);
+    expect(readPositionCache()).toMatchObject({ sl: 79000, tp: 83000 });
   });
 
   it('seeds restored positions that did not pass through the previous cache write', () => {

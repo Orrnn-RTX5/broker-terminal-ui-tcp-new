@@ -71,7 +71,8 @@ describe('TradingChart trade-history presentation contract', () => {
     expect(chartSource).toContain('const showAnyTradeHistoryOverlay = showTradeHistoryLine || showTradeHistoryArrows;');
     expect(chartSource).toContain('const showTradeHistoryLine = chartProperties.showTradeHistory !== false;');
     expect(chartSource).toContain('const createTradeHistoryLine = (');
-    expect(chartSource).toContain('height:0.75px;background-image:repeating-linear-gradient(to right, ${color} 0 1.5px, transparent 1.5px 4.5px);background-repeat:repeat-x;');
+    // cfcdfec widened the history dash to a 3px mark and a 2px gap.
+    expect(chartSource).toContain('height:0.75px;background-image:repeating-linear-gradient(to right, ${color} 0 3px, transparent 3px 5px);background-repeat:repeat-x;');
     expect(chartSource).not.toContain('height:1px;background:${color};');
     expect(chartSource).toContain("createTradeMarker(trade.side, trade.entryPrice, trade.entryTime, entryPriceLabel, 'history', 1, undefined, 'open', trade.side, trade.entryExecutionTime)");
     expect(chartSource).toContain("createTradeMarker(exitSide, trade.exitPrice, trade.exitTime, closePriceLabel, 'history', 1, undefined, 'close', trade.side, trade.exitExecutionTime)");
