@@ -3,6 +3,22 @@
 
 <head>
   <meta charset="UTF-8" />
+  <meta name="referrer" content="no-referrer" />
+  <script>
+    /* Web-terminal one-time login. Runs before any other script or request on the page:
+       it moves the SSO token out of the URL fragment and parks it on window for
+       src/startup/webTerminalSso.ts, which takes it once. Nothing here logs the value. */
+    (function takeWebTerminalSsoFragment() {
+      var match = /(?:^#|&)token=([^&]*)/.exec(window.location.hash || '');
+      if (!match) return;
+      var value = match[1];
+      try { value = decodeURIComponent(value); } catch (error) { value = ''; }
+      window.__RTX_WEB_TERMINAL_SSO_TOKEN__ = value;
+      try {
+        window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+      } catch (error) { /* Keep going: the value is already parked. */ }
+    })();
+  </script>
   <link rel="icon" type="image/png" href="/favicon.png" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />

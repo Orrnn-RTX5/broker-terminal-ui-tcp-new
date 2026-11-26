@@ -2,6 +2,7 @@ import { API_V2_BASE_URL, isLocalViteDevServer } from '../config/api';
 import { ApiError, apiClient, removeToken, setRefreshToken, setToken, type ApiRequestOptions } from './client';
 import { normalizeBrokerAuthLoginPayload } from './authLoginPayload';
 import { getRuntimeBrokerConfiguration, isDesktopBackendTarget } from '../config/backendTarget.js';
+import { isWebTerminalSsoEnabled } from '../startup/webTerminalSso';
 import { normalizeCandleApiQueryParams } from '../utils/candleApi';
 import { requirePositionCloseTicket } from './positionClose';
 import { createTradeOrderUuid, isTradeOrderUuidV4 } from './tradeSocket';
@@ -284,6 +285,44 @@ export const authV2Api = {
     if (persistSession) return persistAuth(response);
     const token = response.access_token || response.token;
     return { ...response, access_token: token, token };
+  },
+
+  /**
+   * One-time web-terminal login from a CRM link. The gateway runs the same checks as
+   * login and returns the same session body. The response goes through persistAuth,
+   * the same as login. The token is sent only in the POST body and is never logged.
+   * broker_id, when given, must match the configured broker, as it does for login.
+   */
+  exchangeWebTerminalSso: async (token: string, options?: ApiRequestOptions, broker_id?: string): Promise<AuthTokenResponse> => {
+    // Real Electron desktop builds have no configured broker. Browser terminals, including the
+    // web-tcp terminal (a desktop backend target), pin one in the runtime configuration.
+    const configuration = isWebTerminalSsoEnabled(isDesktopBackendTarget()) ? getRuntimeBrokerConfiguration() : null;
+    if (configuration && (!configuration.valid
+      || (broker_id && broker_id.trim() !== configuration.brokerId))) {
+      throw new Error('This terminal only accepts accounts for its configured broker.');
+    }
+    const shouldSkipDynamicUrl = (Boolean(options?.baseUrl) || Boolean(options?.skipDynamicUrl)) && !isLocalViteDevServer();
+    // Send the same configured broker that the login form sends to /auth/login.
+    // Real desktop builds have no configured broker, so the body carries only the token there.
+    const response = await apiClient.post<AuthTokenResponse>(
+      '/auth/sso/exchange',
+      configuration ? { token, broker_id: configuration.brokerId } : { token },
+      v2Options({
+        ...options,
+        skipAuth: true,
+        skipDynamicUrl: shouldSkipDynamicUrl,
+        timeoutMs: options?.timeoutMs ?? AUTH_LOGIN_TIMEOUT_MS,
+      }),
+    );
+    if (configuration) {
+      if (JSON.stringify(getRuntimeBrokerConfiguration()) !== JSON.stringify(configuration)) {
+        throw new Error('The broker configuration changed during login. Please log in again.');
+      }
+      if (response.broker_id && response.broker_id.trim() !== configuration.brokerId) {
+        throw new Error('The account belongs to a different broker.');
+      }
+    }
+    return persistAuth(response);
   },
 
   me: (options?: ApiRequestOptions) =>

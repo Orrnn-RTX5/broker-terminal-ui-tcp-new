@@ -176,6 +176,29 @@ describe('trade v2 API contract calls', () => {
     expect(localStorage.getItem('auth_token')).toBeNull();
   });
 
+  it('sends the SSO token with the configured broker, the same broker login sends', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'sso-access-token', broker_id: 'test-broker' }));
+
+    await expect(authV2Api.exchangeWebTerminalSso('Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa'))
+      .resolves.toMatchObject({ access_token: 'sso-access-token' });
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(lastFetchCall().url).toContain('/auth/sso/exchange');
+    expect(lastFetchCall().body).toEqual({
+      token: 'Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa',
+      broker_id: 'test-broker',
+    });
+    expect(localStorage.getItem('auth_token')).toBe('sso-access-token');
+  });
+
+  it('does not save an SSO session that belongs to another broker', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'wrong-sso-token', broker_id: 'other-broker' }));
+
+    await expect(authV2Api.exchangeWebTerminalSso('Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa'))
+      .rejects.toThrow('different broker');
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
+
   it('does not save a login response after broker deployment changes', async () => {
     const deferred = createDeferred<Response>();
     vi.mocked(fetch).mockReturnValueOnce(deferred.promise);
@@ -1285,5 +1308,79 @@ describe('tradingV2Api pending placement identity', () => {
       restore();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('web-tcp SSO exchange', () => {
+  const SSO_TOKEN = 'Xk3_pQ9-vT2bLm8zRw4nYc7hJd1sFg6uAe0iOqN5tKa';
+  let restoreRuntime: (() => void) | undefined;
+
+  const setPlatform = (platform: string) => {
+    (window as TestWindow & { rtx5Electron?: unknown }).rtx5Electron = { isDesktop: true, platform };
+    restoreRuntime = installTestBrokerRuntime({ BACKEND_TARGET: 'desktop' });
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ ok: true }))));
+    localStorage.clear();
+    removeToken();
+    localStorage.setItem('broker_id', 'test-broker');
+    localStorage.setItem('server_url', 'https://broker.example');
+  });
+
+  afterEach(() => {
+    delete (window as TestWindow & { rtx5Electron?: unknown }).rtx5Electron;
+    restoreRuntime?.();
+    restoreRuntime = undefined;
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the token with the configured broker and verifies the response broker on web-tcp', async () => {
+    setPlatform('web-tcp');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'sso-access-token', broker_id: 'test-broker' }));
+
+    await expect(authV2Api.exchangeWebTerminalSso(SSO_TOKEN, undefined, 'test-broker'))
+      .resolves.toMatchObject({ access_token: 'sso-access-token' });
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(lastFetchCall().url).toContain('/auth/sso/exchange');
+    expect(lastFetchCall().body).toEqual({ token: SSO_TOKEN, broker_id: 'test-broker' });
+    expect(localStorage.getItem('auth_token')).toBe('sso-access-token');
+  });
+
+  it('uses the configured broker in the body when the caller passes none on web-tcp', async () => {
+    setPlatform('web-tcp');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'sso-access-token', broker_id: 'test-broker' }));
+
+    await authV2Api.exchangeWebTerminalSso(SSO_TOKEN);
+
+    expect(lastFetchCall().body).toEqual({ token: SSO_TOKEN, broker_id: 'test-broker' });
+  });
+
+  it('refuses a caller broker that differs from the configured broker before sending on web-tcp', async () => {
+    setPlatform('web-tcp');
+
+    await expect(authV2Api.exchangeWebTerminalSso(SSO_TOKEN, undefined, 'other-broker'))
+      .rejects.toThrow('only accepts accounts for its configured broker');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not save an SSO session that belongs to another broker on web-tcp', async () => {
+    setPlatform('web-tcp');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'wrong-sso-token', broker_id: 'other-broker' }));
+
+    await expect(authV2Api.exchangeWebTerminalSso(SSO_TOKEN, undefined, 'test-broker'))
+      .rejects.toThrow('different broker');
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
+
+  it('keeps a real Electron desktop build unchanged: the body carries only the token', async () => {
+    setPlatform('win32');
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'desktop-sso-token' }));
+
+    await expect(authV2Api.exchangeWebTerminalSso(SSO_TOKEN, undefined, 'test-broker'))
+      .resolves.toMatchObject({ access_token: 'desktop-sso-token' });
+
+    expect(lastFetchCall().body).toEqual({ token: SSO_TOKEN });
   });
 });

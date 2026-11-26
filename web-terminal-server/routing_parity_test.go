@@ -253,6 +253,15 @@ func TestClassifyBrokerRoute_ParityEndpoints(t *testing.T) {
 			wantMatched: true,
 		},
 		{
+			name:        "v2 auth sso exchange on terminal (one-time CRM link)",
+			appKind:     "terminal",
+			method:      http.MethodPost,
+			path:        "/api/v2/auth/sso/exchange",
+			wantService: "gateway",
+			wantRewPath: "/api/v2/auth/sso/exchange",
+			wantMatched: true,
+		},
+		{
 			name:        "livez probe",
 			appKind:     "terminal",
 			method:      http.MethodGet,

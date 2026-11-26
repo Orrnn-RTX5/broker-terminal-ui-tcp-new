@@ -2118,6 +2118,8 @@ func (c *WebTerminalServer) serveIndexHTML(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	// The one-time SSO token lives in the URL fragment; the page must never send a Referer.
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = w.Write(raw)
 }
 

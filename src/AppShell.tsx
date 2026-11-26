@@ -1,7 +1,7 @@
 import BugReportHost from './components/BugReportHost';
 import { useUiTranslation } from './hooks/useUiTranslation';
 import { useCallback, useEffect, useState } from 'react';
-import { getPublicBackendTarget } from './config/backendTarget.js';
+import { getPublicBackendTarget, isDesktopBackendTarget } from './config/backendTarget.js';
 import { preloadPublicMarketCatalog } from './services/publicMarketCatalog';
 import { preloadPublicStartupHistory } from './startup/publicHistoryPrefetch';
 import { WelcomeTerminal } from './startup/WelcomeTerminalEntry';
@@ -12,6 +12,7 @@ import {
 import { TerminalLoadFallback } from './startup/TerminalLoadFallback';
 import { preloadTradingChartRuntime } from './startup/tradingChartRuntime';
 import { ensureConfiguredWebSession } from './startup/configuredWebSession';
+import { hasPendingWebTerminalSso, isWebTerminalSsoEnabled } from './startup/webTerminalSso';
 
 type AppModule = typeof import('./App');
 type AuthenticatedStylesModule = typeof import('./authenticatedStyles');
@@ -234,7 +235,9 @@ export default function AppShell({
   // ensureConfiguredWebSession still runs first so another broker's stored session is discarded.
   const [shouldMountTerminal, setShouldMountTerminal] = useState(() => {
     ensureConfiguredWebSession();
-    return true;
+    // A CRM link (#token=) shows the login screen first, which exchanges the one-time
+    // token. The terminal mounts only after that exchange succeeds.
+    return !(hasPendingWebTerminalSso() && isWebTerminalSsoEnabled(isDesktopBackendTarget()));
   });
   const [sessionGeneration, setSessionGeneration] = useState(0);
   const [initialSessionHandoff, setInitialSessionHandoff] = useState<AuthenticatedSessionHandoff | null>(null);

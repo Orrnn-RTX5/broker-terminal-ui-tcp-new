@@ -42,6 +42,14 @@ import {
 import { resolveLoginHeroAsset, type LoginHeroAsset } from './welcomeHeroAssets';
 import { openAccountFeature } from '../startup/terminalFeatures';
 import {
+    WEB_TERMINAL_SSO_NO_BROKER_MESSAGE,
+    hasPendingWebTerminalSso,
+    isWebTerminalSsoEnabled,
+    resolveWebTerminalSsoStart,
+    runWebTerminalSsoExchange,
+    takePendingWebTerminalSso,
+} from '../startup/webTerminalSso';
+import {
     BrokerLogoImage,
     buildBrokerDirectoryLogoUrl,
     isPlaceholderBrokerLogoUrl,
@@ -935,10 +943,16 @@ export function WelcomeTerminal({
         return () => document.removeEventListener('mousedown', handleOutsideMouseDown);
     }, [dropdownOpen, selectedBroker]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    // One authentication path for the login form and for a web-terminal SSO link.
+    // ssoSignIn is false for the form. For an SSO link it is true. The one-time token is
+    // taken only after the guards below have passed, so a run that fails a guard leaves the
+    // link pending for a later pass. A saved-login restore in flight blocks the form only;
+    // SSO uses no saved form values, so it is not blocked.
+    const runAuthentication = async (ssoSignIn: boolean) => {
         if (submittingRef.current) return;
-        if (restoring) return;
+        if (restoring && !ssoSignIn) return;
+        if (ssoSignIn && !hasPendingWebTerminalSso()) return;
+        const isSsoSignIn = ssoSignIn;
         submittingRef.current = true;
         beginLoginPerformanceMeasurement();
         setLoading(true);
@@ -960,6 +974,11 @@ export function WelcomeTerminal({
                 throw new Error('Select an available broker and wait for the server check before logging in.');
             }
 
+            // Every guard has passed, so the one-time token is spent now. If it was already
+            // taken by an earlier pass, this run stops quietly.
+            const ssoCapture = ssoSignIn ? takePendingWebTerminalSso() : null;
+            if (ssoSignIn && !ssoCapture) return;
+
             const submitBroker = normalizeBrokerInfoForTarget(selectedBroker) as BrokerServerItem;
             const brokerServerUrl = isDesktopBrokerSelection ? selectedBroker.server_url! : resolveBrokerBackendUrl(submitBroker);
             const brokerExtApiUrl = isDesktopBrokerSelection ? brokerServerUrl : resolveBrokerExtApiUrl(submitBroker);
@@ -977,14 +996,19 @@ export function WelcomeTerminal({
             }
 
             markAuthenticationRequestStarted();
-            const authenticationPromise = authV2Api.login({
-                username,
-                password,
-                broker_id: submitBroker.broker_id,
-            }, {
-                baseUrl: buildBrokerApiV2BaseUrl(brokerExtApiUrl),
-                skipDynamicUrl: true,
-            });
+            const authenticationPromise = ssoCapture
+                ? runWebTerminalSsoExchange(ssoCapture, (ssoToken) => authV2Api.exchangeWebTerminalSso(ssoToken, {
+                    baseUrl: buildBrokerApiV2BaseUrl(brokerExtApiUrl),
+                    skipDynamicUrl: true,
+                }, submitBroker.broker_id))
+                : authV2Api.login({
+                    username,
+                    password,
+                    broker_id: submitBroker.broker_id,
+                }, {
+                    baseUrl: buildBrokerApiV2BaseUrl(brokerExtApiUrl),
+                    skipDynamicUrl: true,
+                });
 
             // Dispatch the small, critical authentication request before a
             // cold App/CSS preload can compete for bandwidth and main-thread
@@ -1006,10 +1030,12 @@ export function WelcomeTerminal({
             // can finish concurrently instead of delaying that import.
             const loginStoreRuntimePromise = loadAuthenticatedLoginStoreRuntime();
             void loginStoreRuntimePromise.catch(() => undefined);
-            try {
-                await persistPassword({ brokerId: submitBroker.broker_id, serverUrl: brokerExtApiUrl }, String(data.account_login ?? username.trim()), password);
-            } catch {
-                throw new Error('Unable to save the password. Turn off Save password to log in without saving it.');
+            if (!isSsoSignIn) {
+                try {
+                    await persistPassword({ brokerId: submitBroker.broker_id, serverUrl: brokerExtApiUrl }, String(data.account_login ?? username.trim()), password);
+                } catch {
+                    throw new Error('Unable to save the password. Turn off Save password to log in without saving it.');
+                }
             }
             await feedbackPaintPromise;
 
@@ -1072,7 +1098,7 @@ export function WelcomeTerminal({
                 authToken: token,
                 refreshToken: data.refresh_token,
                 expiresAt: sessionHandoff.expiresAt ?? undefined,
-                password,
+                password: isSsoSignIn ? undefined : password,
             });
             if (submitBroker.broker_id !== resolvedSessionBrokerId || brokerExtApiUrl !== resolvedSessionServerUrl) {
                 loginStoreModule.rememberAccountSession?.({
@@ -1082,7 +1108,7 @@ export function WelcomeTerminal({
                     authToken: token,
                     refreshToken: data.refresh_token,
                     expiresAt: sessionHandoff.expiresAt ?? undefined,
-                    password,
+                    password: isSsoSignIn ? undefined : password,
                 });
             }
             appStore.setAuthenticated(
@@ -1115,17 +1141,21 @@ export function WelcomeTerminal({
             // synchronous storage writes out of the first terminal paint.
             schedulePostLoginBookkeeping(() => {
                 localStorage.setItem('rtx_last_login', String(accountId));
-                if (rememberMe || savePassword) {
-                    localStorage.setItem('rtx_saved_username', String(accountId));
-                } else {
-                    localStorage.removeItem('rtx_saved_username');
+                // An SSO link does not change the saved-username choice made on the form.
+                if (!isSsoSignIn) {
+                    if (rememberMe || savePassword) {
+                        localStorage.setItem('rtx_saved_username', String(accountId));
+                    } else {
+                        localStorage.removeItem('rtx_saved_username');
+                    }
                 }
                 localStorage.removeItem('rtx_saved_password');
             });
 
         } catch (err: unknown) {
             const errorMessage = getErrorMessage(err, 'Authentication failed');
-            if (errorMessage !== 'Please select a broker server.') {
+            // An SSO failure is never logged, so the link token cannot reach the console.
+            if (!isSsoSignIn && errorMessage !== 'Please select a broker server.') {
                 console.error('[WelcomeTerminal] Auth error:', err);
             }
             setError(errorMessage);
@@ -1134,6 +1164,44 @@ export function WelcomeTerminal({
             setLoading(false);
         }
     };
+
+    // The SSO effect reads the latest runAuthentication through this ref, so the effect does not
+    // depend on a function that changes on every render. This effect is declared before the SSO
+    // effect, so the ref is current when the SSO effect runs.
+    const runAuthenticationRef = useRef(runAuthentication);
+    useEffect(() => { runAuthenticationRef.current = runAuthentication; });
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await runAuthentication(false);
+    };
+
+    // A CRM link opened this page with a one-time token. Exchange it once, from the
+    // login screen. On failure this same form stays up with the error message.
+    // The token is single use, so it is taken only once a broker is known. When the
+    // broker lookup settles with no broker, the form shows a message and the token is
+    // left untouched. The web-tcp terminal picks its broker from the desktop directory,
+    // so it also waits for the broker health check to pass before the token is spent.
+    // runAuthentication takes the token only after its guards pass. A pass that fails a guard
+    // leaves the token pending. The effect re-runs only when one of its guard inputs changes
+    // (broker, directory status, health, search text, broker list), so a failed guard does not loop:
+    // the loading and error state it sets re-renders the form without changing those inputs.
+    // Once the inputs become valid, the link is retried. A pass that already took the token finds nothing pending.
+    useEffect(() => {
+        if (!isWebTerminalSsoEnabled(isDesktopBrokerSelection)) return;
+        if (!hasPendingWebTerminalSso()) return;
+        if (isDesktopBrokerSelection && healthStatus !== 'online') return;
+        const start = resolveWebTerminalSsoStart({
+            hasBroker: Boolean(selectedBroker),
+            brokerDirectorySettled: brokerListStatus !== 'loading',
+        });
+        if (start === 'wait') return;
+        if (start === 'no-broker') {
+            setError(WEB_TERMINAL_SSO_NO_BROKER_MESSAGE);
+            return;
+        }
+        void runAuthenticationRef.current(true);
+    }, [isDesktopBrokerSelection, selectedBroker, brokerListStatus, healthStatus, searchQuery, brokerList]);
 
     const selectedBrokerName = selectedBroker?.broker_name || 'Select broker';
     const selectedBrokerDisplayServer = formatBrokerDisplayServer(selectedBroker) || selectedBrokerName;

@@ -37,7 +37,7 @@ const runInstantShell = ({
   fetch?: (...args: unknown[]) => unknown;
 } = {}) => {
   const html = readSource('index.html');
-  const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
+  const script = html.match(/<script>\s*(\(function prepareInstantShellAndMetrics[\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error('Instant shell script missing');
   const shellDocument = document.implementation.createHTMLDocument('Startup');
   const storage: Record<string, string> = storedSession ? {
@@ -85,6 +85,25 @@ afterEach(() => {
 });
 
 describe('instant startup shell source contract', () => {
+  it('places the SSO strip script first in head and the instant startup shell as the next inline script', () => {
+    const html = readSource('index.html');
+    const head = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1];
+    expect(head).toBeTruthy();
+
+    const headScripts = Array.from(head!.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi));
+    expect(headScripts.length).toBeGreaterThanOrEqual(2);
+    expect(headScripts[0]?.[1]).not.toMatch(/\bsrc\s*=/i);
+    expect(headScripts[0]?.[2]).toContain('takeWebTerminalSsoFragment');
+    expect(headScripts[0]?.[2]).toContain('__RTX_WEB_TERMINAL_SSO_TOKEN__');
+
+    const inlineHeadScripts = headScripts
+      .filter(([, attrs]) => !/\bsrc\s*=/i.test(attrs))
+      .map(([, , body]) => body);
+    expect(inlineHeadScripts.length).toBeGreaterThanOrEqual(2);
+    expect(inlineHeadScripts[0]).toContain('takeWebTerminalSsoFragment');
+    expect(inlineHeadScripts[1]).toContain('prepareInstantShellAndMetrics');
+  });
+
   it('preloads shared desktop artwork and ignores stale broker presentation', () => {
     const shell = runInstantShell({
       electron: true,

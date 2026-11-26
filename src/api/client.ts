@@ -183,7 +183,7 @@ const buildHeaders = (
 
 // Endpoints that should NOT carry an existing Bearer token
 // (they authenticate via credentials in the body, not via the Authorization header)
-const AUTH_ENDPOINTS = ['/api/login', '/api/refresh', '/api/v2/auth/login', '/api/v2/auth/refresh', '/auth/login', '/auth/refresh'];
+const AUTH_ENDPOINTS = ['/api/login', '/api/refresh', '/api/v2/auth/login', '/api/v2/auth/refresh', '/api/v2/auth/sso/exchange', '/auth/login', '/auth/refresh', '/auth/sso/exchange'];
 
 // Build query string from params object
 const buildQueryString = (params?: QueryParams): string => {

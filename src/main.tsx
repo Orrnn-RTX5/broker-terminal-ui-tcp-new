@@ -1,3 +1,5 @@
+// Must stay the first import: it takes the web-terminal SSO handoff before any other module runs.
+import './startup/webTerminalSsoEarly';
 import './startup/webTcpRoutingReconcileEarly';
 import { mountApp } from './bootstrap';
 import { mountRtx5VersionBadge } from './components/mountRtx5VersionBadge';

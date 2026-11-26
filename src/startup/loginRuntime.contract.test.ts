@@ -40,12 +40,23 @@ describe('interactive login runtime boundary source contract', () => {
 
   it('preserves authentication and state-transition ordering', () => {
     const welcome = readSource('src/components/WelcomeTerminal.tsx');
-    const submit = welcome.slice(welcome.indexOf('const handleSubmit'));
+    const runAuthStart = welcome.indexOf('const runAuthentication');
+    const handleSubmitStart = welcome.indexOf('const handleSubmit');
+    const handleSubmitEnd = welcome.indexOf('\n    };\n', handleSubmitStart);
+    expect(runAuthStart).toBeGreaterThan(0);
+    expect(handleSubmitStart).toBeGreaterThan(runAuthStart);
+    expect(handleSubmitEnd).toBeGreaterThan(handleSubmitStart);
 
-    expectOrdered(submit, [
+    const runAuth = welcome.slice(runAuthStart, handleSubmitStart);
+    const handleSubmit = welcome.slice(handleSubmitStart, handleSubmitEnd);
+    expect(handleSubmit).toContain('e.preventDefault();');
+    expect(handleSubmit).toContain('await runAuthentication(false);');
+
+    expectOrdered(runAuth, [
       'await preloadLoginTransportRuntime()',
       'markAuthenticationRequestStarted();',
-      'const authenticationPromise = authV2Api.login({',
+      'const authenticationPromise =',
+      ': authV2Api.login({',
       'const terminalReadyPromise = feedbackPaintPromise',
       '.then(() => onPrepareTerminal?.())',
       'onPreloadTerminalPresentation?.()',
@@ -64,12 +75,12 @@ describe('interactive login runtime boundary source contract', () => {
       'schedulePostLoginBookkeeping(() => {',
     ]);
 
-    const authenticationAccepted = submit.indexOf('markAuthenticationAccepted();');
-    const authenticationResponse = submit.indexOf('const data = await authenticationPromise;');
-    const sessionCommitted = submit.indexOf('appStore.setAuthenticated(');
-    const terminalPreparation = submit.indexOf('const terminalReadyPromise = feedbackPaintPromise');
-    const authenticationRequest = submit.indexOf('const authenticationPromise = authV2Api.login({');
-    const sessionPersistence = submit.indexOf('persistBrokerSessionDiscovery({');
+    const authenticationAccepted = runAuth.indexOf('markAuthenticationAccepted();');
+    const authenticationResponse = runAuth.indexOf('const data = await authenticationPromise;');
+    const sessionCommitted = runAuth.indexOf('appStore.setAuthenticated(');
+    const terminalPreparation = runAuth.indexOf('const terminalReadyPromise = feedbackPaintPromise');
+    const authenticationRequest = runAuth.indexOf(': authV2Api.login({');
+    const sessionPersistence = runAuth.indexOf('persistBrokerSessionDiscovery({');
 
     expect(terminalPreparation).toBeGreaterThan(0);
     expect(authenticationRequest).toBeGreaterThan(0);
@@ -78,10 +89,10 @@ describe('interactive login runtime boundary source contract', () => {
     expect(terminalPreparation).toBeLessThan(authenticationAccepted);
     expect(terminalPreparation).toBeLessThan(sessionCommitted);
     expect(sessionPersistence).toBeGreaterThan(authenticationResponse);
-    expect(submit.slice(0, authenticationResponse)).not.toContain('persistBrokerSessionDiscovery({');
-    expect(submit.slice(0, authenticationResponse)).not.toContain('updateDynamicUrls();');
-    expect(submit.slice(0, authenticationResponse)).toContain('onPrepareTerminal?.()');
-    expect(submit).not.toContain('appStore.setActiveAccount(loginNum)');
+    expect(runAuth.slice(0, authenticationResponse)).not.toContain('persistBrokerSessionDiscovery({');
+    expect(runAuth.slice(0, authenticationResponse)).not.toContain('updateDynamicUrls();');
+    expect(runAuth.slice(0, authenticationResponse)).toContain('onPrepareTerminal?.()');
+    expect(runAuth).not.toContain('appStore.setActiveAccount(loginNum)');
   });
 
   it('keeps pending feedback measurable without replacing the visible Login label', () => {

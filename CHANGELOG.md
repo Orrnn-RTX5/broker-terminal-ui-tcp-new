@@ -1,5 +1,9 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.13] - 2026-11-26 (VERSION file; web terminal)
+### Added
+- Web terminal one-click login (SSO): a manager-issued one-time link opens the terminal already logged in to the client account. The one-time token is read only after the broker checks pass, and is never stored. Needs backend 1.30.0 or later.
+
 ## [1.2.8] - 2026-11-25 (VERSION file; terminal web server)
 ### Changed
 - White-label: the web terminal server no longer hardcodes a broker domain for its WebSocket Origin check (binary order lane and drawings). With no configuration it accepts the request host and origins on the same parent domain (with public-suffix guards); RTX5_WEB_ALLOWED_ORIGIN_HOSTS can replace that default. The port-80 redirect no longer falls back to a fixed host: it uses RTX5_WEB_PUBLIC_HOST, else answers 400.
