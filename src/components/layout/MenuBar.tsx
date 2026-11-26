@@ -737,7 +737,7 @@ export const MenuBar = ({
             {
                 label: 'Access Server...',
                 translateLabel: false,
-                shortcut: 'Alt+Shift+T',
+                // Alt+Shift+T belongs to trading.toggle-one-click; do not advertise it here.
                 icon: <Icon name="server" size="sm" className="text-emerald-400" />,
                 action: () => {
                     closeMenu();

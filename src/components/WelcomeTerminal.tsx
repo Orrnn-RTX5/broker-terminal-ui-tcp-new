@@ -652,7 +652,7 @@ export function WelcomeTerminal({
         localStorage.removeItem('rtx_saved_password');
     }, []);
 
-    // Re-sync broker directory whenever user changes server endpoint via modal / Alt+Shift+T
+    // Re-sync broker directory whenever user changes server endpoint via the access-server dialog
     useEffect(() => {
         const onTcpStatus = (event: Event) => {
             const detail = (event as CustomEvent<{ target_tcp?: string; broker_id?: string; broker_name?: string; connected?: boolean }>).detail;
@@ -1147,7 +1147,7 @@ export function WelcomeTerminal({
                     login: loginNum,
                     name: getAuthenticatedAccountName(data),
                     server: displayServerLabel || submitBroker.broker_name || '',
-                    ...(tradingAccountType ? { accountType: tradingAccountType, isLive: tradingAccountType === 'real' } : { isLive: true }),
+                    ...(tradingAccountType ? { accountType: tradingAccountType, isLive: tradingAccountType === 'real' } : {}),
                     lastUsed: Date.now(),
                 } : undefined,
             );
@@ -1417,7 +1417,7 @@ export function WelcomeTerminal({
                                         <button
                                             type="button"
                                             onClick={openTcpEndpointDialog}
-                                            title="Configure Broker Access Server — Alt+Shift+T"
+                                            title="Configure Broker Access Server"
                                             style={{
                                                 padding: '3px 8px',
                                                 borderRadius: 5,

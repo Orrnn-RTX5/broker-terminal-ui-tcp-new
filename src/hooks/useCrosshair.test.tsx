@@ -172,11 +172,12 @@ describe('useCrosshair dirty rendering', () => {
     expect(frames.size).toBe(1);
 
     flushFrames();
-    expect(view.getByTestId('vertical').style.transform).toBe('translate3d(30px,0,0)');
-    expect(view.getByTestId('horizontal').style.transform).toBe('translate3d(0,40px,0)');
+    // jsdom 31 (0e044a40) serializes translate3d with spaces and 0px.
+    expect(view.getByTestId('vertical').style.transform).toBe('translate3d(30px, 0px, 0px)');
+    expect(view.getByTestId('horizontal').style.transform).toBe('translate3d(0px, 40px, 0px)');
     expect(view.getByTestId('vertical').style.height).toBe('278px');
     expect(view.getByTestId('horizontal').style.width).toBe('404px');
-    expect(view.getByTestId('time-label').style.transform).toBe('translate3d(10px,278px,0)');
+    expect(view.getByTestId('time-label').style.transform).toBe('translate3d(10px, 278px, 0px)');
     expect(view.getByTestId('price-label').textContent).toBe('100.40');
     expect(offsetWidthReads).toBe(1);
     expect(frames.size).toBe(0);
@@ -203,8 +204,8 @@ describe('useCrosshair dirty rendering', () => {
     fireEvent(window, new Event('resize'));
     expect(frames.size).toBe(1);
     flushFrames();
-    expect(view.getByTestId('time-label').style.transform).toBe('translate3d(10px,338px,0)');
-    expect(view.getByTestId('price-label').style.transform).toBe('translate3d(544px,30px,0)');
+    expect(view.getByTestId('time-label').style.transform).toBe('translate3d(10px, 338px, 0px)');
+    expect(view.getByTestId('price-label').style.transform).toBe('translate3d(544px, 30px, 0px)');
     expect(offsetWidthReads).toBe(1);
 
     fireEvent(window, new Event('scroll'));
@@ -247,8 +248,8 @@ describe('useCrosshair dirty rendering', () => {
     fireEvent.pointerMove(view.getByTestId('container'), { clientX: 40, clientY: 60 });
     flushFrames();
 
-    expect(timeLabel.style.transform).toBe('translate3d(10px,274px,0)');
-    expect(priceLabel.style.transform).toBe('translate3d(404px,27px,0)');
+    expect(timeLabel.style.transform).toBe('translate3d(10px, 274px, 0px)');
+    expect(priceLabel.style.transform).toBe('translate3d(404px, 27px, 0px)');
     expect(priceLabel.style.width).toBe('96px');
     expect(offsetWidthReads).toBe(1);
 
@@ -256,8 +257,8 @@ describe('useCrosshair dirty rendering', () => {
     fixture.crosshairListeners.forEach((listener) => listener());
     flushFrames();
 
-    expect(timeLabel.style.transform).toBe('translate3d(10px,274px,0)');
-    expect(priceLabel.style.transform).toBe('translate3d(404px,27px,0)');
+    expect(timeLabel.style.transform).toBe('translate3d(10px, 274px, 0px)');
+    expect(priceLabel.style.transform).toBe('translate3d(404px, 27px, 0px)');
     expect(priceLabel.style.width).toBe('96px');
     expect(offsetWidthReads).toBe(2);
 
@@ -267,8 +268,8 @@ describe('useCrosshair dirty rendering', () => {
     fixture.crosshairListeners.forEach((listener) => listener());
     flushFrames();
 
-    expect(timeLabel.style.transform).toBe('translate3d(10px,272px,0)');
-    expect(priceLabel.style.transform).toBe('translate3d(404px,26px,0)');
+    expect(timeLabel.style.transform).toBe('translate3d(10px, 272px, 0px)');
+    expect(priceLabel.style.transform).toBe('translate3d(404px, 26px, 0px)');
     expect(offsetWidthReads).toBe(3);
   });
 

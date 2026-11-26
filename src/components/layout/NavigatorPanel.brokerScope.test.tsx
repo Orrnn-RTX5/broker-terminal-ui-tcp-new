@@ -429,7 +429,7 @@ describe('Navigator authenticated broker account visibility', () => {
     expect(localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY)).toBe(persisted);
   });
 
-  it('switches immediately to a cached session with stored password even when explicit expiresAt was omitted', async () => {
+  it('opens interactive login instead of installing a cached token when expiresAt was omitted and silent login is skipped', async () => {
     authenticate(brokerA, [saved('Alpha owner', brokerA.server), saved('Alpha other', brokerA.server, 200004)]);
     rememberAccountSession({
       brokerId: brokerA.id,
@@ -444,11 +444,13 @@ describe('Navigator authenticated broker account visibility', () => {
       fireEvent.click(favorites().getByText(/Alpha other/));
     });
 
-    expect(screen.queryByRole('dialog', { name: 'Account login' })).not.toBeInTheDocument();
+    // No authV2Api in this suite, so the silent login is skipped. The omitted
+    // expiresAt must not be installed as a session.
+    expect(await screen.findByRole('dialog', { name: 'Account login' })).toHaveTextContent('200004 Alpha-Live');
     expect(useAppStore.getState()).toMatchObject({
       isAuthenticated: true,
-      accountId: '200004',
-      authToken: 'cached-token-200004',
+      accountId: '200003',
+      authToken: 'shared-test-token',
     });
   });
 });

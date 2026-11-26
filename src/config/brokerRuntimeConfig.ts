@@ -98,8 +98,8 @@ export function validateBrokerRuntimeConfig(
       // Schemes are explicit: never repair malformed deployment values into a new destination.
       const url = new URL(value)
       const protocol = ws ? 'wss:' : 'https:'
-      const local = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(url.hostname) || url.hostname.endsWith('.localhost') || Boolean(options.allowLocal || options.desktop)
-      const allowedLocalProtocol = options.allowLocal && local && url.protocol === (ws ? 'ws:' : 'http:')
+      const local = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(url.hostname) || url.hostname.endsWith('.localhost')
+      const allowedLocalProtocol = Boolean(options.allowLocal) && local && url.protocol === (ws ? 'ws:' : 'http:')
       if (url.protocol !== protocol && !allowedLocalProtocol) throw new Error(`must use ${protocol.slice(0, -1).toUpperCase()}`)
       if (local && !options.allowLocal) throw new Error('loopback is permitted only in explicit development or desktop mode')
       if (url.username || url.password || url.search || url.hash) throw new Error('must not contain credentials, query strings, or fragments')
@@ -144,7 +144,7 @@ export function validateBrokerRuntimeConfig(
     try {
       const url = new URL(value)
       const host = url.hostname.replace(/^\[|\]$/g, '')
-      const local = /^(localhost|127\.0\.0\.1|::1)$/i.test(host) || url.hostname.endsWith('.localhost') || Boolean(options.allowLocal || options.desktop)
+      const local = /^(localhost|127\.0\.0\.1|::1)$/i.test(host) || url.hostname.endsWith('.localhost')
       const allowedLocalProtocol = (options.allowLocal || options.desktop) && local && url.protocol === 'http:'
       if (url.protocol !== 'https:' && !allowedLocalProtocol) {
         errors.push(`${label} must be a public HTTPS URL without credentials.`)

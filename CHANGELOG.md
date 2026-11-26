@@ -1,5 +1,18 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.16] - 2026-11-26 (VERSION file; terminal UI)
+### Fixed
+- **Order ticket, pending orders:** the minimum stop distance is measured in points (stops level x 10^-digits) on the Buy/Sell buttons, the same as on submit. Before, symbols with a tick size larger than one point (for example tick 0.05 on 2 digits) could keep the pending buttons disabled for a valid price. The price spinner, depth ladder and chart still step by the broker tick.
+- **Account panel login:** after a failed or skipped silent login with a remembered password, an unverified or expired cached token is no longer installed; the normal login opens instead.
+- **Positions:** a position without a backend profit shows the profit as unavailable instead of an estimated value.
+- **Trade table:** pending/processing rows do not open the context menu; confirmed rows open it once.
+- **Charts:** candle requests check that the login token belongs to the active broker before using it.
+- **Journal:** 'Last trade latency' follows the latest latency event again; a quote-age rejection text is no longer read as order latency.
+- **Menus:** Access Server no longer shows the Alt+Shift+T shortcut (that shortcut is one-click trading).
+- Journal, bottom dock and chart preview code cleaned up so the TypeScript build check and lint pass, without behaviour change. Recording an order latency does no extra copying on the order path.
+### Tests
+- Fixed pre-existing failing terminal tests (test-environment drift after the jsdom upgrade, missing translation keys, stale expectations) and added tests for the pending stop distance, the Journal copy button and multi-view Journal latency.
+
 ## [1.2.15] - 2026-11-26 (VERSION file; web terminal)
 ### Changed
 - Symbols and Symbol specification dialogs: Sector and Industry now come from the broker's symbol specification. The old built-in symbol-name guesses are removed; an unknown sector or industry shows '—'. The Symbols dialog loads faster because it no longer pulls in the specification dialog code.

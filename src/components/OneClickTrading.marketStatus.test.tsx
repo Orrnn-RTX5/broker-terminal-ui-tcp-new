@@ -101,7 +101,9 @@ describe('OneClickTrading market status', () => {
     expect(volumeInput).toHaveClass('rtx-oct-lot-input');
     expect(volumeInput.style.borderStyle).toBe('none');
     expect(volumeInput).toHaveStyle({ borderRadius: '0px', appearance: 'none' });
-    expect(volumeInput).toHaveStyle({ background: 'transparent', outline: 'none' });
+    // jsdom 31 (0e044a40) canonicalizes background/outline shorthands away from toHaveStyle.
+    expect(volumeInput.style.backgroundColor).toBe('transparent');
+    expect(volumeInput.style.outlineStyle).toBe('none');
     expect(rowChildren[0]).toHaveAttribute('data-side', 'sell');
     expect(rowChildren[1]).toBe(volumeControl);
     expect(rowChildren[2]).toHaveAttribute('data-side', 'buy');

@@ -78,8 +78,9 @@ describe('ChartContextMenu chart types', () => {
     const areaItem = areaLabel.parentElement as HTMLDivElement;
 
     expect(lineItem.nextElementSibling).toBe(areaItem);
-    expect(lineItem).toHaveStyle({ background: 'var(--ctx-item-active-bg, rgba(59, 130, 246, 0.15))' });
-    expect(areaItem).toHaveStyle({ background: 'transparent' });
+    // jsdom 31 (0e044a40) does not match toHaveStyle's background shorthand to a CSS variable.
+    expect(lineItem.style.background).toBe('var(--ctx-item-active-bg, rgba(59, 130, 246, 0.15))');
+    expect(areaItem.style.backgroundColor).toBe('transparent');
 
     fireEvent.click(areaItem);
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -92,8 +93,9 @@ describe('ChartContextMenu chart types', () => {
     const lineItem = screen.getByText('Line Chart').parentElement as HTMLDivElement;
     const areaItem = screen.getByText('Area Chart').parentElement as HTMLDivElement;
 
-    expect(lineItem).toHaveStyle({ background: 'transparent' });
-    expect(areaItem).toHaveStyle({ background: 'var(--ctx-item-active-bg, rgba(59, 130, 246, 0.15))' });
+    // jsdom 31 (0e044a40) serializes background:transparent as the shorthand "none".
+    expect(lineItem.style.backgroundColor).toBe('transparent');
+    expect(areaItem.style.background).toBe('var(--ctx-item-active-bg, rgba(59, 130, 246, 0.15))');
 
     fireEvent.click(lineItem);
     await waitFor(() => expect(onChangeChartType).toHaveBeenCalledWith('line'));

@@ -215,9 +215,7 @@ export function getInstrumentConfig(
   }
   const tickSize = readPositiveFinite(catalog.tickSize) ?? readPositiveFinite(instrument?.tickSize);
   const digitStep = digits === null ? null : Math.pow(10, -digits);
-  const priceStep = tickSize !== null && digitStep !== null
-    ? Math.min(tickSize, digitStep)
-    : (tickSize ?? digitStep);
+  const priceStep = tickSize ?? digitStep;
   return {
     digits,
     priceStep,
@@ -2785,6 +2783,16 @@ function resolveSideForOrderType(type: OrderType | undefined): DialogSubmitSide 
   return null;
 }
 
+/** True when `price` is not at least `minDist` below `anchor`. Level 0 stays strict. */
+function stopsTooCloseBelow(price: number, anchor: number, minDist: number, eps: number): boolean {
+  return minDist > 0 ? price > anchor - minDist + eps : price >= anchor - eps;
+}
+
+/** True when `price` is not at least `minDist` above `anchor`. Level 0 stays strict. */
+function stopsTooCloseAbove(price: number, anchor: number, minDist: number, eps: number): boolean {
+  return minDist > 0 ? price < anchor + minDist - eps : price <= anchor + eps;
+}
+
 // ITEM 2 (T10 side preselection): normalize the chart-provided side.
 // Fail-closed: anything other than BUY/SELL resolves to null (default flow).
 function normalizeInitialDialogSide(value: unknown): DialogSubmitSide | null {
@@ -3191,37 +3199,32 @@ export function OrderPanelDialog({
       return false;
     }
 
-    const minDist = (specStopsLevel !== null && specStopsLevel > 0 && unitStep !== null)
-      ? specStopsLevel * unitStep
+    // Stops level is points (10^-digits), the same distance handleSubmit uses.
+    // priceStep stays the broker tick for the spinner, the DOM ladder, and the chart.
+    const point = specDigits !== null ? Math.pow(10, -specDigits) : null;
+    const minDist = (specStopsLevel !== null && specStopsLevel > 0 && point !== null)
+      ? specStopsLevel * point
       : 0;
     const eps = specDigits !== null ? Math.pow(10, -(specDigits + 3)) : 1e-9;
 
     if (isLimitOrderType(orderType)) {
-      if (side === 'buy' && ask > 0 && parsedPrice >= ask - minDist - eps) {
-        return false;
-      }
-      if (side === 'sell' && bid > 0 && parsedPrice <= bid + minDist + eps) {
-        return false;
-      }
+      if (side === 'buy' && ask > 0 && stopsTooCloseBelow(parsedPrice, ask, minDist, eps)) return false;
+      if (side === 'sell' && bid > 0 && stopsTooCloseAbove(parsedPrice, bid, minDist, eps)) return false;
     } else if (isStopOrderType(orderType) || isStopLimitOrderType(orderType)) {
-      if (side === 'buy' && ask > 0 && parsedPrice <= ask + minDist + eps) {
-        return false;
-      }
-      if (side === 'sell' && bid > 0 && parsedPrice >= bid - minDist - eps) {
-        return false;
-      }
+      if (side === 'buy' && ask > 0 && stopsTooCloseAbove(parsedPrice, ask, minDist, eps)) return false;
+      if (side === 'sell' && bid > 0 && stopsTooCloseBelow(parsedPrice, bid, minDist, eps)) return false;
     }
 
     const entryRef = isStopLimitOrderType(orderType) && Number.isFinite(parsedStopLimitPrice) && parsedStopLimitPrice > 0
       ? parsedStopLimitPrice
       : parsedPrice;
     if (Number.isFinite(parsedStopLoss) && parsedStopLoss > 0) {
-      if (side === 'buy' && parsedStopLoss >= entryRef - minDist - eps) return false;
-      if (side === 'sell' && parsedStopLoss <= entryRef + minDist + eps) return false;
+      if (side === 'buy' && stopsTooCloseBelow(parsedStopLoss, entryRef, minDist, eps)) return false;
+      if (side === 'sell' && stopsTooCloseAbove(parsedStopLoss, entryRef, minDist, eps)) return false;
     }
     if (Number.isFinite(parsedTakeProfit) && parsedTakeProfit > 0) {
-      if (side === 'buy' && parsedTakeProfit <= entryRef + minDist + eps) return false;
-      if (side === 'sell' && parsedTakeProfit >= entryRef - minDist - eps) return false;
+      if (side === 'buy' && stopsTooCloseAbove(parsedTakeProfit, entryRef, minDist, eps)) return false;
+      if (side === 'sell' && stopsTooCloseBelow(parsedTakeProfit, entryRef, minDist, eps)) return false;
     }
 
     if (expiration === 'Specified' || expiration === 'Specified day') {
@@ -3246,7 +3249,6 @@ export function OrderPanelDialog({
     parsedVol,
     specDigits,
     specStopsLevel,
-    unitStep,
   ]);
 
   const handleOrderTypeChange = useCallback((nextType: OrderType) => {

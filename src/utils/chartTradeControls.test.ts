@@ -258,6 +258,8 @@ describe('createEntryTradeControlBar', () => {
       tradeKey: 'trade:contrast', ticket: 987, symbol: 'XAUUSD', side,
       volume: 0.01, isLightSurface: true, leftInset: 10, plainLabel: true, chartBackground: background,
     });
+    // jsdom 31 (0e044a40) returns an empty computed style until the node is in the document.
+    document.body.appendChild(root);
     const volume = root.querySelector<HTMLElement>('.rtx-trade-chip--volume')!;
     const action = root.querySelector<HTMLElement>('.rtx-trade-control-btn--reverse')!;
     const money = root.querySelector<HTMLElement>('.rtx-trade-chip--money')!;
@@ -277,6 +279,7 @@ describe('createEntryTradeControlBar', () => {
       tradeKey: 'trade:outlined', ticket: 987, symbol: 'XAUUSD', side: 'BUY',
       volume: 0.01, isLightSurface: false, leftInset: 10, plainLabel: true, onAction, onShare,
     });
+    document.body.appendChild(root);
     for (const action of ['share', 'reverse', 'double', 'close']) {
       const button = root.querySelector<HTMLButtonElement>(`.rtx-trade-control-btn--${action}`)!;
       expect(button.querySelector('svg')?.getAttribute('stroke')).toBe('currentColor');
@@ -296,11 +299,11 @@ describe('createEntryTradeControlBar', () => {
     expect(capsule).toHaveStyle({ height: '18px', flexShrink: '0' });
     expect(root.querySelector<HTMLElement>('.rtx-trade-secondary')).toHaveStyle({ flexShrink: '0' });
     expect(root.querySelector<HTMLElement>('.rtx-trade-brackets')).toHaveStyle({ flexShrink: '0' });
-    expect(root.querySelector<HTMLElement>('.rtx-trade-chip--money .rtx-trade-chip-value')).toHaveStyle({
-      display: 'inline-block',
-      minWidth: '6ch',
-      textAlign: 'right',
-    });
+    const moneyValue = root.querySelector<HTMLElement>('.rtx-trade-chip--money .rtx-trade-chip-value')!;
+    // jsdom 31 (0e044a40) toHaveStyle misses this flex item's specified display, min-width and text-align.
+    expect(moneyValue.style.display).toBe('inline-block');
+    expect(moneyValue.style.minWidth).toBe('6ch');
+    expect(moneyValue.style.textAlign).toBe('right');
     expect(root).toHaveStyle({ minHeight: '18px', flexWrap: 'wrap' });
     expect(root.querySelector('.rtx-trade-brackets')).not.toBeNull();
     expect(onShare).toHaveBeenCalledTimes(1);
@@ -363,6 +366,7 @@ describe('createEntryTradeControlBar', () => {
       tradeKey: 'trade:dark', ticket: 987, symbol: 'XAUUSD', side: 'BUY',
       volume: 0.01, isLightSurface: false, leftInset: 10, plainLabel: true,
     });
+    document.body.appendChild(root);
     const primary = root.querySelector<HTMLElement>('.rtx-trade-primary')!;
     const secondary = root.querySelector<HTMLElement>('.rtx-trade-secondary')!;
     const volume = root.querySelector<HTMLElement>('.rtx-trade-chip--volume')!;
@@ -421,6 +425,7 @@ describe('createEntryTradeControlBar', () => {
 
   it('keeps the drag-badge contract classes and datasets on the bar root', () => {
     const { root } = buildBar();
+    document.body.appendChild(root);
     expect(root.classList.contains('rtx-trade-level-badge')).toBe(true);
     expect(root.classList.contains('rtx-trade-controls')).toBe(true);
     expect(root.dataset.tradeKey).toBe('trade:987');
@@ -454,6 +459,7 @@ describe('createEntryTradeControlBar', () => {
       isLightSurface: false,
       leftInset: 10,
     }).root;
+    document.body.append(sell, buy);
 
     for (const selector of ['.rtx-trade-chip--pips', '.rtx-trade-chip--money']) {
       expect(sell.querySelector(selector)).toHaveStyle({ backgroundColor: '#ef4444', color: '#ffffff' });
@@ -471,6 +477,7 @@ describe('createEntryTradeControlBar', () => {
       isLightSurface: true,
       leftInset: 10,
     });
+    document.body.appendChild(root);
 
     expect(root.querySelector('.rtx-trade-chip--pips')).toHaveStyle({ backgroundColor: '#ffffff', color: '#182230' });
     expect(root.querySelector('.rtx-trade-chip--money')).toHaveStyle({ backgroundColor: '#ffffff', color: '#182230' });
@@ -543,6 +550,7 @@ describe('createTradeLevelControlBar', () => {
       isLightSurface: true, chartBackground: background, leftInset: 10, onRemove: vi.fn(),
       hoverDetails: { entryPrice: 100, levelPrice: 101, digits: 2, tickSize: 0.01 },
     });
+    document.body.appendChild(bar);
     expect(bar).toHaveStyle({ backgroundColor: background });
     for (const selector of ['.rtx-trade-chip--role', '.rtx-trade-chip--money', '.rtx-trade-control-btn--remove']) {
       expect(textContrast(bar.querySelector<HTMLElement>(selector)!.style.color, background)).toBeGreaterThanOrEqual(4.5);
@@ -556,6 +564,7 @@ describe('createTradeLevelControlBar', () => {
       isLightSurface: false, leftInset: 10, onRemove,
       hoverDetails: { entryPrice: 100, levelPrice: 101, digits: 2, tickSize: 0.01 },
     });
+    document.body.appendChild(bar);
     expect(bar.querySelector('.rtx-trade-chip--pips')).toBeNull();
     expect(bar.querySelector('.rtx-trade-chip--money')?.textContent).toBe('USD:5.00');
     expect(bar).toHaveStyle({ cursor: 'default' });
@@ -637,6 +646,7 @@ describe('createTradeLevelControlBar', () => {
       leftInset: 10,
       onRemove,
     });
+    document.body.appendChild(bar);
     expect(bar.dataset.role).toBe('SL');
     expect(bar.dataset.tradeKey).toBe('trade:987');
     expect(bar.classList.contains('rtx-trade-level-badge')).toBe(true);
@@ -669,6 +679,7 @@ describe('createDockedLevelChip', () => {
       isLightSurface: false,
       leftInset: 10,
     });
+    document.body.appendChild(chip);
     expect(chip.classList.contains('rtx-trade-level-badge')).toBe(true);
     expect(chip.classList.contains('rtx-trade-dock-chip')).toBe(true);
     expect(chip.dataset.role).toBe('TP');

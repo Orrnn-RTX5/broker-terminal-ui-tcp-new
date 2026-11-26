@@ -586,7 +586,8 @@ export const NavigatorPanel: React.FC = () => {
                 : null);
             const hasVerifiedUnexpiredToken = Boolean(
                 cachedSession?.authToken
-                && (!cachedSession.expiresAt || cachedSession.expiresAt > Date.now()),
+                && typeof cachedSession.expiresAt === 'number'
+                && cachedSession.expiresAt > Date.now(),
             );
             if (cachedSession && hasVerifiedUnexpiredToken && applyCachedTokenSession(cachedSession)) {
                 return;
@@ -689,14 +690,10 @@ export const NavigatorPanel: React.FC = () => {
                         }
                     }
                 } catch {
-                    // Fall through to cached token or interactive login dialog if silent login fails
+                    // Silent login failed. Leave the unverified cached token uninstalled.
                 } finally {
                     setSwitchingLogin(null);
                 }
-            }
-
-            if (cachedSession?.authToken && applyCachedTokenSession(cachedSession)) {
-                return;
             }
         }
 

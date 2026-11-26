@@ -65,6 +65,15 @@ const clamp = (value: number, min: number, max: number): number => (
   Math.max(min, Math.min(max, value))
 );
 
+// Market-data Tick does not declare digits. Live normalization still stores
+// broker digits on the same object (normalizeRealtimeTick). Read that carried
+// field here instead of widening the shared tick type, which the quote path
+// compares by its declared fields.
+const readCarriedTickDigits = (tick: object | null | undefined): unknown => {
+  if (tick != null && 'digits' in tick) return tick.digits;
+  return undefined;
+};
+
 const buildFallbackPreviewCandles = (anchorPrice?: number): PreviewCandle[] => {
   const base = anchorPrice && Number.isFinite(anchorPrice) && anchorPrice > 0 ? anchorPrice : 1.0864;
   const step = base * 0.00045;
@@ -192,6 +201,7 @@ export const ChartPropertiesPreviewChart: React.FC<ChartPropertiesPreviewChartPr
   }, []);
 
   const tickRevision = symbolData?.tickBufferRevision ?? 0;
+  const marketTickDigits = readCarriedTickDigits(symbolData?.currentTick);
   const liveBidRaw = Number(symbolData?.currentTick?.bid ?? appTick?.bid ?? 0);
   const liveAskRaw = Number(symbolData?.currentTick?.ask ?? appTick?.ask ?? 0);
   const liveLastRaw = Number(appTick?.last ?? 0);
@@ -251,7 +261,7 @@ export const ChartPropertiesPreviewChart: React.FC<ChartPropertiesPreviewChartPr
       : undefined;
     const resolvedDigits = resolveSpecDigits(
       registeredSpecDigits,
-      symbolData?.currentTick?.digits,
+      marketTickDigits,
       appTick?.digits,
     ) ?? inferObservedPriceDigits(candles.slice(-24), [resolvedBid, resolvedAsk]) ?? 4;
 
@@ -266,9 +276,9 @@ export const ChartPropertiesPreviewChart: React.FC<ChartPropertiesPreviewChartPr
     liveAskRaw,
     liveBidRaw,
     liveLastRaw,
+    marketTickDigits,
     normalizedSymbol,
     normalizedTf,
-    symbolData?.currentTick?.digits,
     tickRevision,
   ]);
 

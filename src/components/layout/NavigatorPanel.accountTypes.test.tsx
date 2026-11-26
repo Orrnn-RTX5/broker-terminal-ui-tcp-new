@@ -449,4 +449,71 @@ describe('Navigator account type icons', () => {
     expect(screen.getByText('200091: Demo Trader').closest('.navigator-tree-item__row')).toHaveAttribute('data-account-active', 'true');
     expect(screen.getByText('200003: Real Trader').closest('.navigator-tree-item__row')).toHaveAttribute('data-account-active', 'false');
   });
+
+  it('opens interactive login when silent login fails and does not install the unverified cached token', async () => {
+    const brokerId = 'alpha-broker';
+    const serverUrl = 'https://alpha.example';
+    (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, string> }).__RTX_RUNTIME_CONFIG__ = {
+      CONFIG_SOURCE: 'deployment',
+      BACKEND_TARGET: 'web',
+      BROKER_ID: brokerId,
+      API_HOST: serverUrl,
+      API_HOST_EXT: serverUrl,
+      WS_HOST: 'wss://alpha.example',
+      DEFAULT_MT5_SERVER: 'Alpha',
+      DISCOVERY_BASE_URL: 'https://directory.example',
+    };
+    localStorage.setItem('broker_id', brokerId);
+    localStorage.setItem('broker_name', 'Alpha');
+    localStorage.setItem('server_url', serverUrl);
+    localStorage.setItem('rtx_broker_server', 'Alpha');
+
+    rememberAccountSession({
+      brokerId,
+      serverUrl,
+      login: 200091,
+      authToken: 'stale-token-200091',
+      password: 'DemoPassword123',
+    });
+
+    useAppStore.getState().addSavedAccount({
+      login: 200091,
+      name: 'Demo Trader',
+      server: 'Alpha',
+      brokerId,
+      serverUrl,
+      accountType: 'demo',
+      isLive: false,
+      lastUsed: 1,
+    });
+    useAppStore.getState().setAuthenticated(true, '200003', 'valid-token-200003', 'refresh-200003', Date.now() + 3600_000, {
+      login: 200003,
+      name: 'Real Trader',
+      server: 'Alpha',
+      brokerId,
+      serverUrl,
+      accountType: 'real',
+      isLive: true,
+      lastUsed: 2,
+    });
+
+    tradeMocks.login.mockRejectedValue(new Error('silent login failed'));
+
+    render(<NavigatorPanel />);
+    fireEvent.doubleClick(screen.getByText('200091: Demo Trader').closest('.navigator-tree-item__row')!);
+
+    expect(await screen.findByRole('dialog', { name: 'Account login' })).toBeInTheDocument();
+    await waitFor(() => expect(tradeMocks.login).toHaveBeenCalledOnce());
+    expect(tradeMocks.login).toHaveBeenCalledWith(
+      { username: '200091', password: 'DemoPassword123', broker_id: brokerId },
+      expect.objectContaining({ persistSession: false }),
+    );
+    expect(useAppStore.getState()).toMatchObject({
+      isAuthenticated: true,
+      accountId: '200003',
+      authToken: 'valid-token-200003',
+    });
+    expect(screen.getByText('200003: Real Trader').closest('.navigator-tree-item__row')).toHaveAttribute('data-account-active', 'true');
+    expect(screen.getByText('200091: Demo Trader').closest('.navigator-tree-item__row')).toHaveAttribute('data-account-active', 'false');
+  });
 });

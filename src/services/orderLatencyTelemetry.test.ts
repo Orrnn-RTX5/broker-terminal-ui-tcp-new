@@ -93,7 +93,29 @@ describe('order latency telemetry', () => {
     expect(journalSamples).toHaveLength(200);
     expect(journalSamples[0].traceId).toBe('terminal-5');
     expect(journalSamples.at(-1)?.totalMs).toBe(204);
+    expect(getJournalTradeOrderLatencySamples()).toBe(journalSamples);
+    recordTradeOrderLatency({
+      phase: 'ws_enqueued',
+      transport: 'websocket',
+      traceId: 'enqueue-after-read',
+      sessionScope: 'broker-a:account-a',
+    });
+    expect(getJournalTradeOrderLatencySamples()).toBe(journalSamples);
+    recordTradeOrderLatency({
+      phase: 'placement_terminal',
+      transport: 'websocket',
+      traceId: 'terminal-205',
+      sessionScope: 'broker-a:account-a',
+      terminalStatus: 'filled',
+      totalMs: 205,
+    });
+    const nextJournalSamples = getJournalTradeOrderLatencySamples();
+    expect(nextJournalSamples).not.toBe(journalSamples);
+    expect(nextJournalSamples).toHaveLength(200);
+    expect(nextJournalSamples.at(-1)?.traceId).toBe('terminal-205');
+    expect(getJournalTradeOrderLatencySamples()).toBe(nextJournalSamples);
     clearTradeOrderLatencySamples();
     expect(getJournalTradeOrderLatencySamples()).toEqual([]);
+    expect(getJournalTradeOrderLatencySamples()).toBe(getJournalTradeOrderLatencySamples());
   });
 });

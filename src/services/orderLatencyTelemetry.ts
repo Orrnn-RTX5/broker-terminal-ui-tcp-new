@@ -98,6 +98,10 @@ const samples: TradeOrderLatencySample[] = [];
 // Journal needs completed attempts even when a burst of enqueue/acknowledgement
 // diagnostics has displaced them from the general-purpose sample ring.
 const journalSamples: TradeOrderLatencySample[] = [];
+const EMPTY_JOURNAL_SAMPLES: readonly TradeOrderLatencySample[] = [];
+// Lazy snapshot for getJournalTradeOrderLatencySamples(): invalidated in O(1)
+// on push and materialized only on read, so the order path allocates nothing.
+let journalSamplesSnapshot: readonly TradeOrderLatencySample[] | null = EMPTY_JOURNAL_SAMPLES;
 let sampleSequence = 0;
 
 /** Monotonic clock for durations; wall-clock time is never used for subtraction. */
@@ -125,12 +129,19 @@ const percentile = (sorted: number[], value: number): number => {
 export const getTradeOrderLatencySamples = (): readonly TradeOrderLatencySample[] =>
   samples.slice();
 
-export const getJournalTradeOrderLatencySamples = (): readonly TradeOrderLatencySample[] =>
-  journalSamples.slice();
+export const getJournalTradeOrderLatencySamples = (): readonly TradeOrderLatencySample[] => {
+  if (journalSamplesSnapshot === null) {
+    journalSamplesSnapshot = journalSamples.length === 0
+      ? EMPTY_JOURNAL_SAMPLES
+      : journalSamples.slice();
+  }
+  return journalSamplesSnapshot;
+};
 
 export const clearTradeOrderLatencySamples = (): void => {
   samples.length = 0;
   journalSamples.length = 0;
+  journalSamplesSnapshot = EMPTY_JOURNAL_SAMPLES;
 };
 
 export const summarizeTradeOrderLatency = (
@@ -184,6 +195,7 @@ export const recordTradeOrderLatency = (
     if (journalSamples.length > MAX_RETAINED_SAMPLES) {
       journalSamples.splice(0, journalSamples.length - MAX_RETAINED_SAMPLES);
     }
+    journalSamplesSnapshot = null;
   }
 
   // Notify observers in a later task. Suppress non-terminal CustomEvent timers

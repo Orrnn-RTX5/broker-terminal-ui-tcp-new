@@ -48,7 +48,7 @@ const findTerminalPanelId = (node: unknown): string | null => {
   return null;
 };
 
-export const toggleFloatToolboxDockPanel = (): void => {
+const toggleFloatToolboxDockPanel = (): void => {
   const { layout, floatPanel, redockPanel } = useDockLayoutStore.getState();
   const floatingId = layout.floatingPanels.map((panel) => findTerminalPanelId(panel)).find(Boolean) ?? null;
   if (floatingId) {
@@ -153,6 +153,11 @@ export function BottomDock({
         return isAvailableTab(stored) ? stored : 'Trade';
     });
     const [historyMounted, setHistoryMounted] = useState(activeTab === 'History');
+    // History stays mounted after the first activation so its loaded rows stay warm.
+    const selectTab = useCallback((nextTab: TabType) => {
+        setActiveTab(nextTab);
+        if (nextTab === 'History') setHistoryMounted(true);
+    }, []);
     const historyAccountId = useAppStore(state => state.accountId);
     const isTradeSurfaceLive = activeTab === 'Trade';
     const isExposureSurfaceLive = activeTab === 'Exposure';
@@ -184,13 +189,6 @@ export function BottomDock({
     useEffect(() => subscribeWorkspaceViewReset(() => {
         setActiveTab('Trade');
     }), []);
-
-    useEffect(() => {
-        if (activeTab === 'History') {
-            // History remains mounted after its first activation so its loaded rows stay warm.
-            setHistoryMounted(true);
-        }
-    }, [activeTab]);
 
     useEffect(() => {
         return runAfterTerminalReady(() => {
@@ -233,23 +231,18 @@ export function BottomDock({
 
     useEffect(() => {
         const pendingTab = getRequestedBottomDockTab();
-        if (pendingTab) {
-            if (isAvailableTab(pendingTab)) {
-                // Navigation requests are external service state consumed on mount.
-                setActiveTab(pendingTab);
-            }
-            acknowledgeBottomDockTab(pendingTab);
-        }
+        // The initial state already applied this request. Acknowledge it without another setState.
+        if (pendingTab) acknowledgeBottomDockTab(pendingTab);
         const handleOpenBottomDockTab = (event: Event) => {
             const requestedTab = (event as CustomEvent<{ tab?: TabType }>).detail?.tab;
             if (!isAvailableTab(requestedTab)) return;
-            setActiveTab(requestedTab);
+            selectTab(requestedTab);
             acknowledgeBottomDockTab(requestedTab);
         };
 
         window.addEventListener('rtx:open-bottom-dock-tab', handleOpenBottomDockTab);
         return () => window.removeEventListener('rtx:open-bottom-dock-tab', handleOpenBottomDockTab);
-    }, []);
+    }, [selectTab]);
 
     // Auto-switch to Journal if the account equity hits 0 (margin call / account blown)
     const prevEquityRef = useRef<number | null>(null);
@@ -391,7 +384,7 @@ export function BottomDock({
                     hidden={activeTab !== 'History'}
                     aria-hidden={activeTab !== 'History'}
                 >
-                    {historyMounted && (
+                    {(historyMounted || activeTab === 'History') && (
                         <Suspense fallback={null}>
                         <MemoHistoryTab
                             formatMoney={formatMoney}
@@ -471,7 +464,7 @@ export function BottomDock({
                                 }}
                                 onClick={() => {
                                     if (unavailableReason) return;
-                                    setActiveTab(tab.id);
+                                    selectTab(tab.id);
                                 }}
                                 className={`rtx-dock-tab inline-flex h-full items-center justify-center gap-1 px-4 text-[12px] font-normal leading-none whitespace-nowrap rounded-none border-r border-zinc-800 border-t-0 transition-colors duration-75 relative
                         ${unavailableReason ? 'rtx-dock-tab--locked cursor-not-allowed' : ''}

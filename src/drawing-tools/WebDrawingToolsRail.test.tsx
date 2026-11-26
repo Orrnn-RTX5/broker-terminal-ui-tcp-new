@@ -723,11 +723,14 @@ describe('WebDrawingToolsRail', () => {
     });
     render(<WebDrawingToolsRail selectedSymbol="XAUUSD" orientation="horizontal" />);
     const menu = openTrendMenu();
-    expect(menu).toHaveStyle({ left: '204px', top: '120px', maxHeight: 'calc(100vh - 128px)' });
+    expect(menu).toHaveStyle({ left: '204px', top: '120px' });
+    // jsdom 31 (0e044a40) reorders calc(100vh - 128px) and resolves 100vh in getComputedStyle.
+    expect(menu.style.maxHeight).toBe('calc(-128px + 100vh)');
     viewportWidth = 1_000;
     triggerLeft = 36;
     act(() => window.dispatchEvent(new Event('resize')));
-    expect(menu).toHaveStyle({ left: '36px', top: '120px', maxHeight: 'calc(100vh - 128px)' });
+    expect(menu).toHaveStyle({ left: '36px', top: '120px' });
+    expect(menu.style.maxHeight).toBe('calc(-128px + 100vh)');
   });
 
   it('shows zoom out directly below zoom in only after the active chart reports a larger scale', () => {

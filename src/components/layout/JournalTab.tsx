@@ -18,10 +18,12 @@ import React, {
     useCallback,
     useDeferredValue,
     useEffect,
+    useId,
     useLayoutEffect,
     useMemo,
     useRef,
     useState,
+    useSyncExternalStore,
 } from 'react';
 import { Icon } from '../ui/Icon';
 import { journalApi, type JournalLogEntry } from '../../services/api';
@@ -67,11 +69,29 @@ const JOURNAL_ROW_HEIGHT = 30;
 const JOURNAL_ROW_OVERSCAN = 8;
 const JOURNAL_FALLBACK_VIEWPORT_HEIGHT = 320;
 
-const JOURNAL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
-    year: '2-digit', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-});
+const EMPTY_JOURNAL_LOGS: readonly JournalLogEntry[] = [];
+const EMPTY_JOURNAL_CACHE: ReadonlyMap<string, JournalLogEntry[]> = new Map();
+
+// The rolling time window reads the clock only when its inputs change, not on
+// an interval. The snapshot stays a stable primitive so render itself stays pure.
+let journalFilterNowSec = Math.floor(Date.now() / 1000);
+const journalFilterNowListeners = new Set<() => void>();
+
+const subscribeJournalFilterNow = (onChange: () => void): (() => void) => {
+    journalFilterNowListeners.add(onChange);
+    return () => {
+        journalFilterNowListeners.delete(onChange);
+    };
+};
+
+const getJournalFilterNowSec = (): number => journalFilterNowSec;
+
+const bumpJournalFilterNow = (): void => {
+    const next = Math.floor(Date.now() / 1000);
+    if (next === journalFilterNowSec) return;
+    journalFilterNowSec = next;
+    journalFilterNowListeners.forEach(onChange => onChange());
+};
 
 // ─── Type highlight colours ───────────────────────────────────────────────────
 
@@ -205,6 +225,153 @@ const getScopedPlacementTerminalSamples = (
             seenAttempts.add(attemptKey);
             return true;
         });
+};
+
+// External journal-latency snapshot per sessionScope. Each scope entry is
+// seeded from the journal ring when its subscription starts (HEAD re-read the
+// ring on mount and scope changes). A single window listener folds each
+// rtx:trade-order-latency event into the matching sample.sessionScope entry: a
+// higher sequence wins the label, and placement rows are appended, deduped,
+// and capped at 200. The cached array is reused when that fold changes nothing.
+type JournalLatencyScopeEntry = {
+    snapshot: readonly TradeOrderLatencySample[];
+    subscribers: Set<() => void>;
+};
+
+const journalLatencyEntries = new Map<string, JournalLatencyScopeEntry>();
+let journalLatencyListenerAttached = false;
+
+const placementAttemptKey = (sample: TradeOrderLatencySample): string => (
+    sample.clientOrderId
+        ? `${sample.sessionScope ?? ''}:${sample.clientOrderId}`
+        : `sequence:${sample.sequence}`
+);
+
+const findSampleBySequence = (
+    samples: readonly TradeOrderLatencySample[],
+    sequence: number,
+): TradeOrderLatencySample | undefined => {
+    for (let index = 0; index < samples.length; index += 1) {
+        if (samples[index].sequence === sequence) return samples[index];
+    }
+    return undefined;
+};
+
+const composeJournalLatencySnapshot = (
+    current: readonly TradeOrderLatencySample[],
+    sample: TradeOrderLatencySample,
+    sessionScope: string,
+): readonly TradeOrderLatencySample[] => {
+    const combined = [...current, sample];
+    const placements = getScopedPlacementTerminalSamples(combined, sessionScope);
+    const cappedPlacements = placements.length > 200 ? placements.slice(0, 200) : placements;
+    const latest = getLatestTerminalTradeLatency(combined, sessionScope);
+    let next: readonly TradeOrderLatencySample[] = cappedPlacements;
+    if (latest !== null) {
+        const latestSample = findSampleBySequence(combined, latest.sequence);
+        if (latestSample !== undefined && !cappedPlacements.some(item => item === latestSample)) {
+            next = [...cappedPlacements, latestSample];
+        }
+    }
+
+    const currentLatest = getLatestTerminalTradeLatency(current, sessionScope);
+    if (
+        currentLatest?.sequence !== latest?.sequence
+        || currentLatest?.latencyMs !== latest?.latencyMs
+    ) {
+        return next;
+    }
+
+    const currentPlacements = getScopedPlacementTerminalSamples(current, sessionScope);
+    const currentCapped = currentPlacements.length > 200
+        ? currentPlacements.slice(0, 200)
+        : currentPlacements;
+    if (currentCapped.length !== cappedPlacements.length) return next;
+    for (let index = 0; index < currentCapped.length; index += 1) {
+        if (currentCapped[index] !== cappedPlacements[index]) return next;
+    }
+    return current;
+};
+
+const foldJournalLatencySample = (
+    current: readonly TradeOrderLatencySample[],
+    sample: TradeOrderLatencySample,
+    sessionScope: string,
+): readonly TradeOrderLatencySample[] => {
+    if (sample.sessionScope !== sessionScope || current.includes(sample)) return current;
+
+    const candidate = getTerminalTradeLatency(sample, sessionScope);
+    const placement = isPlacementTerminalSample(sample, sessionScope);
+    if (candidate === null && !placement) return current;
+
+    const latest = getLatestTerminalTradeLatency(current, sessionScope);
+    const labelChanges = candidate !== null && (latest === null || candidate.sequence > latest.sequence);
+    if (placement) {
+        const key = placementAttemptKey(sample);
+        for (let index = 0; index < current.length; index += 1) {
+            const existing = current[index];
+            if (!isPlacementTerminalSample(existing, sessionScope)) continue;
+            if (placementAttemptKey(existing) !== key) continue;
+            if (existing.sequence >= sample.sequence && !labelChanges) return current;
+            return composeJournalLatencySnapshot(current, sample, sessionScope);
+        }
+    } else if (!labelChanges) {
+        return current;
+    }
+
+    return composeJournalLatencySnapshot(current, sample, sessionScope);
+};
+
+const handleJournalLatencyEvent = (event: Event): void => {
+    const sample = (event as CustomEvent<TradeOrderLatencySample>).detail;
+    if (sample == null || typeof sample !== 'object' || typeof sample.sessionScope !== 'string') {
+        return;
+    }
+    const entry = journalLatencyEntries.get(sample.sessionScope);
+    if (!entry) return;
+
+    const next = foldJournalLatencySample(entry.snapshot, sample, sample.sessionScope);
+    if (next === entry.snapshot) return;
+    entry.snapshot = next;
+    entry.subscribers.forEach(notify => notify());
+};
+
+const readJournalLatencySnapshot = (sessionScope: string): readonly TradeOrderLatencySample[] => (
+    journalLatencyEntries.get(sessionScope)?.snapshot ?? getJournalTradeOrderLatencySamples()
+);
+
+const subscribeJournalLatency = (sessionScope: string, onChange: () => void): (() => void) => {
+    // Subscription start (mount, and again when the account scope changes).
+    let entry = journalLatencyEntries.get(sessionScope);
+    if (!entry) {
+        entry = {
+            snapshot: getJournalTradeOrderLatencySamples(),
+            subscribers: new Set(),
+        };
+        journalLatencyEntries.set(sessionScope, entry);
+    }
+    entry.subscribers.add(onChange);
+    if (!journalLatencyListenerAttached) {
+        window.addEventListener(TRADE_ORDER_LATENCY_EVENT, handleJournalLatencyEvent);
+        journalLatencyListenerAttached = true;
+    }
+
+    let active = true;
+    return () => {
+        if (!active) return;
+        active = false;
+        const currentEntry = journalLatencyEntries.get(sessionScope);
+        if (currentEntry) {
+            currentEntry.subscribers.delete(onChange);
+            if (currentEntry.subscribers.size === 0) {
+                journalLatencyEntries.delete(sessionScope);
+            }
+        }
+        if (journalLatencyEntries.size === 0 && journalLatencyListenerAttached) {
+            window.removeEventListener(TRADE_ORDER_LATENCY_EVENT, handleJournalLatencyEvent);
+            journalLatencyListenerAttached = false;
+        }
+    };
 };
 
 const formatLocalOrderVolume = (volume: number | undefined): string => (
@@ -573,12 +740,42 @@ type JournalLogTableProps = {
     onAutoScrollChange: (enabled: boolean) => void;
 };
 
+// Per-instance follow pin keyed by useId(), not viewport state and not a useRef:
+// writing ref.current during render is rejected by react-hooks/refs, and
+// storing the pin in state would render JournalLogTable again. Render reads
+// the instance entry to decide whether to snap; the layout effect commits it
+// and unmount deletes it so logs are never retained.
+type JournalLogFollowPin = {
+    autoScroll: boolean;
+    logs: readonly JournalLogEntry[];
+};
+
+const journalLogFollowPins = new Map<string, JournalLogFollowPin>();
+
+const journalLogFollowChanged = (
+    pinId: string,
+    autoScroll: boolean,
+    logs: readonly JournalLogEntry[],
+): boolean => {
+    const pin = journalLogFollowPins.get(pinId);
+    return pin === undefined || pin.autoScroll !== autoScroll || pin.logs !== logs;
+};
+
+const rememberJournalLogFollowPin = (
+    pinId: string,
+    autoScroll: boolean,
+    logs: readonly JournalLogEntry[],
+): void => {
+    journalLogFollowPins.set(pinId, { autoScroll, logs });
+};
+
 const JournalLogTable = React.memo(function JournalLogTable({
     logs,
     autoScroll,
     onAutoScrollChange,
 }: JournalLogTableProps) {
     const tr = useUiTranslation();
+    const pinId = useId();
     const scrollViewportRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLTableSectionElement>(null);
     const firstRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -590,7 +787,21 @@ const JournalLogTable = React.memo(function JournalLogTable({
         scrollTop: 0,
         height: JOURNAL_FALLBACK_VIEWPORT_HEIGHT,
     });
-    const [selectedLogKey, setSelectedLogKey] = useState<string | null>(null);
+    const [selectedLogKey, setSelectedLogKey] = useState<React.Key | null>(null);
+
+    // Snap the virtual window when auto-follow is on and the row list or the
+    // follow flag changes. scrollTop 0 is already pinned, so it does not
+    // schedule another render. The layout effect commits the pin and moves
+    // the DOM scrollTop.
+    if (journalLogFollowChanged(pinId, autoScroll, logs) && autoScroll && viewport.scrollTop !== 0) {
+        setViewport(current => (
+            current.scrollTop === 0 ? current : { ...current, scrollTop: 0 }
+        ));
+    }
+
+    useLayoutEffect(() => () => {
+        journalLogFollowPins.delete(pinId);
+    }, [pinId]);
 
     useLayoutEffect(() => {
         const element = scrollViewportRef.current;
@@ -610,11 +821,11 @@ const JournalLogTable = React.memo(function JournalLogTable({
     }, []);
 
     useLayoutEffect(() => {
+        rememberJournalLogFollowPin(pinId, autoScroll, logs);
         if (!autoScroll) return;
         const element = scrollViewportRef.current;
         if (element) element.scrollTop = 0;
-        setViewport(current => current.scrollTop === 0 ? current : { ...current, scrollTop: 0 });
-    }, [autoScroll, logs]);
+    }, [pinId, autoScroll, logs]);
 
     const handleScroll = useCallback(() => {
         const element = scrollViewportRef.current;
@@ -625,7 +836,7 @@ const JournalLogTable = React.memo(function JournalLogTable({
         setViewport(current => (
             current.scrollTop === scrollTop && current.height === height
                 ? current
-                : { scrollTop, height }
+                : { ...current, scrollTop, height }
         ));
 
         const shouldAutoScroll = scrollTop < 40;
@@ -795,6 +1006,25 @@ const JournalLogTable = React.memo(function JournalLogTable({
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 
+type JournalFlight = {
+    scope: string;
+    requestKey: string;
+    nonce: number;
+    phase: 'loading' | 'refreshing' | 'settled' | 'error';
+    error: string | null;
+};
+
+type JournalResponseCache = {
+    scope: string;
+    entries: ReadonlyMap<string, JournalLogEntry[]>;
+};
+
+type LoadedJournalResponse = {
+    scope: string;
+    requestKey: string;
+    logs: JournalLogEntry[];
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type JournalTabSurfaceProps = {
@@ -804,21 +1034,42 @@ type JournalTabSurfaceProps = {
 
 function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceProps) {
     const tr = useUiTranslation();
-    const [lastTradeLatency, setLastTradeLatency] = useState<ScopedTradeLatency | null>(() => (
-        getLatestTerminalTradeLatency(getJournalTradeOrderLatencySamples(), sessionScope)
-    ));
+    const subscribeLatency = useCallback(
+        (onChange: () => void) => subscribeJournalLatency(sessionScope, onChange),
+        [sessionScope],
+    );
+    const readLatencySnapshot = useCallback(
+        () => readJournalLatencySnapshot(sessionScope),
+        [sessionScope],
+    );
+    const journalLatencySamples = useSyncExternalStore(
+        subscribeLatency,
+        readLatencySnapshot,
+        readLatencySnapshot,
+    );
+    const journalNowSec = useSyncExternalStore(
+        subscribeJournalFilterNow,
+        getJournalFilterNowSec,
+        getJournalFilterNowSec,
+    );
     const [serverTradeLatency, setServerTradeLatency] = useState<ServerTradeLatency | null>(null);
-    const [serverLogs, setServerLogs] = useState<JournalLogEntry[]>([]);
-    const [terminalTradeSamples, setTerminalTradeSamples] = useState<PlacementTerminalSample[]>(() => (
-        getScopedPlacementTerminalSamples(getJournalTradeOrderLatencySamples(), sessionScope)
+    const [responseCache, setResponseCache] = useState<JournalResponseCache>(() => ({
+        scope: sessionScope,
+        entries: EMPTY_JOURNAL_CACHE,
+    }));
+    const [loadedJournal, setLoadedJournal] = useState<LoadedJournalResponse | null>(null);
+    const [flight, setFlight] = useState<JournalFlight | null>(() => (
+        isAuthenticated
+            ? {
+                scope: sessionScope,
+                requestKey: JSON.stringify([sessionScope, 2, 0]),
+                nonce: 0,
+                phase: 'loading',
+                error: null,
+            }
+            : null
     ));
-    const [hasLoaded, setHasLoaded] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [fetchError, setFetchError] = useState<string | null>(null);
-    const [loadedRequestKey, setLoadedRequestKey] = useState<string | null>(null);
-    const [loadedSessionScope, setLoadedSessionScope] = useState<string | null>(null);
-    const [errorRequestKey, setErrorRequestKey] = useState<string | null>(null);
+    const [refreshNonce, setRefreshNonce] = useState(0);
 
     // Filters
     const [logType, setLogType] = useState(0);   // 0 = All
@@ -827,7 +1078,7 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
     const [search, setSearch] = useState('');
     const [autoScroll, setAutoScroll] = useState(true);
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-    const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+    const [copyFeedback, setCopyFeedback] = useState<{ scopeKey: string; status: 'copied' | 'error' } | null>(null);
 
     // Keep the controls urgent. React can apply the heavier table/query update
     // immediately after the selected pill or native select has painted.
@@ -842,186 +1093,161 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
 
     const requestKey = JSON.stringify([sessionScope, deferredLogMode, deferredLogType]);
 
-    const manualRefreshRef = useRef<() => void>(() => undefined);
-    const loadedSessionScopeRef = useRef<string | null>(null);
-    const cachedResponsesRef = useRef(new Map<string, JournalLogEntry[]>());
-    const cacheSessionScopeRef = useRef(sessionScope);
     const copyFeedbackTimerRef = useRef<number | null>(null);
     const copySequenceRef = useRef(0);
 
+    const lastTradeLatency = useMemo(
+        () => getLatestTerminalTradeLatency(journalLatencySamples, sessionScope),
+        [journalLatencySamples, sessionScope],
+    );
+    // Scope during render so an account switch cannot briefly expose the
+    // previous account's retained samples.
+    const scopedTerminalTradeSamples = useMemo(
+        () => getScopedPlacementTerminalSamples(journalLatencySamples, sessionScope),
+        [journalLatencySamples, sessionScope],
+    );
+
+    // A session change drops the previous account's cache and rows before paint.
+    // Logging out clears the rows on screen and keeps the cache for this account.
+    if (responseCache.scope !== sessionScope) {
+        setResponseCache({ scope: sessionScope, entries: EMPTY_JOURNAL_CACHE });
+    }
+    if (loadedJournal !== null && (loadedJournal.scope !== sessionScope || !isAuthenticated)) {
+        setLoadedJournal(null);
+    }
+
+    const cacheEntries = responseCache.scope === sessionScope ? responseCache.entries : EMPTY_JOURNAL_CACHE;
+    const cachedLogs = isAuthenticated ? cacheEntries.get(requestKey) : undefined;
+    const loadedForSession = isAuthenticated && loadedJournal?.scope === sessionScope ? loadedJournal : null;
+    const scopeHasLoaded = cachedLogs !== undefined || loadedForSession !== null;
+    const serverLogs = scopeHasLoaded
+        ? (cachedLogs ?? loadedForSession?.logs ?? EMPTY_JOURNAL_LOGS)
+        : EMPTY_JOURNAL_LOGS;
+    const loadedRequestKey = cachedLogs !== undefined ? requestKey : (loadedForSession?.requestKey ?? null);
+    const loadedSessionScope = scopeHasLoaded ? sessionScope : null;
+    const flightMatches = flight !== null
+        && flight.scope === sessionScope
+        && flight.requestKey === requestKey
+        && flight.nonce === refreshNonce;
+    if (isAuthenticated && !flightMatches) {
+        setFlight({
+            scope: sessionScope,
+            requestKey,
+            nonce: refreshNonce,
+            phase: scopeHasLoaded ? 'refreshing' : 'loading',
+            error: null,
+        });
+    } else if (!isAuthenticated && flight !== null) {
+        setFlight(null);
+    }
+    const activeFlight = flightMatches ? flight : null;
+    const isLoading = activeFlight?.phase === 'loading';
+    const isRefreshing = activeFlight?.phase === 'refreshing';
+    const scopeFetchError = !isFilterSettling && activeFlight?.phase === 'error'
+        ? activeFlight.error
+        : null;
+
     useEffect(() => {
-        const acceptSample = (sample: TradeOrderLatencySample): void => {
-            const candidate = getTerminalTradeLatency(sample, sessionScope);
+        if (!isAuthenticated) return undefined;
+
+        let disposed = false;
+        const controller = new AbortController();
+        const scope = sessionScope;
+        const key = requestKey;
+        const nonce = refreshNonce;
+
+        journalApi.getLogs(
+            { mode: deferredLogMode, type: deferredLogType },
+            { signal: controller.signal },
+        ).then(data => {
+            if (disposed || controller.signal.aborted) return;
+
+            setResponseCache(current => {
+                const entries = new Map(current.scope === scope ? current.entries : undefined);
+                entries.set(key, data.logs);
+                return { scope, entries };
+            });
+            setLoadedJournal({ scope, requestKey: key, logs: data.logs });
+            const candidate = getLatestServerTradeLatency(data.logs, scope);
             if (candidate) {
-                setLastTradeLatency(current => (
-                    current?.sessionScope === sessionScope && current.sequence >= candidate.sequence
+                setServerTradeLatency(current => (
+                    current?.sessionScope === scope && current.datetime >= candidate.datetime
                         ? current
                         : candidate
                 ));
             }
-            if (!isPlacementTerminalSample(sample, sessionScope)) return;
-            setTerminalTradeSamples(current => getScopedPlacementTerminalSamples(
-                [...current, sample],
-                sessionScope,
-            ).slice(0, 200));
-        };
-        const handleLatency = (event: Event): void => {
-            acceptSample((event as CustomEvent<TradeOrderLatencySample>).detail);
-        };
-
-        window.addEventListener(TRADE_ORDER_LATENCY_EVENT, handleLatency);
-        const retainedSamples = getJournalTradeOrderLatencySamples();
-        setLastTradeLatency(getLatestTerminalTradeLatency(retainedSamples, sessionScope));
-        setTerminalTradeSamples(getScopedPlacementTerminalSamples(retainedSamples, sessionScope));
-
-        return () => window.removeEventListener(TRADE_ORDER_LATENCY_EVENT, handleLatency);
-    }, [sessionScope]);
-
-    useEffect(() => {
-        let disposed = false;
-        let activeController: AbortController | null = null;
-        let requestSequence = 0;
-
-        if (cacheSessionScopeRef.current !== sessionScope) {
-            cachedResponsesRef.current.clear();
-            cacheSessionScopeRef.current = sessionScope;
-        }
-
-        const cachedLogs = isAuthenticated
-            ? cachedResponsesRef.current.get(requestKey)
-            : undefined;
-        const canReuseCurrentResponse = isAuthenticated
-            && loadedSessionScopeRef.current === sessionScope;
-        let hasSuccessfulResponse = cachedLogs !== undefined || canReuseCurrentResponse;
-
-        const loadJournal = async (): Promise<void> => {
-            if (disposed || !isAuthenticated) return;
-
-            const sequence = ++requestSequence;
-            activeController?.abort();
-            const controller = new AbortController();
-            activeController = controller;
-
-            if (hasSuccessfulResponse) {
-                setIsRefreshing(true);
-            } else {
-                setIsLoading(true);
-            }
-            setFetchError(null);
-            setErrorRequestKey(null);
-
-            try {
-                const data = await journalApi.getLogs(
-                    { mode: deferredLogMode, type: deferredLogType },
-                    { signal: controller.signal },
-                );
-                if (disposed || controller.signal.aborted || sequence !== requestSequence) return;
-
-                hasSuccessfulResponse = true;
-                cachedResponsesRef.current.set(requestKey, data.logs);
-                loadedSessionScopeRef.current = sessionScope;
-                setServerLogs(data.logs);
-                const candidate = getLatestServerTradeLatency(data.logs, sessionScope);
-                if (candidate) {
-                    setServerTradeLatency(current => (
-                        current?.sessionScope === sessionScope && current.datetime >= candidate.datetime
-                            ? current
-                            : candidate
-                    ));
-                }
-                setHasLoaded(true);
-                setLoadedRequestKey(requestKey);
-                setLoadedSessionScope(sessionScope);
-                setFetchError(null);
-                setErrorRequestKey(null);
-            } catch (err) {
-                if (disposed || controller.signal.aborted || sequence !== requestSequence) return;
-                setFetchError(err instanceof Error ? err.message : 'Failed to load journal');
-                setErrorRequestKey(requestKey);
-            } finally {
-                if (!disposed && sequence === requestSequence) {
-                    if (activeController === controller) activeController = null;
-                    setIsLoading(false);
-                    setIsRefreshing(false);
-                }
-            }
-        };
-
-        setFetchError(null);
-        setErrorRequestKey(null);
-        setIsRefreshing(false);
-
-        if (cachedLogs !== undefined) {
-            loadedSessionScopeRef.current = sessionScope;
-            setServerLogs(cachedLogs);
-            setHasLoaded(true);
-            setLoadedRequestKey(requestKey);
-            setLoadedSessionScope(sessionScope);
-            setIsLoading(false);
-        } else if (!canReuseCurrentResponse) {
-            loadedSessionScopeRef.current = null;
-            setServerLogs([]);
-            setHasLoaded(false);
-            setLoadedRequestKey(null);
-            setLoadedSessionScope(null);
-            setIsLoading(isAuthenticated);
-        } else {
-            // Keep the last response mounted while a new Type/Mode query loads.
-            // This avoids a full table teardown and gives immediate filter feedback.
-            setIsLoading(false);
-        }
-
-        const requestRefresh = () => { void loadJournal(); };
-        manualRefreshRef.current = requestRefresh;
-        if (isAuthenticated) void loadJournal();
+            setFlight(current => (
+                current !== null
+                && current.scope === scope
+                && current.requestKey === key
+                && current.nonce === nonce
+                    ? { scope, requestKey: key, nonce, phase: 'settled', error: null }
+                    : current
+            ));
+        }, (err: unknown) => {
+            if (disposed || controller.signal.aborted) return;
+            const message = err instanceof Error ? err.message : 'Failed to load journal';
+            setFlight(current => (
+                current !== null
+                && current.scope === scope
+                && current.requestKey === key
+                && current.nonce === nonce
+                    ? { scope, requestKey: key, nonce, phase: 'error', error: message }
+                    : current
+            ));
+        });
 
         return () => {
             disposed = true;
-            requestSequence += 1;
-            activeController?.abort();
-            if (manualRefreshRef.current === requestRefresh) {
-                manualRefreshRef.current = () => undefined;
-            }
+            controller.abort();
         };
-    }, [isAuthenticated, requestKey, deferredLogMode, deferredLogType, sessionScope]);
+    }, [isAuthenticated, requestKey, deferredLogMode, deferredLogType, sessionScope, refreshNonce]);
 
     const refreshJournal = useCallback(() => {
-        manualRefreshRef.current();
+        setRefreshNonce(nonce => nonce + 1);
     }, []);
 
-    const scopeHasLoaded = hasLoaded && loadedSessionScope === sessionScope;
     const ownsCurrentRequest = scopeHasLoaded
         && loadedRequestKey === requestKey
         && !isFilterSettling;
-    const scopeFetchError = !isFilterSettling && errorRequestKey === requestKey
-        ? fetchError
-        : null;
-    // Scope again during render so an account switch cannot briefly expose the
-    // previous account's retained samples before the synchronization effect runs.
-    const scopedTerminalTradeSamples = useMemo(
-        () => getScopedPlacementTerminalSamples(terminalTradeSamples, sessionScope),
-        [terminalTradeSamples, sessionScope],
-    );
     const hasLocalJournalData = scopedTerminalTradeSamples.length > 0;
     const canRenderJournalContent = scopeHasLoaded || hasLocalJournalData;
     const canUseFilteredLogs = ownsCurrentRequest
         || (!scopeHasLoaded && hasLocalJournalData && !isFilterSettling);
 
+    // The rolling window is sampled when these inputs change, not on a timer.
+    useLayoutEffect(() => {
+        bumpJournalFilterNow();
+    }, [
+        loadedRequestKey,
+        requestKey,
+        loadedSessionScope,
+        sessionScope,
+        serverLogs,
+        scopedTerminalTradeSamples,
+        deferredTimeRange,
+        deferredLogType,
+        deferredLogMode,
+        deferredSearch,
+    ]);
+
+    const timeCutoffSec = deferredTimeRange ? journalNowSec - deferredTimeRange * 3600 : null;
+
     // Client-side filtering
     const filteredLogs = useMemo(() => {
-        const scopedServerLogs = loadedSessionScope === sessionScope ? serverLogs : [];
+        const scopedServerLogs = loadedSessionScope === sessionScope ? serverLogs : EMPTY_JOURNAL_LOGS;
         const scopedLogs = mergeTerminalTradeJournalLogs(scopedServerLogs, scopedTerminalTradeSamples);
         if (scopedLogs.length === 0) return scopedLogs;
 
         let filtered = scopedLogs;
 
-        // Time filter
-        if (deferredTimeRange) {
-            const cutoff = Math.floor(Date.now() / 1000) - deferredTimeRange * 3600;
-            filtered = filtered.filter(l => l.datetime >= cutoff);
+        // Time filter. All (0) keeps every row. Other ranges are rolling hours.
+        if (timeCutoffSec !== null) {
+            filtered = filtered.filter(l => l.datetime >= timeCutoffSec);
         }
 
-        // Type filter
+        // Type filter stays on the request that produced these rows. A refetch
+        // keeps the previous rows mounted instead of flashing an empty table.
         if (loadedRequestKey === requestKey && deferredLogType !== 0) {
             filtered = filtered.filter(l => l.type === deferredLogType);
         }
@@ -1039,7 +1265,17 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
         }
 
         return filtered;
-    }, [loadedRequestKey, requestKey, loadedSessionScope, sessionScope, serverLogs, scopedTerminalTradeSamples, deferredTimeRange, deferredLogType, deferredLogMode, deferredSearch]);
+    }, [timeCutoffSec, loadedRequestKey, requestKey, loadedSessionScope, sessionScope, serverLogs, scopedTerminalTradeSamples, deferredLogType, deferredLogMode, deferredSearch]);
+
+    const copyScopeKey = `${sessionScope}\u0000${logMode}\u0000${logType}\u0000${timeRange}\u0000${search}`;
+    // Drop a badge from another filter scope during render. Restoring those
+    // filters must not revive Copied/Failed after the timer was cancelled.
+    if (copyFeedback !== null && copyFeedback.scopeKey !== copyScopeKey) {
+        setCopyFeedback(null);
+    }
+    const copyStatus: CopyStatus = copyFeedback !== null && copyFeedback.scopeKey === copyScopeKey
+        ? copyFeedback.status
+        : 'idle';
 
     useEffect(() => () => {
         copySequenceRef.current += 1;
@@ -1054,25 +1290,26 @@ function JournalTabSurface({ isAuthenticated, sessionScope }: JournalTabSurfaceP
             window.clearTimeout(copyFeedbackTimerRef.current);
             copyFeedbackTimerRef.current = null;
         }
-        setCopyStatus('idle');
-    }, [sessionScope, logMode, logType, timeRange, search]);
+    }, [copyScopeKey]);
 
     const copyFilteredJournal = useCallback(async () => {
         if (filteredLogs.length === 0) return;
 
         const sequence = ++copySequenceRef.current;
+        const scopeKey = copyScopeKey;
         if (copyFeedbackTimerRef.current !== null) {
             window.clearTimeout(copyFeedbackTimerRef.current);
         }
 
         const copied = await copyTextToClipboard(serializeJournalLogs(filteredLogs));
         if (sequence !== copySequenceRef.current) return;
-        setCopyStatus(copied ? 'copied' : 'error');
+        setCopyFeedback({ scopeKey, status: copied ? 'copied' : 'error' });
 
         copyFeedbackTimerRef.current = window.setTimeout(() => {
-            if (sequence === copySequenceRef.current) setCopyStatus('idle');
+            if (sequence !== copySequenceRef.current) return;
+            setCopyFeedback(current => (current?.scopeKey === scopeKey ? null : current));
         }, 2000);
-    }, [filteredLogs]);
+    }, [filteredLogs, copyScopeKey]);
 
     const handleAutoScrollChange = useCallback((enabled: boolean) => {
         setAutoScroll(current => current === enabled ? current : enabled);

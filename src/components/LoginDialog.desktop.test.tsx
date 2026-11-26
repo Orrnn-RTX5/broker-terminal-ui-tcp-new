@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LoginDialog } from './LoginDialog';
 
@@ -49,8 +49,8 @@ it('lets the user continue viewing from trade login without showing the trade no
   expect(dialog).toHaveAttribute('aria-modal', 'true');
   expect(dialog).not.toHaveTextContent('Log in to your trading account to place an order.');
   expect(dialog).not.toHaveTextContent('No order has been placed.');
-  await screen.findByText('Server online');
-  expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
+  expect(screen.queryByText('Server online')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Continue viewing' }));
   expect(close).toHaveBeenCalledOnce();
   expect(runtime.login).not.toHaveBeenCalled();
@@ -58,8 +58,8 @@ it('lets the user continue viewing from trade login without showing the trade no
 
 it('lists all servers before credentials, clears the password, and logs in to the selected directory endpoint', async () => {
   render(<LoginDialog isOpen onClose={vi.fn()} />);
-  const server = screen.getByRole('combobox', { name: 'Server' });
-  await screen.findByText('Server online');
+  const server = screen.getByRole('combobox', { name: 'Broker Server' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
   expect(screen.getByRole('option', { name: 'Achiever Financials' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Nexa' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Grow Trading Academy' })).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ it('lists all servers before credentials, clears the password, and logs in to th
   fireEvent.change(password, { target: { value: 'old-password' } });
   fireEvent.change(server, { target: { value: 'Nexa' } });
   expect(password).toHaveValue('');
-  await screen.findByText('Server online');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
   expect(fetchMock).toHaveBeenCalledWith('https://nexa.test/health', expect.anything());
   fireEvent.change(account, { target: { value: '12345' } });
   fireEvent.change(password, { target: { value: 'new-password' } });
@@ -86,11 +86,32 @@ it('lists all servers before credentials, clears the password, and logs in to th
 });
 
 it('blocks credentials and login when the selected server is offline', async () => {
-  fetchMock.mockImplementation(async (url: string) => new Response(JSON.stringify(url.endsWith('/broker/servers') ? brokers : {}), { status: url.endsWith('/health') ? 503 : 200 }));
+  let resolveHealth!: (response: Response) => void;
+  const healthResponse = new Promise<Response>(resolve => {
+    resolveHealth = resolve;
+  });
+  fetchMock.mockImplementation((url: string) => {
+    if (url.endsWith('/health')) return healthResponse;
+    return Promise.resolve(new Response(JSON.stringify(url.endsWith('/broker/servers') ? brokers : {})));
+  });
   render(<LoginDialog isOpen onClose={vi.fn()} />);
-  await screen.findByText('Server unavailable');
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Broker Server' })).toBeEnabled());
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('https://achiever.test/health', expect.anything()));
+  expect(screen.getByPlaceholderText('Account ID')).toBeDisabled();
+  expect(screen.getByPlaceholderText('Password')).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Log in' })).toBeDisabled();
+  expect(screen.queryByText('Checking server...')).not.toBeInTheDocument();
+  expect(screen.queryByText('Server online')).not.toBeInTheDocument();
+  expect(screen.queryByText('Server unavailable')).not.toBeInTheDocument();
+  await act(async () => {
+    resolveHealth(new Response(JSON.stringify({}), { status: 503 }));
+  });
+  expect(screen.queryByText('Server online')).not.toBeInTheDocument();
+  expect(screen.queryByText('Server unavailable')).not.toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Account ID')).toBeDisabled();
   expect(screen.getByPlaceholderText('Password')).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Log in' })).toBeDisabled();
   fireEvent.submit(screen.getByRole('button', { name: 'Log in' }).closest('form')!);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Select an available broker server and wait for the server check.');
   expect(runtime.login).not.toHaveBeenCalled();
 });

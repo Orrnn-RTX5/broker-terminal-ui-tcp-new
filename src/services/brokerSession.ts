@@ -1251,6 +1251,15 @@ export function buildBrokerWsFeedUri(): string {
     return toLocalDevProxyWsUrl(appendFeedBrokerIdToWsUrl(forceWssForHttpsFrontend(providedWsUrl)));
   }
 
+  // Split-port bridges publish FEED_WS_URL separately from the trading host.
+  // Honor it even when server_url is already set, so quotes do not follow :8090.
+  const explicitFeedUrl = normalizeWsUrlToFeed(
+    getRuntimeConfigValue(['FEED_WS_URL', 'FEED_WS_HOST', 'VITE_FEED_WS_URL', 'VITE_FEED_WS_HOST']),
+  );
+  if (canUseStoredWsUrl(explicitFeedUrl, server)) {
+    return toLocalDevProxyWsUrl(appendFeedBrokerIdToWsUrl(forceWssForHttpsFrontend(explicitFeedUrl)));
+  }
+
   const fallback = normalizeWsUrlToFeed(
     getRuntimeConfigValue(['WS_HOST', 'VITE_WS_HOST', 'VITE_MARKET_WS_URL', 'VITE_RTX5_WS_URL', 'VITE_WS_URL'])
     || getPublicWsTarget()

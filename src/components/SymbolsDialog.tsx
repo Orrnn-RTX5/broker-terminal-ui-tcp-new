@@ -931,8 +931,8 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
           top: pos.y,
           width: size.w,
           height: size.h,
-          minWidth: Math.min(DIALOG_MIN_WIDTH, Math.max(0, window.innerWidth - DIALOG_VIEWPORT_GAP * 2)),
-          minHeight: Math.min(DIALOG_MIN_HEIGHT, Math.max(0, window.innerHeight - DIALOG_VIEWPORT_GAP * 2)),
+          minWidth: Math.min(DIALOG_MIN_WIDTH, size.w),
+          minHeight: Math.min(DIALOG_MIN_HEIGHT, size.h),
         }}
         onClick={e => e.stopPropagation()}
       >

@@ -404,16 +404,19 @@ const BACKEND_PROFIT_ROUNDING_TOLERANCE = 0.005 + 1e-9;
  */
 export const resolveTradeProfit = (position: TradeProfitInput): TradeProfitResolution => {
   const backend = readBackendPositionProfit(position);
+  if (backend === null) {
+    return { value: null, source: 'missing', warnings: ['missing_backend_profit'] };
+  }
   const precise = position.hasBackendCurrentPrice === false
     ? null
     : calculateLivePositionProfit(position);
-  const value = precise !== null && (backend === null || Math.abs(precise - backend) <= BACKEND_PROFIT_ROUNDING_TOLERANCE)
+  const value = precise !== null && Math.abs(precise - backend) <= BACKEND_PROFIT_ROUNDING_TOLERANCE
     ? precise
-    : (backend ?? precise);
+    : backend;
   return {
     value,
-    source: value === null ? 'missing' : 'backend',
-    warnings: value === null ? ['missing_backend_profit'] : [],
+    source: 'backend',
+    warnings: [],
   };
 };
 

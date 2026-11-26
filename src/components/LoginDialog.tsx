@@ -36,7 +36,7 @@ import {
     loadBrokerPresentation,
     mergeBrokerPresentation,
 } from '../services/brokerPresentation';
-import { LAST_AUTHENTICATED_BROKER_ID_KEY, pickDiscoveryBroker, type BrokerServerItem } from './WelcomeTerminal';
+import { pickDiscoveryBroker, type BrokerServerItem } from './WelcomeTerminal';
 import { BrokerLogoImage } from './BrokerLogoImage';
 import { User, X, ChevronDown, LockKeyhole, Eye, EyeOff, Copy, Check, LoaderCircle, Server, AlertCircle } from 'lucide-react';
 import '../styles/login-dialog.css';
@@ -76,6 +76,9 @@ const getErrorMessage = (err: unknown, fallback: string): string =>
     err instanceof Error ? err.message : fallback;
 
 const normalizeBrokerId = (value: unknown): string => String(value ?? '').trim();
+
+// Same key the desktop login writes (WelcomeTerminal.LAST_AUTHENTICATED_BROKER_ID_KEY).
+const LAST_AUTHENTICATED_BROKER_ID_KEY = 'rtx_last_authenticated_broker_id';
 
 const buildLockedRuntimeBroker = (brokerId: string, displayName?: string): BrokerServerItem => {
     const backendUrl = getBackendTarget();
@@ -431,7 +434,7 @@ export function LoginDialog({
                     ? data.find(item => item.broker_id === userSelectedBrokerRef.current?.broker_id && isDirectoryBrokerSelectable(item))
                     : undefined;
                 const savedBrokerId = lockedBrokerId || initialServer || localStorage.getItem('broker_id') || localStorage.getItem('rtx_broker_id') || '';
-                const lastAuthenticatedBrokerId = localStorage.getItem(LAST_AUTHENTICATED_BROKER_ID_KEY || 'rtx_last_authenticated_broker_id') || '';
+                const lastAuthenticatedBrokerId = localStorage.getItem(LAST_AUTHENTICATED_BROKER_ID_KEY) || '';
                 const selectedDiscoveryBroker = userSelected || activeTcpBroker || pickDiscoveryBroker(data, {
                     isDesktopBrokerSelection: isDesktopBackendTarget(),
                     savedBrokerId,
@@ -653,7 +656,7 @@ export function LoginDialog({
                 localStorage.setItem('rtx_broker_server', displayServerLabel);
             }
             localStorage.setItem(
-                LAST_AUTHENTICATED_BROKER_ID_KEY || 'rtx_last_authenticated_broker_id',
+                LAST_AUTHENTICATED_BROKER_ID_KEY,
                 String(data.broker_id || submitBroker.broker_id),
             );
             updateDynamicUrls();
@@ -739,7 +742,7 @@ export function LoginDialog({
                     login: loginNum,
                     name: getAuthenticatedAccountName(data),
                     server: displayServerLabel || submitBroker.broker_name || '',
-                    ...(tradingAccountType ? { accountType: tradingAccountType, isLive: tradingAccountType === 'real' } : { isLive: true }),
+                    ...(tradingAccountType ? { accountType: tradingAccountType, isLive: tradingAccountType === 'real' } : {}),
                     lastUsed: Date.now(),
                 } : undefined,
             );

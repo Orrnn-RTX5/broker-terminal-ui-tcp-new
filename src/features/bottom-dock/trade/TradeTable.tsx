@@ -354,7 +354,11 @@ const TradeTableRow = memo(function TradeTableRow({
         openModifyPosition(position);
       }}
       onContextMenu={(event) => {
-        if (isPendingPlacement) return;
+        event.stopPropagation();
+        if (isPendingPlacement) {
+          event.preventDefault();
+          return;
+        }
         handleTradeContextMenu(event, position);
       }}
     >

@@ -541,10 +541,20 @@ export class ChartDataService {
       to,
     });
 
+    let candleAuthMatchesActiveBroker = true;
+    if (token) {
+      try {
+        assertCandleAuthMatchesActiveBroker(token);
+      } catch (error) {
+        if (!(error instanceof CandleAuthBrokerMismatchError)) throw error;
+        candleAuthMatchesActiveBroker = false;
+      }
+    }
+
     // ── PURE BINARY TCP FAST PATH (RTX5 Desktop Client) ──────────────────────
     // Serves both guest pre-login and authenticated chart requests directly
     // from MT5CandleEngine RAM/PG in raw 64-byte IEEE-754 Little-Endian binary!
-    if (isDesktopBackendTarget()) {
+    if (isDesktopBackendTarget() && candleAuthMatchesActiveBroker) {
       const binaryUrl = `${apiV2BaseUrl}/binary-candles/${encodeURIComponent(symbol)}${buildQuery(queryParams)}`;
       try {
         const binaryCandles = await fetchBinaryCandles(binaryUrl, apiTf, signal, authHeaders);
@@ -562,10 +572,11 @@ export class ChartDataService {
       isAuthenticatedCore?: boolean;
     }> = [];
 
-    if (isDesktopBackendTarget() && apiV2BaseUrl) {
+    if (isDesktopBackendTarget() && apiV2BaseUrl && candleAuthMatchesActiveBroker) {
       attempts.push({
         url: `${apiV2BaseUrl}/candles/${encodeURIComponent(symbol)}${buildQuery(queryParams)}`,
         headers: authHeaders,
+        ...(token ? { isAuthenticatedCore: true } : {}),
       });
     }
 
@@ -576,17 +587,12 @@ export class ChartDataService {
         headers: { 'X-Broker-ID': getRuntimeConfiguredBrokerId() },
       });
     }
-    if (token && apiV2BaseUrl && !isDesktopBackendTarget()) {
-      try {
-        assertCandleAuthMatchesActiveBroker(token);
-        attempts.push({
-          url: `${apiV2BaseUrl}/candles/${encodeURIComponent(symbol)}${buildQuery(queryParams)}`,
-          headers: authHeaders,
-          isAuthenticatedCore: true,
-        });
-      } catch (error) {
-        if (!(error instanceof CandleAuthBrokerMismatchError)) throw error;
-      }
+    if (token && apiV2BaseUrl && !isDesktopBackendTarget() && candleAuthMatchesActiveBroker) {
+      attempts.push({
+        url: `${apiV2BaseUrl}/candles/${encodeURIComponent(symbol)}${buildQuery(queryParams)}`,
+        headers: authHeaders,
+        isAuthenticatedCore: true,
+      });
     }
 
     if (from === undefined && to === undefined && hasPublicCandleBridge()) {

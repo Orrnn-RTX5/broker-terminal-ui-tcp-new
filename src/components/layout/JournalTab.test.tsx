@@ -3,10 +3,15 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JournalTab } from './JournalTab';
+import { getBinaryOrderRawFrameTransport } from '../../services/binaryTcpOrderClient';
 import {
     clearTradeOrderLatencySamples,
+    getJournalTradeOrderLatencySamples,
     recordTradeOrderLatency,
+    TRADE_ORDER_LATENCY_EVENT,
 } from '../../services/orderLatencyTelemetry';
+
+const ScopeContext = React.createContext<string | null>(null);
 
 const journalHarness = vi.hoisted(() => ({
     getLogs: vi.fn(),
@@ -25,7 +30,7 @@ vi.mock('../../services/api', () => ({
 }));
 
 vi.mock('../../hooks/useBrokerAccountSessionScope', () => ({
-    useBrokerAccountSessionScope: () => journalHarness.sessionScope,
+    useBrokerAccountSessionScope: () => React.useContext(ScopeContext) ?? journalHarness.sessionScope,
 }));
 
 vi.mock('../../store/useAppStore', () => ({
@@ -194,6 +199,54 @@ describe('JournalTab', () => {
         await waitFor(() => expect(copyButton).toHaveTextContent('Failed'));
         expect(screen.getByText('Unable to copy the filtered journal')).toBeInTheDocument();
         expect(document.querySelector('textarea[readonly]')).not.toBeInTheDocument();
+    });
+
+    it('does not revive Copied or Failed after a filter round-trip', async () => {
+        journalHarness.getLogs.mockResolvedValue({
+            count: 1,
+            logs: [makeLog({ message: 'Copy me' })],
+        });
+
+        render(<JournalTab />);
+        expect(await screen.findByText('Copy me')).toBeInTheDocument();
+
+        const copyButton = screen.getByRole('button', { name: 'Copy filtered journal' });
+        fireEvent.click(copyButton);
+        await waitFor(() => expect(copyButton).toHaveTextContent('Copied'));
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'check');
+
+        const search = screen.getByRole('textbox', { name: 'Filter journal messages' });
+        fireEvent.change(search, { target: { value: 'z' } });
+        expect(copyButton.textContent?.trim()).toBe('Copy');
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'copy');
+        expect(copyButton.nextElementSibling).toHaveTextContent('');
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(copyButton.textContent?.trim()).toBe('Copy');
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'copy');
+        expect(copyButton.nextElementSibling).toHaveTextContent('');
+        expect(screen.getByText('Copy me')).toBeInTheDocument();
+
+        clipboardWriteText.mockRejectedValueOnce(new DOMException('Clipboard permission denied', 'NotAllowedError'));
+        Object.defineProperty(document, 'execCommand', {
+            configurable: true,
+            value: vi.fn().mockReturnValue(false),
+        });
+        fireEvent.click(copyButton);
+        await waitFor(() => expect(copyButton).toHaveTextContent('Failed'));
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'copy');
+        expect(copyButton.nextElementSibling).toHaveTextContent('Unable to copy the filtered journal');
+
+        fireEvent.change(search, { target: { value: 'z' } });
+        expect(copyButton.textContent?.trim()).toBe('Copy');
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'copy');
+        expect(copyButton.nextElementSibling).toHaveTextContent('');
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(copyButton.textContent?.trim()).toBe('Copy');
+        expect(copyButton.querySelector('[data-icon]')).toHaveAttribute('data-icon', 'copy');
+        expect(copyButton.nextElementSibling).toHaveTextContent('');
+        expect(screen.getByText('Copy me')).toBeInTheDocument();
     });
 
     it('hydrates the last completed trade latency recorded before Journal mounts', async () => {
@@ -477,6 +530,254 @@ describe('JournalTab', () => {
         });
 
         await waitFor(() => expect(indicator).toHaveTextContent('Last trade latency: 15 ms'));
+    });
+
+    it('does not let a sample stored without an event change the label when a later event arrives', async () => {
+        journalHarness.getLogs.mockResolvedValue({ count: 0, logs: [] });
+        render(<JournalTab />);
+        const indicator = screen.getByTestId('last-trade-latency');
+        expect(indicator).toHaveTextContent('Last trade latency: \u2014');
+
+        act(() => {
+            recordTradeOrderLatency({
+                phase: 'order_filled',
+                transport: 'websocket',
+                traceId: 'visible-fill',
+                sessionScope: journalHarness.sessionScope,
+                terminalRttMs: 10,
+                totalMs: 10,
+            });
+        });
+        await waitFor(() => expect(indicator).toHaveTextContent('Last trade latency: 10 ms'));
+
+        const releaseInFlightOrder = getBinaryOrderRawFrameTransport().acquireActiveSlot();
+        try {
+            act(() => {
+                recordTradeOrderLatency({
+                    phase: 'order_filled',
+                    transport: 'websocket',
+                    traceId: 'silent-fill',
+                    sessionScope: journalHarness.sessionScope,
+                    terminalRttMs: 99,
+                    totalMs: 99,
+                });
+            });
+        } finally {
+            releaseInFlightOrder();
+        }
+        expect(getJournalTradeOrderLatencySamples().some(sample => sample.traceId === 'silent-fill')).toBe(true);
+        expect(indicator).toHaveTextContent('Last trade latency: 10 ms');
+
+        act(() => {
+            recordTradeOrderLatency({
+                phase: 'order_accepted',
+                transport: 'websocket',
+                traceId: 'later-event',
+                sessionScope: journalHarness.sessionScope,
+                acceptedRttMs: 4,
+                totalMs: 4,
+            });
+        });
+        await act(async () => {
+            await new Promise(resolve => window.setTimeout(resolve, 0));
+        });
+        expect(indicator).toHaveTextContent('Last trade latency: 10 ms');
+    });
+
+    it('updates multiple mounted JournalTab instances for the same scope via one window listener', async () => {
+        journalHarness.getLogs.mockResolvedValue({ count: 0, logs: [] });
+        const addSpy = vi.spyOn(window, 'addEventListener');
+        const removeSpy = vi.spyOn(window, 'removeEventListener');
+        const latencyAddCalls = () => addSpy.mock.calls.filter(([type]) => type === TRADE_ORDER_LATENCY_EVENT).length;
+        const latencyRemoveCalls = () => removeSpy.mock.calls.filter(([type]) => type === TRADE_ORDER_LATENCY_EVENT).length;
+
+        try {
+            const view = render(
+                <>
+                    <JournalTab />
+                    <JournalTab />
+                </>,
+            );
+            expect(await screen.findAllByText('No journal entries for the selected filters')).toHaveLength(2);
+            expect(latencyAddCalls()).toBe(1);
+            expect(latencyRemoveCalls()).toBe(0);
+
+            act(() => {
+                recordTradeOrderLatency({
+                    phase: 'placement_terminal',
+                    transport: 'websocket',
+                    traceId: 'shared-1',
+                    clientOrderId: 'cid-shared-1',
+                    sessionScope: journalHarness.sessionScope,
+                    symbol: 'XAUUSD',
+                    side: 'buy',
+                    volume: 0.01,
+                    terminalStatus: 'filled',
+                    totalMs: 12.5,
+                });
+            });
+
+            await waitFor(() => {
+                const indicators = screen.getAllByTestId('last-trade-latency');
+                expect(indicators).toHaveLength(2);
+                expect(indicators[0]).toHaveTextContent('Last trade latency: 12.5 ms');
+                expect(indicators[1]).toHaveTextContent('Last trade latency: 12.5 ms');
+            });
+            expect(screen.getAllByText('Order executed buy XAUUSD 0.01')).toHaveLength(2);
+
+            view.rerender(<JournalTab />);
+            expect(latencyAddCalls()).toBe(1);
+            expect(latencyRemoveCalls()).toBe(0);
+
+            act(() => {
+                recordTradeOrderLatency({
+                    phase: 'placement_terminal',
+                    transport: 'websocket',
+                    traceId: 'shared-2',
+                    clientOrderId: 'cid-shared-2',
+                    sessionScope: journalHarness.sessionScope,
+                    symbol: 'EURUSD',
+                    side: 'sell',
+                    volume: 0.02,
+                    terminalStatus: 'filled',
+                    totalMs: 19,
+                });
+            });
+            await waitFor(() => expect(screen.getByTestId('last-trade-latency')).toHaveTextContent('Last trade latency: 19 ms'));
+
+            view.unmount();
+            expect(latencyRemoveCalls()).toBe(1);
+        } finally {
+            addSpy.mockRestore();
+            removeSpy.mockRestore();
+        }
+    });
+
+    it('isolates latency snapshots across concurrently mounted JournalTab instances with different session scopes', async () => {
+        journalHarness.getLogs.mockResolvedValue({ count: 0, logs: [] });
+
+        render(
+            <>
+                <ScopeContext.Provider value="broker-a:account-a">
+                    <JournalTab />
+                </ScopeContext.Provider>
+                <ScopeContext.Provider value="broker-b:account-b">
+                    <JournalTab />
+                </ScopeContext.Provider>
+            </>,
+        );
+        expect(await screen.findAllByText('No journal entries for the selected filters')).toHaveLength(2);
+
+        act(() => {
+            recordTradeOrderLatency({
+                phase: 'placement_terminal',
+                transport: 'websocket',
+                traceId: 'scope-a-1',
+                clientOrderId: 'cid-scope-a-1',
+                sessionScope: 'broker-a:account-a',
+                symbol: 'EURUSD',
+                side: 'buy',
+                volume: 0.01,
+                terminalStatus: 'filled',
+                totalMs: 14,
+            });
+        });
+
+        await waitFor(() => expect(screen.getAllByTestId('last-trade-latency')[0]).toHaveTextContent('Last trade latency: 14 ms'));
+        expect(screen.getAllByTestId('last-trade-latency')[1]).toHaveTextContent('Last trade latency: \u2014');
+        expect(screen.getAllByText('Order executed buy EURUSD 0.01')).toHaveLength(1);
+
+        act(() => {
+            recordTradeOrderLatency({
+                phase: 'placement_terminal',
+                transport: 'websocket',
+                traceId: 'scope-b-1',
+                clientOrderId: 'cid-scope-b-1',
+                sessionScope: 'broker-b:account-b',
+                symbol: 'BTCUSD',
+                side: 'buy',
+                volume: 0.01,
+                terminalStatus: 'filled',
+                totalMs: 28,
+            });
+        });
+
+        await waitFor(() => expect(screen.getAllByTestId('last-trade-latency')[1]).toHaveTextContent('Last trade latency: 28 ms'));
+        expect(screen.getAllByTestId('last-trade-latency')[0]).toHaveTextContent('Last trade latency: 14 ms');
+        expect(screen.getByText('Order executed buy EURUSD 0.01')).toBeInTheDocument();
+        expect(screen.getByText('Order executed buy BTCUSD 0.01')).toBeInTheDocument();
+    });
+
+    it('keeps the first JournalLogTable scroll position when a second JournalLogTable updates its pin', async () => {
+        const getRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            const height = this.matches('.rtx-journal-row, .rtx-journal-table__head') ? 4 : 0;
+            return { x: 0, y: 0, width: 0, height, top: 0, right: 0, bottom: height, left: 0, toJSON: () => ({}) };
+        });
+        const now = nowSeconds();
+        const logsA = Array.from({ length: 100 }, (_, index) => makeLog({
+            id: `tab-a-${index}`,
+            datetime: now - index,
+            message: `Tab A row ${index}`,
+        }));
+        const logsB = Array.from({ length: 100 }, (_, index) => makeLog({
+            id: `tab-b-${index}`,
+            datetime: now - index,
+            message: `Tab B row ${index}`,
+        }));
+        journalHarness.getLogs
+            .mockResolvedValueOnce({ count: logsA.length, logs: logsA })
+            .mockResolvedValueOnce({ count: logsB.length, logs: logsB });
+
+        try {
+            const view = render(
+                <>
+                    <ScopeContext.Provider value="broker-a:account-a">
+                        <JournalTab />
+                    </ScopeContext.Provider>
+                </>,
+            );
+            expect(await screen.findByText('Tab A row 0')).toBeInTheDocument();
+
+            const viewportA = screen.getByTestId('journal-scroll-viewport');
+            act(() => {
+                viewportA.scrollTop = 36;
+                fireEvent.scroll(viewportA);
+            });
+            expect(screen.getByRole('button', { name: '↑ Auto' })).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.queryByText('Tab A row 0')).not.toBeInTheDocument();
+            expect(screen.getByText('Tab A row 1')).toBeInTheDocument();
+
+            view.rerender(
+                <>
+                    <ScopeContext.Provider value="broker-a:account-a">
+                        <JournalTab />
+                    </ScopeContext.Provider>
+                    <ScopeContext.Provider value="broker-b:account-b">
+                        <JournalTab />
+                    </ScopeContext.Provider>
+                </>,
+            );
+            expect(await screen.findByText('Tab B row 0')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByText('Tab A row 1'));
+            expect(screen.getByText('Tab A row 1').closest('tr')).toHaveAttribute('aria-selected', 'true');
+            expect(screen.queryByText('Tab A row 0')).not.toBeInTheDocument();
+            expect(viewportA.scrollTop).toBe(36);
+
+            view.rerender(
+                <>
+                    <ScopeContext.Provider value="broker-a:account-a">
+                        <JournalTab />
+                    </ScopeContext.Provider>
+                </>,
+            );
+            fireEvent.click(screen.getByText('Tab A row 2'));
+            expect(screen.getByText('Tab A row 2').closest('tr')).toHaveAttribute('aria-selected', 'true');
+            expect(screen.queryByText('Tab A row 0')).not.toBeInTheDocument();
+            expect(viewportA.scrollTop).toBe(36);
+        } finally {
+            getRect.mockRestore();
+        }
     });
 
     it('keeps search and time filtering local while mode and type changes refetch', async () => {

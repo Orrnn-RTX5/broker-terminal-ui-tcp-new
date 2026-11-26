@@ -227,7 +227,6 @@ export function ConnectionStatus({ reconnectCallback }: ConnectionStatusProps) {
                 <Server size={14} className="text-emerald-400" />
                 <span>Access Server...</span>
               </div>
-              <span className="text-zinc-500 font-mono text-[10px]">Alt+Shift+T</span>
             </button>
 
             <button

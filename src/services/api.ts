@@ -3525,12 +3525,7 @@ export const normalizeJournalResponse = (rawPayload: unknown): JournalResponse =
       const message = normalizeJournalText(log.message);
       const compatibleTiming = normalizeTradeJournalTiming(typeText, source, message);
       const explicitLatencyMs = normalizeOptionalJournalLatency(log.latency_ms);
-      const tailDurationMatch = explicitLatencyMs === undefined && typeText.trim().toLowerCase() === 'trade'
-        ? message.match(/\s+in\s+(\d+(?:\.\d+)?)(ns|[µμu]s|ms|s)$/i)
-        : null;
-      const latencyMs = explicitLatencyMs
-        ?? compatibleTiming?.latencyMs
-        ?? (tailDurationMatch ? journalDurationToMilliseconds(tailDurationMatch[1], tailDurationMatch[2]) : undefined);
+      const latencyMs = explicitLatencyMs ?? compatibleTiming?.latencyMs;
       const datetimeSec = normalizeJournalNumber(log.datetime);
       const rawDatetimeMs = normalizeJournalNumber(log.datetime_ms);
       const datetimeMs = rawDatetimeMs > 0 ? rawDatetimeMs : (datetimeSec > 0 ? datetimeSec * 1000 : undefined);
@@ -3553,7 +3548,7 @@ export const normalizeJournalResponse = (rawPayload: unknown): JournalResponse =
         type_text: typeText,
         datetime: datetimeSec,
         source,
-        message: explicitLatencyMs !== undefined ? message : (compatibleTiming?.message ?? message),
+        message: compatibleTiming?.message ?? message,
       };
     });
   const count = Number(payload.count);

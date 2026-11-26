@@ -1142,7 +1142,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
                         <Icon name="server" size="sm" className="text-emerald-400" />
                     </div>
                     <span className="flex-1">Access Server...</span>
-                    <span className="rtx-menu-row__shortcut">Alt+Shift+T</span>
+                    {/* Alt+Shift+T is trading.toggle-one-click; Access Server has no catalog shortcut. */}
                 </button>
 
                 {/* Login to Web Trader */}
