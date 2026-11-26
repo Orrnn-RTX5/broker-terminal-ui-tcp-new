@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -160,5 +162,13 @@ describe('MarketWatchTradingView', () => {
       { side: 'sell', symbol: 'EURUSD.RAW', volume: 0.01, login: 10001 },
       expect.objectContaining({ intentAtMs: expect.any(Number) }),
     );
+  });
+
+  it('uses compact 42px sell/buy button height and aligned card chrome in CSS', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/market-watch/market-watch-trading.css'), 'utf8');
+    expect(css).toMatch(/\.rtx-oct-trade-button\s*\{[^}]*height:\s*42px !important;[^}]*min-height:\s*42px !important;[^}]*max-height:\s*42px !important;/);
+    expect(css).toMatch(/\.rtx-oct-volume-control\s*\{[^}]*border-top:\s*0 !important;[^}]*border-radius:\s*0 0 4px 4px !important;/);
+    expect(css).toMatch(/\[data-side='sell'\] \.rtx-oct-price\s*\{\s*text-align:\s*left !important;\s*\}/);
+    expect(css).toMatch(/\[data-side='buy'\] \.rtx-oct-price\s*\{\s*text-align:\s*right !important;\s*\}/);
   });
 });

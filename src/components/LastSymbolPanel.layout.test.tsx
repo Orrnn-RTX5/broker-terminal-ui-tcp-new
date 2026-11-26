@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MT5_QUOTE_TICK_STALE_MS } from '../hooks/useQuoteTickDirection';
 
 const mocks = vi.hoisted(() => ({
   closePosition: vi.fn(),
@@ -75,15 +78,20 @@ describe('LastSymbolPanel enterprise layout', () => {
     vi.unstubAllGlobals();
   });
 
-  it('presents a clear, accessible idle state', () => {
+  it('presents a clear, accessible idle state without the live badge', () => {
     render(<LastSymbolPanel />);
 
     expect(screen.getByRole('region', { name: 'Last symbol trader' })).toBeInTheDocument();
     expect(screen.getByText('Missing symbol')).toBeInTheDocument();
-    expect(screen.getByText('Idle')).toHaveAttribute('data-tone', 'idle');
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live')).not.toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Sell Last Symbol at market' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Buy Last Symbol at market' })).toBeDisabled();
+    const sell = screen.getByRole('button', { name: 'Sell Last Symbol at market' });
+    const buy = screen.getByRole('button', { name: 'Buy Last Symbol at market' });
+    expect(sell).toBeDisabled();
+    expect(buy).toBeDisabled();
+    expect(sell).toHaveAttribute('data-dir', 'flat');
+    expect(buy).toHaveAttribute('data-dir', 'flat');
     expect(screen.getByRole('button', { name: 'Close all Last Symbol positions' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Decrease order volume' })).toBeDisabled();
     expect(screen.getByRole('spinbutton', { name: 'Order volume in lots' })).toHaveValue(0.01);
@@ -189,11 +197,17 @@ describe('LastSymbolPanel enterprise layout', () => {
 
     render(<LastSymbolPanel />);
 
-    expect(screen.getByText('Live')).toHaveAttribute('data-tone', 'live');
+    expect(screen.queryByText('Live')).not.toBeInTheDocument();
     const sell = screen.getByRole('button', { name: 'Sell EURUSD at market' });
     const buy = screen.getByRole('button', { name: 'Buy EURUSD at market' });
     expect(within(sell).getByText('1.08500')).toBeInTheDocument();
+    expect(within(sell).getByText('SELL')).toBeInTheDocument();
+    expect(within(sell).queryByText('Bid')).not.toBeInTheDocument();
     expect(within(buy).getByText('1.08520')).toBeInTheDocument();
+    expect(within(buy).getByText('BUY')).toBeInTheDocument();
+    expect(within(buy).queryByText('Ask')).not.toBeInTheDocument();
+    expect(sell).toHaveAttribute('data-side', 'sell');
+    expect(buy).toHaveAttribute('data-side', 'buy');
     expect(sell).toBeEnabled();
     expect(buy).toBeEnabled();
 
@@ -205,6 +219,67 @@ describe('LastSymbolPanel enterprise layout', () => {
     fireEvent.click(preset);
     expect(useLastSymbolStore.getState().volume).toBe(0.1);
     expect(preset).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('tracks chart-style tick-direction state (up/down/flat after 15s) independently on sell and buy buttons', () => {
+    vi.useFakeTimers();
+    try {
+      useAppStore.getState().setTicks({
+        BTCUSD: {
+          symbol: 'BTCUSD',
+          bid: 60420,
+          ask: 60435,
+          spread: 15,
+          timestamp: Date.now(),
+          digits: 2,
+        },
+      });
+      useLastSymbolStore.setState({ lastSymbol: 'BTCUSD' });
+
+      render(<LastSymbolPanel />);
+      const sell = screen.getByRole('button', { name: 'Sell BTCUSD at market' });
+      const buy = screen.getByRole('button', { name: 'Buy BTCUSD at market' });
+
+      expect(sell).toHaveAttribute('data-dir', 'flat');
+      expect(buy).toHaveAttribute('data-dir', 'flat');
+
+      act(() => {
+        useAppStore.getState().setTicks({
+          BTCUSD: { symbol: 'BTCUSD', bid: 60426.82, ask: 60441.86, spread: 15.04, timestamp: Date.now(), digits: 2 },
+        });
+      });
+      expect(sell).toHaveAttribute('data-dir', 'up');
+      expect(buy).toHaveAttribute('data-dir', 'up');
+
+      act(() => {
+        useAppStore.getState().setTicks({
+          BTCUSD: { symbol: 'BTCUSD', bid: 60410, ask: 60445, spread: 35, timestamp: Date.now(), digits: 2 },
+        });
+      });
+      expect(sell).toHaveAttribute('data-dir', 'down');
+      expect(buy).toHaveAttribute('data-dir', 'up');
+
+      act(() => {
+        vi.advanceTimersByTime(MT5_QUOTE_TICK_STALE_MS);
+      });
+      expect(sell).toHaveAttribute('data-dir', 'flat');
+      expect(buy).toHaveAttribute('data-dir', 'flat');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('matches chart OneClickTrading button sizing and tick-direction color rules in CSS', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/last-symbol-panel.css'), 'utf8');
+
+    expect(css).not.toContain('.last-symbol-status');
+    expect(css).toMatch(/\.last-symbol-trade-button\s*\{[^}]*height:\s*36px;/);
+    expect(css).toMatch(/\.last-symbol-trade-button\s*\{[^}]*min-height:\s*36px;/);
+    expect(css).toMatch(/\.last-symbol-trade-button\s*\{[^}]*max-height:\s*36px;/);
+    expect(css).toMatch(/@media \(max-width: 1720px\), \(max-height: 920px\)[\s\S]*?\.last-symbol-trade-button\s*\{[^}]*height:\s*26px;[^}]*min-height:\s*26px;[^}]*max-height:\s*26px;/);
+    expect(css).toMatch(/\.last-symbol-trade-button\[data-dir='up'\]:not\(:disabled\)\s*\{[^}]*background:\s*#4597ff;/);
+    expect(css).toMatch(/\.last-symbol-trade-button\[data-dir='down'\]:not\(:disabled\)\s*\{[^}]*background:\s*#ff5858;/);
+    expect(css).toMatch(/\.last-symbol-trade-button\[data-dir='flat'\]:not\(:disabled\)\s*\{[^}]*background:\s*#6b7280;/);
   });
 
   it('does not alias a suffixed contract quote to the base symbol', () => {
@@ -222,7 +297,8 @@ describe('LastSymbolPanel enterprise layout', () => {
 
     render(<LastSymbolPanel />);
 
-    expect(screen.getByText('Awaiting quote')).toBeInTheDocument();
+    expect(screen.queryByText('Awaiting quote')).not.toBeInTheDocument();
+    expect(screen.queryByText('Live')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sell XAUUSD at market' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Buy XAUUSD at market' })).toBeDisabled();
   });

@@ -1632,7 +1632,6 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action, .rtx-too
   color: #6941c6 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action[aria-pressed="true"],
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[aria-pressed="true"],
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-icon-button[aria-checked="true"] {
   background: #f3e5f5 !important;
@@ -1655,12 +1654,6 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-symbol-badge {
   background: #f9fafb !important;
   border-color: #eaecf0 !important;
   color: #475467 !important;
-}
-
-html.rtx-advanced-view.rtx-skin-untitled-light .rtx-toolbar-action[aria-pressed="true"] .rtx-toolbar-symbol-badge {
-  background: #ffffff !important;
-  border-color: #d6bbfb !important;
-  color: #6941c6 !important;
 }
 
 html.rtx-advanced-view.rtx-skin-untitled-light .rtx-trade-history-overlay-button[aria-expanded="false"],

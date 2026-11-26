@@ -21,6 +21,7 @@ import {
 import { chartDataService } from '../../../services/chartDataService';
 import { captureHistoryGapRequestScope } from '../../../services/chartHistoryGapRequests';
 import {
+  aggregateM1CandlesToTimeframe,
   fetchDerivedTimeframeCandlesFromM1,
   getDerivedM1InitialTargetCandleLimit,
   isM1DerivedFallbackTimeframe,
@@ -81,6 +82,190 @@ import type { ChartDataRenderRequest } from './chartRuntimeContracts';
 import type { ChartHistoryPage } from './useTradingChartHistoryCache';
 
 type LoadingPhase = 'connecting' | 'receiving' | 'ready' | 'hidden';
+const FRESH_CACHE_SKIP_REFRESH_MS = 30_000;
+
+const getLiveQuoteForSymbol = (selectedSymbol: string) => {
+  const normalizedSymbol = selectedSymbol.trim().toUpperCase();
+  return (
+    window.rtxTickCache?.get(selectedSymbol)
+    ?? window.rtxTickCache?.get(normalizedSymbol)
+    ?? useAppStore.getState().ticks[selectedSymbol]
+    ?? useAppStore.getState().ticks[normalizedSymbol]
+  );
+};
+
+interface BackgroundTimeframePreloaderOptions {
+  selectedSymbol: string;
+  activeTf: Timeframe;
+  explicitBrokerOffsetSeconds: number;
+  buildHistoryCacheTarget: (activeTimeframe: Timeframe) => {
+    key: CandleCacheKey;
+    metadata: CandleCacheMetadata;
+  };
+  setHistoryCache: (
+    activeTimeframe: Timeframe,
+    candles: Candle[],
+    brokerOffsetSeconds?: number,
+    source?: CandleCacheSource,
+  ) => void;
+  reconcileCandlesWithLiveQuote: (candles: Candle[], context: string) => Candle[];
+  resolveLatestFormingHistoryQuote: (rows: Candle[], historyTimeframe: Timeframe) => Candle[];
+}
+
+const createBackgroundTimeframePreloader = ({
+  selectedSymbol,
+  activeTf,
+  explicitBrokerOffsetSeconds,
+  buildHistoryCacheTarget,
+  setHistoryCache,
+  reconcileCandlesWithLiveQuote,
+  resolveLatestFormingHistoryQuote,
+}: BackgroundTimeframePreloaderOptions) => {
+  const isCacheWarmReady = (targetTf: Timeframe): boolean => {
+    const key = buildHistoryCacheTarget(targetTf)?.key;
+    const existing = key ? candleCache.getLatest(key) : null;
+    if (!existing || existing.candles.length === 0) return false;
+    const minWarmBars = targetTf === 'M1' ? 2 : getTradingChartDefaultVisibleBars(targetTf);
+    return existing.source !== 'derived-m1' || existing.candles.length >= minWarmBars;
+  };
+
+  const warmDerivedTimeframesFromM1Seed = (m1Candles: Candle[]) => {
+    const oldestM1Time = m1Candles[0]?.time;
+    const newestM1Time = m1Candles[m1Candles.length - 1]?.time;
+    for (const derivedTf of CANDLE_TIMEFRAMES) {
+      if (derivedTf === 'M1' || derivedTf === activeTf) continue;
+      if (prefersNativeTimeframeHistory(derivedTf) || isCacheWarmReady(derivedTf as Timeframe)) {
+        continue;
+      }
+      const activeDerivedStart = Number.isFinite(newestM1Time)
+        ? getTimeframePeriodSeconds(
+          newestM1Time,
+          derivedTf,
+          explicitBrokerOffsetSeconds,
+        )?.startTime
+        : undefined;
+      const aggregated = aggregateM1CandlesToTimeframe(
+        m1Candles,
+        derivedTf,
+        explicitBrokerOffsetSeconds,
+      ).map(candle => ({
+        time: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume ?? 0,
+        isComplete: Number.isFinite(activeDerivedStart) ? candle.time < Number(activeDerivedStart) : undefined,
+      }));
+      const completeLeading = omitPartialLeadingM1Aggregate(
+        aggregated,
+        oldestM1Time,
+        derivedTf,
+        explicitBrokerOffsetSeconds,
+      );
+      const warmCandles = getValidSortedCandles(
+        completeLeading.map(candle => ({
+          time: candle.time,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: candle.volume,
+          tickVolume: candle.volume,
+          closed: candle.isComplete,
+        })),
+      );
+      if (warmCandles.length >= getTradingChartDefaultVisibleBars(derivedTf)) {
+        setHistoryCache(
+          derivedTf as Timeframe,
+          warmCandles,
+          explicitBrokerOffsetSeconds,
+          'derived-m1',
+        );
+      }
+    }
+  };
+
+  const preloadSingleTimeframe = async (
+    tf: Timeframe,
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ) => {
+    if (!isCurrent() || isCacheWarmReady(tf)) return;
+    const requestedCount = tf === 'M1' || !prefersNativeTimeframeHistory(tf)
+      ? getInitialHistoryCount(tf)
+      : getTradingChartDefaultVisibleBars(tf);
+    try {
+      const fetched = await chartDataService.fetchCandles({
+        symbol: selectedSymbol,
+        timeframe: tf,
+        count: requestedCount,
+        signal,
+      });
+      if (!isCurrent()) return;
+      let prepared = getValidSortedCandles(fetched as Candle[]);
+      if (prepared.length === 0) return;
+      prepared = reconcileCandlesWithLiveQuote(prepared, 'preload history');
+      prepared = resolveLatestFormingHistoryQuote(prepared, tf);
+      if (prepared.length === 0 || !isCurrent()) return;
+      setHistoryCache(tf, prepared, explicitBrokerOffsetSeconds, 'backend');
+      if (tf === 'M1') {
+        warmDerivedTimeframesFromM1Seed(prepared);
+      }
+    } catch (error) {
+      if (isAbortError(error) || !isCurrent()) return;
+    }
+  };
+
+  const preloadParallelFrames = async (
+    frames: Timeframe[],
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ) => {
+    if (frames.length === 0 || !isCurrent()) return;
+    await Promise.allSettled(frames.map(tf => preloadSingleTimeframe(tf, signal, isCurrent)));
+  };
+
+  const preloadNativeAndSeedTimeframes = (
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ) => {
+    const priorityFrames = CANDLE_TIMEFRAMES.filter(targetTf => {
+      const tf = targetTf as Timeframe;
+      if (tf === activeTf || isCacheWarmReady(tf)) return false;
+      return tf === 'M1' || prefersNativeTimeframeHistory(tf);
+    }) as Timeframe[];
+    return preloadParallelFrames(priorityFrames, signal, isCurrent);
+  };
+
+  const preloadMissingDerivedTimeframes = (
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ) => {
+    const missingDerived = CANDLE_TIMEFRAMES.filter(targetTf => {
+      const tf = targetTf as Timeframe;
+      if (tf === 'M1' || tf === activeTf || prefersNativeTimeframeHistory(tf)) return false;
+      return !isCacheWarmReady(tf);
+    }) as Timeframe[];
+    return preloadParallelFrames(missingDerived, signal, isCurrent);
+  };
+
+  const runAfterReady = async (
+    signal: AbortSignal,
+    isCurrent: () => boolean,
+  ) => {
+    if (!await waitForTerminalReady(signal) || !isCurrent()) return;
+    await preloadNativeAndSeedTimeframes(signal, isCurrent);
+    if (!isCurrent()) return;
+    await preloadMissingDerivedTimeframes(signal, isCurrent);
+  };
+
+  return {
+    preloadNativeAndSeedTimeframes,
+    preloadMissingDerivedTimeframes,
+    runAfterReady,
+  };
+};
 
 interface UseTradingChartHistoryLoadingOptions {
   discardRetainedPublicChartSurface: () => void;
@@ -244,9 +429,79 @@ export function useTradingChartHistoryLoading({
       // before starting new broker history work. This keeps timeframe clicks
       // responsive even when a refresh request is comparatively slow.
       historyRequestCoordinatorRef.current.abort();
+      const explicitBrokerOffsetSeconds = brokerTimeOffsetSecRef.current;
+      const resolveLatestFormingHistoryQuote = (rows: Candle[], historyTimeframe: Timeframe): Candle[] => {
+        const last = rows[rows.length - 1];
+        if (!last) return rows;
+        const quoted = resolveFormingCandleLiveClose(
+          last,
+          getLiveQuoteForSymbol(selectedSymbol),
+          selectedSymbol,
+          historyTimeframe,
+          explicitBrokerOffsetSeconds,
+        );
+        if (quoted === last) return rows;
+        const [validated] = reconcileCandlesWithLiveQuote([quoted], 'forming history quote');
+        return validated ? [...rows.slice(0, -1), validated] : rows;
+      };
+
+      const {
+        preloadNativeAndSeedTimeframes,
+        preloadMissingDerivedTimeframes,
+        runAfterReady,
+      } = createBackgroundTimeframePreloader({
+        selectedSymbol,
+        activeTf,
+        explicitBrokerOffsetSeconds,
+        buildHistoryCacheTarget,
+        setHistoryCache,
+        reconcileCandlesWithLiveQuote,
+        resolveLatestFormingHistoryQuote,
+      });
+
+      const cacheKey = buildHistoryCacheTarget(activeTf)?.key;
+      const cachedBaselineEntry = cacheKey ? candleCache.getLatest(cacheKey) : null;
       const hydratedFromCache = hydrateHistoryFromCache(activeTf, 'cached-history');
       const hydratedFullViewportFromCache = hydratedFromCache
         && candlesRef.current.length >= getTradingChartDefaultVisibleBars(activeTf);
+      const hasFreshCompleteCache = Boolean(
+        hydratedFromCache
+        && cachedBaselineEntry
+        && cachedBaselineEntry.candles.length > 0
+        && !candleCache.isStale(cachedBaselineEntry, FRESH_CACHE_SKIP_REFRESH_MS)
+        && (
+          activeTf === 'M1'
+            ? cachedBaselineEntry.candles.length >= getInitialHistoryCount('M1')
+            : (
+              cachedBaselineEntry.source !== 'derived-m1'
+              || cachedBaselineEntry.candles.length >= getTradingChartDefaultVisibleBars(activeTf)
+            )
+        ),
+      );
+      if (hasFreshCompleteCache) {
+        const refreshedTailCandles = resolveLatestFormingHistoryQuote(candlesRef.current, activeTf);
+        const latestCachedTail = refreshedTailCandles[refreshedTailCandles.length - 1];
+        if (latestCachedTail && refreshedTailCandles !== candlesRef.current) {
+          candlesRef.current = refreshedTailCandles;
+          currentCandleRef.current = { ...latestCachedTail };
+          updateLegendDOM(
+            latestCachedTail.open,
+            latestCachedTail.high,
+            latestCachedTail.low,
+            latestCachedTail.close,
+            getDisplayVolume(latestCachedTail, chartSettingsRef.current),
+          );
+          requestChartDataRender({ resetVisibleRange: false, reason: 'cached-live-quote' });
+        }
+        const preloadOwner = historyRequestCoordinatorRef.current.start({
+          symbol: selectedSymbol,
+          timeframe: activeTf,
+          count: 0,
+        }, async () => candlesRef.current);
+        void runAfterReady(preloadOwner.signal, () => !isDisposedRef.current && preloadOwner.isCurrent());
+        return;
+      }
+
       const currentAfterHydration = currentCandleRef.current;
       if (!hydratedFromCache) {
         setLoadingPhase('receiving');
@@ -266,7 +521,28 @@ export function useTradingChartHistoryLoading({
         count: initialHistoryCount,
       }, async options => {
         if (!deriveInitialHistoryFromM1) {
-          return chartDataService.fetchCandles(options);
+          const nativeCandles = await chartDataService.fetchCandles(options);
+          if (
+            nativeCandles.length > 0
+            || options.signal?.aborted
+            || !isM1DerivedFallbackTimeframe(activeTf)
+          ) {
+            return nativeCandles;
+          }
+
+          // Fall back to M1 aggregation only if the broker returned no native higher-TF bars.
+          derivedInitialHistory = await fetchDerivedTimeframeCandlesFromM1({
+            symbol: selectedSymbol,
+            targetTimeframe: activeTf,
+            signal: options.signal,
+            targetCandleLimit: getDerivedM1InitialTargetCandleLimit(activeTf),
+            includeM1Candles: true,
+            yieldBetweenPages: waitForProgressiveHistoryIdleTurn,
+          });
+          if (derivedInitialHistory.candles.length > 0) {
+            historySource = 'derived-m1';
+          }
+          return derivedInitialHistory.candles;
         }
 
         derivedInitialHistory = await fetchDerivedTimeframeCandlesFromM1({
@@ -370,23 +646,6 @@ export function useTradingChartHistoryLoading({
       // with Date.now() and snapping the difference to 30-minute increments
       // shifted valid future/test sessions and made REST and stream buckets diverge.
       // A non-zero offset may only come from an explicit broker contract.
-      const explicitBrokerOffsetSeconds = brokerTimeOffsetSecRef.current;
-      const normalizedSymbol = selectedSymbol.trim().toUpperCase();
-      const currentQuote = window.rtxTickCache?.get(selectedSymbol)
-        ?? window.rtxTickCache?.get(normalizedSymbol)
-        ?? useAppStore.getState().ticks[selectedSymbol]
-        ?? useAppStore.getState().ticks[normalizedSymbol];
-      const resolveLatestFormingHistoryQuote = (rows: Candle[], historyTimeframe: Timeframe): Candle[] => {
-        const last = rows[rows.length - 1];
-        if (!last) return rows;
-        const quoted = resolveFormingCandleLiveClose(
-          last, currentQuote, selectedSymbol, historyTimeframe, explicitBrokerOffsetSeconds,
-        );
-        if (quoted === last) return rows;
-        const [validated] = reconcileCandlesWithLiveQuote([quoted], 'forming history quote');
-        return validated ? [...rows.slice(0, -1), validated] : rows;
-      };
-
       const protectedHistory = protectedDisplayedHistoryRef.current;
       const shouldPreserveProtectedHistory = (
         hasDisplayedHistoryRef.current &&
@@ -650,7 +909,15 @@ export function useTradingChartHistoryLoading({
           await waitForProgressiveHistoryIdleTurn(historyRequest.signal);
           if (!isCurrentHistoryLoad()) return;
           warmOtherTimeframeCaches();
-          if (activeTf !== 'M1' || candles.length < 2) return;
+          const preloadBurst = preloadNativeAndSeedTimeframes(
+            historyRequest.signal,
+            isCurrentHistoryLoad,
+          );
+          if (activeTf !== 'M1' || candles.length < 2) {
+            await preloadBurst;
+            await preloadMissingDerivedTimeframes(historyRequest.signal, isCurrentHistoryLoad);
+            return;
+          }
 
           const applyAdditionalHistory = (incoming: Candle[], reason: string): number => {
             const added = mergeMissingHistoryCandles(
@@ -690,6 +957,11 @@ export function useTradingChartHistoryLoading({
               console.warn('[Chart] Background history page failed; keeping visible candles:', error);
             }
           }
+
+          void preloadBurst.then(() => {
+            if (!isCurrentHistoryLoad()) return;
+            return preloadMissingDerivedTimeframes(historyRequest.signal, isCurrentHistoryLoad);
+          });
 
           const gapBackfill = await backfillRecentInteriorHistoryGaps({
             symbol: selectedSymbol,

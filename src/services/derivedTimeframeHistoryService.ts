@@ -333,10 +333,15 @@ export const isM1DerivedFallbackTimeframe = (timeframe: string): boolean => {
   return normalized !== null && normalized !== 'M1';
 };
 
-/** Calendar history needs whole days/weeks/months, beyond a bounded M1 page. */
+/** 4-hour and calendar frames span multiple days, beyond one bounded M1 page. */
 export const prefersNativeTimeframeHistory = (timeframe: string): boolean => {
   const normalized = normalizeTimeframe(timeframe);
-  return normalized === 'D1' || normalized === 'W1' || normalized === 'MN';
+  return (
+    normalized === 'H4'
+    || normalized === 'D1'
+    || normalized === 'W1'
+    || normalized === 'MN'
+  );
 };
 
 export const getDerivedM1MaxPages = (targetTimeframe: string): number => {

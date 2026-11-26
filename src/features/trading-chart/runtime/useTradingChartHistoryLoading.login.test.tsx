@@ -148,7 +148,7 @@ describe('retained public canvas during account history replacement', () => {
 });
 
 describe('current-session live candle while loading initial history', () => {
-  it.each(['D1', 'W1', 'MN'] as const)('loads %s directly before any M1 derivation', async timeframe => {
+  it.each(['H4', 'D1', 'W1', 'MN'] as const)('loads %s directly before any M1 derivation', async timeframe => {
     const harness = createHarness();
     harness.options.timeframe = timeframe;
     harness.options.prevTimeframeRef.current = timeframe;
@@ -157,7 +157,21 @@ describe('current-session live candle while loading initial history', () => {
     await act(() => view.result.current.loadHistory('XAUUSD.raw', timeframe));
     expect(transport.derive).not.toHaveBeenCalled();
     expect(transport.fetch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ timeframe, symbol: 'XAUUSD.raw', count: 30 }));
+    expect(harness.options.setHistoryCache).toHaveBeenCalledWith(timeframe, candles, 0, 'backend');
     expect(harness.options.updateChartData).toHaveBeenCalledWith(candles, undefined, expect.objectContaining({ finishLoadingAfterRender: true }));
+  });
+
+  it('falls back to M1 derivation on H4 when native H4 history returns empty', async () => {
+    const harness = createHarness();
+    harness.options.timeframe = 'H4';
+    harness.options.prevTimeframeRef.current = 'H4';
+    transport.fetch.mockResolvedValue([]);
+    transport.derive.mockResolvedValue(derivedResponse(candles));
+    const view = renderHook(() => useTradingChartHistoryLoading(harness.options));
+    await act(() => view.result.current.loadHistory('XAUUSD.raw', 'H4'));
+    expect(transport.fetch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ timeframe: 'H4', symbol: 'XAUUSD.raw', count: 30 }));
+    expect(transport.derive).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ targetTimeframe: 'H4', targetCandleLimit: 30 }));
+    expect(harness.options.setHistoryCache).toHaveBeenCalledWith('H4', candles, 0, 'derived-m1');
   });
 
   it('paints a revisited cache while refresh is pending and retains it after a failed refresh', async () => {
@@ -216,7 +230,7 @@ describe('current-session live candle while loading initial history', () => {
     harness.options.currentCandleRef.current = forming;
     harness.options.liveCandleMutationGenerationRef.current = 1;
     harness.options.liveCandleMutationGenerationByTimeRef.current.set(forming.time, 1);
-    if (['M1', 'D1', 'W1', 'MN'].includes(timeframe)) transport.fetch.mockResolvedValue(history);
+    if (['M1', 'H4', 'D1', 'W1', 'MN'].includes(timeframe)) transport.fetch.mockResolvedValue(history);
     else transport.derive.mockResolvedValue(derivedResponse(history));
     const view = renderHook(() => useTradingChartHistoryLoading(harness.options));
 

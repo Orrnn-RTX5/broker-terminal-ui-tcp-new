@@ -439,7 +439,10 @@ describe('enterprise light visual-system contract', () => {
       /\.rtx-modify-dialog button:disabled\s*\{[\s\S]*?background: var\(--rtx-light-panel-subtle, #f1f4f8\) !important;[\s\S]*?color: var\(--rtx-light-text-muted, #475569\) !important;/,
     );
     expect(lastSymbolCss).toMatch(
-      /\.last-symbol-trade-button--sell:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-sell-hover, #b91c1c\) !important;[\s\S]*?color: #ffffff !important;/,
+      /\.last-symbol-trade-button\[data-dir='down'\]:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-sell-hover, #b91c1c\) !important;[\s\S]*?color: #ffffff !important;/,
+    );
+    expect(lastSymbolCss).toMatch(
+      /\.last-symbol-trade-button\[data-dir='up'\]:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-buy-hover, #1d4ed8\) !important;[\s\S]*?color: #ffffff !important;/,
     );
     expect(bugReportCss).toMatch(
       /\.rtx-bug-report-send:hover:not\(:disabled\)\s*\{[\s\S]*?background: var\(--rtx-light-accent-strong, #1e4788\) !important;[\s\S]*?color: #ffffff !important;/,

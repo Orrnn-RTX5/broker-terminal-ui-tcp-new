@@ -749,7 +749,6 @@ html:root.rtx-skin-untitled-light .rtx-last-symbol-panel :is(
 }
 
 html:root.rtx-skin-untitled-light .rtx-last-symbol-panel :is(
-  .last-symbol-trade-button__price, .last-symbol-trade-button__top strong,
   .last-symbol-presets button, .last-symbol-settings__heading,
   .last-symbol-setting-row strong
 ) {
@@ -776,7 +775,6 @@ html:root.rtx-skin-untitled-light .rtx-last-symbol-panel :is(
 
 html:root.rtx-skin-untitled-light .rtx-last-symbol-panel :is(
   .last-symbol-unit, .last-symbol-history, .last-symbol-side,
-  .last-symbol-status, .last-symbol-trade-button__quote-label,
   .last-symbol-account-summary dt, .last-symbol-settings__heading small,
   .last-symbol-setting-row small, .last-symbol-field small,
   .last-symbol-protection-summary, .last-symbol-notice, .last-symbol-alert

@@ -18,6 +18,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useSyncExter
 import { getLiveQuotesVersion, subscribeLiveQuotes } from '../services/liveQuotes';
 import { getLiveSymbolPnLFromSource } from '../services/livePositionAggregates';
 import { useFloatingPanelDrag } from '../hooks/useFloatingPanelDrag';
+import { useQuoteTickDirection } from '../hooks/useQuoteTickDirection';
 import { Icon } from './ui/Icon';
 import { DailyChangeSummary } from './market-watch/DailyChangeSummary';
 import { useLastSymbolStore } from '../store/useLastSymbolStore';
@@ -196,14 +197,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     const canPlaceTrade = Boolean(lastSymbol) && !shouldBlockSymbolTrading(marketStatus, lastSymbol);
     const sellDisabled = hasTradingSession && (!canPlaceTrade || bid === 0);
     const buyDisabled = hasTradingSession && (!canPlaceTrade || ask === 0);
-    const hasLiveQuote = Boolean(lastSymbol && bid > 0 && ask > 0);
-    const executionStatus = !lastSymbol
-        ? { label: 'Idle', tone: 'idle' }
-        : !canPlaceTrade
-            ? { label: marketStatus.label || 'Unavailable', tone: 'blocked' }
-            : hasLiveQuote
-                ? { label: 'Live', tone: 'live' }
-                : { label: 'Awaiting quote', tone: 'waiting' };
+    const { bidDir, askDir } = useQuoteTickDirection(lastSymbol, bid, ask);
 
     // Flash status message
     const flash = useCallback((msg: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -502,10 +496,6 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                 <section className="last-symbol-summary" aria-label={tr(symbol === undefined ? "Last traded symbol" : "Selected symbol")}>
                     <div className="last-symbol-section-heading">
                         <span>{tr(symbol === undefined ? "Last traded symbol" : "Selected symbol")}</span>
-                        <span className="last-symbol-status" data-tone={executionStatus.tone}>
-                            <span className="last-symbol-status__dot" aria-hidden="true" />
-                            {tr(executionStatus.label)}
-                        </span>
                     </div>
                     <div className="last-symbol-summary__row">
                         <div>
@@ -608,16 +598,15 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                             onClick={() => placeOrder('SELL')}
                             disabled={sellDisabled}
                             className="last-symbol-trade-button last-symbol-trade-button--sell"
+                            data-side="sell"
+                            data-dir={bidDir}
                             aria-label={tr("Sell {{value0}} at market", { value0: lastSymbol || tr('Last Symbol') })}
                             title={tr("Sell at market (Shift+S)")}
                         >
-                            <span className="last-symbol-trade-button__top">
-                                <strong>{tr("Sell")}</strong>
-                                <span className="last-symbol-trade-button__quote-label">{tr("Bid")}</span>
-                            </span>
                             <span className="last-symbol-trade-button__price">
                                 {bid > 0 ? (digits === null ? String(bid) : bid.toFixed(digits)) : '—'}
                             </span>
+                            <span className="last-symbol-trade-button__label">{tr("SELL")}</span>
                         </button>
 
                         <button
@@ -625,13 +614,12 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                             onClick={() => placeOrder('BUY')}
                             disabled={buyDisabled}
                             className="last-symbol-trade-button last-symbol-trade-button--buy"
+                            data-side="buy"
+                            data-dir={askDir}
                             aria-label={tr("Buy {{value0}} at market", { value0: lastSymbol || tr('Last Symbol') })}
                             title={tr("Buy at market (Shift+B)")}
                         >
-                            <span className="last-symbol-trade-button__top">
-                                <strong>{tr("Buy")}</strong>
-                                <span className="last-symbol-trade-button__quote-label">{tr("Ask")}</span>
-                            </span>
+                            <span className="last-symbol-trade-button__label">{tr("BUY")}</span>
                             <span className="last-symbol-trade-button__price">
                                 {ask > 0 ? (digits === null ? String(ask) : ask.toFixed(digits)) : '—'}
                             </span>

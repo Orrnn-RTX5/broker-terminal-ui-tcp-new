@@ -45,6 +45,7 @@ import { isOneClickTradingAccepted, useOneClickDisclaimerStore } from '../store/
 import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
 import './OneClickTrading.css';
 import { hasAuthenticatedTradingSession, requireTradingAuth } from '../services/tradingAuthGate';
+import { MT5_QUOTE_TICK_STALE_MS, useQuoteTickDirection } from '../hooks/useQuoteTickDirection';
 
 interface OneClickTradingProps {
     symbol: string;
@@ -58,7 +59,7 @@ interface OneClickTradingProps {
     volumeStep?: number;
 }
 
-export const MT5_ONE_CLICK_STALE_MS = 15_000;
+export const MT5_ONE_CLICK_STALE_MS = MT5_QUOTE_TICK_STALE_MS;
 
 type LooseRecord = Record<string, unknown>;
 
@@ -225,8 +226,6 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
     useEffect(() => { setBlockedMessage(null); setError(null); }, [symbol]);
-    const prevBidRef = useRef<number>(0);
-    const prevAskRef = useRef<number>(0);
     const panelRef = useRef<HTMLDivElement>(null);
     const [compact, setCompact] = useState(false);
     useEffect(() => {
@@ -275,49 +274,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     // - Blue (`up`): current price > previous price
     // - Red (`down`): current price < previous price
     // - Gray (`flat`): price unchanged for 15 seconds (or before first tick delta)
-    const [bidFlash, setBidFlash] = useState<'up' | 'down' | ''>('');
-    const [askFlash, setAskFlash] = useState<'up' | 'down' | ''>('');
-    const [bidDir, setBidDir] = useState<'up' | 'down' | 'flat'>('flat');
-    const [askDir, setAskDir] = useState<'up' | 'down' | 'flat'>('flat');
-
-    useEffect(() => {
-        prevBidRef.current = 0;
-        prevAskRef.current = 0;
-        setBidDir('flat');
-        setAskDir('flat');
-    }, [symbol]);
-
-    useEffect(() => {
-        if (prevBidRef.current && bid !== prevBidRef.current) {
-            const dir = bid > prevBidRef.current ? 'up' : 'down';
-            setBidFlash(dir);
-            setBidDir(dir);
-            prevBidRef.current = bid;
-            const flashTimer = setTimeout(() => setBidFlash(''), 350);
-            const staleTimer = setTimeout(() => setBidDir('flat'), MT5_ONE_CLICK_STALE_MS);
-            return () => {
-                clearTimeout(flashTimer);
-                clearTimeout(staleTimer);
-            };
-        }
-        prevBidRef.current = bid;
-    }, [bid]);
-
-    useEffect(() => {
-        if (prevAskRef.current && ask !== prevAskRef.current) {
-            const dir = ask > prevAskRef.current ? 'up' : 'down';
-            setAskFlash(dir);
-            setAskDir(dir);
-            prevAskRef.current = ask;
-            const flashTimer = setTimeout(() => setAskFlash(''), 350);
-            const staleTimer = setTimeout(() => setAskDir('flat'), MT5_ONE_CLICK_STALE_MS);
-            return () => {
-                clearTimeout(flashTimer);
-                clearTimeout(staleTimer);
-            };
-        }
-        prevAskRef.current = ask;
-    }, [ask]);
+    const { bidDir, askDir, bidFlash, askFlash } = useQuoteTickDirection(symbol, bid, ask);
 
     const [isAdvancedMode, setIsAdvancedMode] = useState(false);
     useEffect(() => {

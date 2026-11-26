@@ -187,4 +187,21 @@ describe('cache baseline arriving after a live candle on reload', () => {
     act(() => { expect(harness.view.result.current.hydrateHistoryFromCache('M1', 'cached-history')).toBe(false); });
     expect(harness.options.updateChartData).not.toHaveBeenCalled();
   });
+
+  it('reuses cached backend H4 history on revisit even with fewer than 30 bars, unlike partial derived-m1', () => {
+    const harness = createHarness('BTCUSD', 'H4');
+    harness.options.candlesRef.current = [];
+    harness.options.currentCandleRef.current = null;
+    harness.options.liveCandleMutationGenerationByTimeRef.current.clear();
+
+    candleCache.setLatest(harness.key, harness.history, { ...harness.metadata, source: 'derived-m1' });
+    act(() => { expect(harness.view.result.current.hydrateHistoryFromCache('H4', 'cached-timeframe-change')).toBe(false); });
+
+    candleCache.setLatest(harness.key, harness.history, { ...harness.metadata, source: 'backend' });
+    act(() => { expect(harness.view.result.current.hydrateHistoryFromCache('H4', 'cached-timeframe-change')).toBe(true); });
+    expect(harness.options.updateChartData).toHaveBeenCalledWith(harness.history, undefined, expect.objectContaining({
+      cachedBaseline: true,
+      finishLoadingAfterRender: true,
+    }));
+  });
 });

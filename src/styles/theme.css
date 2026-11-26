@@ -593,7 +593,6 @@ html:is(.rtx-skin-untitled-light, .theme-light) .rtx-toolbar-brand__logo {
   outline-offset: -2px;
 }
 
-.rtx-toolbar-action[aria-pressed='true'],
 .rtx-trade-history-overlay-button[aria-expanded='true'],
 .rtx-toolbar-icon-button[aria-checked='true'] {
   background: var(--color-info-dim);
@@ -638,16 +637,6 @@ html.rtx-desktop-shell-active .rtx-period-separator-toggle[aria-pressed='true'] 
   line-height: 16px;
   min-width: 38px;
   padding: 0 5px;
-}
-
-.rtx-toolbar-action[aria-pressed='true'] .rtx-toolbar-action__icon,
-.rtx-toolbar-action[aria-pressed='true'] .rtx-toolbar-symbol-badge {
-  color: var(--color-blue-300, #93c5fd);
-}
-
-.rtx-toolbar-action[aria-pressed='true'] .rtx-toolbar-symbol-badge {
-  background: var(--bg-secondary);
-  border-color: var(--border-tertiary);
 }
 
 /* === Laptop & Responsive Full-Row Visibility (No Clipping / No Scrollbar) === */

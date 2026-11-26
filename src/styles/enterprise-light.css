@@ -419,13 +419,11 @@ html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action,
   outline-offset: 0 !important;
 }
 
-html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action[aria-pressed="true"],
-  .rtx-toolbar-icon-button[aria-pressed="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-icon-button[aria-pressed="true"],
   .rtx-toolbar-icon-button[aria-checked="true"],
   .rtx-trade-history-overlay-button[aria-expanded="true"],
   .rtx-advanced-grid-button[aria-expanded="true"]),
-html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-action[aria-pressed="true"],
-  .rtx-toolbar-icon-button[aria-pressed="true"],
+html.rtx-advanced-view.rtx-skin-untitled-light :is(.rtx-toolbar-icon-button[aria-pressed="true"],
   .rtx-toolbar-icon-button[aria-checked="true"],
   .rtx-trade-history-overlay-button[aria-expanded="true"],
   .rtx-advanced-grid-button[aria-expanded="true"]):is(:hover, :focus, :focus-visible, :active) {

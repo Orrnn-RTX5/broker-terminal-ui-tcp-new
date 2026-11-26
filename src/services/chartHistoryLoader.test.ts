@@ -257,7 +257,7 @@ describe('chart history loader', () => {
     expect(result.usedDerivedFallback).toBe(false);
   });
 
-  it.each(['D1', 'W1', 'MN'])('requests native %s older history without paging through M1 first', async timeframe => {
+  it.each(['H4', 'D1', 'W1', 'MN'])('requests native %s older history without paging through M1 first', async timeframe => {
     const fetchCandles = vi.fn(async () => [candle(3600)]);
     const result = await fetchOlderHistoryPage({ symbol: 'XAUUSD.raw', timeframe, olderThanRaw: 7200, fetchCandles });
     expect(fetchCandles).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
@@ -480,7 +480,7 @@ describe('chart history loader', () => {
     expect(result.candles.map(item => item.time)).toEqual([3600]);
   });
 
-  it.each(['M5', 'M15', 'M30', 'H1', 'H4'])(
+  it.each(['M5', 'M15', 'M30', 'H1'])(
     'tries M1 derivation before the native %s older-history request',
     async timeframe => {
       const requestedTimeframes: string[] = [];

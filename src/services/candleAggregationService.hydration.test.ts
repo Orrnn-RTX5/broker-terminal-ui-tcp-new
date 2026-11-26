@@ -58,4 +58,21 @@ describe('aggregation handoff to another chart pane', () => {
     emitSessionChange('token_rotation');
     expect(candleAggregationService.getCandlesForHydration('BTCUSD', 'M1')).toEqual(history);
   });
+
+  it('retains enough derived H1 bars from M1 history to satisfy initial chart viewport caching', () => {
+    const service = new CandleAggregationService();
+    const startHour = Math.floor(Date.UTC(2026, 9, 1, 0, 0) / 1000);
+    const m1Candles: OHLCV[] = Array.from({ length: 35 * 60 }, (_, index) => ({
+      time: startHour + index * 60,
+      open: 100 + index * 0.01,
+      high: 101 + index * 0.01,
+      low: 99 + index * 0.01,
+      close: 100.5 + index * 0.01,
+      volume: 1,
+      isComplete: index < 35 * 60 - 1,
+    }));
+
+    service.loadHistoricalCandles('BTCUSD', 'M1', m1Candles);
+    expect(service.getCandles('BTCUSD', 'H1', true, false).length).toBeGreaterThanOrEqual(30);
+  });
 });

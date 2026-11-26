@@ -844,7 +844,7 @@ export class SymbolCandleBuilder {
 
     const LIMITS: Record<Timeframe, number> = {
       M1: 1440, M5: 288, M15: 96, M30: 48,
-      H1: 24,   H4: 10,  D1: 30,  W1: 12, MN: 12,
+      H1: 48,   H4: 12,  D1: 30,  W1: 12, MN: 12,
     };
 
     const limit = LIMITS[tf] ?? 100;

@@ -4,8 +4,8 @@
   min-height: 0;
   overflow: auto;
   container-type: inline-size;
-  background: var(--bg-secondary, #1f1f1f);
-  color: var(--text-primary, #e5e5e5);
+  background: var(--bg-secondary, #131316);
+  color: var(--text-primary, #e2e2e8);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -13,8 +13,8 @@
 .rtx-market-watch-trading__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
+  gap: 5px;
+  padding: 5px;
 }
 
 @container (max-width: 329px) {
@@ -24,17 +24,20 @@
 .rtx-market-watch-trading__card {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-primary, #444444);
-  background: var(--bg-secondary, #1f1f1f);
+  border: 1px solid var(--border-primary, #28282e);
+  border-radius: 5px;
+  background: var(--bg-secondary, #131316);
 }
 
 .rtx-market-watch-trading__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 4px;
-  min-height: 21px;
-  padding: 0 3px;
+  gap: 6px;
+  min-height: 22px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary, #191a1e);
+  border-bottom: 1px solid var(--border-primary, #28282e);
 }
 
 .rtx-market-watch-trading__symbol {
@@ -51,7 +54,7 @@
   --rtx-type-size: 10px;
   flex-shrink: 0;
   font-size: 10px;
-  color: var(--text-secondary, #b7b7b7);
+  color: var(--text-secondary, #808088);
 }
 
 .rtx-market-watch-trading__controls {
@@ -60,7 +63,7 @@
 }
 
 /* Only this presentation changes; the shared control keeps execution ownership. */
-html:root body .rtx-market-watch-trading__controls .rtx-oct {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct {
   position: relative !important;
   inset: auto !important;
   display: block !important;
@@ -71,7 +74,7 @@ html:root body .rtx-market-watch-trading__controls .rtx-oct {
   z-index: auto;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct > [data-testid='one-click-trading-row'] {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct > [data-testid='one-click-trading-row'] {
   position: relative;
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -80,108 +83,121 @@ html:root body .rtx-market-watch-trading__controls .rtx-oct > [data-testid='one-
   gap: 1px;
   border: 0 !important;
   border-radius: 0 !important;
-  background: var(--border-primary, #444444) !important;
+  background: var(--border-primary, #28282e) !important;
   box-shadow: none !important;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button {
   display: flex !important;
   flex-direction: column !important;
-  justify-content: flex-start !important;
+  align-items: stretch !important;
+  justify-content: space-between !important;
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;
   flex: 1 1 auto !important;
-  height: 58px !important;
-  min-height: 58px !important;
-  max-height: 58px !important;
-  gap: 0 !important;
-  padding: 0 !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+  gap: 2px !important;
+  padding: 4px 8px 5px !important;
   border: 0 !important;
   box-shadow: none !important;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button[data-side='sell'] { grid-area: sell; }
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button[data-side='buy'] { grid-area: buy; }
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button[data-side='sell'] { grid-area: sell; }
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-trade-button[data-side='buy'] { grid-area: buy; }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-side-label {
-  --rtx-type-size: 10px;
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-side-label {
+  --rtx-type-size: 9.5px;
+  --rtx-type-weight: 700;
   display: block;
   order: -1;
   box-sizing: border-box;
   width: 100%;
-  min-height: 21px;
-  padding: 3px 4px !important;
-  font-size: 10px !important;
-  line-height: 15px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  line-height: 12px !important;
+  opacity: 0.92;
   white-space: nowrap;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct [data-side='sell'] .rtx-oct-side-label { text-align: left; }
-html:root body .rtx-market-watch-trading__controls .rtx-oct [data-side='buy'] .rtx-oct-side-label { text-align: right; }
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct [data-side='sell'] .rtx-oct-side-label { text-align: left !important; }
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct [data-side='buy'] .rtx-oct-side-label { text-align: right !important; }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-price {
-  --rtx-type-size: clamp(13px, 4.2cqi, 19px);
-  --rtx-type-weight: 500;
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-price {
+  --rtx-type-size: clamp(12px, 3.8cqi, 15px);
+  --rtx-type-weight: 700;
   display: block;
   box-sizing: border-box;
   width: 100%;
+  height: auto !important;
   min-width: 0;
-  padding: 5px 2px !important;
-  font-size: clamp(13px, 4.2cqi, 19px) !important;
-  font-weight: 500;
-  line-height: 24px !important;
+  padding: 0 !important;
+  font-size: clamp(12px, 3.8cqi, 15px) !important;
+  font-weight: 700 !important;
+  line-height: 16px !important;
   white-space: nowrap !important;
   overflow: hidden;
   text-overflow: ellipsis;
   text-shadow: none !important;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct [data-side='sell'] .rtx-oct-price { text-align: left !important; }
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct [data-side='buy'] .rtx-oct-price { text-align: right !important; }
+
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control {
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
   grid-area: auto !important;
   z-index: 1;
-  width: 82px !important;
-  min-width: 82px !important;
-  max-width: 82px !important;
-  height: 21px !important;
-  min-height: 21px !important;
-  max-height: 21px !important;
+  width: 74px !important;
+  min-width: 74px !important;
+  max-width: 74px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
   gap: 0 !important;
-  padding: 0 !important;
-  border: 1px solid var(--border-primary, #444444) !important;
-  background: var(--bg-tertiary, #2a2a2a) !important;
+  padding: 0 1px !important;
+  border: 1px solid var(--border-secondary, #333338) !important;
+  border-top: 0 !important;
+  border-radius: 0 0 4px 4px !important;
+  background: var(--bg-tertiary, #191a1e) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28) !important;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control button {
-  width: 20px !important;
-  min-width: 20px !important;
-  height: 19px !important;
-  min-height: 19px !important;
-  max-height: 19px !important;
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control button {
+  width: 18px !important;
+  min-width: 18px !important;
+  height: 17px !important;
+  min-height: 17px !important;
+  max-height: 17px !important;
   padding: 0 !important;
-  color: var(--text-secondary, #b7b7b7) !important;
+  color: var(--text-secondary, #808088) !important;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control button svg {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control button svg {
   width: 10px;
   height: 10px;
 }
 
-html:root body .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control input {
+html:root body .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control input {
   --rtx-type-size: 10px;
-  --rtx-type-weight: 500;
-  width: 38px !important;
-  height: 19px !important;
-  min-height: 19px !important;
-  max-height: 19px !important;
+  --rtx-type-weight: 600;
+  width: 34px !important;
+  height: 17px !important;
+  min-height: 17px !important;
+  max-height: 17px !important;
   font-size: 10px !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   font-family: inherit !important;
-  color: var(--text-primary, #e5e5e5) !important;
+  color: var(--text-primary, #e2e2e8) !important;
 }
 
 /* The quote engine has no price yet: show availability, not a zero quote. */
@@ -189,27 +205,85 @@ html:root body .rtx-market-watch-trading__card[data-has-quote='false'] .rtx-oct-
 html:root body .rtx-market-watch-trading__card[data-has-quote='false'] .rtx-oct-trade-button::after {
   content: '\2014';
   display: block;
-  padding-top: 5px;
-  font-size: 19px;
-  line-height: 24px;
+  padding-top: 0;
+  font-size: 14px;
+  line-height: 16px;
+}
+
+html:root body .rtx-market-watch-trading__card[data-has-quote='false'] .rtx-oct-trade-button[data-side='sell']::after {
+  text-align: left;
+}
+
+html:root body .rtx-market-watch-trading__card[data-has-quote='false'] .rtx-oct-trade-button[data-side='buy']::after {
+  text-align: right;
 }
 
 .rtx-market-watch-trading__stats {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
   margin: 0;
-  border-top: 1px solid var(--border-primary, #444444);
+  background: var(--bg-tertiary, #191a1e);
+  border-top: 1px solid var(--border-primary, #28282e);
   font-size: 10px;
   text-align: center;
 }
 
 .rtx-market-watch-trading__stats > div {
   min-width: 0;
-  padding: 3px 1px;
+  padding: 3px 4px;
 }
 
-.rtx-market-watch-trading__stats > div + div { border-left: 1px solid var(--border-primary, #444444); }
+.rtx-market-watch-trading__stats > div + div { border-left: 1px solid var(--border-primary, #28282e); }
 .rtx-market-watch-trading__stats :is(dt, dd) { --rtx-type-size: 10px; }
-.rtx-market-watch-trading__stats dt { color: var(--text-secondary, #b7b7b7); line-height: 13px; }
+.rtx-market-watch-trading__stats dt {
+  color: var(--text-secondary, #808088);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  line-height: 12px;
+  text-transform: uppercase;
+}
 .rtx-market-watch-trading__stats dd { margin: 0; line-height: 14px; overflow-wrap: anywhere; }
-.rtx-market-watch-trading__empty { padding: 12px 8px; color: var(--text-secondary, #b7b7b7); text-align: center; }
+.rtx-market-watch-trading__empty { padding: 12px 8px; color: var(--text-secondary, #808088); text-align: center; }
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading {
+  background: var(--rtx-light-panel, #f8fafc);
+  color: var(--rtx-light-text, #182230);
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__card {
+  background: var(--rtx-light-elevated, #ffffff);
+  border-color: var(--rtx-light-border, #c5ced9);
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__header,
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__stats {
+  background: var(--rtx-light-panel-subtle, #f1f4f8);
+  border-color: var(--rtx-light-border, #c5ced9);
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__stats > div + div {
+  border-left-color: var(--rtx-light-border, #c5ced9);
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__time,
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__stats dt {
+  color: var(--rtx-light-text-muted, #475569);
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct > [data-testid='one-click-trading-row'] {
+  background: var(--rtx-light-border, #c5ced9) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control {
+  background: var(--rtx-light-field, #ffffff) !important;
+  border-color: var(--rtx-light-control-border, #697b91) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control input {
+  color: var(--rtx-light-text, #182230) !important;
+}
+
+:is(html.rtx-skin-untitled-light, html.theme-light) .rtx-market-watch-trading__card .rtx-market-watch-trading__controls .rtx-oct .rtx-oct-volume-control button {
+  color: var(--rtx-light-text-secondary, #334155) !important;
+}

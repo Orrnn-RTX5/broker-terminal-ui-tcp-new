@@ -72,6 +72,9 @@ describe('TopToolbar primary command cluster', () => {
     expect(themeCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent;[^}]*border-color: transparent;[^}]*border-radius: var\(--radius-sm\);/);
     expect(themeCss).toMatch(/\.rtx-toolbar-action:hover,[\s\S]*?\.rtx-toolbar-action--primary:focus-visible \{[^}]*background: var\(--bg-quaternary\);[^}]*border-color: transparent;/);
     expect(themeCss).not.toMatch(/\.rtx-toolbar-action--primary:hover[^}]*border-color: var\(--border-tertiary\);/);
+    expect(themeCss).not.toContain(".rtx-toolbar-action[aria-pressed='true']");
+    expect(advancedCss).not.toContain('.rtx-toolbar-action[aria-pressed="true"]');
+    expect(enterpriseCss).not.toContain('.rtx-toolbar-action[aria-pressed="true"]');
     expect(timeframePickerSource).toContain('hover:border-transparent hover:bg-[var(--bg-quaternary)] hover:text-zinc-100');
     expect(timeframePickerSource).not.toContain('hover:border-zinc-700');
     expect(advancedCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent !important;[^}]*border-color: transparent !important;/);

@@ -6,6 +6,7 @@ import {
   getDerivedM1InitialTargetCandleLimit,
   getDerivedM1MaxPages,
   isM1DerivedFallbackTimeframe,
+  prefersNativeTimeframeHistory,
 } from './derivedTimeframeHistoryService';
 
 const utcSeconds = (year: number, month: number, day: number, hour = 0, minute = 0) =>
@@ -514,6 +515,13 @@ describe('derived timeframe history from M1', () => {
   it('exposes fallback eligibility and page limits by timeframe', () => {
     expect(isM1DerivedFallbackTimeframe('M1')).toBe(false);
     expect(isM1DerivedFallbackTimeframe('H1')).toBe(true);
+    expect(isM1DerivedFallbackTimeframe('H4')).toBe(true);
+    expect(prefersNativeTimeframeHistory('M5')).toBe(false);
+    expect(prefersNativeTimeframeHistory('H1')).toBe(false);
+    expect(prefersNativeTimeframeHistory('H4')).toBe(true);
+    expect(prefersNativeTimeframeHistory('D1')).toBe(true);
+    expect(prefersNativeTimeframeHistory('W1')).toBe(true);
+    expect(prefersNativeTimeframeHistory('MN')).toBe(true);
     expect(getDerivedM1InitialTargetCandleLimit('H1')).toBe(30);
     expect(getDerivedM1InitialTargetCandleLimit('D1')).toBe(10);
     expect(getDerivedM1InitialTargetCandleLimit('MN')).toBe(1);
