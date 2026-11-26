@@ -239,4 +239,31 @@ describe('price line ownership during login', () => {
     expect(line.style.display).toBe('none');
     expect(line.style.top).toBe('-9999px');
   });
+
+  it('refreshes existing ASK and LAST price line colors live without another quote tick', () => {
+    const view = setup();
+    act(() => view.result.current.syncSupplementalPriceLines(102.5, 102.25));
+    view.askApply.mockClear();
+    view.lastApply.mockClear();
+
+    view.result.current.livePriceColorPaletteRef.current = {
+      ...view.result.current.livePriceColorPaletteRef.current,
+      askPriceLine: '#fb7185',
+      lastPriceLine: '#facc15',
+    };
+    act(() => view.result.current.refreshSupplementalPriceLines());
+
+    expect(view.askApply).toHaveBeenLastCalledWith(expect.objectContaining({
+      price: 102.5,
+      color: '#fb7185',
+      title: 'ASK',
+      lineVisible: true,
+    }));
+    expect(view.lastApply).toHaveBeenLastCalledWith(expect.objectContaining({
+      price: 102.25,
+      color: '#facc15',
+      title: 'LAST',
+      lineVisible: true,
+    }));
+  });
 });

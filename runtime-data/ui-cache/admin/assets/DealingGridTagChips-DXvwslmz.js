@@ -1,1 +1,0 @@
-import"./rolldown-runtime-BWaJ3C7D.js";import{i as e,t}from"./react-vendor-DU-teErA.js";import{t as n}from"./ClientTagChips-Dzv85dxL.js";e();var r=t(),i=({tags:e=[]})=>!Array.isArray(e)||e.length===0?null:(0,r.jsx)(n,{tags:e.slice(0,3),canEdit:!1});export{i as default};

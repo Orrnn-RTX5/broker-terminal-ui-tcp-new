@@ -31,7 +31,6 @@ const renderMenu = (overrides: Partial<ComponentProps<typeof ChartContextMenu>> 
       onToggleGrid={noop}
       onToggleVolumes={noop}
       onToggleAutoScroll={noop}
-      onToggleChartShift={noop}
       onOpenProperties={noop}
       onSaveAsPicture={noop}
       onPrintChart={noop}

@@ -288,4 +288,36 @@ describe('trading chart extracted modules', () => {
       border: '#1746bc',
     });
   });
+
+  it('builds visible Square grid colors across dark and Enterprise Light surfaces in solid and dashed modes', () => {
+    const parseAlpha = (rgba: string) => {
+      const match = /rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)/.exec(rgba);
+      return match ? Number(match[1]) : 1;
+    };
+
+    const lightColors = getEffectiveChartColors(defaultChartProperties, { isAdvancedUntitledLight: true });
+    const lightSquareDashed = buildChartTheme(lightColors, true, true, 'dashed', 'square');
+    const lightScaleDashed = buildChartTheme(lightColors, true, true, 'dashed', 'scale');
+    const lightSquareSolid = buildChartTheme(lightColors, true, true, 'solid', 'square');
+
+    expect(parseAlpha(lightSquareDashed.gridHorizontal)).toBeGreaterThan(parseAlpha(lightScaleDashed.gridHorizontal));
+    expect(parseAlpha(lightSquareDashed.gridVertical)).toBeGreaterThan(parseAlpha(lightScaleDashed.gridVertical));
+    expect(parseAlpha(lightSquareSolid.gridHorizontal)).toBeGreaterThanOrEqual(0.12);
+
+    const darkColors = getEffectiveChartColors(defaultChartProperties, { isAdvancedUntitledLight: false });
+    const darkSquareDashed = buildChartTheme(darkColors, true, false, 'dashed', 'square');
+    const darkSquareSolid = buildChartTheme(darkColors, true, false, 'solid', 'square');
+
+    expect(parseAlpha(darkSquareDashed.gridHorizontal)).toBeGreaterThanOrEqual(0.13);
+    expect(parseAlpha(darkSquareSolid.gridHorizontal)).toBeGreaterThanOrEqual(0.12);
+
+    const customVolumesTheme = buildChartTheme({
+      ...defaultChartProperties.colors,
+      volumes: '#f59e0b',
+    }, true, false, 'dashed', 'mt5', 'Custom');
+    expect(customVolumesTheme.volumeUp).toBe('rgba(245, 158, 11, 0.5)');
+    expect(customVolumesTheme.volumeDown).toBe('rgba(245, 158, 11, 0.5)');
+    expect(customVolumesTheme.volumeLineUp).toBe('#f59e0b');
+    expect(customVolumesTheme.volumeLineDown).toBe('#f59e0b');
+  });
 });

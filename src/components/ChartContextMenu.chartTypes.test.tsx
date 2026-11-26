@@ -37,7 +37,6 @@ const renderMenu = (
       onToggleGrid={onToggleGrid}
       onToggleVolumes={noop}
       onToggleAutoScroll={noop}
-      onToggleChartShift={noop}
       onOpenProperties={noop}
       onSaveAsPicture={noop}
       onPrintChart={noop}
@@ -59,6 +58,18 @@ const renderMenu = (
 };
 
 describe('ChartContextMenu chart types', () => {
+  it('renders the symbol header without a decorative dot', () => {
+    renderMenu('line');
+    const header = screen.getByText('XAUUSD');
+    expect(header.childElementCount).toBe(0);
+  });
+
+  it('omits Chart Shift while keeping Auto Scroll in the chart context menu', () => {
+    renderMenu('line');
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Auto Scroll' })).toBeInTheDocument();
+    expect(screen.queryByText('Chart Shift')).not.toBeInTheDocument();
+  });
+
   it('keeps Line and Area separate and places Area immediately after Line', async () => {
     const { onChangeChartType, onClose } = renderMenu('line');
     const lineLabel = screen.getByText('Line Chart');
@@ -86,6 +97,13 @@ describe('ChartContextMenu chart types', () => {
 
     fireEvent.click(lineItem);
     await waitFor(() => expect(onChangeChartType).toHaveBeenCalledWith('line'));
+  });
+  it('renders chart type shortcuts Alt+1 through Alt+4 in order', () => {
+    renderMenu('line');
+    expect(screen.getByText('Bar Chart').parentElement).toHaveTextContent('Alt+1');
+    expect(screen.getByText('Candlesticks').parentElement).toHaveTextContent('Alt+2');
+    expect(screen.getByText('Line Chart').parentElement).toHaveTextContent('Alt+3');
+    expect(screen.getByText('Area Chart').parentElement).toHaveTextContent('Alt+4');
   });
 });
 
@@ -263,6 +281,15 @@ describe('ChartContextMenu grid choices', () => {
       cleanup();
       useTemplateStore.setState(initial);
     }
+  });
+
+  it('lists only Default as built-in template without Clean Chart or Technical Analysis', () => {
+    renderMenu('line');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Templates' }));
+    const templatesMenu = screen.getByRole('menu', { name: 'Templates' });
+    expect(within(templatesMenu).getByText('Default')).toBeInTheDocument();
+    expect(within(templatesMenu).queryByText('Clean Chart')).toBeNull();
+    expect(within(templatesMenu).queryByText('Technical Analysis')).toBeNull();
   });
 
   it('shows and toggles the chart background logo from the right-click context menu', async () => {

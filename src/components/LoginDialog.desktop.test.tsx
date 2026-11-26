@@ -42,12 +42,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('explains the blocked guest trade and lets the user continue viewing without authentication', async () => {
+it('lets the user continue viewing from trade login without showing the trade notice', async () => {
   const close = vi.fn();
   render(<LoginDialog isOpen onClose={close} reason="trade" />);
   const dialog = screen.getByRole('dialog', { name: 'Log in to trade' });
   expect(dialog).toHaveAttribute('aria-modal', 'true');
-  expect(dialog).toHaveTextContent('No order has been placed.');
+  expect(dialog).not.toHaveTextContent('Log in to your trading account to place an order.');
+  expect(dialog).not.toHaveTextContent('No order has been placed.');
   await screen.findByText('Server online');
   expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Continue viewing' }));

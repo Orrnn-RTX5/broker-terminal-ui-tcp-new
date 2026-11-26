@@ -118,7 +118,7 @@ beforeEach(() => {
   useDrawingToolPreferencesStore.setState({ keepDrawing: false, magnetMode: 'off', snapToIndicators: false });
   useChartObjectStateStore.setState({ byContext: {} });
   useChartZoomStore.setState({ byContext: {} });
-  useChartCursorStore.setState({ mode: 'arrow', valuesTooltipOnLongPress: true });
+  useChartCursorStore.setState({ mode: 'cross', valuesTooltipOnLongPress: true });
 });
 
 afterEach(() => {
@@ -261,7 +261,7 @@ describe('WebDrawingToolsRail', () => {
     expect(rail).toHaveAttribute('aria-orientation', 'vertical');
 
     expect(within(rail).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Arrow — Cursors',
+      'Cross — Cursors',
       'Trendline — Trend Line Tools',
       'Fib retracement - Gann and Fibonacci Tools',
       'Chart patterns',
@@ -284,14 +284,15 @@ describe('WebDrawingToolsRail', () => {
 
   it('opens the TradingView cursors flyout and arms the selected pointer', () => {
     render(<WebDrawingToolsRail selectedSymbol="XAUUSD" />);
-    const menu = openRailMenu('Arrow — Cursors', 'Cursors');
+    const menu = openRailMenu('Cross — Cursors', 'Cursors');
     expect(within(menu).getAllByRole('menuitemradio').map((item) => item.getAttribute('data-tool-id')))
       .toEqual(CURSOR_TOOLS.map((tool) => tool.id));
-    expect(within(menu).getByRole('menuitemradio', { name: 'Arrow' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(menu).getByRole('menuitemradio', { name: 'Cross' })).toHaveAttribute('aria-checked', 'true');
 
     expect(within(menu).queryByRole('menuitemradio', { name: 'Demonstration' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('menuitemradio', { name: 'Eraser' })).not.toBeInTheDocument();
-    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['Cross', 'Dot', 'Arrow', 'Magic']);
+    expect(within(menu).queryByRole('menuitemradio', { name: 'Magic' })).not.toBeInTheDocument();
+    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['Cross', 'Dot', 'Arrow']);
     fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Dot' }));
     expect(useChartCursorStore.getState().mode).toBe('dot');
     expect(commandBus.getHistory().at(-1)).toEqual({
@@ -302,27 +303,28 @@ describe('WebDrawingToolsRail', () => {
     expect(screen.queryByRole('menu', { name: 'Cursors' })).not.toBeInTheDocument();
   });
 
-  it.each(['eraser', 'demonstration'] as const)('replaces an existing %s selection with Arrow and saves the corrected mode', (mode) => {
-    useChartCursorStore.setState({ mode, valuesTooltipOnLongPress: false });
+  it.each(['eraser', 'demonstration', 'magic'] as const)('replaces an existing %s selection with Cross and saves the corrected mode', (mode) => {
+    useChartCursorStore.setState({ mode: mode as never, valuesTooltipOnLongPress: false });
     render(<WebDrawingToolsRail selectedSymbol="XAUUSD" />);
-    expect(useChartCursorStore.getState().mode).toBe('arrow');
+    expect(useChartCursorStore.getState().mode).toBe('cross');
     expect(useChartCursorStore.getState().valuesTooltipOnLongPress).toBe(false);
-    expect(JSON.parse(localStorage.getItem('rtx-chart-cursor-mode')!).state.mode).toBe('arrow');
-    const menu = openRailMenu('Arrow — Cursors', 'Cursors');
-    expect(within(menu).getByRole('menuitemradio', { name: 'Arrow' })).toHaveAttribute('aria-checked', 'true');
+    expect(JSON.parse(localStorage.getItem('rtx-chart-cursor-mode')!).state.mode).toBe('cross');
+    const menu = openRailMenu('Cross — Cursors', 'Cursors');
+    expect(within(menu).getByRole('menuitemradio', { name: 'Cross' })).toHaveAttribute('aria-checked', 'true');
     expect(within(menu).queryByRole('menuitemradio', { name: 'Eraser' })).not.toBeInTheDocument();
     expect(within(menu).queryByRole('menuitemradio', { name: 'Demonstration' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitemradio', { name: 'Magic' })).not.toBeInTheDocument();
   });
 
   it('keeps the long-press values tooltip toggle in the cursors menu', () => {
     render(<WebDrawingToolsRail selectedSymbol="XAUUSD" />);
-    const menu = openRailMenu('Arrow — Cursors', 'Cursors');
+    const menu = openRailMenu('Cross — Cursors', 'Cursors');
     const valuesToggle = within(menu).getByRole('switch', { name: 'Values tooltip on long press' });
     expect(valuesToggle).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(valuesToggle);
     expect(useChartCursorStore.getState().valuesTooltipOnLongPress).toBe(false);
     expect(screen.getByRole('menu', { name: 'Cursors' })).toBeInTheDocument();
-    expect(useChartCursorStore.getState().mode).toBe('arrow');
+    expect(useChartCursorStore.getState().mode).toBe('cross');
   });
 
   it('keeps the exact 17-tool catalog in its three ordered flyout groups', () => {

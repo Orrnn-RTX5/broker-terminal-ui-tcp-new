@@ -65,7 +65,8 @@ interface TemplateState {
   resetToDefaults: () => void;
 }
 
-const DEFAULT_TEMPLATE_IDS = new Set(['default', 'clean-chart', 'technical-analysis']);
+const DEFAULT_TEMPLATE_IDS = new Set(['default']);
+const REMOVED_BUILTIN_TEMPLATE_IDS = new Set(['clean-chart', 'technical-analysis']);
 
 export const DEFAULT_TEMPLATE_COLORS: ChartTemplate['colors'] = {
   background: defaultChartProperties.colors.background,
@@ -91,54 +92,6 @@ const defaultTemplates: ChartTemplate[] = [
     showGrid: true,
     showVolumes: false,
     indicators: [],
-    drawingTools: [],
-    colors: DEFAULT_TEMPLATE_COLORS,
-    createdAt: Date.now(),
-    isDefault: true,
-  },
-  {
-    id: 'clean-chart',
-    name: 'Clean Chart',
-    chartType: 'candlestick',
-    timeframe: 'H1',
-    showGrid: false,
-    showVolumes: false,
-    indicators: [],
-    drawingTools: [],
-    colors: DEFAULT_TEMPLATE_COLORS,
-    createdAt: Date.now(),
-    isDefault: true,
-  },
-  {
-    id: 'technical-analysis',
-    name: 'Technical Analysis',
-    chartType: 'candlestick',
-    timeframe: 'H4',
-    showGrid: true,
-    showVolumes: false,
-    indicators: [
-      {
-        id: 'sma-20',
-        name: 'SMA(20)',
-        type: 'sma',
-        parameters: { period: 20, color: '#2962ff' },
-        visible: true,
-      },
-      {
-        id: 'ema-50',
-        name: 'EMA(50)',
-        type: 'ema',
-        parameters: { period: 50, color: '#f23645' },
-        visible: true,
-      },
-      {
-        id: 'rsi-14',
-        name: 'RSI(14)',
-        type: 'rsi',
-        parameters: { period: 14, overbought: 70, oversold: 30 },
-        visible: true,
-      },
-    ],
     drawingTools: [],
     colors: DEFAULT_TEMPLATE_COLORS,
     createdAt: Date.now(),
@@ -225,11 +178,13 @@ export const useTemplateStore = create<TemplateState>()(
         merge: (persisted, current) => {
           const persistedState = persisted as Partial<TemplateState> | undefined;
           const templates = Array.isArray(persistedState?.templates)
-            ? persistedState.templates.map((template) => (
-                template?.isDefault && DEFAULT_TEMPLATE_IDS.has(template.id)
-                  ? { ...template, showVolumes: false, colors: DEFAULT_TEMPLATE_COLORS }
-                  : template
-              ))
+            ? persistedState.templates
+                .filter((template) => !(template?.isDefault && REMOVED_BUILTIN_TEMPLATE_IDS.has(template.id)))
+                .map((template) => (
+                  template?.isDefault && DEFAULT_TEMPLATE_IDS.has(template.id)
+                    ? { ...template, showVolumes: false, colors: DEFAULT_TEMPLATE_COLORS }
+                    : template
+                ))
             : current.templates;
           return {
             ...current,

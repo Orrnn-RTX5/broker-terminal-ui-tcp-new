@@ -118,13 +118,32 @@ it('forgets the saved password when unchecked without requiring another login', 
   expect(screen.getByLabelText('Password')).toHaveValue('fixture-password');
 });
 
-it('clears restored credentials when the account ID changes', async () => {
+it('keeps the password when removing characters or changing the account ID', async () => {
   await saveLogin(scope, '12345', 'fixture-password');
   openDialog();
   await ready();
   await waitFor(() => expect(screen.getByLabelText('Password')).toHaveValue('fixture-password'));
+  fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: '1234' } });
+  expect(screen.getByLabelText('Account ID')).toHaveValue('1234');
+  expect(screen.getByLabelText('Password')).toHaveValue('fixture-password');
+  expect(screen.getByRole('checkbox', { name: 'Save password' })).not.toBeChecked();
+
   fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: '54321' } });
-  expect(screen.getByLabelText('Password')).toHaveValue('');
+  expect(screen.getByLabelText('Password')).toHaveValue('fixture-password');
+  expect(screen.getByRole('checkbox', { name: 'Save password' })).not.toBeChecked();
+});
+
+it('keeps Account ID empty and preserves password after the user deletes the previous saved ID', async () => {
+  await saveLogin(scope, '12345', 'fixture-password');
+  openDialog();
+  await ready();
+  await waitFor(() => expect(screen.getByLabelText('Account ID')).toHaveValue('12345'));
+  await waitFor(() => expect(screen.getByLabelText('Password')).toHaveValue('fixture-password'));
+
+  fireEvent.change(screen.getByLabelText('Account ID'), { target: { value: '' } });
+  await ready();
+  expect(screen.getByLabelText('Account ID')).toHaveValue('');
+  expect(screen.getByLabelText('Password')).toHaveValue('fixture-password');
   expect(screen.getByRole('checkbox', { name: 'Save password' })).not.toBeChecked();
 });
 

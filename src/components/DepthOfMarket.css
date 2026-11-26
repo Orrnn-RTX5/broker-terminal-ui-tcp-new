@@ -1,10 +1,9 @@
 /* Depth of Market — institutional terminal finish.
-   Uses theme CSS variables with refined slate/charcoal dark fallbacks and
+   Uses theme CSS variables with neutral dark charcoal fallbacks and
    clean light-mode overrides so both themes stay crisp and scannable. */
 
 .rtx-depth-of-market {
   font-variant-numeric: tabular-nums;
-  box-shadow: var(--shadow-lg, 0 16px 36px rgba(0, 0, 0, 0.55)), 0 0 0 1px var(--border-primary, #262b38);
 }
 
 /* ── Title-bar controls ─────────────────────────────────────────────── */
@@ -16,15 +15,15 @@
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #909098);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
 .rtx-dom-icon-btn:hover {
-  color: var(--text-primary, #f1f5f9);
-  background: var(--bg-quaternary, #282e3e);
+  color: var(--text-primary, #e2e2e8);
+  background: var(--bg-quaternary, #2a2a2c);
 }
 .rtx-dom-icon-btn--danger:hover {
   color: #ffffff;
@@ -35,51 +34,72 @@
   outline-offset: 1px;
 }
 
-.rtx-dom-drag-hint {
-  display: flex;
-  align-items: center;
-  padding: 0 2px;
-  color: var(--text-tertiary, #64748b);
-  opacity: 0.75;
-}
-
 /* ── Toolbar ────────────────────────────────────────────────────────── */
+.rtx-dom-toolbar {
+  min-height: 34px;
+}
+.rtx-dom-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 5px;
+  border: 1px solid var(--border-primary, #38383c);
+  background: color-mix(in srgb, var(--bg-primary, #141416) 58%, transparent);
+}
 .rtx-dom-toolbar-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 22px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #909098);
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 .rtx-dom-toolbar-btn:hover {
-  background: var(--bg-quaternary, #252b3b);
-  border-color: var(--border-primary, #333a4b);
-  color: var(--text-primary, #f1f5f9);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary, #e2e2e8);
 }
 .rtx-dom-toolbar-btn:active {
-  background: var(--bg-elevated, #2d3548);
+  background: rgba(255, 255, 255, 0.11);
 }
 .rtx-dom-toolbar-btn.is-active {
-  background: rgba(69, 151, 255, 0.14);
-  border-color: rgba(69, 151, 255, 0.48);
-  color: var(--text-primary, #f1f5f9);
+  background: var(--bg-quaternary, #323236);
+  border-color: var(--border-secondary, #4a4a50);
+  color: var(--text-primary, #ffffff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+.rtx-dom-toolbar-btn--tool {
+  border-radius: 4px;
+}
+.rtx-dom-toolbar-btn--tool.is-active {
+  background: rgba(69, 151, 255, 0.16);
+  border-color: rgba(69, 151, 255, 0.45);
+  color: #6eb2ff;
+  box-shadow: none;
 }
 .rtx-dom-toolbar-btn:focus-visible {
   outline: 1px solid #4597ff;
   outline-offset: 1px;
 }
+.rtx-dom-toolbar-mode {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary, #888892);
+  opacity: 0.78;
+  white-space: nowrap;
+}
 
 /* ── Ladder Scrollbar ───────────────────────────────────────────────── */
 .rtx-dom-ladder-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  scrollbar-color: rgba(160, 160, 168, 0.3) transparent;
 }
 .rtx-dom-ladder-scroll::-webkit-scrollbar {
   width: 5px;
@@ -88,11 +108,11 @@
   background: transparent;
 }
 .rtx-dom-ladder-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.32);
+  background: rgba(160, 160, 168, 0.28);
   border-radius: 999px;
 }
 .rtx-dom-ladder-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.52);
+  background: rgba(160, 160, 168, 0.48);
 }
 
 /* ── Ladder ─────────────────────────────────────────────────────────── */
@@ -106,7 +126,7 @@
 }
 
 .rtx-dom-vol-placeholder {
-  color: var(--text-tertiary, #50505a);
+  color: var(--text-tertiary, #5c5c64);
   opacity: 0.55;
 }
 
@@ -160,62 +180,61 @@
 }
 
 /* ── Steppers (SL / Volume / TP) ────────────────────────────────────── */
+.rtx-dom-params-bar {
+  min-height: 36px;
+}
 .rtx-dom-stepper {
   display: inline-flex;
   align-items: stretch;
   height: 24px;
-  border: 1px solid var(--border-secondary, #333a4b);
+  border: 1px solid var(--border-primary, #343438);
   border-radius: 4px;
-  background: var(--bg-elevated, #181c26);
+  background: color-mix(in srgb, var(--bg-primary, #141416) 76%, transparent);
   overflow: hidden;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.rtx-dom-stepper:hover {
+  border-color: var(--border-secondary, #48484f);
 }
 .rtx-dom-stepper:focus-within {
-  border-color: #4597ff;
-  box-shadow: 0 0 0 1px rgba(69, 151, 255, 0.25);
+  border-color: var(--border-hover, #64646c);
 }
 .rtx-dom-stepper__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
+  width: 19px;
   padding: 0;
   border: 0;
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-secondary, #94a3b8);
+  background: transparent;
+  color: var(--text-tertiary, #787882);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
   transition: background 100ms ease, color 100ms ease;
 }
-.rtx-dom-stepper__btn:first-child {
-  border-right: 1px solid var(--border-primary, #2a3040);
-}
-.rtx-dom-stepper__btn:last-child {
-  border-left: 1px solid var(--border-primary, #2a3040);
-}
 .rtx-dom-stepper__btn:hover {
-  background: var(--bg-quaternary, #282e3e);
-  color: var(--text-primary, #f1f5f9);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #e2e2e8);
 }
 .rtx-dom-stepper__input {
-  width: 40px;
+  width: 36px;
   padding: 0 2px;
   border: 0;
   outline: none;
   background: transparent;
   text-align: center;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--text-primary, #e2e2e8);
   font-size: 12px;
   font-weight: 500;
   appearance: textfield;
   -moz-appearance: textfield;
 }
 .rtx-dom-stepper__input--volume {
-  width: 46px;
+  width: 44px;
   font-weight: 600;
-  color: #93c5fd;
+  color: var(--text-primary, #e2e2e8);
 }
 .rtx-dom-stepper__input::-webkit-outer-spin-button,
 .rtx-dom-stepper__input::-webkit-inner-spin-button {
@@ -223,17 +242,19 @@
   margin: 0;
 }
 .rtx-dom-stepper__label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-secondary, #8c8c96);
 }
 
 /* ── Execution footer ───────────────────────────────────────────────── */
 .rtx-dom-exec-footer {
-  background: var(--bg-tertiary, #1a1e29);
+  background: var(--bg-tertiary, #1f1f1f);
+  padding: 8px 12px 11px;
+  gap: 8px;
 }
 .rtx-dom-exec-btn {
   flex: 1 1 0%;
@@ -244,33 +265,34 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 2px;
   height: 44px;
   min-height: 44px;
   max-height: 44px;
-  padding: 5px 6px 6px;
-  border: 0;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   cursor: pointer;
   color: #ffffff;
-  transition: background 120ms ease, filter 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, filter 120ms ease;
 }
 .rtx-dom-exec-btn:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline: 1.5px solid rgba(255, 255, 255, 0.72);
   outline-offset: -2px;
 }
 .rtx-dom-exec-btn__caption {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  line-height: 14px;
-  letter-spacing: 0.07em;
+  line-height: 12px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.92;
+  opacity: 0.9;
 }
 .rtx-dom-exec-btn__price {
   font-family: var(--font-mono, 'Roboto Mono', 'Courier New', monospace);
   font-size: 13.5px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 17px;
   font-variant-numeric: tabular-nums;
   max-width: 100%;
   overflow: hidden;
@@ -279,49 +301,52 @@
 }
 .rtx-dom-exec-btn__symbol {
   font-family: var(--font-sans, sans-serif);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
-  opacity: 0.82;
+  line-height: 14px;
+  color: var(--text-secondary, #a8a8b2);
+  opacity: 1;
 }
 .rtx-dom-exec-btn--sell {
-  background: #ff5858;
-  border-radius: 0 0 0 8px;
+  background: linear-gradient(180deg, #dc3b3f 0%, #c42e32 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
 }
 .rtx-dom-exec-btn--sell:hover {
-  background: #ef4444;
+  background: linear-gradient(180deg, #e54549 0%, #cd3438 100%);
 }
 .rtx-dom-exec-btn--sell:active {
-  background: #dc2626;
+  background: #b6262a;
 }
 .rtx-dom-exec-btn--buy {
-  background: #4597ff;
-  border-radius: 0 0 8px 0;
+  background: linear-gradient(180deg, #2b75e6 0%, #2060cc 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
 }
 .rtx-dom-exec-btn--buy:hover {
-  background: #3183ff;
+  background: linear-gradient(180deg, #3580f0 0%, #2669d6 100%);
 }
 .rtx-dom-exec-btn--buy:active {
-  background: #2563eb;
+  background: #1a52b0;
 }
 .rtx-dom-exec-btn--flat {
-  background: var(--bg-tertiary, #1f2432);
-  color: var(--text-primary, #e2e8f0);
-  border-left: 1px solid var(--border-primary, #2c3344);
-  border-right: 1px solid var(--border-primary, #2c3344);
+  background: linear-gradient(180deg, #2d2d32 0%, #242428 100%);
+  color: var(--text-primary, #e2e2e8);
+  border-color: var(--border-secondary, #46464c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .rtx-dom-exec-btn--flat:hover {
-  background: var(--bg-quaternary, #282f40);
+  background: linear-gradient(180deg, #35353b 0%, #2b2b30 100%);
   color: #ffffff;
+  border-color: var(--border-hover, #585860);
 }
 .rtx-dom-exec-btn--flat:active {
-  background: var(--bg-secondary, #181c26);
+  background: #222226;
 }
 
 /* Laptop Screen Ratio Responsive Scaling for Depth of Market Modal
    (Desktop > 1720px width and > 920px height stays 100% untouched) */
 @media (max-width: 1720px), (max-height: 920px) {
   .rtx-dom-dialog {
-    border-radius: 8px !important;
+    border-radius: 6px !important;
   }
 
   .rtx-depth-of-market {
@@ -354,41 +379,45 @@
   }
 
   .rtx-dom-toolbar {
-    height: 25px !important;
-    min-height: 25px !important;
-    padding: 2px 8px !important;
-    gap: 3px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 10px !important;
+    gap: 6px !important;
   }
 
   .rtx-dom-toolbar-btn {
-    width: 23px;
-    height: 19px;
+    width: 24px;
+    height: 20px;
   }
 
   .rtx-dom-toolbar-btn svg {
-    width: 13px !important;
-    height: 13px !important;
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .rtx-dom-toolbar-mode {
+    font-size: 9.5px !important;
   }
 
   .rtx-depth-of-market__columns {
-    grid-template-columns: minmax(48px, 0.72fr) minmax(84px, 1.28fr) 40px !important;
+    grid-template-columns: minmax(68px, 1.02fr) minmax(82px, 1.16fr) 48px !important;
     height: 23px !important;
     min-height: 23px !important;
     font-size: 10px !important;
   }
 
   .rtx-depth-of-market__row.rtx-dom-level {
-    grid-template-columns: minmax(48px, 0.72fr) minmax(84px, 1.28fr) 40px !important;
-    height: 21px !important;
-    min-height: 21px !important;
-    max-height: 21px !important;
+    grid-template-columns: minmax(68px, 1.02fr) minmax(82px, 1.16fr) 48px !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    max-height: 20px !important;
   }
 
   .rtx-depth-of-market__row.rtx-dom-spread {
-    height: 21px !important;
-    min-height: 21px !important;
-    max-height: 21px !important;
-    gap: 6px !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    max-height: 20px !important;
+    gap: 5px !important;
   }
 
   .rtx-dom-price {
@@ -424,24 +453,24 @@
   }
 
   .rtx-dom-params-bar {
-    height: 28px !important;
-    min-height: 28px !important;
-    padding: 3px 8px !important;
-    gap: 6px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 4px 12px !important;
+    gap: 10px !important;
   }
 
   .rtx-dom-stepper__label {
-    --rtx-type-size: 9.5px;
-    font-size: 9.5px !important;
+    --rtx-type-size: 10px;
+    font-size: 10px !important;
   }
 
   .rtx-dom-stepper {
-    height: 20px;
+    height: 22px;
   }
 
   .rtx-dom-stepper__btn {
     width: 18px;
-    font-size: 11.5px;
+    font-size: 12px;
   }
 
   .rtx-dom-stepper__input {
@@ -451,15 +480,20 @@
   }
 
   .rtx-dom-stepper__input--volume {
-    width: 40px;
+    width: 42px;
+  }
+
+  .rtx-dom-exec-footer {
+    padding: 7px 12px 10px;
+    gap: 7px;
   }
 
   .rtx-dom-exec-btn {
-    height: 36px;
-    min-height: 36px;
-    max-height: 36px;
-    padding: 3px 5px 4px;
-    gap: 0;
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 4px 6px;
+    gap: 1px;
   }
 
   .rtx-dom-exec-btn__caption {
@@ -469,14 +503,15 @@
   }
 
   .rtx-dom-exec-btn__price {
-    --rtx-type-size: 12px;
-    font-size: 12px !important;
+    --rtx-type-size: 12.5px;
+    font-size: 12.5px !important;
     line-height: 15px;
   }
 
   .rtx-dom-exec-btn__symbol {
     --rtx-type-size: 10.5px;
     font-size: 10.5px !important;
+    line-height: 13px !important;
   }
 }
 
@@ -484,7 +519,7 @@
   .rtx-dom-titlebar {
     height: 28px !important;
     min-height: 28px !important;
-    padding: 0 9px !important;
+    padding: 0 10px !important;
   }
 
   .rtx-depth-of-market__heading {
@@ -498,25 +533,25 @@
   }
 
   .rtx-dom-toolbar {
-    height: 24px !important;
-    min-height: 24px !important;
-    padding: 2px 7px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    padding: 0 9px !important;
   }
 
   .rtx-dom-toolbar-btn {
-    width: 22px;
-    height: 18px;
+    width: 23px;
+    height: 19px;
   }
 
   .rtx-depth-of-market__columns {
-    grid-template-columns: minmax(44px, 0.7fr) minmax(80px, 1.3fr) 38px !important;
+    grid-template-columns: minmax(64px, 1.02fr) minmax(78px, 1.16fr) 46px !important;
     height: 22px !important;
     min-height: 22px !important;
     font-size: 9.5px !important;
   }
 
   .rtx-depth-of-market__row.rtx-dom-level {
-    grid-template-columns: minmax(44px, 0.7fr) minmax(80px, 1.3fr) 38px !important;
+    grid-template-columns: minmax(64px, 1.02fr) minmax(78px, 1.16fr) 46px !important;
     height: 18px !important;
     min-height: 18px !important;
     max-height: 18px !important;
@@ -546,35 +581,40 @@
   }
 
   .rtx-dom-params-bar {
-    height: 26px !important;
-    min-height: 26px !important;
-    padding: 2px 7px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 4px 10px !important;
   }
 
   .rtx-dom-stepper {
-    height: 19px;
+    height: 21px;
   }
 
   .rtx-dom-stepper__btn {
     width: 17px;
-    font-size: 11px;
+    font-size: 11.5px;
   }
 
   .rtx-dom-stepper__input {
     --rtx-type-size: 10.5px;
-    width: 31px;
+    width: 32px;
     font-size: 10.5px !important;
   }
 
   .rtx-dom-stepper__input--volume {
-    width: 37px;
+    width: 40px;
+  }
+
+  .rtx-dom-exec-footer {
+    padding: 6px 12px 10px;
+    gap: 6px;
   }
 
   .rtx-dom-exec-btn {
-    height: 34px;
-    min-height: 34px;
-    max-height: 34px;
-    padding: 2px 4px 3px;
+    height: 38px;
+    min-height: 38px;
+    max-height: 38px;
+    padding: 3px 5px;
   }
 
   .rtx-dom-exec-btn__caption {
@@ -584,14 +624,15 @@
   }
 
   .rtx-dom-exec-btn__price {
-    --rtx-type-size: 11.5px;
-    font-size: 11.5px !important;
+    --rtx-type-size: 12px;
+    font-size: 12px !important;
     line-height: 14px;
   }
 
   .rtx-dom-exec-btn__symbol {
     --rtx-type-size: 10px;
     font-size: 10px !important;
+    line-height: 12px !important;
   }
 }
 

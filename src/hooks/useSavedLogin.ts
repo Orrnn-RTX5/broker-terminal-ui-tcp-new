@@ -22,11 +22,13 @@ export function useSavedLogin(
   const available = supportsSavedLogins();
   const edits = useRef(0);
   const restored = useRef(false);
+  const userEditedLogin = useRef(false);
   const previousScope = useRef('');
   const scopeKey = scope?.serverUrl ? savedLoginScopeKey(scope) : '';
 
   useEffect(() => {
     edits.current += 1;
+    userEditedLogin.current = false;
     updateLogin(initialLogin);
     updatePassword('');
     updateSavePassword(false);
@@ -43,7 +45,10 @@ export function useSavedLogin(
       restored.current = false;
     }
     previousScope.current = scopeKey;
-    if (!open || !scopeKey || !available || (!restoreEmptyLogin && !login.trim())) { setRestoring(false); return; }
+    if (!open || !scopeKey || !available || (!login.trim() && (!restoreEmptyLogin || userEditedLogin.current))) {
+      setRestoring(false);
+      return;
+    }
     const version = edits.current;
     setRestoring(true);
     const [brokerId, serverUrl] = JSON.parse(scopeKey) as [string, string];
@@ -72,7 +77,7 @@ export function useSavedLogin(
 
   const setLogin = useCallback((value: string) => {
     edits.current += 1;
-    if (restored.current) updatePassword('');
+    userEditedLogin.current = true;
     restored.current = false;
     updateSavePassword(false);
     updateLogin(value);

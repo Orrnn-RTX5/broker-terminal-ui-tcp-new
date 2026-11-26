@@ -24,6 +24,7 @@ import {
 import {
     extractBrokerDiscoveryList,
     formatBrokerDisplayServer,
+    getBrokerDirectorySignature,
     getDirectoryBrokerServerUrl,
     isDirectoryBrokerSelectable,
     switchDesktopTcpBroker,
@@ -117,9 +118,11 @@ export function LoginDialog({
     const lastTcpKeyRef = useRef('');
     const submittingRef = useRef(false);
     const [brokerList, setBrokerList] = useState<BrokerServerItem[]>([]);
+    const brokerListRef = useRef<BrokerServerItem[]>([]);
     const [selectedBroker, setSelectedBroker] = useState<BrokerServerItem | null>(null);
     const selectedBrokerRef = useRef<BrokerServerItem | null>(null);
     const userSelectedBrokerRef = useRef<BrokerServerItem | null>(null);
+    const brokerSelectionSeqRef = useRef(0);
     const resolvedInitialLogin = addAccountLogin
         ? initialLogin
         : (initialLogin || useAppStore.getState().accountId || localStorage.getItem('rtx_saved_username') || '');
@@ -165,6 +168,7 @@ export function LoginDialog({
             const endpointKey = `${detail.broker_id || ''}|${detail.target_tcp || ''}`;
             const prevKey = lastTcpKeyRef.current;
             lastTcpKeyRef.current = endpointKey;
+            if (isDesktop && userSelectedBrokerRef.current) return;
             if (!prevKey || prevKey === endpointKey) return;
             const current = selectedBrokerRef.current;
             if (current && (
@@ -177,7 +181,7 @@ export function LoginDialog({
         };
         window.addEventListener('rtx5-tcp-status', onTcpStatus);
         return () => window.removeEventListener('rtx5-tcp-status', onTcpStatus);
-    }, [isOpen]);
+    }, [isOpen, isDesktop]);
     const loginRequestGenerationRef = useRef(0);
     const isMountedRef = useRef(true);
     const isOpenRef = useRef(isOpen);
@@ -202,20 +206,22 @@ export function LoginDialog({
     // Pre-fill with current account or provided initial login
     useEffect(() => {
         if (!isOpen) {
+            lastTcpKeyRef.current = '';
+            brokerSelectionSeqRef.current += 1;
             healthCheckUrlRef.current = null;
             healthStatusRef.current = null;
             userSelectedBrokerRef.current = null;
             setHealthStatus(null);
             resetPasswordCopy();
             invalidatePendingLogin();
+            return undefined;
         }
-        if (isOpen) {
-            setError(null);
-            setShowPassword(false);
-            resetPasswordCopy();
-            setSearchQuery('');
-            setTimeout(() => loginInputRef.current?.select(), 100);
-        }
+        setError(null);
+        setShowPassword(false);
+        resetPasswordCopy();
+        setSearchQuery('');
+        const selectTimer = setTimeout(() => loginInputRef.current?.select(), 100);
+        return () => clearTimeout(selectTimer);
     }, [isOpen, initialLogin, invalidatePendingLogin, resetPasswordCopy]);
 
     useEffect(() => {
@@ -230,7 +236,7 @@ export function LoginDialog({
         };
     }, [invalidatePendingLogin]);
 
-    const runHealthCheck = async (serverUrl: string) => {
+    const runHealthCheck = async (serverUrl: string, targetBrokerId?: string) => {
         const cleanUrl = normalizeBrokerServerUrl(serverUrl).replace(/\/$/, '');
         const healthUrl = `${cleanUrl}${isDesktop ? '/health' : '/api/v2/time'}`;
         if (healthAbortRef.current) {
@@ -251,8 +257,23 @@ export function LoginDialog({
 
         try {
             if (!isConfiguredBrokerEndpoint(healthUrl)) throw new Error('Broker health URL does not match this deployment.');
-            const response = await fetch(toLocalDevProxyUrl(healthUrl), {
-                signal: controller.signal, cache: 'no-store', redirect: 'error', credentials: 'omit',
+            const proxiedHealthUrl = toLocalDevProxyUrl(healthUrl);
+            const isSameOriginGateway = typeof window !== 'undefined' && (
+                proxiedHealthUrl.startsWith('/')
+                || (() => {
+                    try {
+                        return new URL(proxiedHealthUrl, window.location.origin).origin === window.location.origin;
+                    } catch {
+                        return false;
+                    }
+                })()
+            );
+            const response = await fetch(proxiedHealthUrl, {
+                signal: controller.signal,
+                cache: 'no-store',
+                redirect: 'error',
+                credentials: 'omit',
+                ...(isSameOriginGateway && targetBrokerId ? { headers: { 'X-Broker-ID': targetBrokerId } } : {}),
             });
             clearTimeout(timeoutId);
             if (healthAbortRef.current !== controller || controller.signal.aborted) return;
@@ -276,12 +297,14 @@ export function LoginDialog({
         if (submittingRef.current || (isDesktop && !isDirectoryBrokerSelectable(item))) return;
         setError(null);
         if (lockedBrokerKey && normalizeBrokerId(item.broker_id) !== lockedBrokerKey) return;
+        const selectionSeq = ++brokerSelectionSeqRef.current;
         if (userInitiated) {
             userSelectedBrokerRef.current = item;
         }
         const normalizedBroker = normalizeBrokerInfoForTarget(item) as BrokerServerItem;
         const normalizedServerUrl = isDesktop ? getDirectoryBrokerServerUrl(item) : resolveBrokerBackendUrl(normalizedBroker);
-        if (isDesktop && selectedBroker && (selectedBroker.broker_id !== item.broker_id || getDirectoryBrokerServerUrl(selectedBroker) !== normalizedServerUrl)) setPassword('');
+        const previousBroker = selectedBrokerRef.current;
+        if (isDesktop && previousBroker && (previousBroker.broker_id !== item.broker_id || getDirectoryBrokerServerUrl(previousBroker) !== normalizedServerUrl)) setPassword('');
         const displayServer = formatBrokerDisplayServer(item) || normalizedBroker.display_server || item.broker_name;
         const nextBroker: BrokerServerItem = {
             ...item,
@@ -306,13 +329,14 @@ export function LoginDialog({
         const controller = new AbortController();
         presentationAbortRef.current = controller;
         const runPostSelectChecks = () => {
-            void runHealthCheck(normalizedServerUrl);
+            if (!isMountedRef.current || !isOpenRef.current || brokerSelectionSeqRef.current !== selectionSeq) return;
+            void runHealthCheck(normalizedServerUrl, nextBroker.broker_id);
             if (!normalizedServerUrl) return;
             void loadBrokerPresentation({
                 broker_id: nextBroker.broker_id,
                 server_url: normalizedServerUrl,
             }, controller.signal).then((presentation) => {
-                if (!presentation || controller.signal.aborted) return;
+                if (!presentation || controller.signal.aborted || brokerSelectionSeqRef.current !== selectionSeq) return;
                 const presentationBroker = mergeBrokerPresentation(nextBroker, presentation) as BrokerServerItem;
                 setSelectedBroker(current => {
                     if (!current || current.broker_id !== presentationBroker.broker_id) return current;
@@ -371,11 +395,12 @@ export function LoginDialog({
             ? buildLockedRuntimeBroker(String(lockedBrokerId), displayName)
             : null;
         if (lockedFallback) {
+            brokerListRef.current = [lockedFallback];
             setBrokerList([lockedFallback]);
             setSelectedBroker(lockedFallback);
             setSearchQuery(lockedFallback.broker_name);
             setDropdownOpen(false);
-            void runHealthCheck(resolveBrokerExtApiUrl(lockedFallback));
+            void runHealthCheck(resolveBrokerExtApiUrl(lockedFallback), lockedFallback.broker_id);
         }
         const directoryRequest = !isDesktop && !configuration.discoveryBaseUrl
             ? Promise.resolve(lockedFallback ? [lockedFallback] : [])
@@ -392,6 +417,7 @@ export function LoginDialog({
                     data.forEach((item) => { item.broker_name = currentDisplayName; });
                 }
                 if (lockedBrokerKey && data.length === 0 && lockedFallback) data.push(lockedFallback);
+                brokerListRef.current = data;
                 setBrokerList(data);
 
                 const tcpStatus = (window as unknown as { __RTX5_TCP_STATUS__?: { broker_id?: string; target_tcp?: string } }).__RTX5_TCP_STATUS__;
@@ -412,16 +438,28 @@ export function LoginDialog({
                     lastAuthenticatedBrokerId,
                 });
                 if (selectedDiscoveryBroker) {
-                    applySelectedBroker(selectedDiscoveryBroker, false);
+                    const currentSelected = selectedBrokerRef.current;
+                    const sameBrokerSelection = Boolean(
+                        currentSelected
+                        && healthStatusRef.current === 'online'
+                        && currentSelected.broker_id === selectedDiscoveryBroker.broker_id
+                        && getDirectoryBrokerServerUrl(currentSelected) === getDirectoryBrokerServerUrl(selectedDiscoveryBroker)
+                        && String(currentSelected.tcp_addr || '') === String(selectedDiscoveryBroker.tcp_addr || '')
+                        && String(currentSelected.broker_name || '') === String(selectedDiscoveryBroker.broker_name || '')
+                    );
+                    if (!sameBrokerSelection) {
+                        applySelectedBroker(selectedDiscoveryBroker, false);
+                    }
                 }
             })
             .catch(() => {
                 if (!isMounted) return;
                 if (!isDesktop && lockedFallback) {
+                    brokerListRef.current = [lockedFallback];
                     setBrokerList([lockedFallback]);
                     setSelectedBroker(current => current || lockedFallback);
                     setSearchQuery(current => current || lockedFallback.broker_name);
-                    void runHealthCheck(resolveBrokerExtApiUrl(lockedFallback));
+                    void runHealthCheck(resolveBrokerExtApiUrl(lockedFallback), lockedFallback.broker_id);
                     return;
                 }
                 setError('Broker servers are unavailable. Please reopen this dialog to retry.');
@@ -741,7 +779,7 @@ export function LoginDialog({
                 ref={dialogRef}
                 aria-modal="true"
                 aria-labelledby={`${dialogId}-title`}
-                aria-describedby={`${dialogId}-description`}
+                aria-describedby={!tradeLogin ? `${dialogId}-description` : undefined}
                 className="rtx-login-dialog rtx-login-dialog--polished"
                 style={dragStyle}
                 onClick={(e) => e.stopPropagation()}
@@ -771,8 +809,6 @@ export function LoginDialog({
 
                 <form onSubmit={handleSubmit} className="rtx-login-form" aria-busy={loading}
                     data-rtx-login-form data-login-submit-pending={loading ? 'true' : 'false'}>
-                    {tradeLogin && <p id={`${dialogId}-description`} className="rtx-login-description rtx-login-trade-notice">{tr("Log in to your trading account to place an order. You can continue viewing charts and prices without logging in. No order has been placed.")}</p>}
-
                     {isDesktop && (
                         <div className="rtx-login-field">
                             <label htmlFor={`${dialogId}-server`} className="rtx-login-label text-[14px] leading-5 font-medium">{tr("Broker Server")}</label>
@@ -783,27 +819,29 @@ export function LoginDialog({
                                     value={selectedBroker?.broker_id || ''}
                                     disabled={loading || directoryLoading || Boolean(lockedBrokerKey)}
                                     onFocus={() => {
+                                        if (lockedBrokerKey) return;
                                         void loadAppBrokerDirectory({ forceRefresh: true, desktop: true })
                                             .then((payload: unknown) => {
                                                 const discovered = extractBrokerDiscoveryList(payload) as BrokerServerItem[];
-                                                const data = lockedBrokerKey
-                                                    ? discovered.filter(item => normalizeBrokerId(item.broker_id) === lockedBrokerKey)
-                                                    : discovered;
-                                                if (data.length > 0) setBrokerList(data);
+                                                if (discovered.length > 0 && getBrokerDirectorySignature(discovered) !== getBrokerDirectorySignature(brokerListRef.current)) {
+                                                    brokerListRef.current = discovered;
+                                                    setBrokerList(discovered);
+                                                }
                                             })
                                             .catch(() => undefined);
                                     }}
                                     onChange={event => {
-                                        const broker = brokerList.find(item => item.broker_id === event.target.value);
+                                        const broker = brokerList.find(item => String(item.broker_id ?? '') === event.target.value);
                                         if (broker) handleSelectBroker(broker);
                                     }}
                                     className="rtx-login-input rtx-login-select"
                                 >
                                     <option value="" disabled>{tr(directoryLoading ? "Loading broker servers..." : "Select broker server")}</option>
                                     {brokerList.map(broker => {
-                                        const optionLabel = broker.tcp_addr
-                                            ? `${broker.broker_name} (${broker.tcp_addr})`
-                                            : String(broker.display_server || broker.broker_name);
+                                        const optionLabel = String(
+                                            broker.broker_name
+                                            || String(broker.display_server || '').replace(/\s*\([^)]*:\d+\)\s*$/, '').trim()
+                                        );
                                         return (
                                             <option key={broker.broker_id} value={broker.broker_id} disabled={!isDirectoryBrokerSelectable(broker)}>
                                                 {optionLabel}{!isDirectoryBrokerSelectable(broker) ? ` (${tr("Unavailable")})` : ''}
@@ -978,9 +1016,9 @@ export function LoginDialog({
                                                     />
                                                     <span className="truncate">{item.broker_name}</span>
                                                 </div>
-                                                {(item.tcp_addr || item.region) && (
+                                                {item.region && (
                                                     <span className="rtx-login-broker-region">
-                                                        {item.tcp_addr || item.region}
+                                                        {item.region}
                                                     </span>
                                                 )}
                                             </button>

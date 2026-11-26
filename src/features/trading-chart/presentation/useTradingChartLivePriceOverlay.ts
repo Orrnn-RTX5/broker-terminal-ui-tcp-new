@@ -28,6 +28,44 @@ interface UseTradingChartLivePriceOverlayOptions {
   seriesRef: MutableRefObject<ISeriesApi<SeriesType> | null>;
 }
 
+const syncSupplementalPriceLineEntry = (
+  lineRef: MutableRefObject<IPriceLine | null>,
+  series: ISeriesApi<SeriesType>,
+  visible: boolean,
+  price: number,
+  color: string,
+  title: string,
+) => {
+  if (!visible || !Number.isFinite(price) || price <= 0) {
+    try {
+      lineRef.current?.applyOptions({ lineVisible: false, axisLabelVisible: false });
+    } catch {
+      lineRef.current = null;
+    }
+    return;
+  }
+
+  const options = {
+    price,
+    color,
+    lineWidth: 1 as const,
+    lineStyle: LineStyle.Dashed,
+    lineVisible: true,
+    axisLabelVisible: true,
+    title,
+  };
+
+  try {
+    if (!lineRef.current) {
+      lineRef.current = series.createPriceLine(options);
+    } else {
+      lineRef.current.applyOptions(options);
+    }
+  } catch {
+    lineRef.current = null;
+  }
+};
+
 export function useTradingChartLivePriceOverlay({
   askPriceLineRef,
   canPaintLivePrice,
@@ -55,11 +93,13 @@ export function useTradingChartLivePriceOverlay({
   const useEnterpriseLightPricePaletteRef = useRef(false);
   const livePriceCanvasManagedRef = useRef(false);
   const requestLivePriceCanvasUpdateRef = useRef<(() => void) | null>(null);
+  const lastSupplementalPricesRef = useRef<{ ask: number; last: number } | null>(null);
 
   const hideLivePriceOverlay = useCallback((clearPrice = true) => {
     if (clearPrice) {
       livePriceRef.current = null;
       livePriceScaleWidthRef.current = null;
+      lastSupplementalPricesRef.current = null;
       // These canvas lines outlive setData([]). Hide the old quote before the
       // broker/account selection clears its candles or paints a new scale.
       for (const lineRef of [askPriceLineRef, lastPriceLineRef]) {
@@ -91,63 +131,39 @@ export function useTradingChartLivePriceOverlay({
   }, [askPriceLineRef, lastPriceLineRef]);
 
   const syncSupplementalPriceLines = useCallback((askPrice: number, lastPrice: number) => {
+    lastSupplementalPricesRef.current = { ask: askPrice, last: lastPrice };
     if (!canPaintLivePrice()) return;
     const series = seriesRef.current;
     if (!series) return;
 
     const settings = chartSettingsRef.current;
-    const syncLine = (
-      lineRef: MutableRefObject<IPriceLine | null>,
-      visible: boolean,
-      price: number,
-      color: string,
-      title: string,
-    ) => {
-      if (!visible || !Number.isFinite(price) || price <= 0) {
-        try {
-          lineRef.current?.applyOptions({ lineVisible: false, axisLabelVisible: false });
-        } catch {
-          lineRef.current = null;
-        }
-        return;
-      }
+    const palette = livePriceColorPaletteRef.current;
 
-      const options = {
-        price,
-        color,
-        lineWidth: 1 as const,
-        lineStyle: LineStyle.Dashed,
-        lineVisible: true,
-        axisLabelVisible: true,
-        title,
-      };
-
-      try {
-        if (!lineRef.current) {
-          lineRef.current = series.createPriceLine(options);
-        } else {
-          lineRef.current.applyOptions(options);
-        }
-      } catch {
-        lineRef.current = null;
-      }
-    };
-
-    syncLine(
+    syncSupplementalPriceLineEntry(
       askPriceLineRef,
+      series,
       settings.showAskPriceLine,
       askPrice,
-      settings.colors.askPriceLine,
+      palette.askPriceLine || settings.colors.askPriceLine,
       'ASK',
     );
-    syncLine(
+    syncSupplementalPriceLineEntry(
       lastPriceLineRef,
+      series,
       settings.showLastPriceLine,
       lastPrice,
-      settings.colors.lastPriceLine,
+      palette.lastPriceLine || settings.colors.lastPriceLine,
       'LAST',
     );
   }, [askPriceLineRef, canPaintLivePrice, chartSettingsRef, lastPriceLineRef, seriesRef]);
+
+  const refreshSupplementalPriceLines = useCallback(() => {
+    if (!lastSupplementalPricesRef.current) return;
+    syncSupplementalPriceLines(
+      lastSupplementalPricesRef.current.ask,
+      lastSupplementalPricesRef.current.last,
+    );
+  }, [syncSupplementalPriceLines]);
 
   const getLivePriceDirectionalColor = useCallback((
     activeCandleTime?: number,
@@ -385,6 +401,7 @@ export function useTradingChartLivePriceOverlay({
     renderLivePriceOnCanvas,
     repaintLivePriceOverlayFromCurrentPrice,
     requestLivePriceCanvasUpdateRef,
+    refreshSupplementalPriceLines,
     syncSupplementalPriceLines,
     useEnterpriseLightPricePaletteRef,
   };

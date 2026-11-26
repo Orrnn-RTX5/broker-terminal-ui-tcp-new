@@ -78,8 +78,8 @@ describe('complete terminal shortcut inventory', () => {
 
   it('targets Area, every timeframe, period separators and OHLC at the active chart', () => {
     render(<GlobalShortcuts {...props()} />);
-    press('0', { altKey: true });
-    for (const key of ['4', '5', '6', '7', '8', '9']) press(key, { altKey: true, code: `Digit${key}` });
+    press('4', { altKey: true });
+    for (const key of ['0', '5', '6', '7', '8', '9']) press(key, { altKey: true, code: `Digit${key}` });
     // Shift changes event.key on real keyboards; physical codes must still work.
     for (const [key, code] of [['$', 'Digit4'], ['%', 'Digit5'], ['^', 'Digit6']]) press(key, { altKey: true, shiftKey: true, code });
     const history = commandBus.getHistory();

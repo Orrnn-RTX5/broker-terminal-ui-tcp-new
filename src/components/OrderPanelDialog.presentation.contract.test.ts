@@ -45,4 +45,13 @@ describe('OrderPanelDialog presentation contract', () => {
     expect(dialogSource).toContain('aria-label={tr("Increase volume")}');
     expect(dialogSource).toContain('role="dialog"');
   });
+
+  it('renders BID and ASK side tags on SELL/BUY cards without a background pill', () => {
+    const baseSideTag = dialogCss.match(/\.rtx-order-dialog__action-card-side-tag\s*\{([^}]*)\}/)?.[1] ?? '';
+    const lightSideTag = dialogCss.match(/\.rtx-order-dialog \.rtx-order-dialog__action-card-side-tag\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    expect(baseSideTag).toContain('background: transparent;');
+    expect(baseSideTag).not.toContain('border-radius');
+    expect(lightSideTag).toContain('background: transparent !important;');
+  });
 });

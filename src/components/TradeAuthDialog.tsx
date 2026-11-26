@@ -20,7 +20,7 @@ import { useBrokerLoginPolicy } from '../hooks/useBrokerLoginPolicy';
 import { useDraggableSheet } from '../hooks/useDraggableSheet';
 import { assertTerminalConnectedToBroker, useDesktopDemoBroker } from '../hooks/useDesktopDemoBroker';
 import { updateDynamicUrls } from '../config/api';
-import { getRuntimeBrokerConfiguration, isElectronRuntime, normalizeBrokerInfoForTarget } from '../config/backendTarget.js';
+import { getRuntimeBrokerConfiguration, isDesktopBackendTarget, isElectronRuntime, normalizeBrokerInfoForTarget } from '../config/backendTarget.js';
 import type { BrokerLoginPolicy } from '../services/brokerLoginPolicy';
 import {
   formatBrokerDisplayServer,
@@ -96,7 +96,7 @@ export function TradeAuthDialog(props: TradeAuthDialogProps) {
   // Desktop accounts belong to a directory server, not a web deployment: the
   // login keeps its broker selector, and a demo account is opened at the
   // broker server the terminal is connected to.
-  return isElectronRuntime() ? <DesktopTradeAuthDialog {...props} /> : <WebTradeAuthDialog {...props} />;
+  return (isDesktopBackendTarget() || isElectronRuntime()) ? <DesktopTradeAuthDialog {...props} /> : <WebTradeAuthDialog {...props} />;
 }
 
 function WebTradeAuthDialog(props: TradeAuthDialogProps) {
@@ -638,7 +638,7 @@ function TradeAuthFlow({
                     <LogIn size={16} strokeWidth={1.85} />
                   </span>
                   <span className="rtx-auth-action__copy">
-                    <span className="rtx-auth-action__label">Log in to live account</span>
+                    <span className="rtx-auth-action__label">Log in to real account</span>
                     <span className="rtx-auth-action__description">Access your existing trading account</span>
                   </span>
                   <span className="rtx-auth-action__cta" aria-hidden="true">

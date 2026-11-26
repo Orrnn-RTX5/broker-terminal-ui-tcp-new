@@ -619,15 +619,14 @@
   --rtx-type-family: var(--font-mono);
   --rtx-type-size: 8.5px;
   --rtx-type-weight: 600;
-  background: rgb(0 0 0 / 22%);
-  border-radius: 2.5px;
+  background: transparent;
   font-family: var(--font-mono);
   font-size: 8.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   line-height: 1;
   opacity: 0.86;
-  padding: 1.5px 3.5px;
+  padding: 0;
 }
 
 .rtx-order-dialog__action-card-price {
@@ -1096,13 +1095,23 @@
   flex: 0 0 26px;
   gap: 4px;
   margin-bottom: 5px;
+  min-width: 0;
   z-index: 2;
 }
 
 .rtx-order-dialog__tf-group {
   align-items: center;
   display: inline-flex;
+  flex: 0 1 auto;
   gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.rtx-order-dialog__tf-group::-webkit-scrollbar {
+  display: none;
 }
 
 .rtx-order-dialog__tf-btn {
@@ -1113,6 +1122,7 @@
   color: var(--order-supporting-text);
   cursor: pointer;
   display: inline-flex;
+  flex-shrink: 0;
   font-family: "Segoe UI", Tahoma, var(--font-sans);
   font-size: 10.5px;
   font-weight: 500;
@@ -1121,6 +1131,7 @@
   line-height: 1;
   padding: 0 6px;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
 }
 
 .rtx-order-dialog__tf-btn:hover {
@@ -1348,6 +1359,7 @@
   color: var(--order-supporting-text);
   cursor: pointer;
   display: inline-flex;
+  flex-shrink: 0;
   height: 22px;
   justify-content: center;
   padding: 0;
@@ -1365,6 +1377,7 @@
 
 .rtx-order-dialog__toolbar-sep {
   background: var(--border-primary);
+  flex-shrink: 0;
   height: 16px;
   margin: 0 2px;
   width: 1px;
@@ -1372,6 +1385,7 @@
 
 .rtx-order-dialog__chart-type-wrap {
   display: inline-flex;
+  flex-shrink: 0;
   position: relative;
 }
 
@@ -2045,7 +2059,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog .rtx-order-dialog__action-card-side-tag {
   --rtx-ui-font-size: 7.5px;
   --rtx-font-weight-body: 600;
-  background: rgba(0, 0, 0, 0.18) !important;
+  background: transparent !important;
 }
 
 html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-light, .theme-light) .rtx-order-dialog :is(.rtx-order-dialog__action-card-price, .rtx-order-dialog__action-card-prefix) {
@@ -2771,7 +2785,7 @@ html:root:is(.rtx-advanced-view.rtx-skin-untitled-light, .rtx-skin-untitled-ligh
   .rtx-order-dialog__action-card-side-tag {
     --rtx-type-size: 7px;
     font-size: 7px !important;
-    padding: 1px 2.5px;
+    padding: 0;
   }
 
   .rtx-order-dialog__action-card-price,

@@ -10,7 +10,6 @@ export const DEMONSTRATION_FADE_DELAY_MS = 700;
 export const DEMONSTRATION_FADE_MS = 2600;
 const DEMONSTRATION_COLOR = '#f5c542';
 const DEMONSTRATION_POINT_SAMPLE_PX = 2;
-const MAGIC_COLORS = ['#f5d76e', '#7dd3fc', '#f9a8d4', '#ffffff', '#c4b5fd'];
 const ERASER_IGNORE = 'button, a, input, textarea, select, label, [role="button"], .rtx-trade-level-badge, .rtx-trade-level-hit-area, .rtx-chart-text-input-popover';
 
 const svgNs = 'http://www.w3.org/2000/svg';
@@ -130,36 +129,6 @@ const appendSampledPoint = (
   return true;
 };
 
-const ensureMagicLayer = (wrapper: HTMLElement): HTMLElement => {
-  const existing = wrapper.querySelector<HTMLElement>(':scope > .rtx-magic-layer');
-  if (existing) return existing;
-  const layer = document.createElement('div');
-  layer.className = 'rtx-magic-layer';
-  layer.setAttribute('aria-hidden', 'true');
-  wrapper.appendChild(layer);
-  return layer;
-};
-
-/** Glitter burst for the Magic cursor. The press itself still reaches the chart. */
-const burstMagic = (wrapper: HTMLElement, x: number, y: number, count = 16): void => {
-  const layer = ensureMagicLayer(wrapper);
-  if (layer.childElementCount > 72) return;
-  for (let index = 0; index < count; index += 1) {
-    const spark = document.createElement('span');
-    spark.className = 'rtx-magic-spark';
-    if (index % 4 === 0) spark.dataset.shape = 'star';
-    const angle = (Math.PI * 2 * index) / count + Math.random() * 0.45;
-    const distance = 16 + Math.random() * 34;
-    spark.style.left = `${x}px`;
-    spark.style.top = `${y}px`;
-    spark.style.background = MAGIC_COLORS[index % MAGIC_COLORS.length];
-    spark.style.setProperty('--rtx-magic-dx', `${Math.cos(angle) * distance}px`);
-    spark.style.setProperty('--rtx-magic-dy', `${Math.sin(angle) * distance}px`);
-    layer.appendChild(spark);
-    window.setTimeout(() => spark.remove(), 700);
-  }
-};
-
 const cursorModeAllowsGesture = (wrapper: HTMLElement): boolean => {
   if (wrapper.dataset.trendDrawingActive === 'true') return false;
   const contextId = wrapper.dataset.chartContextId;
@@ -167,10 +136,9 @@ const cursorModeAllowsGesture = (wrapper: HTMLElement): boolean => {
 };
 
 /**
- * Keeps the chart pointer, eraser, demonstration marks, and magic bursts
- * aligned with the Cursors flyout. Demonstration strokes follow TradingView:
- * hold Alt and click or drag; the mark fades after a few seconds and is not saved.
- * Magic scatters glitter on press and does not consume the click.
+ * Keeps the chart pointer, eraser, and demonstration marks aligned with the
+ * Cursors flyout. Demonstration strokes follow TradingView: hold Alt and click
+ * or drag; the mark fades after a few seconds and is not saved.
  */
 export const installChartCursorInteractions = (wrapper: HTMLElement): (() => void) => {
   const abort = new AbortController();
@@ -253,30 +221,6 @@ export const installChartCursorInteractions = (wrapper: HTMLElement): (() => voi
       try { wrapper.setPointerCapture(event.pointerId); } catch { /* Synthetic events have no capture. */ }
       return;
     }
-    if (mode === 'magic') {
-      if (event.target instanceof Element && event.target.closest(ERASER_IGNORE)) return;
-      const origin = localPoint(wrapper, event);
-      burstMagic(wrapper, origin.x, origin.y);
-      let lastBurst = 0;
-      const gesture = beginGesture(event.pointerId, () => undefined);
-      const onMove = (move: PointerEvent) => {
-        if (move.pointerId !== event.pointerId || move.buttons === 0) return;
-        const now = performance.now();
-        if (now - lastBurst < 48) return;
-        lastBurst = now;
-        const next = localPoint(wrapper, move);
-        burstMagic(wrapper, next.x, next.y, 8);
-      };
-      const finish = (up?: PointerEvent) => {
-        if (up && up.pointerId !== event.pointerId) return;
-        gesture.cleanup();
-      };
-      window.addEventListener('pointermove', onMove, { capture: true, signal: gesture.signal });
-      window.addEventListener('pointerup', finish, { capture: true, signal: gesture.signal });
-      window.addEventListener('pointercancel', finish, { capture: true, signal: gesture.signal });
-      window.addEventListener('blur', () => finish(), { signal: gesture.signal });
-      return;
-    }
     if (mode !== 'eraser') return;
     if (event.target instanceof Element && event.target.closest(ERASER_IGNORE)) return;
     if (wrapper.dataset.chartContextId) activateActiveChartSource(wrapper.dataset.chartContextId);
@@ -336,6 +280,5 @@ export const installChartCursorInteractions = (wrapper: HTMLElement): (() => voi
     abort.abort();
     unsubscribe();
     wrapper.querySelector(':scope > .rtx-demonstration-layer')?.remove();
-    wrapper.querySelector(':scope > .rtx-magic-layer')?.remove();
   };
 };

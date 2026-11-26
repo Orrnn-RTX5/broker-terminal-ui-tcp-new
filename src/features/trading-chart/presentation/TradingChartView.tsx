@@ -57,7 +57,6 @@ interface TradingChartViewProps {
   closeCtxMenu: () => void;
   containerRef: RefObject<HTMLDivElement | null>;
   ctxAutoScroll: boolean;
-  ctxChartShift: boolean;
   ctxMenu: ChartContextMenuState;
   ctxShowTradeHistory: boolean;
   ctxShowTradeHistoryLine: boolean;
@@ -78,7 +77,6 @@ interface TradingChartViewProps {
   handleCtxTimeframeChange: (timeframe: Timeframe) => void;
   handleCtxToggleAutoScroll: () => void;
   handleCtxToggleBackgroundLogo?: () => void;
-  handleCtxToggleChartShift: () => void;
   handleCtxToggleGrid: () => void;
   handleCtxToggleOHLC: () => void;
   handleCtxToggleTradeHistory: () => void;
@@ -136,13 +134,13 @@ export const TradingChartView = (props: TradingChartViewProps) => {
   const {
     activeChartSourceId, activeTimeframe, addLocalIndicator, backgroundImageDialogOpen = false,
     bindDrawingManagerToChart, centerRef,
-    chartSettings, chartTheme, closeCtxMenu, containerRef, ctxAutoScroll, ctxChartShift,
+    chartSettings, chartTheme, closeCtxMenu, containerRef, ctxAutoScroll,
     ctxMenu, ctxShowTradeHistory, ctxShowTradeHistoryLine, ctxShowTradeLevels,
     currentIndicators, drawingRuntimeContextRef, handleContextMenu, handleCtxChartTypeChange,
     handleCtxGridTypeChange, handleCtxGridLineStyleChange,
     handleCtxDeleteIndicators, handleCtxOpenBackgroundImage, handleCtxOpenDOM, handleCtxOpenNewOrder, handleCtxOpenProperties,
     handleCtxRefresh, handleCtxSaveAsPicture, handleCtxTimeframeChange,
-    handleCtxToggleAutoScroll, handleCtxToggleBackgroundLogo, handleCtxToggleChartShift, handleCtxToggleGrid,
+    handleCtxToggleAutoScroll, handleCtxToggleBackgroundLogo, handleCtxToggleGrid,
     handleCtxToggleOHLC, handleCtxToggleTradeHistory, handleCtxToggleTradeHistoryLine,
     handleCtxToggleTradeLevels, handleCtxToggleVolumes, handleCtxZoomIn, handleCtxZoomOut,
     handleLoadTemplate, handleOpenTemplateDialog, horizLineRef, initialLivePriceOverlayColors,
@@ -162,7 +160,7 @@ return (
       data-chart-context-id={activeChartSourceId}
       data-show-background-logo={isChartBackgroundLogoVisible(chartSettings) ? 'true' : 'false'}
       dir="ltr"
-      data-cursor="select"
+      data-cursor="cross"
       onContextMenu={handleContextMenu}
     >
 
@@ -636,7 +634,6 @@ return (
         gridLineStyle={chartSettings.gridLineStyle}
         showVolumes={chartSettings.showTickVolumes || chartSettings.showRealVolumes}
         autoScroll={ctxAutoScroll}
-        chartShift={ctxChartShift}
         showTradeLevels={ctxShowTradeLevels}
         showTradeHistory={ctxShowTradeHistory}
         showTradeHistoryLine={ctxShowTradeHistoryLine}
@@ -650,7 +647,6 @@ return (
         onChangeGridLineStyle={handleCtxGridLineStyleChange}
         onToggleVolumes={handleCtxToggleVolumes}
         onToggleAutoScroll={handleCtxToggleAutoScroll}
-        onToggleChartShift={handleCtxToggleChartShift}
         onToggleTradeLevels={handleCtxToggleTradeLevels}
         onToggleTradeHistory={handleCtxToggleTradeHistory}
         onToggleTradeHistoryLine={handleCtxToggleTradeHistoryLine}

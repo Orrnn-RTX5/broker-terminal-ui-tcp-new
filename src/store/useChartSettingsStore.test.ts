@@ -849,6 +849,16 @@ describe('chart settings trade history overlay defaults', () => {
         downColor: '#087f6c',
         isDefaultPalette: false,
       });
+
+      // Customizing Background to another light color keeps readable light foreground & grid
+      useChartSettingsStore.getState().applySymbolPresetScheme('EURUSD', 'Blue and Red');
+      useChartSettingsStore.getState().updateSymbolColor('EURUSD', 'background', '#eef2f7');
+      const customBgLight = useChartSettingsStore.getState().symbolProperties.EURUSD;
+      expect(getEffectiveChartColors(customBgLight, { isAdvancedUntitledLight: true })).toMatchObject({
+        background: '#eef2f7',
+        foreground: '#334155',
+        grid: 'rgba(71, 85, 105, 0.07)',
+      });
     } finally {
       root?.classList.remove('rtx-advanced-view', 'rtx-skin-untitled-light');
       useChartSettingsStore.setState(initial);

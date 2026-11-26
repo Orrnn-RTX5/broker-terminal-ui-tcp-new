@@ -78,3 +78,42 @@ it('keeps an empty login blank when restoreEmptyLogin is false and clears restor
 
   await act(async () => response.resolve(null));
 });
+
+it('keeps the password and leaves Account ID blank when editing or clearing a saved account ID', async () => {
+  vi.mocked(loadSavedLogin).mockImplementation(async (_scope, requestedLogin = '') => {
+    if (!requestedLogin || requestedLogin === '12345') {
+      return { login: '12345', password: 'saved-password' };
+    }
+    if (requestedLogin === '67890') {
+      return { login: '67890', password: 'second-password' };
+    }
+    return null;
+  });
+
+  const { result } = renderHook(() => useSavedLogin(true, '', scope));
+  await waitFor(() => expect(result.current.login).toBe('12345'));
+  expect(result.current.password).toBe('saved-password');
+  expect(result.current.savePassword).toBe(true);
+
+  act(() => result.current.setLogin('1234'));
+  await waitFor(() => expect(result.current.restoring).toBe(false));
+  expect(result.current.login).toBe('1234');
+  expect(result.current.password).toBe('saved-password');
+  expect(result.current.savePassword).toBe(false);
+
+  act(() => result.current.setLogin(''));
+  await waitFor(() => expect(result.current.restoring).toBe(false));
+  expect(result.current.login).toBe('');
+  expect(result.current.password).toBe('saved-password');
+  expect(result.current.savePassword).toBe(false);
+
+  act(() => result.current.setLogin('67890'));
+  await waitFor(() => expect(result.current.password).toBe('second-password'));
+  expect(result.current.savePassword).toBe(true);
+
+  act(() => result.current.setLogin(''));
+  await waitFor(() => expect(result.current.restoring).toBe(false));
+  expect(result.current.login).toBe('');
+  expect(result.current.password).toBe('second-password');
+  expect(result.current.savePassword).toBe(false);
+});

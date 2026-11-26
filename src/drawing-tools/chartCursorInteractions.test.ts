@@ -36,24 +36,37 @@ describe('chart cursor interactions', () => {
   afterEach(() => {
     cleanup();
     document.body.replaceChildren();
-    useChartCursorStore.setState({ mode: 'arrow', valuesTooltipOnLongPress: true });
+    localStorage.clear();
+    useChartCursorStore.setState({ mode: 'cross', valuesTooltipOnLongPress: true });
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     document.elementsFromPoint = originalElementsFromPoint;
   });
 
+  it('defaults to Cross and replaces persisted Magic mode with Cross on rehydration', async () => {
+    expect(useChartCursorStore.getInitialState().mode).toBe('cross');
+    localStorage.setItem('rtx-chart-cursor-mode', JSON.stringify({
+      state: { mode: 'magic', valuesTooltipOnLongPress: false },
+      version: 0,
+    }));
+    await useChartCursorStore.persist.rehydrate();
+    expect(useChartCursorStore.getState().mode).toBe('cross');
+    expect(useChartCursorStore.getState().valuesTooltipOnLongPress).toBe(false);
+  });
+
   it('publishes the selected cursor on the chart wrapper', () => {
     const { wrapper, release } = mountChart();
+    expect(wrapper.dataset.cursor).toBe('cross');
+    expect(wrapper.dataset.crosshair).toBe('on');
+    useChartCursorStore.getState().setMode('arrow');
     expect(wrapper.dataset.cursor).toBe('select');
+    expect(wrapper.dataset.crosshair).toBe('off');
     useChartCursorStore.getState().setMode('dot');
     expect(wrapper.dataset.cursor).toBe('dot');
     expect(wrapper.dataset.crosshair).toBe('on');
     useChartCursorStore.getState().setMode('eraser');
     expect(wrapper.dataset.cursor).toBe('eraser');
-    expect(wrapper.dataset.crosshair).toBe('off');
-    useChartCursorStore.getState().setMode('magic');
-    expect(wrapper.dataset.cursor).toBe('magic');
     expect(wrapper.dataset.crosshair).toBe('off');
     release();
   });
@@ -243,45 +256,5 @@ describe('chart cursor interactions', () => {
     }));
     expect(requestFrame).toHaveBeenCalledTimes(2);
     release();
-  });
-
-  it('bursts glitter for Magic without taking the press away from the chart', () => {
-    const { wrapper, release } = mountChart();
-    const remove = vi.spyOn(drawingManager, 'deleteDrawing');
-    let reachedTheChart = false;
-    wrapper.addEventListener('pointerdown', () => { reachedTheChart = true; });
-    useChartCursorStore.getState().setMode('magic');
-
-    wrapper.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 24, clientY: 30, pointerId: 8 }));
-    expect(wrapper.querySelectorAll('.rtx-magic-spark').length).toBeGreaterThan(0);
-    expect(reachedTheChart).toBe(true);
-    expect(remove).not.toHaveBeenCalled();
-    release();
-    expect(wrapper.querySelector('.rtx-magic-layer')).toBeNull();
-  });
-
-  it('ends Magic on pointerup outside the wrapper and removes listeners on teardown', () => {
-    vi.spyOn(performance, 'now').mockReturnValue(100);
-    const { wrapper, release } = mountChart();
-    useChartCursorStore.getState().setMode('magic');
-
-    wrapper.dispatchEvent(new PointerEvent('pointerdown', {
-      bubbles: true, button: 0, clientX: 24, clientY: 30, pointerId: 13,
-    }));
-    const initialCount = wrapper.querySelectorAll('.rtx-magic-spark').length;
-    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 13 }));
-    wrapper.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles: true, buttons: 1, clientX: 50, clientY: 50, pointerId: 13,
-    }));
-    expect(wrapper.querySelectorAll('.rtx-magic-spark')).toHaveLength(initialCount);
-
-    wrapper.dispatchEvent(new PointerEvent('pointerdown', {
-      bubbles: true, button: 0, clientX: 30, clientY: 30, pointerId: 14,
-    }));
-    release();
-    wrapper.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles: true, buttons: 1, clientX: 60, clientY: 60, pointerId: 14,
-    }));
-    expect(wrapper.querySelector('.rtx-magic-layer')).toBeNull();
   });
 });

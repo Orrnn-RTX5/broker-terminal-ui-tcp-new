@@ -32,7 +32,7 @@ export const TERMINAL_SHORTCUTS: ShortcutHelpEntry[] = [
   { id: 'charts.bar-chart', key: '1', alt: true, description: 'Bar Chart', category: 'Charts' },
   { id: 'charts.candlestick', key: '2', alt: true, description: 'Candlesticks', category: 'Charts' },
   { id: 'charts.line-chart', key: '3', alt: true, description: 'Line Chart', category: 'Charts' },
-  { id: 'charts.area-chart', key: '0', alt: true, description: 'Area Chart', category: 'Charts' },
+  { id: 'charts.area-chart', key: '4', alt: true, description: 'Area Chart', category: 'Charts' },
   { id: 'charts.indicator-list', key: 'i', ctrl: true, description: 'Indicator List', category: 'Charts' },
   { id: 'charts.object-list', key: 'b', ctrl: true, description: 'Object List', category: 'Charts' },
   { id: 'charts.period-separators', key: 'p', alt: true, shift: true, description: 'Show period separators', category: 'Charts' },

@@ -86,6 +86,40 @@ class CandleCache {
     return this.cloneEntry(entry);
   }
 
+  getLatestForSymbolTimeframe(scope: string, symbol: string, timeframe: string): CandleCacheEntry | null {
+    const targetScope = normalizeScope(scope);
+    const targetSymbol = normalizeSymbol(symbol);
+    const targetTimeframe = normalizeTimeframe(timeframe);
+    const now = Date.now();
+    let best: CandleCacheEntry | null = null;
+    for (const [key, entry] of this.entries) {
+      if (now - entry.fetchedAt > MAX_CACHE_AGE_MS) {
+        this.entries.delete(key);
+        continue;
+      }
+      if (
+        entry.scope !== targetScope
+        || entry.symbol !== targetSymbol
+        || entry.timeframe !== targetTimeframe
+        || entry.candles.length === 0
+      ) {
+        continue;
+      }
+      if (!best) {
+        best = entry;
+        continue;
+      }
+      const bestDerived = best.source === 'derived-m1';
+      const entryDerived = entry.source === 'derived-m1';
+      if (bestDerived && !entryDerived) {
+        best = entry;
+      } else if (bestDerived === entryDerived && entry.fetchedAt >= best.fetchedAt) {
+        best = entry;
+      }
+    }
+    return best ? this.cloneEntry(best) : null;
+  }
+
   setLatest(key: CandleCacheKey, candles: OHLCData[], metadata: CandleCacheMetadata): CandleCacheEntry {
     const normalizedCandles = this.boundCandles(sortAndDedupeCandles(candles));
     const entry: CandleCacheEntry = {

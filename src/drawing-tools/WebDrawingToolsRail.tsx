@@ -173,10 +173,10 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', 
     && activeTargetContextId !== currentChartSourceId
     ? null
     : activeTool;
-  const selectedCursor = (getCursorTool(cursorMode) ?? getCursorTool('arrow'))!;
+  const selectedCursor = (getCursorTool(cursorMode) ?? getCursorTool('cross'))!;
   useEffect(() => {
-    if (cursorMode === 'eraser' || cursorMode === 'demonstration') {
-      useChartCursorStore.getState().setMode('arrow');
+    if (!getCursorTool(cursorMode)) {
+      useChartCursorStore.getState().setMode('cross');
     }
   }, [cursorMode]);
   const selectedTool = getTrendLineTool(lastToolId) ?? TREND_LINE_TOOLS[0];
@@ -1059,7 +1059,7 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', 
         <button
           className="web-drawing-tools-rail__button web-drawing-tools-rail__flyout-button"
           data-rail-menu="cursors"
-          data-active={cursorMode !== 'arrow' && visibleActiveTool === null ? 'true' : 'false'}
+          data-active={cursorMode !== 'cross' && visibleActiveTool === null ? 'true' : 'false'}
           type="button"
           aria-label={tr('{{value0}} — Cursors', { value0: tr(selectedCursor.label) })}
           aria-haspopup="menu"

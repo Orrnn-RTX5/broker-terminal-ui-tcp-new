@@ -140,6 +140,19 @@ const getColorContrastRatio = (first: string, second: string): number | null => 
 // volume bars remain legible without obscuring candlesticks drawn above them.
 export const TRADINGVIEW_VOLUME_OPACITY = 0.5;
 
+const DEFAULT_PRESET_VOLUME_COLORS = new Set([
+  'rgba(69,151,255,0.32)',
+  'rgba(0,200,150,0.32)',
+  'rgba(37,87,255,0.32)',
+  'rgba(173,173,173,0.4)',
+  'rgba(250,204,21,0.4)',
+  'rgba(21,128,61,0.4)',
+  'rgba(0,0,0,0.4)',
+  'rgba(34,197,94,0.4)',
+  '#26a69a',
+  '#32cd32',
+]);
+
 // Derive crisp directional base volume colors directly from the active candle
 // colors without hardcoding any scheme hues. When a hollow candle body matches
 // the chart background (e.g. black bull body on a black canvas, or white bull
@@ -195,11 +208,16 @@ export const buildChartTheme = (
   const configuredGrid = colors.grid || 'rgba(120, 144, 156, 0.28)';
   const isDefaultReferenceLightGrid = useReferenceLightSurface
     && configuredGrid.replace(/\s+/g, '').toLowerCase() === 'rgba(71,85,105,0.07)';
-  const rawGrid = isDefaultReferenceLightGrid
-    ? (gridLineStyle === 'solid'
-      ? 'rgba(100, 116, 139, 0.14)'
-      : 'rgba(100, 116, 139, 0.05)')
-    : configuredGrid;
+  let rawGrid = configuredGrid;
+  if (isDefaultReferenceLightGrid) {
+    if (gridLineStyle === 'solid') {
+      rawGrid = 'rgba(100, 116, 139, 0.26)';
+    } else if (gridType === 'square') {
+      rawGrid = 'rgba(100, 116, 139, 0.09)';
+    } else {
+      rawGrid = 'rgba(100, 116, 139, 0.05)';
+    }
+  }
   // A pale canvas needs less tint; dark canvases need enough fill to separate
   // the area from the grid. Follow the configured chart surface, not app chrome.
   const areaFillOpacity = backgroundIsDark ? 0.32 : 0.16;
@@ -215,10 +233,22 @@ export const buildChartTheme = (
 
   const background = colors.background || '#0e0e12';
   const foreground = colors.foreground || '#ffffff';
-  const volumeLineUp = resolveCandleVolumeBaseColor(candleUp, barUp, background, foreground);
-  const volumeLineDown = resolveCandleVolumeBaseColor(candleDown, barDown, background, foreground);
-  const volumeUp = colorWithAlpha(volumeLineUp, TRADINGVIEW_VOLUME_OPACITY, volumeLineUp);
-  const volumeDown = colorWithAlpha(volumeLineDown, TRADINGVIEW_VOLUME_OPACITY, volumeLineDown);
+  const normalizedCustomVolume = colors.volumes?.trim().replace(/\s+/g, '').toLowerCase() ?? '';
+  const hasExplicitCustomVolume = colorScheme === 'Custom'
+    && normalizedCustomVolume.length > 0
+    && !DEFAULT_PRESET_VOLUME_COLORS.has(normalizedCustomVolume);
+  const volumeLineUp = hasExplicitCustomVolume
+    ? colors.volumes
+    : resolveCandleVolumeBaseColor(candleUp, barUp, background, foreground);
+  const volumeLineDown = hasExplicitCustomVolume
+    ? colors.volumes
+    : resolveCandleVolumeBaseColor(candleDown, barDown, background, foreground);
+  const volumeUp = hasExplicitCustomVolume && normalizedCustomVolume.startsWith('rgba(')
+    ? colors.volumes
+    : colorWithAlpha(volumeLineUp, TRADINGVIEW_VOLUME_OPACITY, volumeLineUp);
+  const volumeDown = hasExplicitCustomVolume && normalizedCustomVolume.startsWith('rgba(')
+    ? colors.volumes
+    : colorWithAlpha(volumeLineDown, TRADINGVIEW_VOLUME_OPACITY, volumeLineDown);
 
   return {
     background,

@@ -1,10 +1,11 @@
-/* Size Chart Properties to its controls, so each desktop tab fits in one view. */
+/* Keep Chart Properties compact so Preview, Controls, and Actions fit comfortably without vertical bloat. */
 .rtx-cp-shell {
-  width: min(520px, calc(100vw - 24px));
+  width: min(560px, calc(100vw - 24px));
   height: auto;
   min-height: 0;
   max-height: calc(100dvh - 24px);
   overflow: hidden;
+  border-radius: 6px;
 }
 
 .rtx-cp-shell .rtx-cp-header,
@@ -13,20 +14,31 @@
   flex-shrink: 0;
 }
 
+.rtx-cp-shell .rtx-cp-header {
+  min-height: 28px;
+  padding: 3px 10px;
+}
+
 .rtx-cp-shell .rtx-cp-content {
   min-width: 0;
   min-height: 0;
-  gap: 16px;
+  gap: 10px;
+  padding: 4px 12px 8px;
 }
 
 .rtx-cp-shell .rtx-cp-preview-box {
-  margin: 8px 0;
+  margin: 0 0 6px;
   min-width: 0;
 }
 
 .rtx-cp-shell .rtx-cp-preview-inner {
-  height: 76px;
-  border: 1px solid var(--border-primary, #444);
+  height: 168px;
+  border: 1px solid var(--border-primary, #38383f);
+  border-radius: 4px;
+}
+
+.rtx-cp-shell .rtx-cp-preview-chart {
+  display: block;
 }
 
 .rtx-cp-shell .rtx-cp-settings {
@@ -38,15 +50,29 @@
 .rtx-cp-shell .rtx-cp-tab-content {
   min-height: 0;
   padding-right: 2px;
-  /* The natural dialog height avoids scrolling; short windows can still reach
-     every control without moving the tabs or the action buttons off screen. */
   overflow-y: auto;
 }
 
 .rtx-cp-shell .rtx-cp-colors-grid {
-  grid-template-columns: 120px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-block: 2px 4px;
+}
+
+.rtx-cp-shell .rtx-cp-colors-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 10px;
   row-gap: 4px;
-  padding-block: 4px;
+}
+
+.rtx-cp-shell .rtx-cp-color-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .rtx-cp-shell .rtx-cp-colors-grid .rtx-cp-select,
@@ -63,10 +89,13 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell .rtx-cp-color-picke
 }
 
 .rtx-cp-shell .rtx-cp-colors-grid .rtx-cp-divider {
-  margin-block: 2px;
+  margin-block: 1px;
 }
 
 .rtx-cp-shell .rtx-cp-show-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 14px;
   row-gap: 3px;
   padding-block: 4px;
 }
@@ -76,8 +105,9 @@ html.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell .rtx-cp-color-picke
 }
 
 .rtx-cp-shell .rtx-cp-tab {
-  min-height: 30px;
-  padding-inline: 10px;
+  min-height: 22px;
+  padding-inline: 8px;
+  padding-block: 2px;
 }
 
 .rtx-cp-shell .rtx-cp-tab:focus-visible {
@@ -108,6 +138,11 @@ html:root.rtx-advanced-view.rtx-skin-untitled-light .rtx-cp-shell .rtx-cp-tab:ho
 }
 
 @media (max-width: 540px) {
+  .rtx-cp-shell .rtx-cp-colors-list,
+  .rtx-cp-shell .rtx-cp-show-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .rtx-cp-shell .rtx-cp-common-grid {
     flex-direction: column;
   }

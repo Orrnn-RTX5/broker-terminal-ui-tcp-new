@@ -182,7 +182,7 @@
   },
   {
     "id": "timeframe.m1",
-    "key": "4",
+    "key": "0",
     "alt": true,
     "description": "M1",
     "category": "Timeframes",
@@ -451,7 +451,7 @@
   },
   {
     "id": "charts.area-chart",
-    "key": "0",
+    "key": "4",
     "alt": true,
     "description": "Area Chart",
     "category": "Charts",

@@ -1,5 +1,5 @@
 import { useUiTranslation } from '../../hooks/useUiTranslation';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   getColorSchemeDisplayLabel,
@@ -11,6 +11,8 @@ import {
   type ColorScheme,
 } from '../../store/useChartSettingsStore';
 import { getChartGridLineColors } from '../../utils/chartGridStyle';
+import { buildChartTheme } from '../../features/trading-chart/presentation/chartTheme';
+import { ChartPropertiesPreviewChart } from './ChartPropertiesPreviewChart';
 import {
   CHART_GRID_DASH_PATTERN_CSS_PX,
   CHART_GRID_STROKE_CSS_PX,
@@ -95,6 +97,24 @@ const getIsAdvancedUntitledLight = (): boolean => {
   return root.classList.contains('rtx-advanced-view') && root.classList.contains('rtx-skin-untitled-light');
 };
 
+const toColorPickerHexValue = (color: string | undefined): string => {
+  const trimmed = color?.trim() ?? '';
+  if (/^#[a-f\d]{6}$/i.test(trimmed)) return trimmed.toLowerCase();
+  const shortHex = /^#([a-f\d])([a-f\d])([a-f\d])$/i.exec(trimmed);
+  if (shortHex) {
+    const [, r, g, b] = shortHex;
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const rgb = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(trimmed);
+  if (rgb) {
+    const hex = [rgb[1], rgb[2], rgb[3]]
+      .map((channel) => Math.max(0, Math.min(255, Math.round(Number(channel)))).toString(16).padStart(2, '0'))
+      .join('');
+    return `#${hex}`;
+  }
+  return '#ffffff';
+};
+
 const getGridPreviewImage = (
   colors: { vertical: string; horizontal: string },
   lineStyle: ChartProperties['gridLineStyle'],
@@ -121,7 +141,7 @@ const getGridPreviewImage = (
     : gridType === 'scale'
       ? ' stroke-dasharray="2 2"'
       : ` stroke-dasharray="${dashPattern[0]} ${dashPattern[1]}"`;
-  const strokeOpacity = gridType === 'mt5' ? ` stroke-opacity="${FINE_CHART_GRID_OPACITY}"` : '';
+  const strokeOpacity = gridType === 'mt5' && dashed ? ` stroke-opacity="${FINE_CHART_GRID_OPACITY}"` : '';
   const strokeAttrs = ` stroke-width="${strokeWidth}"${strokeOpacity}${dashArray}`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cellSize.width}" height="${cellSize.height}" fill="none"><path d="M${lineOffset} 0V${cellSize.height}" stroke="${escapeAttribute(colors.vertical)}"${strokeAttrs}/><path d="M0 ${lineOffset}H${cellSize.width}" stroke="${escapeAttribute(colors.horizontal)}"${strokeAttrs}/></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
@@ -139,6 +159,7 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
     const tr = useUiTranslation();
   const [activeTab, setActiveTab] = useState<'Common' | 'Show' | 'Colors'>('Common');
   const [isAdvancedUntitledLight, setIsAdvancedUntitledLight] = useState(getIsAdvancedUntitledLight);
+  const [previewPanOffset, setPreviewPanOffset] = useState<{ key: string; px: number }>({ key: '', px: 0 });
   
   const {
     globalProperties,
@@ -173,18 +194,33 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
     preserveConfiguredColor: isAdvancedUntitledLight
       && (state.colorScheme !== 'Custom' || previewBackground.toLowerCase() !== '#000000'),
   });
-  const previewLabelBackground = previewBackground.toLowerCase() === '#ffffff'
+  const previewTheme = buildChartTheme(
+    effectiveColors,
+    showState.showGrid,
+    isAdvancedUntitledLight && (state.colorScheme !== 'Custom' || previewBackground.toLowerCase() !== '#000000'),
+    showState.gridLineStyle,
+    showState.gridType,
+    state.colorScheme,
+  );
+  const previewLabelBackground = previewBackground.toLowerCase() === '#ffffff' || previewBackground.toLowerCase() === '#fafbfc'
     ? 'rgba(255, 255, 255, 0.82)'
     : 'rgba(0, 0, 0, 0.72)';
   const previewSquareCellSize = showState.gridType === 'mt5' ? FINE_CHART_GRID_CELL_SIZE_PX : SQUARE_CHART_GRID_CELL_SIZE_PX;
   const previewGridCellSize = showState.gridType === 'scale'
     ? { width: 128, height: 48 }
     : { width: previewSquareCellSize, height: previewSquareCellSize };
+  const previewPanKey = `${symbol}:${timeframe}`;
+  const previewPanX = previewPanOffset.key === previewPanKey ? Math.round(previewPanOffset.px) : 0;
+  const handlePreviewPanOffsetChange = useCallback((px: number) => {
+    setPreviewPanOffset({ key: previewPanKey, px });
+  }, [previewPanKey]);
   const previewStyle = {
     backgroundColor: previewBackground,
     backgroundImage: getGridPreviewImage(previewGridColors, showState.gridLineStyle, previewGridCellSize, showState.gridType),
     backgroundSize: `${previewGridCellSize.width}px ${previewGridCellSize.height}px`,
-    backgroundPosition: showState.gridType === 'mt5' ? 'left bottom' : 'left top',
+    backgroundPosition: previewPanX !== 0
+      ? `${previewPanX}px ${showState.gridType === 'mt5' ? 'bottom' : 'top'}`
+      : (showState.gridType === 'mt5' ? 'left bottom' : 'left top'),
     '--rtx-cp-preview-bg': previewBackground,
     '--rtx-cp-preview-text': effectiveColors.foreground,
     '--rtx-cp-preview-label-bg': previewLabelBackground,
@@ -383,18 +419,15 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
         className="rtx-cp-shell relative bg-[#1e1e1e] border border-[#333] rounded shadow-2xl flex flex-col pointer-events-auto select-none animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
-        <div className="rtx-cp-header flex items-center justify-between px-3 py-2 border-b border-[#333]" {...dragHandleProps}>
-          <span id="chart-properties-title" className="rtx-cp-title text-xs font-medium text-[#ccc]">{tr("Properties of ")}{symbol},{timeframe}</span>
+        <div className="rtx-cp-header flex items-center justify-between px-2.5 py-1 border-b border-[#2e2e34]" {...dragHandleProps}>
+          <span id="chart-properties-title" className="rtx-cp-title text-[11.5px] font-semibold tracking-tight text-[#e2e2e5] leading-tight">{tr("Properties of ")}{symbol},{timeframe}</span>
           <div className="flex items-center gap-1">
-            <button className="rtx-cp-btn-icon w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded text-[#999] hover:text-white transition-colors">
-              <span className="text-xs font-serif">?</span>
-            </button>
             <button 
               onClick={onClose}
               aria-label={tr("Close chart properties")}
-              className="rtx-cp-btn-icon rtx-cp-btn-close w-6 h-6 flex items-center justify-center hover:bg-rose-500/80 hover:text-white rounded text-[#999] transition-colors"
+              className="rtx-cp-btn-icon rtx-cp-btn-close w-5 h-5 flex items-center justify-center hover:bg-rose-500/80 hover:text-white rounded text-[#999] transition-colors"
             >
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
                 <path d="M11 1L1 11M1 1L11 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
@@ -402,11 +435,11 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
         </div>
 
         {/* Content Area */}
-        <div className="rtx-cp-content flex flex-1 overflow-hidden p-3 gap-4 bg-[#1e1e1e]">
+        <div className="rtx-cp-content flex flex-1 overflow-hidden px-3 pt-1 pb-2 gap-2.5 bg-[#1e1e1e]">
           
           {/* Settings apply live to the chart behind this dialog. */}
-          <div className="rtx-cp-settings flex-1 flex flex-col pt-1 pr-1">
-            <div className="rtx-cp-tabs flex gap-4 border-b border-transparent mb-1 pl-1" role="tablist" aria-label={tr('Chart properties')}>
+          <div className="rtx-cp-settings flex-1 flex flex-col">
+            <div className="rtx-cp-tabs flex gap-4 border-b border-[#2e2e34] mb-1 pl-0.5" role="tablist" aria-label={tr('Chart properties')}>
               {(['Common', 'Show', 'Colors'] as const).map(tab => (
                 <button
                   key={tab}
@@ -429,26 +462,33 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                     setActiveTab(tabs[nextIndex]);
                     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
                   }}
-                  className={`rtx-cp-tab px-1 py-0.5 text-xs transition-colors ${activeTab === tab ? 'rtx-cp-tab-active text-blue-400 border-b-2 border-blue-400' : 'text-[#ccc] hover:text-white'}`}
+                  className={`rtx-cp-tab px-1 py-0.5 text-[11.5px] font-medium transition-colors ${activeTab === tab ? 'rtx-cp-tab-active text-blue-400 border-b-2 border-blue-400 -mb-[1px]' : 'text-[#9ca3af] hover:text-white'}`}
                 >
                   {tr(tab)}
                 </button>
               ))}
             </div>
 
-            <div className="rtx-cp-tab-content flex-1 overflow-y-auto pl-1 pr-2 custom-scrollbar" role="tabpanel" id="chart-properties-panel" aria-labelledby={`chart-properties-tab-${activeTab}`}>
+            <div className="rtx-cp-tab-content flex-1 overflow-y-auto pr-0.5 custom-scrollbar" role="tabpanel" id="chart-properties-panel" aria-labelledby={`chart-properties-tab-${activeTab}`}>
               <div className="rtx-cp-preview-box" hidden={activeTab !== 'Colors'}>
-                <div className="rtx-cp-preview-inner relative rounded-sm overflow-hidden" style={previewStyle}>
-                  <span className="rtx-cp-preview-text absolute top-1 left-1 px-1" style={{ color: effectiveColors.foreground, backgroundColor: previewLabelBackground }}>
-                    {tr('Background and grid preview')}
-                  </span>
+                <div className="rtx-cp-preview-inner relative rounded overflow-hidden" style={previewStyle}>
+                  <ChartPropertiesPreviewChart
+                    key={previewPanKey}
+                    symbol={symbol}
+                    timeframe={timeframe}
+                    chartType={selectedChartType}
+                    effectiveColors={effectiveColors}
+                    previewTheme={previewTheme}
+                    colorScheme={state.colorScheme}
+                    onPanOffsetPxChange={handlePreviewPanOffsetChange}
+                  />
                 </div>
               </div>
               {activeTab === 'Show' && (
-                <div className="rtx-cp-show-grid grid grid-cols-1 gap-1.5 py-2">
+                <div className="rtx-cp-show-grid py-1">
                   {showOptions.map(({ key, label }) => (
                     <React.Fragment key={key}>
-                      <label className="rtx-cp-checkbox-row flex items-center gap-2 cursor-pointer group hover:bg-white/5 px-2 py-0.5 -mx-2 rounded transition-colors">
+                      <label className="rtx-cp-checkbox-row flex items-center gap-2 cursor-pointer group hover:bg-white/5 px-1.5 py-0.5 rounded transition-colors">
                         <input
                           type="checkbox"
                           className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444] cursor-pointer w-3.5 h-3.5"
@@ -461,36 +501,36 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                             updateActiveChartProperty(key, e.target.checked);
                           }}
                         />
-                        <span className="rtx-cp-checkbox-label text-[13px] text-[#ccc] group-hover:text-white transition-colors">{tr(label)}</span>
+                        <span className="rtx-cp-checkbox-label text-[12px] text-[#ccc] group-hover:text-white transition-colors">{tr(label)}</span>
                       </label>
                       {key === 'showGrid' && (
-                        <>
-                          <label className="rtx-cp-label flex items-center gap-2 pl-[22px] py-0.5 text-[12px] text-[#ccc]">
-                            <span>{tr('Grid type')}</span>
+                        <div className="col-span-2 grid grid-cols-2 gap-3 pl-5 pr-1 py-1 my-0.5 bg-white/[0.02] border border-[#2c2c34] rounded">
+                          <label className="rtx-cp-label flex items-center gap-2 text-[11.5px] text-[#ccc]">
+                            <span className="shrink-0">{tr('Grid type')}</span>
                             <select
                               value={showState.gridType}
                               disabled={!showState.showGrid}
                               onChange={(e) => updateActiveGridType(e.target.value as ChartProperties['gridType'])}
-                              className="rtx-cp-select flex-1 min-w-0 bg-[#2b2b2b] border border-[#444] text-[12px] px-2 py-0.5 rounded text-[#ccc] outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="rtx-cp-select flex-1 min-w-0 bg-[#26262a] border border-[#3e3e46] text-[11.5px] px-2 py-0.5 rounded text-[#e4e4e7] outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <option value="square" style={colorSchemeOptionStyle}>{tr('Square')}</option>
                               <option value="scale" style={colorSchemeOptionStyle}>{tr('Price/time aligned')}</option>
                               <option value="mt5" style={colorSchemeOptionStyle}>{tr('Fine grid')}</option>
                             </select>
                           </label>
-                          <label className="rtx-cp-label flex items-center gap-2 pl-[22px] py-0.5 text-[12px] text-[#ccc]">
-                            <span>{tr('Grid line style')}</span>
+                          <label className="rtx-cp-label flex items-center gap-2 text-[11.5px] text-[#ccc]">
+                            <span className="shrink-0">{tr('Grid line style')}</span>
                             <select
                               value={showState.gridLineStyle}
                               disabled={!showState.showGrid}
                               onChange={(e) => updateActiveChartProperty('gridLineStyle', e.target.value as ChartProperties['gridLineStyle'])}
-                              className="rtx-cp-select flex-1 min-w-0 bg-[#2b2b2b] border border-[#444] text-[12px] px-2 py-0.5 rounded text-[#ccc] outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="rtx-cp-select flex-1 min-w-0 bg-[#26262a] border border-[#3e3e46] text-[11.5px] px-2 py-0.5 rounded text-[#e4e4e7] outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <option value="dashed" style={colorSchemeOptionStyle}>{tr('Dashed')}</option>
                               <option value="solid" style={colorSchemeOptionStyle}>{tr('Solid')}</option>
                             </select>
                           </label>
-                        </>
+                        </div>
                       )}
                     </React.Fragment>
                   ))}
@@ -498,79 +538,85 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
               )}
 
               {activeTab === 'Colors' && (
-                <div className="rtx-cp-colors-grid grid grid-cols-[100px_1fr] items-center gap-y-[5px] gap-x-2 py-2">
-                  <span className="rtx-cp-label text-[12px] text-[#ccc] text-right">{tr("Scheme:")}</span>
-                  <select 
-                    value={normalizeColorSchemeName(state.colorScheme)}
-                    onChange={(e) => applyActivePresetScheme(e.target.value as ColorScheme)}
-                    className="rtx-cp-select bg-[#2b2b2b] border border-[#444] text-[12px] px-2 py-0.5 rounded w-full text-[#ccc] outline-none focus:border-blue-500 transition-colors col-span-1"
-                  >
-                    {colorSchemeOptions.map((scheme) => (
-                      <option key={scheme} value={scheme} style={colorSchemeOptionStyle}>
-                        {tr(getColorSchemeDisplayLabel(scheme, { isAdvancedUntitledLight }))}
-                      </option>
-                    ))}
-                  </select>
+                <div className="rtx-cp-colors-grid">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <label className="flex items-center gap-2 flex-1 min-w-[205px]">
+                      <span className="rtx-cp-label text-[11.5px] text-[#bbb] shrink-0">{tr("Scheme:")}</span>
+                      <select 
+                        value={normalizeColorSchemeName(state.colorScheme)}
+                        onChange={(e) => applyActivePresetScheme(e.target.value as ColorScheme)}
+                        className="rtx-cp-select flex-1 min-w-0 h-6 bg-[#26262a] border border-[#3e3e46] text-[12px] px-2 rounded text-[#e4e4e7] outline-none focus:border-blue-500 transition-colors"
+                      >
+                        {colorSchemeOptions.map((scheme) => (
+                          <option key={scheme} value={scheme} style={colorSchemeOptionStyle}>
+                            {tr(getColorSchemeDisplayLabel(scheme, { isAdvancedUntitledLight }))}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                  <label className="rtx-cp-checkbox-row col-span-2 flex items-center gap-2 cursor-pointer pl-[108px] py-0.5">
-                    <input
-                      type="checkbox"
-                      className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444]"
-                      checked={syncQuoteColorsWithChart}
-                      onChange={(e) => setSyncQuoteColorsWithChart(e.target.checked)}
-                    />
-                    <span className="rtx-cp-checkbox-label text-[12px] text-[#ccc]">
-                      {tr("Change Bid/Ask price color with chart")}
-                    </span>
-                  </label>
+                    <label className="rtx-cp-checkbox-row flex items-center gap-1.5 cursor-pointer py-0.5 shrink-0">
+                      <input
+                        type="checkbox"
+                        className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444]"
+                        checked={syncQuoteColorsWithChart}
+                        onChange={(e) => setSyncQuoteColorsWithChart(e.target.checked)}
+                      />
+                      <span className="rtx-cp-checkbox-label text-[11.5px] text-[#ccc]">
+                        {tr("Change Bid/Ask price color with chart")}
+                      </span>
+                    </label>
+                  </div>
 
-                  <div className="rtx-cp-divider col-span-2 h-[1px] bg-[#333] my-1"></div>
+                  <div className="rtx-cp-divider h-[1px] bg-[#2e2e34]"></div>
 
-                  {[
-                    { label: 'Background', key: 'background' },
-                    { label: 'Foreground', key: 'foreground' },
-                    { label: 'Grid', key: 'grid' },
-                    { label: 'Bar up', key: 'barUp' },
-                    { label: 'Bar down', key: 'barDown' },
-                    { label: 'Bull candle', key: 'bullCandle' },
-                    { label: 'Bear candle', key: 'bearCandle' },
-                    { label: 'Line chart', key: 'lineChart' },
-                    { label: 'Volumes', key: 'volumes' },
-                    { label: 'Bid price line', key: 'bidPriceLine' },
-                    { label: 'Ask price line', key: 'askPriceLine' },
-                    { label: 'Last price line', key: 'lastPriceLine' },
-                    { label: 'Stop levels', key: 'stopLevels' },
-                  ].map(c => {
-                    const colorVal = effectiveColors[c.key as keyof typeof effectiveColors];
-                    const isRgba = typeof colorVal === 'string' && colorVal.startsWith('rgba');
-                    
-                    return (
-                      <React.Fragment key={c.label}>
-                        <span className="rtx-cp-label text-[12px] text-[#ccc] text-right">{tr(c.label)}:</span>
-                        <label className="rtx-cp-color-picker flex items-center gap-2 bg-[#2b2b2b] border border-[#444] rounded px-1.5 py-[2px] cursor-pointer hover:border-[#666] transition-colors relative">
-                          <input 
-                            type="color" 
-                            aria-label={tr(c.label)}
-                            value={isRgba ? '#ffffff' : colorVal} 
-                            onChange={(e) => updateActiveChartColor(c.key as keyof ChartProperties['colors'], e.target.value)}
-                            className="absolute opacity-0 w-0 h-0" 
-                          />
-                          <div className="w-3.5 h-3.5 rounded-sm border border-[#222] shadow-sm flex-shrink-0" style={{ backgroundColor: colorVal }}></div>
-                          <span className="rtx-cp-color-text text-[12px] text-[#ccc] w-full truncate">{colorVal}</span>
-                          <svg width="8" height="5" viewBox="0 0 10 6" fill="none" className="ml-0.5 text-[#666] flex-shrink-0">
-                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </label>
-                      </React.Fragment>
-                    )
-                  })}
+                  <div className="rtx-cp-colors-list">
+                    {[
+                      { label: 'Background', key: 'background' },
+                      { label: 'Foreground', key: 'foreground' },
+                      { label: 'Grid', key: 'grid' },
+                      { label: 'Line chart', key: 'lineChart' },
+                      { label: 'Bar up', key: 'barUp' },
+                      { label: 'Bar down', key: 'barDown' },
+                      { label: 'Bull candle', key: 'bullCandle' },
+                      { label: 'Bear candle', key: 'bearCandle' },
+                      { label: 'Bid price line', key: 'bidPriceLine' },
+                      { label: 'Ask price line', key: 'askPriceLine' },
+                      { label: 'Last price line', key: 'lastPriceLine' },
+                      { label: 'Volumes', key: 'volumes' },
+                      { label: 'Stop levels', key: 'stopLevels' },
+                    ].map(c => {
+                      const colorVal = effectiveColors[c.key as keyof typeof effectiveColors];
+                      const pickerHex = toColorPickerHexValue(colorVal);
+                      
+                      return (
+                        <div key={c.label} className="rtx-cp-color-row">
+                          <span className="rtx-cp-label text-[11.5px] text-[#bbb] text-right truncate" title={tr(c.label)}>{tr(c.label)}:</span>
+                          <label className="rtx-cp-color-picker h-[22px] flex items-center gap-1.5 bg-[#26262a] border border-[#3e3e46] rounded px-1.5 cursor-pointer hover:border-[#60606b] transition-colors relative">
+                            <input 
+                              type="color" 
+                              aria-label={tr(c.label)}
+                              value={pickerHex}
+                              onChange={(e) => updateActiveChartColor(c.key as keyof ChartProperties['colors'], e.target.value)}
+                              className="absolute opacity-0 w-0 h-0" 
+                            />
+                            <div className="w-3 h-3 rounded-[2px] border border-black/40 shadow-sm flex-shrink-0" style={{ backgroundColor: colorVal }}></div>
+                            <span className="rtx-cp-color-text font-mono text-[11px] text-[#d4d4d8] w-full truncate">{colorVal}</span>
+                            <svg width="8" height="5" viewBox="0 0 10 6" fill="none" className="text-[#71717a] flex-shrink-0">
+                              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </label>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 
               {activeTab === 'Common' && (
-                <div className="rtx-cp-common-grid flex gap-2 pt-1 pr-1">
+                <div className="rtx-cp-common-grid flex gap-2.5 pt-0.5">
                   <div className="flex flex-col gap-2 flex-1">
-                    <div className="rtx-cp-fieldset flex flex-col gap-[3px] p-2 border border-[#444] bg-transparent rounded-sm relative mt-2">
+                    <div className="rtx-cp-fieldset flex flex-col gap-1 p-2 border border-[#38383f] bg-white/[0.015] rounded relative">
                       <label className="rtx-cp-radio-row flex items-center gap-2 cursor-pointer">
                          <input type="radio" name="chartType" className="rtx-cp-radio accent-blue-500 bg-[#2b2b2b]" checked={selectedChartType === 'bar'} onChange={() => updateActiveChartType('Bar', 'bar')} />
                          <span className="rtx-cp-radio-label text-[12px] text-[#ccc]">{tr("Bar chart")}</span>
@@ -588,7 +634,7 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                          <span className="rtx-cp-radio-label text-[12px] text-[#ccc]">{tr("Area chart")}</span>
                       </label>
                     </div>
-                    <div className="rtx-cp-fieldset flex flex-col gap-[3px] p-2 py-3 border border-[#444] bg-transparent rounded-sm mt-1">
+                    <div className="rtx-cp-fieldset flex flex-col gap-1 p-2 border border-[#38383f] bg-white/[0.015] rounded">
                        <label className="rtx-cp-checkbox-row flex items-center gap-2 cursor-pointer">
                          <input type="checkbox" className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444]" checked={state.chartOnForeground} onChange={(e) => updateActiveChartProperty('chartOnForeground', e.target.checked)} />
                          <span className="rtx-cp-checkbox-label text-[12px] text-[#ccc]">{tr("Chart on foreground")}</span>
@@ -604,8 +650,8 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                     </div>
                   </div>
                   
-                  <div className="rtx-cp-fieldset flex flex-col gap-2 flex-[1.2] border border-[#444] bg-transparent rounded p-3 pt-4 relative mt-2">
-                     <span className="rtx-cp-legend absolute -top-[7px] left-3 bg-[#1e1e1e] px-1 text-[11px] font-medium text-[#ccc]">{tr("Scale")}</span>
+                  <div className="rtx-cp-fieldset flex flex-col gap-1.5 flex-[1.15] border border-[#38383f] bg-white/[0.015] rounded p-2.5 pt-3.5 relative mt-1.5">
+                     <span className="rtx-cp-legend absolute -top-[7px] left-2.5 bg-[#1e1e1e] px-1 text-[11px] font-medium text-[#bbb]">{tr("Scale")}</span>
                      <label className="rtx-cp-checkbox-row flex items-center gap-2 cursor-pointer mt-0">
                         <input type="checkbox" className="rtx-cp-checkbox accent-blue-500 bg-[#2b2b2b] border-[#444]" checked={state.scaleFixOneToOne} onChange={(e) => updateActiveChartProperty('scaleFixOneToOne', e.target.checked)} />
                        <span className="rtx-cp-checkbox-label text-[12px] text-[#ccc]">{tr("Scale fix one to one")}</span>
@@ -615,13 +661,13 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
                        <span className="rtx-cp-checkbox-label text-[12px] text-[#ccc]">{tr("Scale fix")}</span>
                      </label>
                      
-                     <div className={`flex flex-col gap-[6px] pl-[26px] mt-1 transition-opacity ${!state.scaleFix ? 'opacity-30 pointer-events-none' : ''}`}>
+                     <div className={`flex flex-col gap-1.5 pl-6 mt-0.5 transition-opacity ${!state.scaleFix ? 'opacity-30 pointer-events-none' : ''}`}>
                        <div className="flex items-center gap-2">
-                          <input type="number" value={state.fixedMaximum} onChange={(e) => updateActiveChartProperty('fixedMaximum', Number(e.target.value))} className="rtx-cp-input w-[80px] bg-[#2b2b2b] border border-[#444] rounded-sm px-1.5 py-[1px] text-[12px] text-[#ccc] focus:outline-none focus:border-blue-500 transition-colors" />
+                          <input type="number" value={state.fixedMaximum} onChange={(e) => updateActiveChartProperty('fixedMaximum', Number(e.target.value))} className="rtx-cp-input w-[84px] bg-[#26262a] border border-[#3e3e46] rounded px-1.5 py-0.5 text-[12px] text-[#e4e4e7] focus:outline-none focus:border-blue-500 transition-colors" />
                          <span className="rtx-cp-label text-[12px] text-[#ccc]">{tr("Fixed maximum")}</span>
                        </div>
                        <div className="flex items-center gap-2">
-                          <input type="number" value={state.fixedMinimum} onChange={(e) => updateActiveChartProperty('fixedMinimum', Number(e.target.value))} className="rtx-cp-input w-[80px] bg-[#2b2b2b] border border-[#444] rounded-sm px-1.5 py-[1px] text-[12px] text-[#ccc] focus:outline-none focus:border-blue-500 transition-colors" />
+                          <input type="number" value={state.fixedMinimum} onChange={(e) => updateActiveChartProperty('fixedMinimum', Number(e.target.value))} className="rtx-cp-input w-[84px] bg-[#26262a] border border-[#3e3e46] rounded px-1.5 py-0.5 text-[12px] text-[#e4e4e7] focus:outline-none focus:border-blue-500 transition-colors" />
                          <span className="rtx-cp-label text-[12px] text-[#ccc]">{tr("Fixed minimum")}</span>
                        </div>
                      </div>
@@ -634,21 +680,21 @@ export const ChartPropertiesDialog: React.FC<ChartPropertiesDialogProps> = ({
         </div>
 
         {/* Footer Buttons */}
-        <div className="rtx-cp-footer flex items-center justify-between px-3 py-2 border-t border-[#333] rounded-b-lg">
+        <div className="rtx-cp-footer flex items-center justify-between px-3 py-2 border-t border-[#2e2e34] rounded-b-lg">
           <button 
             onClick={resetActiveChartDefaults}
-            className="rtx-cp-btn px-4 py-1 text-xs bg-[#2b2b2b] hover:bg-rose-500/20 border border-[#444] hover:border-rose-500/50 text-[#ccc] hover:text-rose-400 rounded-sm transition-colors"
+            className="rtx-cp-btn px-3 py-1 text-[12px] bg-[#26262a] hover:bg-rose-500/15 border border-[#3e3e46] hover:border-rose-500/50 text-[#ccc] hover:text-rose-400 rounded transition-colors"
           >
             {tr("Reset to Defaults")}</button>
           <div className="flex gap-2">
             <button 
               onClick={handleCancel}
-              className="rtx-cp-btn px-6 py-1 text-xs bg-[#2b2b2b] hover:bg-[#333] bg-opacity-80 border border-[#444] hover:border-[#666] text-[#ccc] hover:text-white rounded-sm transition-colors"
+              className="rtx-cp-btn px-4 py-1 text-[12px] bg-[#26262a] hover:bg-[#323238] border border-[#3e3e46] hover:border-[#5a5a66] text-[#d4d4d8] hover:text-white rounded transition-colors"
             >
               {tr("Cancel")}</button>
             <button 
               onClick={onClose}
-              className="rtx-cp-btn rtx-cp-btn-primary px-7 py-1 text-xs bg-[#2b2b2b] hover:bg-[#333] bg-opacity-80 border border-[#444] hover:border-[#666] text-[#ccc] hover:text-white rounded-sm transition-colors"
+              className="rtx-cp-btn rtx-cp-btn-primary px-5 py-1 text-[12px] font-medium bg-[#2563eb] hover:bg-[#1d4ed8] border border-[#3b82f6] text-white rounded transition-colors"
             >
               {tr("OK")}</button>
           </div>

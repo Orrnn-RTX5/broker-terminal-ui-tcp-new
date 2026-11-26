@@ -262,7 +262,7 @@ export function GlobalShortcuts({
       }
     },
 
-    // Chart type shortcuts — matches context menu (Alt+1=Bar, Alt+2=Candlestick, Alt+3=Line)
+    // Chart type shortcuts — matches context menu (Alt+1=Bar, Alt+2=Candlestick, Alt+3=Line, Alt+4=Area)
     {
       id: 'charts.indicator-list',
       key: 'i',
@@ -392,16 +392,16 @@ export function GlobalShortcuts({
       }
     },
 
-    // Timeframe shortcuts — Alt+4 through Alt+9 (and extras for common TFs)
+    // Timeframe shortcuts — Alt+0 for M1, Alt+5 through Alt+9 for M5–H4 (and Alt+Shift+4/5/6 for D1–MN)
     {
       id: 'timeframe.m1',
-      key: '4',
+      key: '0',
       alt: true,
       description: 'Switch to M1',
       category: SHORTCUT_CATEGORIES.CHARTS,
       priority: 90,
       handler: () => {
-        showFeedback('Timeframe: M1 (Alt+4)');
+        showFeedback('Timeframe: M1 (Alt+0)');
         changeTimeframe('M1');
       }
     },

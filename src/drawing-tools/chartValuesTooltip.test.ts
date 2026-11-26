@@ -18,7 +18,7 @@ const candle = (time: number, open: number, close: number, volume = 20): Candle 
 describe('long-press values tooltip', () => {
   afterEach(() => {
     document.body.replaceChildren();
-    useChartCursorStore.setState({ mode: 'arrow', valuesTooltipOnLongPress: true });
+    useChartCursorStore.setState({ mode: 'cross', valuesTooltipOnLongPress: true });
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -138,7 +138,7 @@ describe('long-press values tooltip', () => {
     release();
   });
 
-  it.each(['demonstration', 'magic', 'eraser'] as const)(
+  it.each(['demonstration', 'eraser'] as const)(
     'does not start a tooltip during the %s cursor gesture',
     (mode) => {
       vi.useFakeTimers();

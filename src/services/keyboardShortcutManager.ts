@@ -432,6 +432,7 @@ export const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'handler'>[] = [
   { id: 'charts.bar-chart', key: '1', alt: true, description: 'Bar Chart', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
   { id: 'charts.candlesticks', key: '2', alt: true, description: 'Candlesticks', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
   { id: 'charts.line-chart', key: '3', alt: true, description: 'Line Chart', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
+  { id: 'charts.area-chart', key: '4', alt: true, description: 'Area Chart', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
   { id: 'charts.grid', key: 'g', ctrl: true, description: 'Grid', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
   { id: 'charts.volumes', key: 'l', ctrl: true, description: 'Volumes', category: SHORTCUT_CATEGORIES.CHARTS, priority: 90 },
   { id: 'charts.zoom-in', key: '+', description: 'Zoom In', category: SHORTCUT_CATEGORIES.CHARTS, priority: 80 },

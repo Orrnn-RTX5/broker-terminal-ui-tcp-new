@@ -13,7 +13,6 @@ export const CURSOR_TOOLS: readonly CursorToolDefinition[] = [
   { id: 'cross', label: 'Cross' },
   { id: 'dot', label: 'Dot' },
   { id: 'arrow', label: 'Arrow' },
-  { id: 'magic', label: 'Magic' },
 ];
 
 export const getCursorTool = (id: string | null | undefined): CursorToolDefinition | null =>

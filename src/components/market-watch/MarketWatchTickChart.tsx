@@ -184,7 +184,7 @@ const buildTickChartGridLayout = (
     verticalPositions: getSquareGridLinePositions(plotWidth, FINE_CHART_GRID_CELL_SIZE_PX)
       .map(offset => plot.left + offset),
     strokeWidth: FINE_CHART_GRID_STROKE_CSS_PX,
-    strokeOpacity: FINE_CHART_GRID_OPACITY,
+    strokeOpacity: dashed ? FINE_CHART_GRID_OPACITY : undefined,
     strokeDasharray: dashed
       ? `${FINE_CHART_GRID_DASH_PATTERN_CSS_PX[0]} ${FINE_CHART_GRID_DASH_PATTERN_CSS_PX[1]}`
       : undefined,

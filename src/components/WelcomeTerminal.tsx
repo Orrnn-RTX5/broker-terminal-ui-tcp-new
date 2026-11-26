@@ -26,6 +26,7 @@ import {
     filterBrokerDirectory,
     firstSelectableBroker,
     formatBrokerDisplayServer,
+    getBrokerDirectorySignature,
     getDirectoryBrokerServerUrl,
     isDirectoryBrokerSelectable,
     isBrokerSuspended,
@@ -608,7 +609,13 @@ export function WelcomeTerminal({
     const [brokerList, setBrokerList] = useState<BrokerServerItem[]>(() => (
         !isDesktopBrokerSelection && configuredRuntimeBroker ? [configuredRuntimeBroker] : []
     ));
+    const brokerListRef = useRef<BrokerServerItem[]>(brokerList);
+    const updateBrokerList = useCallback((rows: BrokerServerItem[]) => {
+        brokerListRef.current = rows;
+        setBrokerList(rows);
+    }, []);
     const [selectedBroker, setSelectedBroker] = useState<BrokerServerItem | null>(startupBroker);
+    const brokerSelectionSeqRef = useRef(0);
     const { login: username, password, setLogin: setUsername, setPassword, savePassword, setSavePassword, available: passwordSavingAvailable, restoring, storageError, persistPassword } = useSavedLogin(
         true,
         initialUsername,
@@ -653,6 +660,7 @@ export function WelcomeTerminal({
             const endpointKey = `${detail.broker_id || ''}|${detail.target_tcp || ''}`;
             const prevKey = lastSeenTcpKeyRef.current;
             lastSeenTcpKeyRef.current = endpointKey;
+            if (isDesktopBrokerSelection && userSelectedBrokerRef.current) return;
             if (!prevKey || prevKey === endpointKey) return;
             const current = selectedBrokerRef.current;
             if (current && (
@@ -665,7 +673,7 @@ export function WelcomeTerminal({
         };
         window.addEventListener('rtx5-tcp-status', onTcpStatus);
         return () => window.removeEventListener('rtx5-tcp-status', onTcpStatus);
-    }, []);
+    }, [isDesktopBrokerSelection]);
 
     useEffect(() => {
         let cancelled = false;
@@ -813,6 +821,7 @@ export function WelcomeTerminal({
     }, []);
 
     const applySelectedBroker = useCallback((broker: BrokerServerItem) => {
+        const selectionSeq = ++brokerSelectionSeqRef.current;
         const normalizedBroker = normalizeBrokerInfoForTarget(broker) as BrokerServerItem;
         const serverUrl = isDesktopBrokerSelection ? getDirectoryBrokerServerUrl(broker) : resolveBrokerBackendUrl(normalizedBroker);
         const displayServer = formatBrokerDisplayServer(broker) || normalizedBroker.display_server || broker.broker_name;
@@ -834,6 +843,7 @@ export function WelcomeTerminal({
         const healthTargetUrl = isDesktopBrokerSelection ? serverUrl : resolveBrokerExtApiUrl(normalizedBroker);
         if (isDesktopBrokerSelection && nextBroker.tcp_addr) {
             void switchDesktopTcpBroker(nextBroker).finally(() => {
+                if (brokerSelectionSeqRef.current !== selectionSeq) return;
                 void runHealthCheck(healthTargetUrl, nextBroker);
                 void hydrateBrokerPresentation(nextBroker, serverUrl);
             });
@@ -843,7 +853,7 @@ export function WelcomeTerminal({
         if (serverUrl) {
             void hydrateBrokerPresentation(nextBroker, serverUrl);
         }
-    }, [hydrateBrokerPresentation, isDesktopBrokerSelection, runHealthCheck]);
+    }, [hydrateBrokerPresentation, isDesktopBrokerSelection, runHealthCheck, setPassword]);
 
     const handleSelectBroker = (broker: BrokerServerItem) => {
         if (!isDesktopBrokerSelection || submittingRef.current || !isDirectoryBrokerSelectable(broker)) return;
@@ -852,6 +862,22 @@ export function WelcomeTerminal({
         setError(null);
         setDropdownOpen(false);
     };
+
+    const refreshDesktopBrokerDirectory = useCallback(() => {
+        if (!isDesktopBrokerSelection) return;
+        setDropdownOpen(true);
+        void loadAppBrokerDirectory({ forceRefresh: true, desktop: true })
+            .then(rows => {
+                const data = rows as BrokerServerItem[];
+                if (Array.isArray(data) && data.length > 0) {
+                    if (getBrokerDirectorySignature(data) !== getBrokerDirectorySignature(brokerListRef.current)) {
+                        updateBrokerList(data);
+                    }
+                    setBrokerListStatus('ready');
+                }
+            })
+            .catch(() => undefined);
+    }, [isDesktopBrokerSelection, updateBrokerList]);
 
     useEffect(() => {
         let isMounted = true;
@@ -867,7 +893,7 @@ export function WelcomeTerminal({
             .then(rows => rows as BrokerServerItem[])
             .then((data) => {
                 if (!isMounted) return;
-                setBrokerList(data);
+                updateBrokerList(data);
                 setBrokerListStatus('ready');
 
                 const tcpStatus = (window as unknown as { __RTX5_TCP_STATUS__?: { broker_id?: string; target_tcp?: string } }).__RTX5_TCP_STATUS__;
@@ -902,7 +928,7 @@ export function WelcomeTerminal({
             .catch(err => {
                 if (!isMounted) return;
                 if (!isDesktopBrokerSelection && configuredRuntimeBroker) {
-                    setBrokerList([configuredRuntimeBroker]);
+                    updateBrokerList([configuredRuntimeBroker]);
                     setBrokerListStatus('ready');
                     applySelectedBroker(configuredRuntimeBroker);
                     return;
@@ -915,7 +941,7 @@ export function WelcomeTerminal({
         return () => {
             isMounted = false;
         };
-    }, [applySelectedBroker, configuredRuntimeBroker, isDesktopBrokerSelection, directoryAttempt]);
+    }, [applySelectedBroker, configuredRuntimeBroker, isDesktopBrokerSelection, directoryAttempt, updateBrokerList]);
 
     useEffect(() => {
         if (!isDesktopBrokerSelection && !selectedBroker) return;
@@ -1579,34 +1605,8 @@ export function WelcomeTerminal({
                                                 setSearchQuery(e.target.value);
                                                 setDropdownOpen(true);
                                             }}
-                                            onFocus={() => {
-                                                if (isDesktopBrokerSelection) {
-                                                    setDropdownOpen(true);
-                                                    void loadAppBrokerDirectory({ forceRefresh: true, desktop: true })
-                                                        .then(rows => {
-                                                            const data = rows as BrokerServerItem[];
-                                                            if (Array.isArray(data) && data.length > 0) {
-                                                                setBrokerList(data);
-                                                                setBrokerListStatus('ready');
-                                                            }
-                                                        })
-                                                        .catch(() => undefined);
-                                                }
-                                            }}
-                                            onClick={() => {
-                                                if (isDesktopBrokerSelection) {
-                                                    setDropdownOpen(true);
-                                                    void loadAppBrokerDirectory({ forceRefresh: true, desktop: true })
-                                                        .then(rows => {
-                                                            const data = rows as BrokerServerItem[];
-                                                            if (Array.isArray(data) && data.length > 0) {
-                                                                setBrokerList(data);
-                                                                setBrokerListStatus('ready');
-                                                            }
-                                                        })
-                                                        .catch(() => undefined);
-                                                }
-                                            }}
+                                            onFocus={refreshDesktopBrokerDirectory}
+                                            onClick={refreshDesktopBrokerDirectory}
                                             onKeyDown={e => {
                                                 if (!isDesktopBrokerSelection) return;
                                                 if (e.key === 'Escape') {

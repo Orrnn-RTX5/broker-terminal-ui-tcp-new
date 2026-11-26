@@ -132,7 +132,6 @@ interface UseTradingChartContextMenuControllerOptions {
   resetViewportOnRefresh?: () => void;
   setBackgroundImageDialogOpen?: Dispatch<SetStateAction<boolean>>;
   setCtxAutoScroll: Dispatch<SetStateAction<boolean>>;
-  setCtxChartShift: Dispatch<SetStateAction<boolean>>;
   setCtxMenu: Dispatch<SetStateAction<TradingChartContextMenuState>>;
   setCtxShowTradeHistory: Dispatch<SetStateAction<boolean>>;
   setCtxShowTradeHistoryLine: Dispatch<SetStateAction<boolean>>;
@@ -165,7 +164,6 @@ export function useTradingChartContextMenuController({
   resetViewportOnRefresh,
   setBackgroundImageDialogOpen,
   setCtxAutoScroll,
-  setCtxChartShift,
   setCtxMenu,
   setCtxShowTradeHistory,
   setCtxShowTradeHistoryLine,
@@ -294,18 +292,6 @@ export function useTradingChartContextMenuController({
       return next;
     });
   }, [activeChartSourceId, setCtxAutoScroll, symbol]);
-
-  const handleCtxToggleChartShift = useCallback(() => {
-    setCtxChartShift(previous => {
-      const next = !previous;
-      useChartSettingsStore.getState().updateSymbolProperty(symbol, 'chartShift', next);
-      commandBus.dispatch({
-        type: 'SET_CHART_SHIFT',
-        payload: { enabled: next, targetContextId: activeChartSourceId },
-      });
-      return next;
-    });
-  }, [activeChartSourceId, setCtxChartShift, symbol]);
 
   const handleCtxToggleTradeLevels = useCallback(() => {
     setCtxShowTradeLevels(previous => {
@@ -445,7 +431,6 @@ export function useTradingChartContextMenuController({
     handleCtxTimeframeChange,
     handleCtxToggleAutoScroll,
     handleCtxToggleBackgroundLogo,
-    handleCtxToggleChartShift,
     handleCtxToggleGrid,
     handleCtxToggleOHLC,
     handleCtxToggleTradeHistory,

@@ -1130,11 +1130,15 @@ const buildNextCustomChartColors = (
 
   if (isLightMode && normalizedScheme !== "Custom") {
     const effectiveLight = getEffectiveChartColors(currentProperties, { isAdvancedUntitledLight: true });
+    const bgChannels = key === "background" ? parseHexRgbChannels(value) : null;
+    const isCustomLightBackground = key === "background"
+      && !isDefaultDarkSurfaceBackground(value)
+      && (bgChannels === null || getRelativeLuminanceFromRgb(bgChannels) >= 0.45);
     baseColors = {
       ...effectiveLight,
       background: currentProperties.colors.background,
-      foreground: currentProperties.colors.foreground,
-      grid: currentProperties.colors.grid,
+      foreground: isCustomLightBackground ? effectiveLight.foreground : currentProperties.colors.foreground,
+      grid: isCustomLightBackground ? effectiveLight.grid : currentProperties.colors.grid,
     };
   }
 

@@ -138,4 +138,31 @@ describe('getChartGridLineColors', () => {
       horizontal: 'rgba(0, 0, 0, 0)',
     });
   });
+
+  it('gives built-in dark and light presets higher solid-line visibility across grid types', () => {
+    for (const gridType of ['square', 'scale', 'mt5'] as const) {
+      const darkSolid = getChartGridLineColors({
+        background: '#000000',
+        grid: 'rgba(255, 255, 255, 0.12)',
+        showGrid: true,
+        lineStyle: 'solid',
+        gridType,
+        colorScheme: 'Blue and Red',
+      });
+      expect(darkSolid.vertical).toBe(darkSolid.horizontal);
+      expect(readAlpha(darkSolid.horizontal)).toBeGreaterThanOrEqual(0.24);
+
+      const lightSolid = getChartGridLineColors({
+        background: '#fafbfc',
+        grid: 'rgba(71, 85, 105, 0.07)',
+        showGrid: true,
+        lineStyle: 'solid',
+        gridType,
+        colorScheme: 'Blue and Red',
+        preserveConfiguredColor: true,
+      });
+      expect(lightSolid.vertical).toBe(lightSolid.horizontal);
+      expect(readAlpha(lightSolid.horizontal)).toBeGreaterThanOrEqual(0.2);
+    }
+  });
 });

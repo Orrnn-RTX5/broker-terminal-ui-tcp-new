@@ -37,7 +37,7 @@ export const initialToolbarState: ToolbarState = {
   activeTool: null,
   chartType: (typeof window !== 'undefined' ? localStorage.getItem('rtx5_chart_type') as ToolbarState['chartType'] : null) || 'candlestick',
   timeframe: DEFAULT_CHART_TIMEFRAME,
-  crosshairEnabled: false,
+  crosshairEnabled: true,
   autoScrollEnabled: false,
   chartShiftEnabled: false,
   magnetEnabled: false,

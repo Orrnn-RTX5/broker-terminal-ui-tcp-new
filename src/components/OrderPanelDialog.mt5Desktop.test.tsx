@@ -868,13 +868,128 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
       const top2 = Number.parseFloat(posBar2?.style.top || '0');
       expect(Math.abs(top1 - top2)).toBeGreaterThanOrEqual(20);
 
-      // Timeframe buttons switch HUD symbol/timeframe label cleanly
+      // Timeframe buttons show all M1..MN and switch HUD symbol/timeframe label cleanly
+      const expectedTimeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'] as const;
+      const timeframeGroup = screen.getByRole('group', { name: 'Timeframe' });
+      const renderedTimeframes = Array.from(timeframeGroup.querySelectorAll('button')).map((btn) => btn.textContent);
+      expect(renderedTimeframes).toEqual(expectedTimeframes);
+
       const hudSymbol = container.querySelector('.rtx-order-dialog__chart-hud-symbol');
       expect(hudSymbol?.textContent).toBe('XAUUSD, M1');
-      fireEvent.click(screen.getByTestId('order-mini-chart-tf-M5'));
-      expect(hudSymbol?.textContent).toBe('XAUUSD, M5');
-      expect(screen.getByTestId('order-mini-chart-tf-M5').getAttribute('aria-pressed')).toBe('true');
+      for (const tf of expectedTimeframes) {
+        const tfBtn = screen.getByTestId(`order-mini-chart-tf-${tf}`);
+        fireEvent.click(tfBtn);
+        expect(hudSymbol?.textContent).toBe(`XAUUSD, ${tf}`);
+        expect(tfBtn.getAttribute('aria-pressed')).toBe('true');
+      }
     } finally {
+      getContextSpy.mockRestore();
+      rafSpy.mockRestore();
+      cancelRafSpy.mockRestore();
+    }
+  });
+
+  it('loads cached and backend historical candles for M1..MN and formats calendar axis labels', async () => {
+    const { candleCache } = await import('../services/candleCache');
+    const { API_V2_BASE_URL, RTX5_API_URL, toLocalDevProxyUrl } = await import('../config/api');
+    const { buildBrokerApiV2 } = await import('../services/brokerSession');
+
+    const brokerBase = toLocalDevProxyUrl(buildBrokerApiV2()).replace(/\/$/, '');
+    const apiV2Base = API_V2_BASE_URL.replace(/\/$/, '');
+    const configBase = RTX5_API_URL.replace(/\/$/, '');
+    const scope = brokerBase || apiV2Base || (configBase ? `${configBase}/api/v2` : '/api/v2') || 'default';
+
+    const drawnTexts: string[] = [];
+    const mockCtx = {
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      closePath: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
+      fillText: vi.fn((text: string) => {
+        drawnTexts.push(String(text));
+      }),
+      font: '',
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      lineJoin: 'miter',
+      globalAlpha: 1,
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    };
+
+    const getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      mockCtx as unknown as CanvasRenderingContext2D,
+    );
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+    const cancelRafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+    const mnCandles = Array.from({ length: 18 }, (_, i) => ({
+      time: Math.floor(Date.UTC(2025, i, 1) / 1000),
+      open: 4100 + i,
+      high: 4120 + i,
+      low: 4090 + i,
+      close: 4110 + i,
+      volume: 100 + i,
+    }));
+    const mnKey = candleCache.createKey({ scope, symbol: 'XAUUSD', timeframe: 'MN', limit: 500 });
+    candleCache.setLatest(mnKey, mnCandles, { scope, symbol: 'XAUUSD', timeframe: 'MN', limit: 500, source: 'backend' });
+
+    const d1Candles = Array.from({ length: 24 }, (_, i) => ({
+      time: Math.floor(Date.UTC(2026, 9, 1 + i) / 1000),
+      open: 4150 + i,
+      high: 4160 + i,
+      low: 4140 + i,
+      close: 4155 + i,
+      volume: 50 + i,
+    }));
+    const prevRuntimeCfg = (window as { __RTX_RUNTIME_CONFIG__?: unknown }).__RTX_RUNTIME_CONFIG__;
+    (window as { __RTX_RUNTIME_CONFIG__?: unknown }).__RTX_RUNTIME_CONFIG__ = { BACKEND_TARGET: 'desktop' };
+    const getCandlesSpy = vi.spyOn(tradeApi.market, 'getCandles').mockResolvedValue(d1Candles as never);
+
+    try {
+      render(
+        <OrderPanelDialog
+          isOpen
+          onClose={vi.fn()}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          instruments={[{ symbol: 'XAUUSD', digits: 2, contractSize: 100 }]}
+        />,
+      );
+
+      drawnTexts.length = 0;
+      fireEvent.click(screen.getByTestId('order-mini-chart-tf-MN'));
+      expect(drawnTexts.some((txt) => /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) 202[56]$/.test(txt))).toBe(true);
+
+      drawnTexts.length = 0;
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('order-mini-chart-tf-D1'));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(getCandlesSpy).toHaveBeenCalledWith('XAUUSD', { timeframe: 'D1', limit: 120 });
+      expect(drawnTexts.some((txt) => /^\d{2} (Oct|Nov) 2026$/.test(txt))).toBe(true);
+    } finally {
+      (window as { __RTX_RUNTIME_CONFIG__?: unknown }).__RTX_RUNTIME_CONFIG__ = prevRuntimeCfg;
+      candleCache.clearAll();
+      getCandlesSpy.mockRestore();
       getContextSpy.mockRestore();
       rafSpy.mockRestore();
       cancelRafSpy.mockRestore();

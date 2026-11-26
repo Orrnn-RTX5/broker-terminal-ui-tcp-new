@@ -418,14 +418,14 @@ describe('MarketWatchTickChart', () => {
     expect(grid.querySelector('line[data-axis="horizontal"]')).toHaveAttribute('stroke', '#778899');
     expect(grid.querySelector('line[data-axis="vertical"]')).toHaveAttribute('stroke', '#778899');
 
-    // Switching to Square solid grid updates spacing to 64px, hairline width, and removes dashes.
+    // Switching to Square solid grid updates spacing to 64px, crisp 1px width, and removes dashes.
     act(() => {
       useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridType', 'square');
       useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridLineStyle', 'solid');
     });
     expect(grid).toHaveAttribute('data-grid-type', 'square');
     expect(grid).toHaveAttribute('data-grid-style', 'solid');
-    expect(grid).toHaveAttribute('stroke-width', '0.25');
+    expect(grid).toHaveAttribute('stroke-width', '1');
     expect(grid).not.toHaveAttribute('stroke-opacity');
     expect(grid).not.toHaveAttribute('stroke-dasharray');
     expect(grid).toHaveAttribute('shape-rendering', 'auto');
@@ -433,6 +433,15 @@ describe('MarketWatchTickChart', () => {
     const squareVert = readPositions('vertical');
     expect(squareHorz[1] - squareHorz[0]).toBe(64);
     expect(squareVert[1] - squareVert[0]).toBe(64);
+
+    // Fine solid grid drops the dashed 0.5 opacity dim so solid lines keep full visibility.
+    act(() => {
+      useChartSettingsStore.getState().updateSymbolProperty('BTCUSD', 'gridType', 'mt5');
+    });
+    expect(grid).toHaveAttribute('data-grid-type', 'mt5');
+    expect(grid).toHaveAttribute('data-grid-style', 'solid');
+    expect(grid).not.toHaveAttribute('stroke-opacity');
+    expect(grid).not.toHaveAttribute('stroke-dasharray');
 
     // Switching to Scale dashed grid uses 2 2 dash pattern aligned with axis ticks.
     act(() => {

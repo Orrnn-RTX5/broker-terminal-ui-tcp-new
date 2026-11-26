@@ -171,6 +171,16 @@ export const getDirectoryBrokerServerUrl = (broker: BrokerDiscoveryItem | null |
 export const isDirectoryBrokerSelectable = (broker: BrokerDiscoveryItem | null | undefined): boolean =>
   Boolean(broker && !isBrokerSuspended(broker) && getDirectoryBrokerServerUrl(broker));
 
+/** Stable snapshot key of directory broker rows to avoid redundant list updates while a dropdown is open. */
+export const getBrokerDirectorySignature = (brokers: readonly BrokerDiscoveryItem[]): string =>
+  JSON.stringify(brokers.map((broker) => [
+    String(broker.broker_id ?? '').trim(),
+    String(broker.broker_name ?? '').trim(),
+    getDirectoryBrokerServerUrl(broker),
+    String(broker.tcp_addr ?? '').trim(),
+    isDirectoryBrokerSelectable(broker),
+  ]));
+
 export const firstSelectableBroker = <T extends BrokerDiscoveryItem>(
   brokers: T[],
 ): T | undefined => brokers.find((broker) => !isBrokerSuspended(broker));

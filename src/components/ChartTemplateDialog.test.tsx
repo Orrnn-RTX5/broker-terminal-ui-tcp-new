@@ -128,7 +128,8 @@ describe('retained lazy chart templates', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('ships all built-in chart templates with volume off by default and migrates persisted defaults', () => {
+  it('ships built-in default template with volume off and removes retired built-ins on merge', () => {
+    expect(initialTemplates.map((template) => template.name)).toEqual(['Default']);
     expect(initialTemplates.filter((template) => template.isDefault).every((template) => template.showVolumes === false)).toBe(true);
 
     const merge = useTemplateStore.persist.getOptions().merge!;
@@ -136,7 +137,8 @@ describe('retained lazy chart templates', () => {
       {
         templates: [
           { ...initialTemplates[0], id: 'default', isDefault: true, showVolumes: true },
-          { ...initialTemplates[2], id: 'technical-analysis', isDefault: true, showVolumes: true },
+          { ...initialTemplates[0], id: 'clean-chart', name: 'Clean Chart', isDefault: true, showVolumes: false },
+          { ...initialTemplates[0], id: 'technical-analysis', name: 'Technical Analysis', isDefault: true, showVolumes: true },
           { ...initialTemplates[0], id: 'custom-volume-on', name: 'Custom Volume', isDefault: false, showVolumes: true },
         ],
       },
@@ -144,10 +146,10 @@ describe('retained lazy chart templates', () => {
     );
 
     expect(merged.templates.find((t) => t.id === 'default')?.showVolumes).toBe(false);
-    expect(merged.templates.find((t) => t.id === 'technical-analysis')?.showVolumes).toBe(false);
+    expect(merged.templates.find((t) => t.id === 'clean-chart')).toBeUndefined();
+    expect(merged.templates.find((t) => t.id === 'technical-analysis')).toBeUndefined();
     expect(merged.templates.find((t) => t.id === 'custom-volume-on')?.showVolumes).toBe(true);
     expect(merged.templates.find((t) => t.id === 'default')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
-    expect(merged.templates.find((t) => t.id === 'technical-analysis')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
     expect(merged.templates.find((t) => t.id === 'custom-volume-on')?.colors).toEqual(DEFAULT_TEMPLATE_COLORS);
   });
 

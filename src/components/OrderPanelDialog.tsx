@@ -17,6 +17,10 @@ import {
 } from '../store/useChartSettingsStore';
 import { buildChartTheme } from '../features/trading-chart/presentation/chartTheme';
 import { candleAggregationService, type OHLCV } from '../services/candleAggregationService';
+import { candleCache } from '../services/candleCache';
+import { isStructurallyValidPriceCandle } from '../services/chartPriceGuards';
+import { API_V2_BASE_URL, RTX5_API_URL, toLocalDevProxyUrl } from '../config/api';
+import { getPublicBackendTarget, isDesktopBackendTarget } from '../config/backendTarget.js';
 import { useSymbolMarketStatus } from '../hooks/useSymbolMarketStatus';
 import { useLiveOrderBook } from '../hooks/useLiveMarketData';
 import {
@@ -28,7 +32,18 @@ import { formatSpreadDisplayWithUnit } from '../utils/spread';
 import { RTX_ADVANCED_VIEW_CHANGE_EVENT } from '../utils/advancedViewRootClasses';
 import { tradeApi } from '../api/trade';
 import api from '../services/api';
-import { getCommittedBrokerAccountSessionScope, getCommittedBrokerAccountSessionScopeKey } from '../services/brokerSession';
+import {
+  buildBrokerApiV2,
+  getAccessToken,
+  getCommittedBrokerAccountSessionScope,
+  getCommittedBrokerAccountSessionScopeKey,
+} from '../services/brokerSession';
+import { normalizeBrokerTimestampSeconds } from '../utils/brokerStreamSemantics';
+import {
+  CANDLE_TIMEFRAMES,
+  getTimeframePeriodSeconds,
+  type BoundaryTimeframe,
+} from '../utils/timeframeBoundary';
 import { getLivePositionProfit } from '../services/livePositionMetrics';
 import {
   CHART_POSITION_MODIFY_EVENT,
@@ -355,19 +370,29 @@ type TickChartColors = ChartProperties['colors'];
 
 type TickPoint = { time: number; bid: number; ask: number };
 
-type MiniChartTimeframe = 'M1' | 'M5' | 'M15' | 'H1';
-const MINI_CHART_TIMEFRAMES: readonly MiniChartTimeframe[] = ['M1', 'M5', 'M15', 'H1'];
-const MINI_CHART_TIMEFRAME_SECONDS: Record<MiniChartTimeframe, number> = {
-  M1: 60,
-  M5: 300,
-  M15: 900,
-  H1: 3600,
-};
+type MiniChartTimeframe = BoundaryTimeframe;
+const MINI_CHART_TIMEFRAMES: readonly MiniChartTimeframe[] = CANDLE_TIMEFRAMES;
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
-const formatMiniChartAxisTime = (timeMs: number, mode: 'date-year' | 'date-time' | 'time'): string => {
+type MiniChartAxisTimeMode =
+  | 'date-year'
+  | 'date-time'
+  | 'time'
+  | 'date-utc'
+  | 'date-year-utc'
+  | 'month-year-utc';
+
+const formatMiniChartAxisTime = (timeMs: number, mode: MiniChartAxisTimeMode): string => {
   const date = new Date(timeMs);
+  if (mode === 'date-utc' || mode === 'date-year-utc' || mode === 'month-year-utc') {
+    const dd = String(date.getUTCDate()).padStart(2, '0');
+    const mon = SHORT_MONTHS[date.getUTCMonth()] ?? '';
+    const yyyy = date.getUTCFullYear();
+    if (mode === 'month-year-utc') return `${mon} ${yyyy}`;
+    if (mode === 'date-year-utc') return `${dd} ${mon} ${yyyy}`;
+    return `${dd} ${mon}`;
+  }
   const dd = String(date.getDate()).padStart(2, '0');
   const mon = SHORT_MONTHS[date.getMonth()] ?? '';
   const hh = String(date.getHours()).padStart(2, '0');
@@ -406,13 +431,13 @@ const aggregateM1CandlesToTimeframe = (
   m1Candles: readonly OHLCV[],
   timeframe: MiniChartTimeframe,
 ): OHLCV[] => {
-  const bucketSec = MINI_CHART_TIMEFRAME_SECONDS[timeframe];
   if (timeframe === 'M1' || m1Candles.length === 0) {
     return m1Candles.map((c) => ({ ...c }));
   }
   const buckets: OHLCV[] = [];
   for (const candle of m1Candles) {
-    const bucketTime = Math.floor(candle.time / bucketSec) * bucketSec;
+    const bucketTime = getTimeframePeriodSeconds(candle.time, timeframe)?.startTime;
+    if (bucketTime === undefined) continue;
     const last = buckets[buckets.length - 1];
     if (last && last.time === bucketTime) {
       last.high = Math.max(last.high, candle.high);
@@ -431,6 +456,78 @@ const aggregateM1CandlesToTimeframe = (
     }
   }
   return buckets;
+};
+
+const resolveMiniChartCandleCacheScope = (): string => {
+  const brokerBase = toLocalDevProxyUrl(buildBrokerApiV2()).replace(/\/$/, '');
+  if (brokerBase) return brokerBase;
+  const apiV2Base = API_V2_BASE_URL.replace(/\/$/, '');
+  if (apiV2Base) return apiV2Base;
+  const configBase = RTX5_API_URL.replace(/\/$/, '');
+  return (configBase ? `${configBase}/api/v2` : '/api/v2') || 'default';
+};
+
+const normalizeDialogCandles = (raw: unknown, timeframe: MiniChartTimeframe): OHLCV[] => {
+  const list = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' && Array.isArray((raw as { candles?: unknown }).candles))
+      ? (raw as { candles: unknown[] }).candles
+      : [];
+  const byTime = new Map<number, OHLCV>();
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const rawTime = normalizeBrokerTimestampSeconds(
+      row.time ?? row.Time ?? row.timestamp ?? row.t ?? row.date ?? row.datetime ?? row.open_time ?? row.openTime,
+    );
+    if (!rawTime) continue;
+    const bucketTime = getTimeframePeriodSeconds(rawTime, timeframe)?.startTime ?? rawTime;
+    const open = Number(row.open ?? row.Open ?? row.o);
+    const high = Number(row.high ?? row.High ?? row.h);
+    const low = Number(row.low ?? row.Low ?? row.l);
+    const close = Number(row.close ?? row.Close ?? row.c);
+    const volume = Number(row.tick_volume ?? row.tickVolume ?? row.volume ?? row.v ?? 0);
+    if (!isStructurallyValidPriceCandle({ open, high, low, close })) continue;
+    byTime.set(bucketTime, {
+      time: bucketTime,
+      open,
+      high,
+      low,
+      close,
+      volume: Number.isFinite(volume) && volume > 0 ? volume : 0,
+    });
+  }
+  return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+};
+
+const mergeMiniChartCandles = (baseline: readonly OHLCV[], live: readonly OHLCV[]): OHLCV[] => {
+  if (baseline.length === 0) return live.map((c) => ({ ...c }));
+  if (live.length === 0) return baseline.map((c) => ({ ...c }));
+  const byTime = new Map<number, OHLCV>();
+  for (const bar of baseline) {
+    if (Number.isFinite(bar.time) && bar.time > 0) {
+      byTime.set(bar.time, { ...bar });
+    }
+  }
+  const latestBaselineTime = baseline[baseline.length - 1]?.time ?? 0;
+  for (const bar of live) {
+    if (!Number.isFinite(bar.time) || bar.time <= 0) continue;
+    const existing = byTime.get(bar.time);
+    if (!existing) {
+      if (bar.time >= latestBaselineTime || byTime.size < 2) {
+        byTime.set(bar.time, { ...bar });
+      }
+    } else if (bar.time >= latestBaselineTime && bar.isComplete !== true) {
+      byTime.set(bar.time, {
+        ...existing,
+        high: Math.max(existing.high, bar.high),
+        low: Math.min(existing.low, bar.low),
+        close: bar.close,
+        volume: Math.max(existing.volume || 0, bar.volume || 0),
+      });
+    }
+  }
+  return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
 };
 
 const computeNicePriceTicks = (
@@ -731,8 +828,11 @@ function MiniTickChart({
   const ohlcHighRef = useRef<HTMLSpanElement>(null);
   const ohlcLowRef = useRef<HTMLSpanElement>(null);
   const ohlcCloseRef = useRef<HTMLSpanElement>(null);
+  const fetchedCandlesByKeyRef = useRef<Map<string, OHLCV[]>>(new Map());
+  const inFlightHistoryKeysRef = useRef<Set<string>>(new Set());
   const [miniChartType, setMiniChartType] = useState<MiniChartDisplayType>('candlestick');
   const [activeTimeframe, setActiveTimeframe] = useState<MiniChartTimeframe>('M1');
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [isChartTypeMenuOpen, setIsChartTypeMenuOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const showPriceLines = true;
@@ -1046,6 +1146,66 @@ function MiniTickChart({
   }, [symbol]);
 
   useEffect(() => {
+    const normalizedSym = symbol.trim();
+    if (!normalizedSym) return;
+    const cacheScope = resolveMiniChartCandleCacheScope();
+    const historyKey = `${cacheScope}\u001f${normalizedSym.toUpperCase()}\u001f${activeTimeframe}`;
+    if (fetchedCandlesByKeyRef.current.has(historyKey) || inFlightHistoryKeysRef.current.has(historyKey)) {
+      return;
+    }
+
+    const cachedEntry = candleCache.getLatestForSymbolTimeframe(cacheScope, normalizedSym, activeTimeframe);
+    if (cachedEntry && (cachedEntry.source !== 'derived-m1' || cachedEntry.candles.length >= 24)) {
+      return;
+    }
+
+    const existingAgg = candleAggregationService.getCandles(normalizedSym, activeTimeframe, true, false);
+    if (existingAgg.length >= 24) {
+      return;
+    }
+
+    const hasCandleBackend = isDesktopBackendTarget() || Boolean(getAccessToken()) || Boolean(getPublicBackendTarget());
+    if (!hasCandleBackend) return;
+
+    let cancelled = false;
+    inFlightHistoryKeysRef.current.add(historyKey);
+
+    const loadCandles = async () => {
+      try {
+        const raw = await tradeApi.market.getCandles(normalizedSym, {
+          timeframe: activeTimeframe,
+          limit: 120,
+        });
+        let normalized = normalizeDialogCandles(raw, activeTimeframe);
+        if (!cancelled && normalized.length === 0 && (activeTimeframe === 'W1' || activeTimeframe === 'MN')) {
+          const d1Raw = await tradeApi.market.getCandles(normalizedSym, {
+            timeframe: 'D1',
+            limit: 500,
+          });
+          const d1Candles = normalizeDialogCandles(d1Raw, 'D1');
+          if (d1Candles.length > 0) {
+            normalized = aggregateM1CandlesToTimeframe(d1Candles, activeTimeframe);
+          }
+        }
+        if (cancelled) return;
+        fetchedCandlesByKeyRef.current.set(historyKey, normalized);
+        if (normalized.length > 0) {
+          setHistoryRevision((rev) => rev + 1);
+        }
+      } catch {
+        // Keep existing aggregation/tick fallback when history endpoint is unavailable.
+      } finally {
+        inFlightHistoryKeysRef.current.delete(historyKey);
+      }
+    };
+
+    void loadCandles();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTimeframe, symbol]);
+
+  useEffect(() => {
     if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) return;
 
     const now = Date.now();
@@ -1167,14 +1327,33 @@ function MiniTickChart({
       const targetBarPitch = Math.max(4.5, Math.min(20, 8.5 * Math.max(0.5, zoomLevel)));
       const maxCandleBars = Math.max(16, Math.min(110, Math.floor(usablePlotWidth / targetBarPitch)));
 
-      // Read live candles from candleAggregationService (same source as main TradingChart)
-      let aggregatedCandles = candleAggregationService.getCandles(symbol, activeTimeframe, true, false);
-      if (aggregatedCandles.length < 2 && activeTimeframe !== 'M1') {
+      // Read live candles from candleAggregationService merged with candleCache / fetched history
+      let aggCandles = candleAggregationService.getCandles(symbol, activeTimeframe, true, false);
+      if (aggCandles.length < 2 && activeTimeframe !== 'M1') {
         const m1Source = candleAggregationService.getCandles(symbol, 'M1', true, false);
         if (m1Source.length >= 2) {
-          aggregatedCandles = aggregateM1CandlesToTimeframe(m1Source, activeTimeframe);
+          aggCandles = aggregateM1CandlesToTimeframe(m1Source, activeTimeframe);
         }
       }
+      const cacheScope = resolveMiniChartCandleCacheScope();
+      const historyKey = `${cacheScope}\u001f${symbol.trim().toUpperCase()}\u001f${activeTimeframe}`;
+      const cachedEntry = candleCache.getLatestForSymbolTimeframe(cacheScope, symbol, activeTimeframe);
+      const cachedCandles: OHLCV[] = cachedEntry
+        ? cachedEntry.candles.map((c) => ({
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume ?? 0,
+            isComplete: c.closed,
+          }))
+        : [];
+      const fetchedCandles = fetchedCandlesByKeyRef.current.get(historyKey) ?? [];
+      const historicalBaseline = cachedCandles.length >= fetchedCandles.length
+        ? cachedCandles
+        : fetchedCandles;
+      const aggregatedCandles = mergeMiniChartCandles(historicalBaseline, aggCandles);
       const liveCandles: OHLCV[] = aggregatedCandles.slice(-maxCandleBars).map((c) => ({ ...c }));
       if (liveCandles.length > 0 && bid > 0) {
         const lastBar = liveCandles[liveCandles.length - 1];
@@ -1361,7 +1540,7 @@ function MiniTickChart({
         ctx.save();
         ctx.strokeStyle = gridStroke;
         ctx.lineWidth = 1;
-        ctx.globalAlpha = isLightSkin ? (isSolidGrid ? 0.55 : 0.82) : (isSolidGrid ? 0.45 : 0.7);
+        ctx.globalAlpha = isLightSkin ? (isSolidGrid ? 0.9 : 0.82) : (isSolidGrid ? 0.9 : 0.7);
         if (!isSolidGrid && typeof ctx.setLineDash === 'function') {
           ctx.setLineDash([1, 2]);
         }
@@ -1901,12 +2080,29 @@ function MiniTickChart({
 
       let lastTimeRightEdge = -Infinity;
       let hasDrawnFirstTimeLabel = false;
+      let lastDrawnTickMs: number | null = null;
+      const isMonthlyTf = activeTimeframe === 'MN';
+      const isDateOnlyTf = activeTimeframe === 'D1' || activeTimeframe === 'W1';
       for (let i = 0; i < timeTicks.length; i += 1) {
         const tk = timeTicks[i];
         const tx = Math.round(tk.x) + 0.5;
-        const labelText = !hasDrawnFirstTimeLabel
-          ? formatMiniChartAxisTime(tk.timeMs, 'date-time')
-          : formatMiniChartAxisTime(tk.timeMs, 'time');
+        let labelMode: MiniChartAxisTimeMode;
+        if (isMonthlyTf) {
+          labelMode = 'month-year-utc';
+        } else if (isDateOnlyTf) {
+          const prevYear = lastDrawnTickMs !== null ? new Date(lastDrawnTickMs).getUTCFullYear() : null;
+          const currYear = new Date(tk.timeMs).getUTCFullYear();
+          labelMode = !hasDrawnFirstTimeLabel || prevYear !== currYear ? 'date-year-utc' : 'date-utc';
+        } else {
+          const prevDate = lastDrawnTickMs !== null ? new Date(lastDrawnTickMs) : null;
+          const currDate = new Date(tk.timeMs);
+          const dayChanged = !prevDate
+            || prevDate.getFullYear() !== currDate.getFullYear()
+            || prevDate.getMonth() !== currDate.getMonth()
+            || prevDate.getDate() !== currDate.getDate();
+          labelMode = !hasDrawnFirstTimeLabel || dayChanged ? 'date-time' : 'time';
+        }
+        const labelText = formatMiniChartAxisTime(tk.timeMs, labelMode);
         const labelW = Math.ceil(ctx.measureText(labelText).width);
         const leftEdge = tx - labelW / 2;
         const rightEdge = tx + labelW / 2;
@@ -1922,6 +2118,7 @@ function MiniTickChart({
         ctx.textAlign = 'center';
         ctx.fillText(labelText, tx, timeLabelY);
         lastTimeRightEdge = rightEdge;
+        lastDrawnTickMs = tk.timeMs;
         hasDrawnFirstTimeLabel = true;
       }
 
@@ -1943,7 +2140,12 @@ function MiniTickChart({
 
         if (hoveredCandleIndex !== null && candlesToDraw[hoveredCandleIndex]) {
           const crossTimeMs = candlesToDraw[hoveredCandleIndex].time * 1000;
-          const crossTimeText = formatMiniChartAxisTime(crossTimeMs, 'date-time');
+          const crossTimeMode: MiniChartAxisTimeMode = isMonthlyTf
+            ? 'month-year-utc'
+            : isDateOnlyTf
+              ? 'date-year-utc'
+              : 'date-time';
+          const crossTimeText = formatMiniChartAxisTime(crossTimeMs, crossTimeMode);
           const crossTimeW = Math.ceil(ctx.measureText(crossTimeText).width) + 12;
           const rawCrossX = candleCenterX(hoveredCandleIndex);
           const pillX = Math.max(left + 2, Math.min(plotRight - crossTimeW - 2, Math.round(rawCrossX - crossTimeW / 2)));
@@ -1996,6 +2198,7 @@ function MiniTickChart({
     chartShift,
     chartTheme,
     digits,
+    historyRevision,
     isAdvancedUntitledLight,
     miniChartType,
     orderPrice,

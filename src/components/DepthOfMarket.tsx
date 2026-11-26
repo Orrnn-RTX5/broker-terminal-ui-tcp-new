@@ -53,22 +53,22 @@ function useDepthTypography() {
 /* ─── Chart display types ──────────────────────────────────────────── */
 type ChartMode = 'bar' | 'candlestick' | 'line' | 'tick';
 
-/* ─── Dark Charcoal Theme Colors (from theme.css vars) ──────────────── */
+/* ─── Dark Charcoal Theme Colors (aligned with terminal surfaces) ────── */
 const C = {
-  bgPrimary:   '#0f1117',
-  bgSecondary: '#14171f',
-  bgTertiary:  '#1a1e29',
-  bgElevated:  '#222735',
-  bgHover:     '#282e3e',
+  bgPrimary:   '#141416',
+  bgSecondary: '#1f1f1f',
+  bgTertiary:  '#1f1f1f',
+  bgElevated:  '#2a2a2c',
+  bgHover:     '#303034',
 
-  textPrimary:   '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textTertiary:  '#64748b',
-  textDisabled:  '#475569',
+  textPrimary:   '#e2e2e8',
+  textSecondary: '#909098',
+  textTertiary:  '#5c5c64',
+  textDisabled:  '#46464e',
 
-  borderPrimary:   '#262b38',
-  borderSecondary: '#333a4b',
-  borderHover:     '#475569',
+  borderPrimary:   '#38383c',
+  borderSecondary: '#444448',
+  borderHover:     '#56565c',
 
   profit:    '#4597ff',
   loss:      '#ff5858',
@@ -190,6 +190,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       if (allHistory.length < 2) return;
 
       const width = canvas.clientWidth || fallbackWidth;
+      const measuredHeight = canvas.clientHeight || height;
       const isLaptopCanvas = canvas.clientWidth > 0
         && typeof window !== 'undefined'
         && (window.innerWidth <= 1720 || window.innerHeight <= 920);
@@ -205,22 +206,30 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
 
       const dpr = window.devicePixelRatio || 1;
       canvas.width = width * dpr;
-      canvas.height = height * dpr;
+      canvas.height = measuredHeight * dpr;
       ctx.scale(dpr, dpr);
 
       const isLight = document.documentElement.classList.contains('rtx-skin-untitled-light');
       const upColor = isLight ? '#2563eb' : '#4597ff';
       const downColor = isLight ? '#dc2626' : '#ff5858';
 
-      const themeStyle = getComputedStyle(document.documentElement);
-      const lightColor = (name: string, fallback: string) => themeStyle.getPropertyValue(name).trim() || fallback;
-      ctx.fillStyle = isLight ? lightColor('--rtx-light-panel', '#fafbfc') : C.bgPrimary;
-      ctx.fillRect(0, 0, width, height);
+      const rootStyle = getComputedStyle(document.documentElement);
+      const hostStyle = getComputedStyle(canvas);
+      const readColor = (name: string, fallback: string) => (
+        hostStyle.getPropertyValue(name).trim() || rootStyle.getPropertyValue(name).trim() || fallback
+      );
+      const plotBg = isLight ? readColor('--rtx-light-panel', '#fafbfc') : C.bgPrimary;
+      const axisBg = isLight ? readColor('--rtx-light-panel-subtle', '#f1f5f9') : C.bgPrimary;
+      const borderStroke = isLight ? readColor('--rtx-light-border', '#cbd5e1') : readColor('--border-primary', C.borderPrimary);
+      const axisTextColor = isLight ? readColor('--rtx-light-text-secondary', '#475569') : readColor('--text-secondary', C.textSecondary);
+
+      ctx.fillStyle = plotBg;
+      ctx.fillRect(0, 0, width, measuredHeight);
 
       const chartH = showVolumes
-        ? Math.max(labelHeight, (height - labelHeight) * 0.78)
-        : Math.max(labelHeight, height - labelHeight);
-      const volH = showVolumes ? Math.max(0, height - chartH - labelHeight - 6) : 0;
+        ? Math.max(labelHeight, (measuredHeight - 10) * 0.78)
+        : Math.max(labelHeight, measuredHeight - 8);
+      const volH = showVolumes ? Math.max(0, measuredHeight - chartH - 8) : 0;
       const volTop = chartH + 4;
       let minP = Infinity, maxP = -Infinity;
       let minVol = Infinity, maxVol = 1;
@@ -231,7 +240,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
         maxVol = Math.max(maxVol, t.volume);
       }
       const spreadSpan = Math.max(maxP - minP, (history[history.length - 1]?.ask - history[history.length - 1]?.bid) || 1);
-      const padding = spreadSpan * 0.18;
+      const padding = spreadSpan * 0.22;
       minP -= padding;
       maxP += padding;
       const totalRange = Math.max(maxP - minP, 1e-9);
@@ -239,18 +248,19 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       const scaleDigits = digits ?? inferObservedPriceDigits(null, [minP, maxP, currentTick?.bid, currentTick?.ask]) ?? 5;
       ctx.font = bodyFont;
       const sampleLabel = formatPrice(maxP, scaleDigits);
-      const axisWidth = Math.min(Math.max(58, ctx.measureText(sampleLabel).width + 14), Math.floor(width * 0.36));
+      const axisWidth = Math.min(Math.max(62, ctx.measureText(sampleLabel).width + 18), Math.floor(width * 0.36));
       const plotWidth = Math.max(40, width - axisWidth);
       const plotLeft = 6;
       const plotInnerW = Math.max(20, plotWidth - plotLeft - 6);
 
-      // Right price-axis background strip
-      ctx.fillStyle = isLight ? lightColor('--rtx-light-panel-subtle', '#f1f5f9') : '#12151e';
-      ctx.fillRect(plotWidth, 0, axisWidth, height);
+      if (axisBg !== plotBg) {
+        ctx.fillStyle = axisBg;
+        ctx.fillRect(plotWidth, 0, axisWidth, measuredHeight);
+      }
 
-      // Subtle dashed grid lines inside plot area
-      ctx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.14)' : 'rgba(148, 163, 184, 0.08)';
-      ctx.lineWidth = 0.25;
+      // Quiet terminal grid lines inside plot area
+      ctx.strokeStyle = isLight ? 'rgba(100, 116, 139, 0.14)' : 'rgba(255, 255, 255, 0.05)';
+      ctx.lineWidth = 0.5;
       for (let i = 1; i < 5; i++) {
         const y = Math.round((chartH / 5) * i) + 0.5;
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotWidth, y); ctx.stroke();
@@ -261,25 +271,26 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       }
 
       // Vertical separator between plot and price scale
-      ctx.strokeStyle = isLight ? lightColor('--rtx-light-border', '#cbd5e1') : C.borderPrimary;
+      ctx.strokeStyle = borderStroke;
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(plotWidth + 0.5, 0); ctx.lineTo(plotWidth + 0.5, height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(plotWidth + 0.5, 0); ctx.lineTo(plotWidth + 0.5, measuredHeight); ctx.stroke();
 
-      // Price scale on right (skip labels that would collide with the live price badge)
+      // Price scale on right (even vertical rhythm + collision guard around live badge)
       const lastLabelCenterY = history.length > 0
         ? Math.max(labelHeight / 2, Math.min(chartH - labelHeight / 2, chartH - ((history[history.length - 1].bid - minP) / totalRange) * chartH))
         : null;
-      ctx.fillStyle = isLight ? lightColor('--rtx-light-text-secondary', '#475569') : C.textSecondary;
+      ctx.fillStyle = axisTextColor;
       ctx.font = bodyFont;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      const priceIntervals = Math.max(1, Math.min(4, Math.floor(chartH / (labelHeight + 6))));
+      const axisPadY = Math.max(10, Math.round(labelHeight * 0.65));
+      const axisSpanH = Math.max(labelHeight, chartH - axisPadY * 2);
+      const priceIntervals = Math.max(1, Math.min(4, Math.floor(axisSpanH / (labelHeight + 10))));
       for (let i = 0; i <= priceIntervals; i++) {
-        const y = (chartH / priceIntervals) * i;
-        const clampedY = Math.max(labelHeight / 2, Math.min(chartH - labelHeight / 2, y));
-        if (lastLabelCenterY !== null && Math.abs(clampedY - lastLabelCenterY) < labelHeight * 0.95) continue;
-        const price = maxP - (i / priceIntervals) * totalRange;
-        ctx.fillText(formatPrice(price, scaleDigits), width - 5, clampedY);
+        const y = axisPadY + (axisSpanH / priceIntervals) * i;
+        if (lastLabelCenterY !== null && Math.abs(y - lastLabelCenterY) < labelHeight * 1.05) continue;
+        const price = maxP - (y / chartH) * totalRange;
+        ctx.fillText(formatPrice(price, scaleDigits), width - 7, y);
       }
 
       const pointCount = Math.max(history.length - 1, 1);
@@ -287,30 +298,34 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
 
       // === CHART MODE RENDERING ===
       if (chartMode === 'tick' || chartMode === 'line') {
-        // Area fill under Bid line
-        ctx.beginPath();
-        for (let i = 0; i < history.length; i++) {
-          const x = xForIndex(i);
-          const y = chartH - ((history[i].bid - minP) / totalRange) * chartH;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        if (chartMode === 'line') {
+          ctx.beginPath();
+          for (let i = 0; i < history.length; i++) {
+            const x = xForIndex(i);
+            const y = chartH - ((history[i].bid - minP) / totalRange) * chartH;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.lineTo(xForIndex(history.length - 1), chartH);
+          ctx.lineTo(xForIndex(0), chartH);
+          ctx.closePath();
+          if (typeof ctx.createLinearGradient === 'function') {
+            const grad = ctx.createLinearGradient(0, 0, 0, chartH);
+            grad.addColorStop(0, isLight ? 'rgba(220, 38, 38, 0.09)' : 'rgba(255, 88, 88, 0.08)');
+            grad.addColorStop(1, 'rgba(255, 88, 88, 0)');
+            ctx.fillStyle = grad;
+          } else {
+            ctx.fillStyle = isLight ? 'rgba(220, 38, 38, 0.05)' : 'rgba(255, 88, 88, 0.04)';
+          }
+          ctx.fill();
         }
-        ctx.lineTo(xForIndex(history.length - 1), chartH);
-        ctx.lineTo(xForIndex(0), chartH);
-        ctx.closePath();
-        if (typeof ctx.createLinearGradient === 'function') {
-          const grad = ctx.createLinearGradient(0, 0, 0, chartH);
-          grad.addColorStop(0, isLight ? 'rgba(220, 38, 38, 0.12)' : 'rgba(255, 88, 88, 0.16)');
-          grad.addColorStop(1, isLight ? 'rgba(220, 38, 38, 0.01)' : 'rgba(255, 88, 88, 0.01)');
-          ctx.fillStyle = grad;
-        } else {
-          ctx.fillStyle = isLight ? 'rgba(220, 38, 38, 0.06)' : 'rgba(255, 88, 88, 0.08)';
-        }
-        ctx.fill();
 
-        // Draw Ask line (Blue — dashed)
-        ctx.strokeStyle = isLight ? 'rgba(37, 99, 235, 0.75)' : 'rgba(69, 151, 255, 0.75)';
-        ctx.lineWidth = 1.25;
-        ctx.setLineDash([4, 3]);
+        // Draw Ask line (Blue — crisp fine dashed)
+        ctx.save?.();
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = isLight ? 'rgba(37, 99, 235, 0.72)' : 'rgba(69, 151, 255, 0.75)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
         ctx.beginPath();
         for (let i = 0; i < history.length; i++) {
           const x = xForIndex(i);
@@ -320,9 +335,9 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Draw Bid line (Red — solid)
+        // Draw Bid line (Red — continuous sharp trace)
         ctx.strokeStyle = downColor;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.4;
         ctx.beginPath();
         for (let i = 0; i < history.length; i++) {
           const x = xForIndex(i);
@@ -330,19 +345,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.stroke();
-
-        // Tick mode: draw subtle nodes at latest points
-        if (chartMode === 'tick') {
-          const step = Math.max(1, Math.floor(history.length / 28));
-          for (let i = 0; i < history.length; i += step) {
-            const x = xForIndex(i);
-            const y = chartH - ((history[i].bid - minP) / totalRange) * chartH;
-            ctx.beginPath();
-            ctx.arc(x, y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = downColor;
-            ctx.fill();
-          }
-        }
+        ctx.restore?.();
       } else {
         // Bar / Candlestick mode
         const barCount = Math.max(6, Math.min(36, Math.floor(history.length / 2) || 6));
@@ -429,7 +432,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
 
       // Border between chart and volume
       if (showVolumes) {
-        ctx.strokeStyle = isLight ? lightColor('--rtx-light-border', '#cbd5e1') : C.borderPrimary;
+        ctx.strokeStyle = borderStroke;
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(0, Math.round(chartH) + 0.5); ctx.lineTo(plotWidth, Math.round(chartH) + 0.5); ctx.stroke();
       }
@@ -438,14 +441,14 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
       if (crosshair && mouseRef.current) {
         const { x: mx, y: my } = mouseRef.current;
         const clampedMx = Math.min(mx, plotWidth);
-        ctx.strokeStyle = isLight ? 'rgba(71, 85, 105, 0.55)' : 'rgba(148, 163, 184, 0.55)';
+        ctx.strokeStyle = isLight ? 'rgba(71, 85, 105, 0.55)' : 'rgba(255, 255, 255, 0.35)';
         ctx.lineWidth = 0.8;
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath(); ctx.moveTo(clampedMx, 0); ctx.lineTo(clampedMx, height); ctx.stroke();
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(clampedMx, 0); ctx.lineTo(clampedMx, measuredHeight); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, my); ctx.lineTo(plotWidth, my); ctx.stroke();
         ctx.setLineDash([]);
 
-        const badgeBg = isLight ? lightColor('--rtx-light-accent', '#2563eb') : '#334155';
+        const badgeBg = isLight ? readColor('--rtx-light-accent', '#2563eb') : '#38383f';
         const badgeFg = '#ffffff';
 
         if (my <= chartH) {
@@ -457,7 +460,7 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
           ctx.fillRect(plotWidth + 1, labelY, axisWidth - 1, labelHeight);
           ctx.fillStyle = badgeFg;
           ctx.textAlign = 'right';
-          ctx.fillText(labelText, width - 5, labelY + labelHeight / 2);
+          ctx.fillText(labelText, width - 7, labelY + labelHeight / 2);
         }
 
         const idx = Math.min(history.length - 1, Math.max(0, Math.floor((clampedMx / plotWidth) * history.length)));
@@ -469,10 +472,10 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
           const tw = ctx.measureText(timeStr).width + 10;
           const labelX = Math.max(0, Math.min(plotWidth - tw, clampedMx - tw / 2));
           ctx.fillStyle = badgeBg;
-          ctx.fillRect(labelX, height - labelHeight, tw, labelHeight);
+          ctx.fillRect(labelX, measuredHeight - labelHeight, tw, labelHeight);
           ctx.fillStyle = badgeFg;
           ctx.textAlign = 'center';
-          ctx.fillText(timeStr, labelX + tw / 2, height - labelHeight / 2);
+          ctx.fillText(timeStr, labelX + tw / 2, measuredHeight - labelHeight / 2);
         }
 
         if (my <= chartH) {
@@ -488,15 +491,15 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
             const tw = Math.max(...tooltipLines.map(line => ctx.measureText(line).width)) + 14;
             const th = tooltipLines.length * typography.lineHeight + 8;
             const tooltipY = Math.max(4, Math.min(my, chartH - th - 4));
-            ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(20, 23, 31, 0.94)';
-            ctx.strokeStyle = isLight ? lightColor('--rtx-light-border-strong', '#94a3b8') : C.borderSecondary;
+            ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(26, 26, 30, 0.95)';
+            ctx.strokeStyle = isLight ? readColor('--rtx-light-border-strong', '#94a3b8') : C.borderSecondary;
             ctx.lineWidth = 1;
             const rx = Math.max(4, Math.min(tooltipX, plotWidth - tw - 4));
             ctx.beginPath();
-            ctx.roundRect(rx, tooltipY, tw, th, 4);
+            ctx.roundRect(rx, tooltipY, tw, th, 3);
             ctx.fill();
             ctx.stroke();
-            ctx.fillStyle = isLight ? lightColor('--rtx-light-text', '#0f172a') : C.textPrimary;
+            ctx.fillStyle = isLight ? readColor('--rtx-light-text', '#0f172a') : C.textPrimary;
             ctx.textAlign = 'left';
             tooltipLines.forEach((line, li) => {
               ctx.fillText(line, rx + 7, tooltipY + 4 + typography.lineHeight * (li + 0.5));
@@ -513,30 +516,37 @@ function TickChart({ symbol, width: fallbackWidth, height, chartMode, crosshair,
         const priceText = formatPrice(lastTick.bid, scaleDigits);
         const priceLabelY = Math.max(0, Math.min(chartH - labelHeight, lastY - labelHeight / 2));
 
-        ctx.strokeStyle = downColor;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = isLight ? 'rgba(220, 38, 38, 0.55)' : 'rgba(255, 88, 88, 0.55)';
+        ctx.lineWidth = 0.85;
+        ctx.setLineDash([2, 2]);
         ctx.beginPath(); ctx.moveTo(0, lastY); ctx.lineTo(plotWidth, lastY); ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = downColor;
+        ctx.fillStyle = isLight ? '#dc2626' : '#d93a3e';
         ctx.fillRect(plotWidth + 1, priceLabelY, axisWidth - 1, labelHeight);
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'right';
-        ctx.fillText(priceText, width - 5, priceLabelY + labelHeight / 2);
+        ctx.fillText(priceText, width - 7, priceLabelY + labelHeight / 2);
       }
     };
 
     renderFrame();
     const interval = setInterval(renderFrame, 100);
+    const resizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(() => renderFrame())
+      : null;
+    resizeObserver?.observe(canvas);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      resizeObserver?.disconnect();
+    };
   }, [fallbackWidth, height, symbol, chartMode, crosshair, zoomLevel, typography, digits, currentTick, showVolumes]);
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ width: '100%', height, display: 'block', cursor: crosshair ? 'crosshair' : 'default' }}
+      style={{ width: '100%', height: '100%', display: 'block', cursor: crosshair ? 'crosshair' : 'default' }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     />
@@ -555,126 +565,152 @@ interface DOMToolbarProps {
   onZoomOut: () => void;
 }
 
+const CHART_MODE_LABELS: Record<ChartMode, string> = {
+  bar: 'OHLC Bar',
+  candlestick: 'Candlestick',
+  line: 'Line',
+  tick: 'Tick Stream',
+};
+
 function DOMToolbar({ chartMode, crosshair, onChartModeChange, onToggleCrosshair, onZoomIn, onZoomOut }: DOMToolbarProps) {
     const tr = useUiTranslation();
   const iconBtn = (active: boolean) => `rtx-dom-toolbar-btn ${active ? 'is-active' : ''}`;
 
   return (
     <div
-      className="rtx-dom-toolbar flex items-center gap-1 px-2.5 py-1 border-b select-none shrink-0"
+      className="rtx-dom-toolbar flex items-center justify-between gap-2 px-3 py-1 border-b select-none shrink-0"
       style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}
     >
-      {/* Bar Chart */}
-      <button
-        type="button"
-        className={iconBtn(chartMode === 'bar')}
-        onClick={() => onChartModeChange('bar')}
-        title={tr("Bar Chart (OHLC)")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <rect x="1.5" y="5" width="2.5" height="8" rx="0.5" fill="currentColor"/>
-          <rect x="6.75" y="2" width="2.5" height="12" rx="0.5" fill="currentColor"/>
-          <rect x="12" y="7" width="2.5" height="5" rx="0.5" fill="currentColor"/>
-        </svg>
-      </button>
+      <div className="flex items-center gap-1.5">
+        <div className="rtx-dom-toolbar-group" role="group" aria-label={tr("Chart mode")}>
+          {/* Bar Chart (OHLC) */}
+          <button
+            type="button"
+            className={iconBtn(chartMode === 'bar')}
+            onClick={() => onChartModeChange('bar')}
+            title={tr("Bar Chart (OHLC)")}
+            aria-label={tr("Bar Chart (OHLC)")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M3.5 3.5V12.5M1.75 6.25H3.5M3.5 9.75H5.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+              <path d="M8 2.25V13.75M6.25 8.5H8M8 5.25H9.75" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+              <path d="M12.5 4V12M10.75 6H12.5M12.5 9.25H14.25" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+            </svg>
+          </button>
 
-      {/* Candlestick */}
-      <button
-        type="button"
-        className={iconBtn(chartMode === 'candlestick')}
-        onClick={() => onChartModeChange('candlestick')}
-        title={tr("Candlestick Chart")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <line x1="4" y1="1.5" x2="4" y2="14.5" stroke={chartMode === 'candlestick' ? '#dc2626' : 'currentColor'} strokeWidth="1.2"/>
-          <rect x="2" y="4" width="4" height="6" rx="0.5"
-            fill={chartMode === 'candlestick' ? 'rgba(220,38,38,0.28)' : 'currentColor'}
-            fillOpacity={chartMode === 'candlestick' ? 1 : 0.18}
-            stroke={chartMode === 'candlestick' ? '#dc2626' : 'currentColor'} strokeWidth="1.1"/>
-          <line x1="12" y1="2" x2="12" y2="14" stroke={chartMode === 'candlestick' ? '#2563eb' : 'currentColor'} strokeWidth="1.2"/>
-          <rect x="10" y="5" width="4" height="5" rx="0.5"
-            fill={chartMode === 'candlestick' ? 'rgba(37,99,235,0.28)' : 'currentColor'}
-            fillOpacity={chartMode === 'candlestick' ? 1 : 0.18}
-            stroke={chartMode === 'candlestick' ? '#2563eb' : 'currentColor'} strokeWidth="1.1"/>
-        </svg>
-      </button>
+          {/* Candlestick */}
+          <button
+            type="button"
+            className={iconBtn(chartMode === 'candlestick')}
+            onClick={() => onChartModeChange('candlestick')}
+            title={tr("Candlestick Chart")}
+            aria-label={tr("Candlestick Chart")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M3.5 3V13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <rect x="2.2" y="5.4" width="2.6" height="5.2" rx="0.45" fill="currentColor" />
+              <path d="M8 2V4.3M8 10.6V14" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <rect x="6.7" y="4.3" width="2.6" height="6.3" rx="0.45" stroke="currentColor" strokeWidth="1.2" fill="none" />
+              <path d="M12.5 3.2V12.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <rect x="11.2" y="5.8" width="2.6" height="4.6" rx="0.45" fill="currentColor" />
+            </svg>
+          </button>
 
-      {/* Line Chart */}
-      <button
-        type="button"
-        className={iconBtn(chartMode === 'line')}
-        onClick={() => onChartModeChange('line')}
-        title={tr("Line Chart")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <polyline points="1.5,12 5.5,6 9.5,9 14.5,3.5"
-            stroke={chartMode === 'line' ? '#2563eb' : 'currentColor'}
-            fill="none" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"/>
-        </svg>
-      </button>
+          {/* Line Chart */}
+          <button
+            type="button"
+            className={iconBtn(chartMode === 'line')}
+            onClick={() => onChartModeChange('line')}
+            title={tr("Line Chart")}
+            aria-label={tr("Line Chart")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <polyline
+                points="1.75,11.25 5.25,6.75 8.75,9.25 14.25,3.75"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="1.45"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
 
-      {/* Separator */}
-      <div className="w-px h-3.5 mx-0.5" style={{ background: 'var(--border-primary, #333a4b)' }} />
+          {/* Tick Stream */}
+          <button
+            type="button"
+            className={iconBtn(chartMode === 'tick')}
+            onClick={() => onChartModeChange('tick')}
+            title={tr("Tick Chart")}
+            aria-label={tr("Tick Chart")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <polyline
+                points="1.5,10 4,5.25 6.6,10.5 9.3,3.8 11.9,11.2 14.5,4"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
 
-      {/* Tick Chart */}
-      <button
-        type="button"
-        className={iconBtn(chartMode === 'tick')}
-        onClick={() => onChartModeChange('tick')}
-        title={tr("Tick Chart")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <polyline points="1,9.5 3.8,5 6.5,10 9.5,4 12.2,11 15,3.5"
-            stroke={chartMode === 'tick' ? '#dc2626' : 'currentColor'}
-            fill="none" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
-        </svg>
-      </button>
+        {/* Separator */}
+        <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-primary, #38383c)' }} />
 
-      {/* Crosshair */}
-      <button
-        type="button"
-        className={iconBtn(crosshair)}
-        onClick={onToggleCrosshair}
-        title={crosshair ? tr("Crosshair: ON") : tr("Crosshair: OFF")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <line x1="8" y1="1.5" x2="8" y2="14.5" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2,1.5"/>
-          <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2,1.5"/>
-          <circle cx="8" cy="8" r="2.5" stroke="currentColor" fill="none" strokeWidth="1.2"/>
-        </svg>
-      </button>
+        {/* Crosshair */}
+        <button
+          type="button"
+          className={`rtx-dom-toolbar-btn rtx-dom-toolbar-btn--tool ${crosshair ? 'is-active' : ''}`}
+          onClick={onToggleCrosshair}
+          title={crosshair ? tr("Crosshair: ON") : tr("Crosshair: OFF")}
+          aria-label={tr("Crosshair")}
+          aria-pressed={crosshair}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 1.75V5M8 11V14.25M1.75 8H5M11 8H14.25" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <circle cx="8" cy="8" r="2.1" stroke="currentColor" fill="none" strokeWidth="1.25" />
+          </svg>
+        </button>
 
-      {/* Separator */}
-      <div className="w-px h-3.5 mx-0.5" style={{ background: 'var(--border-primary, #333a4b)' }} />
+        {/* Separator */}
+        <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-primary, #38383c)' }} />
 
-      {/* Zoom In */}
-      <button
-        type="button"
-        className="rtx-dom-toolbar-btn"
-        onClick={onZoomIn}
-        title={tr("Zoom In")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
-          <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-          <line x1="7" y1="5" x2="7" y2="9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-        </svg>
-      </button>
+        {/* Zoom Controls */}
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            className="rtx-dom-toolbar-btn rtx-dom-toolbar-btn--tool"
+            onClick={onZoomIn}
+            title={tr("Zoom In")}
+            aria-label={tr("Zoom In")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.3" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5 7H9M7 5V9M10.3 10.3L14 14" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+            </svg>
+          </button>
 
-      {/* Zoom Out */}
-      <button
-        type="button"
-        className="rtx-dom-toolbar-btn"
-        onClick={onZoomOut}
-        title={tr("Zoom Out")}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-          <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
-          <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-        </svg>
-      </button>
+          <button
+            type="button"
+            className="rtx-dom-toolbar-btn rtx-dom-toolbar-btn--tool"
+            onClick={onZoomOut}
+            title={tr("Zoom Out")}
+            aria-label={tr("Zoom Out")}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.3" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5 7H9M10.3 10.3L14 14" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <span className="rtx-dom-toolbar-mode uppercase" aria-hidden="true">
+        {tr(CHART_MODE_LABELS[chartMode])}
+      </span>
     </div>
   );
 }
@@ -711,6 +747,7 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
   }, [tpInput]);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const [mainContentHeight, setMainContentHeight] = useState(280);
+  const [hasMeasuredWidth, setHasMeasuredWidth] = useState(false);
 
   // Toolbar state
   const [chartMode, setChartMode] = useState<ChartMode>('tick');
@@ -727,21 +764,21 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
 
   const ROW_H = typography.rowHeight;
   const COLUMN_HEADER_HEIGHT = 28;
-  const ladderColumns = 'minmax(58px, 0.8fr) minmax(94px, 1.25fr) 48px';
+  const ladderColumns = 'minmax(72px, 1.02fr) minmax(88px, 1.16fr) 50px';
   const symbolDescription = useMemo(() => getFallbackSymbolDescription(symbol), [symbol]);
   const isLaptopDomSurface = typeof window !== 'undefined'
-    && Boolean(mainContentRef.current && mainContentRef.current.clientWidth > 0)
+    && hasMeasuredWidth
     && (window.innerWidth <= 1720 || window.innerHeight <= 920);
   const effectiveRowH = isLaptopDomSurface
-    ? (window.innerWidth <= 1440 || window.innerHeight <= 780 ? 18 : 21)
+    ? (window.innerWidth <= 1440 || window.innerHeight <= 780 ? 18 : 20)
     : ROW_H;
   const effectiveHeaderH = isLaptopDomSurface
     ? (window.innerWidth <= 1440 || window.innerHeight <= 780 ? 22 : 23)
     : COLUMN_HEADER_HEIGHT;
-  const availableForRows = Math.max(effectiveRowH * 6 * 2, mainContentHeight - effectiveHeaderH);
+  const availableForRows = Math.max(effectiveRowH * 4 * 2, mainContentHeight - effectiveHeaderH);
   const dynamicLevels = isLaptopDomSurface
-    ? Math.max(6, Math.floor((availableForRows - effectiveRowH) / effectiveRowH / 2))
-    : Math.max(6, Math.floor(availableForRows / ROW_H / 2));
+    ? Math.max(4, Math.floor((availableForRows - effectiveRowH + 6) / (effectiveRowH * 2)))
+    : Math.max(4, Math.floor((availableForRows - ROW_H + 6) / (ROW_H * 2)));
   const requestLevels = Math.max(10, dynamicLevels);
   const { orderBook, loading: depthLoading, error: depthError } = useLiveOrderBook(symbol, requestLevels);
   const bestBid = currentTick?.bid ?? orderBook?.bids[0]?.price ?? 0;
@@ -752,12 +789,17 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
     const element = mainContentRef.current;
     if (!element) return;
 
-    const updateHeight = () => setMainContentHeight(Math.max(120, element.getBoundingClientRect().height));
-    updateHeight();
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      setMainContentHeight(Math.max(120, rect.height));
+      setHasMeasuredWidth(rect.width > 0 || element.clientWidth > 0);
+    };
+    updateSize();
 
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
         setMainContentHeight(Math.max(120, entry.contentRect.height));
+        setHasMeasuredWidth(entry.contentRect.width > 0 || element.clientWidth > 0);
       }
     });
     observer.observe(element);
@@ -862,10 +904,15 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
     return (
       <div
         className="rtx-depth-of-market flex flex-col items-center justify-center h-full select-none"
-        style={{ background: 'var(--bg-secondary)', fontFamily: FONT, fontSize: typography.fontSize, fontWeight: typography.bodyWeight, lineHeight: 1.5, color: C.textSecondary }}
+        style={{ background: 'var(--bg-secondary)', fontFamily: FONT, fontSize: typography.fontSize, fontWeight: typography.bodyWeight, lineHeight: 1.5, color: C.textSecondary, borderRadius: 6 }}
       >
         <div className="text-center">
-          {depthLoading && <div className="w-4 h-4 border-2 border-zinc-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" />}
+          {depthLoading && (
+            <div
+              className="w-4 h-4 border-2 rounded-full animate-spin mx-auto mb-2"
+              style={{ borderColor: 'var(--border-primary, #38383c)', borderTopColor: 'var(--text-secondary, #909098)' }}
+            />
+          )}
           {depthError || `Waiting for ${symbol} market depth...`}
         </div>
       </div>
@@ -875,37 +922,30 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
   return (
     <div
       className="rtx-depth-of-market flex flex-col w-full h-full select-none overflow-hidden"
-      style={{ background: 'var(--bg-secondary)', fontFamily: FONT, fontSize: typography.fontSize, fontWeight: typography.bodyWeight, lineHeight: 1.5, borderRadius: 8 }}
+      style={{ background: 'var(--bg-secondary)', fontFamily: FONT, fontSize: typography.fontSize, fontWeight: typography.bodyWeight, lineHeight: 1.5, borderRadius: 6 }}
     >
       {/* ── Title Bar ── */}
       <div
-        className="rtx-dom-titlebar flex min-h-[34px] items-center justify-between gap-2 px-3 py-1 border-b shrink-0 cursor-move"
+        className="rtx-dom-titlebar flex min-h-[32px] items-center justify-between gap-2 px-3 py-1 border-b shrink-0 cursor-move"
         style={{
           background: 'var(--bg-tertiary)',
           borderColor: 'var(--border-primary)',
-          color: C.textPrimary,
-          borderRadius: '8px 8px 0 0',
+          color: 'var(--text-primary, #e2e2e8)',
+          borderRadius: '6px 6px 0 0',
         }}
         onMouseDown={onDragHandleMouseDown}
       >
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="rtx-depth-of-market__heading uppercase tracking-normal shrink-0" style={{ color: C.textPrimary, fontSize: typography.fontSize, fontWeight: 600 }}>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="rtx-depth-of-market__heading uppercase tracking-normal shrink-0" style={{ color: 'var(--text-primary, #e2e2e8)', fontSize: typography.fontSize, fontWeight: 600 }}>
             {symbol}
           </span>
           {symbolDescription && (
-            <span className="rtx-dom-description text-[12px] leading-[18px] font-normal truncate" style={{ color: C.textSecondary, letterSpacing: 'normal' }}>
+            <span className="rtx-dom-description text-[12px] leading-[18px] font-normal truncate" style={{ color: 'var(--text-secondary, #909098)', letterSpacing: 'normal' }}>
               {tr(symbolDescription)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="rtx-dom-drag-hint" aria-hidden="true" title={tr("Drag to move")}>
-            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-              <circle cx="3" cy="3" r="1.1" /><circle cx="7" cy="3" r="1.1" />
-              <circle cx="3" cy="7" r="1.1" /><circle cx="7" cy="7" r="1.1" />
-              <circle cx="3" cy="11" r="1.1" /><circle cx="7" cy="11" r="1.1" />
-            </svg>
-          </span>
+        <div className="flex items-center shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -914,11 +954,75 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
             title={tr("Close")}
             aria-label={tr("Close")}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" />
               <line x1="9.5" y1="2.5" x2="2.5" y2="9.5" />
             </svg>
           </button>
+        </div>
+      </div>
+
+      {/* ── Top Trade Controls: SL | Volume | TP ── */}
+      <div
+        className="rtx-dom-params-bar flex items-center justify-between gap-3 px-3 py-1.5 border-b shrink-0"
+        style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-secondary)' }}
+        onMouseDown={e => e.stopPropagation()}
+      >
+        <div className="rtx-dom-param-group flex items-center gap-2">
+          <span className="rtx-dom-stepper__label">{tr("SL")}</span>
+          <div className="rtx-dom-stepper" title={tr("Stop Loss distance in points (0 = off)")}>
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setSlInput(String(Math.max(0, sl - 1)))} aria-label={tr("Decrease Stop Loss")}>−</button>
+            <input
+              type="number"
+              value={slInput}
+              min={0}
+              step={1}
+              onChange={e => setSlInput(e.target.value)}
+              onBlur={() => setSlInput(String(sl))}
+              className="rtx-dom-stepper__input"
+              style={{ fontFamily: MONO }}
+              aria-label={tr("Stop Loss points")}
+            />
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setSlInput(String(sl + 1))} aria-label={tr("Increase Stop Loss")}>+</button>
+          </div>
+        </div>
+
+        <div className="rtx-dom-param-group flex items-center gap-2">
+          <span className="rtx-dom-stepper__label">{tr("Volume")}</span>
+          <div className="rtx-dom-stepper rtx-dom-stepper--volume" title={tr("Order volume in lots")}>
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setVolumeInput(Math.max(0.01, Math.round((volume - 0.01) * 100) / 100).toFixed(2))} aria-label={tr("Decrease volume")}>−</button>
+            <input
+              type="number"
+              value={volumeInput}
+              min={0.01}
+              step={0.01}
+              onChange={e => setVolumeInput(e.target.value)}
+              onBlur={() => setVolumeInput(volume.toFixed(2))}
+              className="rtx-dom-stepper__input rtx-dom-stepper__input--volume"
+              style={{ fontFamily: MONO }}
+              aria-label={tr("Order volume in lots")}
+            />
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setVolumeInput((Math.round((volume + 0.01) * 100) / 100).toFixed(2))} aria-label={tr("Increase volume")}>+</button>
+          </div>
+        </div>
+
+        <div className="rtx-dom-param-group flex items-center gap-2">
+          <span className="rtx-dom-stepper__label">{tr("TP")}</span>
+          <div className="rtx-dom-stepper" title={tr("Take Profit distance in points (0 = off)")}>
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setTpInput(String(Math.max(0, tp - 1)))} aria-label={tr("Decrease Take Profit")}>−</button>
+            <input
+              type="number"
+              value={tpInput}
+              min={0}
+              step={1}
+              onChange={e => setTpInput(e.target.value)}
+              onBlur={() => setTpInput(String(tp))}
+              className="rtx-dom-stepper__input"
+              style={{ fontFamily: MONO }}
+              aria-label={tr("Take Profit points")}
+            />
+            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setTpInput(String(tp + 1))} aria-label={tr("Increase Take Profit")}>+</button>
+          </div>
         </div>
       </div>
 
@@ -936,7 +1040,7 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
       <div ref={mainContentRef} className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ── Left: Tick Chart ── */}
-        <div className="flex-[54] border-r min-w-0" style={{ borderColor: 'var(--border-primary)' }}>
+        <div className="flex-[51] h-full border-r min-w-0 relative" style={{ borderColor: 'var(--border-primary)' }}>
           <TickChart
             symbol={symbol}
             width={250}
@@ -950,35 +1054,37 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
         </div>
 
         {/* ── Right: DOM Table ── */}
-        <div className="flex-[46] flex flex-col min-w-[216px] overflow-hidden">
-          {/* Column Headers */}
-          <div
-            className="rtx-depth-of-market__columns grid shrink-0 border-b"
-            style={{
-              gridTemplateColumns: ladderColumns,
-              minHeight: COLUMN_HEADER_HEIGHT,
-              fontSize: 11,
-              fontWeight: 600,
-              borderColor: 'var(--border-primary)',
-              background: 'var(--bg-tertiary)',
-            }}
-          >
-            <div
-              className="flex items-center justify-end pr-2 border-r uppercase"
-              style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}
-              title={depthLevels.synthetic ? tr("No depth feed for this symbol — showing a price ladder around the live quote") : undefined}
-            >
-              {tr("Volume")}</div>
-            <div className="flex items-center justify-end pr-2.5 border-r uppercase" style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}>
-              {tr("Price")}</div>
-            <div className="flex items-center justify-center uppercase" style={{ color: 'var(--text-secondary, #808088)', letterSpacing: '0.05em' }}>
-              {tr("Trade")}</div>
-          </div>
-
-          {/* Scrollable Price Levels */}
+        <div className="flex-[49] flex flex-col min-w-[232px] overflow-hidden">
+          {/* Scrollable Price Levels (sticky column headers inside so vertical rules align 1:1 with scrollbar) */}
           <div className="rtx-dom-ladder-scroll flex-1 overflow-y-auto overflow-x-hidden" style={{ background: 'var(--bg-secondary)' }}>
+            {/* Column Headers */}
+            <div
+              className="rtx-depth-of-market__columns grid sticky top-0 z-[2] border-b"
+              style={{
+                gridTemplateColumns: ladderColumns,
+                minHeight: COLUMN_HEADER_HEIGHT,
+                fontSize: 10.5,
+                fontWeight: 600,
+                borderColor: 'var(--border-primary)',
+                background: 'var(--bg-tertiary)',
+              }}
+            >
+              <div
+                className="flex items-center justify-end px-2 border-r uppercase whitespace-nowrap"
+                style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #909098)', letterSpacing: '0.03em' }}
+                title={depthLevels.synthetic ? tr("No depth feed for this symbol — showing a price ladder around the live quote") : undefined}
+              >
+                {tr("Volume")}</div>
+              <div className="flex items-center justify-end px-2 border-r uppercase whitespace-nowrap" style={{ borderColor: 'var(--border-primary)', color: 'var(--text-secondary, #909098)', letterSpacing: '0.03em' }}>
+                {tr("Price")}</div>
+              <div className="flex items-center justify-center px-1 uppercase whitespace-nowrap" style={{ color: 'var(--text-secondary, #909098)', letterSpacing: '0.03em' }}>
+                {tr("Trade")}</div>
+            </div>
             {depthLevels.asks.length === 0 && depthLevels.bids.length === 0 && (
-              <div className="flex items-center justify-center h-full px-3 text-center text-[13px] leading-[20px] font-normal" style={{ color: 'var(--text-tertiary, #50505a)' }}>
+              <div
+                className="flex items-center justify-center px-3 text-center text-[13px] leading-[20px] font-normal"
+                style={{ height: `calc(100% - ${effectiveHeaderH}px)`, color: 'var(--text-tertiary, #5c5c64)' }}
+              >
                 {depthLoading ? tr("Loading market depth...") : depthError || tr("No market depth available")}
               </div>
             )}
@@ -986,6 +1092,7 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
             {depthLevels.asks.map((level, i) => {
               const isNearSpread = i === depthLevels.asks.length - 1;
               const [priceBase, pricePips] = splitLadderPrice(level.price, digits);
+              const cellBorder = 'color-mix(in srgb, var(--border-primary, #38383c) 58%, transparent)';
               return (
                 <div
                   key={`ask-${i}`}
@@ -993,20 +1100,20 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                   style={{
                     gridTemplateColumns: ladderColumns,
                     height: ROW_H,
-                    borderBottom: '1px solid var(--border-primary)',
+                    borderBottom: `1px solid ${cellBorder}`,
                   }}
                   onClick={() => onPlaceOrder?.(buildDepthOrderRequest('SELL', level.price, volume, depthExecutionForLevel('SELL', level.price, bestBid, bestAsk), digits, sl, tp))}
                   onMouseDown={e => e.stopPropagation()}
                 >
-                  <div className="flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
+                  <div className="flex items-center justify-end px-2 border-r" style={{ borderColor: cellBorder }}>
                     {level.volume > 0 ? (
                       <span
                         className="text-[12px]"
                         style={{
                           fontFamily: MONO,
                           color: C.loss,
-                          fontWeight: isNearSpread ? 500 : 400,
-                          opacity: isNearSpread ? 1 : 0.85,
+                          fontWeight: isNearSpread ? 600 : 400,
+                          opacity: isNearSpread ? 1 : 0.78,
                         }}
                       >
                         {level.volume.toFixed(2)}
@@ -1015,13 +1122,13 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                       <span className="rtx-dom-vol-placeholder text-[11px]" style={{ fontFamily: MONO }}>—</span>
                     )}
                   </div>
-                  <div className="flex items-center justify-end pr-2.5 border-r" style={{ borderColor: 'var(--border-primary)' }}>
+                  <div className="flex items-center justify-end px-2 border-r" style={{ borderColor: cellBorder }}>
                     <span
                       className="rtx-dom-price rtx-dom-price--ask"
                       style={{
                         fontFamily: MONO,
                         fontSize: typography.fontSize,
-                        fontWeight: isNearSpread ? 500 : 400,
+                        fontWeight: isNearSpread ? 600 : 400,
                         color: C.loss,
                       }}
                     >
@@ -1049,15 +1156,14 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
             {/* ── Spread row ── */}
             {(bestBid > 0 || bestAsk > 0) && (
               <div
-                className="rtx-depth-of-market__row rtx-dom-spread flex items-center justify-center gap-2"
+                className="rtx-depth-of-market__row rtx-dom-spread flex items-center justify-center gap-1.5"
                 style={{
                   height: ROW_H,
                   background: 'var(--bg-tertiary)',
                   borderBottom: '1px solid var(--border-primary)',
-                  borderTop: '1px solid var(--border-primary)',
                 }}
               >
-                <span className="rtx-dom-spread__label uppercase" style={{ color: 'var(--text-secondary, #808088)', fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em' }}>
+                <span className="rtx-dom-spread__label uppercase" style={{ color: 'var(--text-secondary, #909098)', fontSize: 10.5, fontWeight: 500, letterSpacing: '0.06em' }}>
                   {tr("Spread")}</span>
                 <span className="rtx-dom-spread__badge uppercase" style={{ fontFamily: MONO }}>
                   {digits === null
@@ -1071,6 +1177,7 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
             {depthLevels.bids.map((level, i) => {
               const isNearSpread = i === 0;
               const [priceBase, pricePips] = splitLadderPrice(level.price, digits);
+              const cellBorder = 'color-mix(in srgb, var(--border-primary, #38383c) 58%, transparent)';
               return (
                 <div
                   key={`bid-${i}`}
@@ -1078,20 +1185,20 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                   style={{
                     gridTemplateColumns: ladderColumns,
                     height: ROW_H,
-                    borderBottom: '1px solid var(--border-primary)',
+                    borderBottom: `1px solid ${cellBorder}`,
                   }}
                   onClick={() => onPlaceOrder?.(buildDepthOrderRequest('BUY', level.price, volume, depthExecutionForLevel('BUY', level.price, bestBid, bestAsk), digits, sl, tp))}
                   onMouseDown={e => e.stopPropagation()}
                 >
-                  <div className="flex items-center justify-end pr-2 border-r" style={{ borderColor: 'var(--border-primary)' }}>
+                  <div className="flex items-center justify-end px-2 border-r" style={{ borderColor: cellBorder }}>
                     {level.volume > 0 ? (
                       <span
                         className="text-[12px]"
                         style={{
                           fontFamily: MONO,
                           color: C.profit,
-                          fontWeight: isNearSpread ? 500 : 400,
-                          opacity: isNearSpread ? 1 : 0.85,
+                          fontWeight: isNearSpread ? 600 : 400,
+                          opacity: isNearSpread ? 1 : 0.78,
                         }}
                       >
                         {level.volume.toFixed(2)}
@@ -1100,13 +1207,13 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
                       <span className="rtx-dom-vol-placeholder text-[11px]" style={{ fontFamily: MONO }}>—</span>
                     )}
                   </div>
-                  <div className="flex items-center justify-end pr-2.5 border-r" style={{ borderColor: 'var(--border-primary)' }}>
+                  <div className="flex items-center justify-end px-2 border-r" style={{ borderColor: cellBorder }}>
                     <span
                       className="rtx-dom-price rtx-dom-price--bid"
                       style={{
                         fontFamily: MONO,
                         fontSize: typography.fontSize,
-                        fontWeight: isNearSpread ? 500 : 400,
+                        fontWeight: isNearSpread ? 600 : 400,
                         color: C.profit,
                       }}
                     >
@@ -1134,72 +1241,8 @@ export const DepthOfMarket: React.FC<DepthOfMarketProps> = ({
         </div>
       </div>
 
-      {/* ── Bottom Controls: SL | Volume | TP ── */}
-      <div
-        className="rtx-dom-params-bar grid grid-cols-3 items-center gap-2 px-2.5 py-1.5 border-t shrink-0"
-        style={{ borderColor: 'var(--border-primary)', background: 'var(--bg-tertiary)' }}
-        onMouseDown={e => e.stopPropagation()}
-      >
-        <div className="rtx-dom-param-group flex items-center justify-between gap-1.5">
-          <span className="rtx-dom-stepper__label">{tr("SL")}</span>
-          <div className="rtx-dom-stepper" title={tr("Stop Loss distance in points (0 = off)")}>
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setSlInput(String(Math.max(0, sl - 1)))} aria-label={tr("Decrease Stop Loss")}>−</button>
-            <input
-              type="number"
-              value={slInput}
-              min={0}
-              step={1}
-              onChange={e => setSlInput(e.target.value)}
-              onBlur={() => setSlInput(String(sl))}
-              className="rtx-dom-stepper__input"
-              style={{ fontFamily: MONO }}
-              aria-label={tr("Stop Loss points")}
-            />
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setSlInput(String(sl + 1))} aria-label={tr("Increase Stop Loss")}>+</button>
-          </div>
-        </div>
-
-        <div className="rtx-dom-param-group flex items-center justify-center gap-1.5">
-          <span className="rtx-dom-stepper__label">{tr("Volume")}</span>
-          <div className="rtx-dom-stepper rtx-dom-stepper--volume" title={tr("Order volume in lots")}>
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setVolumeInput(Math.max(0.01, Math.round((volume - 0.01) * 100) / 100).toFixed(2))} aria-label={tr("Decrease volume")}>−</button>
-            <input
-              type="number"
-              value={volumeInput}
-              min={0.01}
-              step={0.01}
-              onChange={e => setVolumeInput(e.target.value)}
-              onBlur={() => setVolumeInput(volume.toFixed(2))}
-              className="rtx-dom-stepper__input rtx-dom-stepper__input--volume"
-              style={{ fontFamily: MONO }}
-              aria-label={tr("Order volume in lots")}
-            />
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setVolumeInput((Math.round((volume + 0.01) * 100) / 100).toFixed(2))} aria-label={tr("Increase volume")}>+</button>
-          </div>
-        </div>
-
-        <div className="rtx-dom-param-group flex items-center justify-end gap-1.5">
-          <span className="rtx-dom-stepper__label">{tr("TP")}</span>
-          <div className="rtx-dom-stepper" title={tr("Take Profit distance in points (0 = off)")}>
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setTpInput(String(Math.max(0, tp - 1)))} aria-label={tr("Decrease Take Profit")}>−</button>
-            <input
-              type="number"
-              value={tpInput}
-              min={0}
-              step={1}
-              onChange={e => setTpInput(e.target.value)}
-              onBlur={() => setTpInput(String(tp))}
-              className="rtx-dom-stepper__input"
-              style={{ fontFamily: MONO }}
-              aria-label={tr("Take Profit points")}
-            />
-            <button type="button" className="rtx-dom-stepper__btn" onClick={() => setTpInput(String(tp + 1))} aria-label={tr("Increase Take Profit")}>+</button>
-          </div>
-        </div>
-      </div>
-
       {/* ── Sell / Close / Buy Buttons ── */}
-      <div className="rtx-dom-exec-footer flex shrink-0" style={{ borderTop: '1px solid var(--border-primary)' }}>
+      <div className="rtx-dom-exec-footer flex items-center shrink-0" style={{ borderTop: '1px solid var(--border-primary)' }}>
         <button
           type="button"
           onClick={() => onPlaceOrder?.(buildDepthOrderRequest('SELL', bestBid, volume, 'market', digits, sl, tp))}

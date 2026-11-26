@@ -135,11 +135,40 @@ describe('Depth of Market typography', () => {
     }
   });
 
-  it('renders the title bar without a green status dot next to the symbol heading', () => {
+  it('renders the title bar without status dot or drag-grip clutter, places SL/Volume/TP above toolbar, and aligns sticky column headers with the ladder', () => {
     const view = render(<DepthOfMarket symbol="EURUSD" />);
 
     expect(view.container.querySelector('.rtx-dom-titlebar .rtx-depth-of-market__heading')?.textContent).toBe('EURUSD');
     expect(view.container.querySelector('.rtx-dom-status-dot')).toBeNull();
+    expect(view.container.querySelector('.rtx-dom-drag-hint')).toBeNull();
+    expect(view.container.querySelector('.rtx-dom-ladder-scroll .rtx-depth-of-market__columns')).not.toBeNull();
+    expect(view.container.querySelector('.rtx-dom-toolbar .rtx-dom-toolbar-group')).not.toBeNull();
+    expect(view.container.querySelector('.rtx-dom-param-divider')).toBeNull();
+    expect(view.container.querySelector<HTMLCanvasElement>('canvas')?.style.height).toBe('100%');
+
+    const paramsBar = view.container.querySelector('.rtx-dom-params-bar');
+    const toolbar = view.container.querySelector('.rtx-dom-toolbar');
+    const footer = view.container.querySelector('.rtx-dom-exec-footer');
+    expect(paramsBar && toolbar && (paramsBar.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+    expect(toolbar && footer && (toolbar.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+  });
+
+  it('draws the default tick chart without scatter-dot markers', () => {
+    const arc = vi.fn();
+    const context = {
+      font: '',
+      fillStyle: '',
+      strokeStyle: '',
+      scale: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(),
+      beginPath: vi.fn(), closePath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      stroke: vi.fn(), fill: vi.fn(), arc, setLineDash: vi.fn(), roundRect: vi.fn(),
+      measureText: (text: string) => ({ width: text.length * 8 }),
+      fillText: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+
+    render(<DepthOfMarket symbol="BTCUSD" />);
+    expect(arc).not.toHaveBeenCalled();
   });
 
   it('renders ask and bid ladder rows without row backgrounds or volume fill bars, preserving colored text', () => {

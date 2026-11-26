@@ -12,7 +12,7 @@ import { removeSolidBackgroundFromRgba } from './watermarkBackgroundRemoval';
 
 export const SQUARE_CHART_GRID_CELL_SIZE_PX = 64;
 export const FINE_CHART_GRID_CELL_SIZE_PX = 32;
-export const CHART_GRID_STROKE_CSS_PX = 0.25;
+export const CHART_GRID_STROKE_CSS_PX = 1;
 export const FINE_CHART_GRID_STROKE_CSS_PX = 1;
 export const FINE_CHART_GRID_OPACITY = 0.5;
 export const CHART_GRID_DASH_PATTERN_CSS_PX: readonly [number, number] = [1, 2];
@@ -969,13 +969,14 @@ class SquareChartGridRenderer implements IPrimitivePaneRenderer {
       const [dashLength, dashGap] = options.dashPatternCssPx
         ?? (isFineProfile ? FINE_CHART_GRID_DASH_PATTERN_CSS_PX : CHART_GRID_DASH_PATTERN_CSS_PX);
       const strokeCssPx = isFineProfile ? FINE_CHART_GRID_STROKE_CSS_PX : CHART_GRID_STROKE_CSS_PX;
+      const fineBaseOpacity = dashed ? FINE_CHART_GRID_OPACITY : 1;
       const verticalLineWidth = isFineProfile
         ? resolveFineGridBitmapStroke(strokeCssPx, horizontalPixelRatio)
         : strokeCssPx * horizontalPixelRatio;
       const verticalPixelOffset = (Math.max(1, Math.round(verticalLineWidth)) % 2) / 2;
       if (isFineProfile) {
         context.globalAlpha = resolveFineGridBitmapOpacity(
-          FINE_CHART_GRID_OPACITY,
+          fineBaseOpacity,
           strokeCssPx,
           horizontalPixelRatio,
           verticalLineWidth,
@@ -1004,7 +1005,7 @@ class SquareChartGridRenderer implements IPrimitivePaneRenderer {
       const horizontalPixelOffset = (Math.max(1, Math.round(horizontalLineWidth)) % 2) / 2;
       if (isFineProfile) {
         context.globalAlpha = resolveFineGridBitmapOpacity(
-          FINE_CHART_GRID_OPACITY,
+          fineBaseOpacity,
           strokeCssPx,
           verticalPixelRatio,
           horizontalLineWidth,

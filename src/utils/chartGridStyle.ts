@@ -19,8 +19,10 @@ const LIGHT_GRID_HORIZONTAL_LUMINANCE_DELTA = 0.095;
 const LIGHT_GRID_VERTICAL_LUMINANCE_DELTA = 0.045;
 const MIN_USEFUL_GRID_LUMINANCE_DELTA = 0.012;
 const DASHED_GRID_CONTRAST_MULTIPLIER = 2.8;
-const DARK_SOLID_GRID_LUMINANCE_DELTA = 0.14;
-const LIGHT_SOLID_GRID_LUMINANCE_DELTA = 0.095;
+const DARK_SOLID_GRID_LUMINANCE_DELTA = 0.155;
+const LIGHT_SOLID_GRID_LUMINANCE_DELTA = 0.12;
+const DARK_SOLID_PRESET_LUMINANCE_DELTA = 0.24;
+const LIGHT_SOLID_PRESET_LUMINANCE_DELTA = 0.135;
 
 const clampChannel = (value: number): number => Math.round(Math.max(0, Math.min(255, value)));
 const clampAlpha = (value: number): number => Math.max(0, Math.min(1, value));
@@ -108,12 +110,24 @@ export const getChartGridLineColors = ({
     ? grid : isDarkSurface ? '#778899' : 'rgba(71, 85, 105, 0.6)';
 
   if (lineStyle === 'solid') {
-    // Continuous guides need much less contrast than short dashes. Keep their
-    // configured hue and 1px geometry, with equally quiet axes in every layout.
-    const solidGrid = gridType === 'mt5' ? fineGridColor : grid;
+    // Continuous guides retain their configured hue and 1px geometry; built-in
+    // presets lift low-alpha dashed defaults so solid lines stay crisp and legible.
+    const isBuiltInPreset = Boolean(colorScheme) && colorScheme !== 'Custom';
+    const compactGrid = grid.replace(/\s+/g, '').toLowerCase();
+    let solidGrid = gridType === 'mt5' ? fineGridColor : grid;
+    if (gridType !== 'mt5' && isBuiltInPreset) {
+      if (isDarkSurface && compactGrid === 'rgba(255,255,255,0.12)') {
+        solidGrid = 'rgba(255, 255, 255, 0.24)';
+      } else if (!isDarkSurface && compactGrid === 'rgba(71,85,105,0.07)') {
+        solidGrid = 'rgba(100, 116, 139, 0.26)';
+      }
+    }
     const parsed = parseChartColor(solidGrid);
     const delta = parsed ? Math.abs(getChartColorLuminance(parsed) - backgroundLuminance) : 0;
-    const target = isDarkSurface ? DARK_SOLID_GRID_LUMINANCE_DELTA : LIGHT_SOLID_GRID_LUMINANCE_DELTA;
+    const usePresetTarget = isBuiltInPreset && !isSlateGridPreset;
+    const target = isDarkSurface
+      ? (usePresetTarget ? DARK_SOLID_PRESET_LUMINANCE_DELTA : DARK_SOLID_GRID_LUMINANCE_DELTA)
+      : (usePresetTarget ? LIGHT_SOLID_PRESET_LUMINANCE_DELTA : LIGHT_SOLID_GRID_LUMINANCE_DELTA);
     const color = parsed
       ? formatGridLineColor(parsed, Math.min(parsed.alpha, target / Math.max(MIN_USEFUL_GRID_LUMINANCE_DELTA, delta)))
       : solidGrid;

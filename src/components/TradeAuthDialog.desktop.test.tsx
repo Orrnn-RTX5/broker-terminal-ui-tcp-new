@@ -122,13 +122,65 @@ describe('desktop trading authentication', () => {
     expect(mocks.loadDirectory).toHaveBeenCalledWith({ forceRefresh: true, desktop: true });
   });
 
+  it('hides the broker IP/port and trade notice in desktop Log in to trade', async () => {
+    mocks.loadDirectory.mockResolvedValue([
+      {
+        broker_id: 'orrnn',
+        broker_name: 'Orrnn',
+        server_url: 'http://127.0.0.1:18504',
+        tcp_addr: '51.195.188.172:4443',
+        display_server: 'Orrnn (51.195.188.172:4443)',
+      },
+    ]);
+    render(<TradeAuthDialog isOpen initialMode="login" intent={intent} onClose={vi.fn()} onAuthenticated={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Log in to trade' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
+    expect(screen.getByRole('option', { name: 'Orrnn' })).toBeInTheDocument();
+    expect(dialog.textContent).not.toContain('51.195.188.172');
+    expect(dialog.textContent).not.toContain(':4443');
+    expect(screen.queryByText(/Log in to your trading account to place an order/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No order has been placed/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the selected broker across focus and tcp status heartbeats in desktop login', async () => {
+    render(<TradeAuthDialog isOpen initialMode="login" intent={intent} onClose={vi.fn()} onAuthenticated={vi.fn()} />);
+
+    const server = screen.getByRole('combobox', { name: /Server/i });
+    await waitFor(() => expect(server).toHaveValue('Nexa'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
+
+    // Emit an initial heartbeat matching Nexa, then switch to Achiever Financials.
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rtx5-tcp-status', {
+        detail: { connected: true, broker_id: 'Nexa', target_tcp: '10.0.0.2:4443' },
+      }));
+    });
+
+    fireEvent.focus(server);
+    fireEvent.change(server, { target: { value: 'achiever' } });
+    await waitFor(() => expect(server).toHaveValue('achiever'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('https://achiever.test/health', expect.anything()));
+
+    // A stale heartbeat from the previous broker must not revert or lock the dropdown.
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rtx5-tcp-status', {
+        detail: { connected: true, broker_id: 'Nexa', target_tcp: '10.0.0.2:4443' },
+      }));
+    });
+
+    expect(server).toBeEnabled();
+    expect(server).toHaveValue('achiever');
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled();
+  });
+
   it('authenticates with a different selected broker and reports completion to the pending trade owner', async () => {
     const onClose = vi.fn();
     const onAuthenticated = vi.fn();
     render(<TradeAuthDialog isOpen intent={intent} onClose={onClose} onAuthenticated={onAuthenticated} />);
     // The login does not wait for the broker a demo account would use.
     expect(screen.getByText('Account required to trade')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in to real account/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
 
     fireEvent.change(screen.getByRole('combobox', { name: /Server/i }), { target: { value: 'achiever' } });
@@ -160,10 +212,11 @@ describe('desktop trading authentication', () => {
     const onClose = vi.fn();
     const onAuthenticated = vi.fn();
     render(<TradeAuthDialog isOpen intent={intent} onClose={onClose} onAuthenticated={onAuthenticated} />);
-    fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in to real account/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Log in' })).toBeEnabled());
 
-    expect(screen.getByText(/No order has been placed/)).toBeVisible();
+    expect(screen.queryByText(/Log in to your trading account to place an order/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No order has been placed/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue viewing' }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(onAuthenticated).not.toHaveBeenCalled();
@@ -229,7 +282,7 @@ describe('desktop demo account from the trade login', () => {
 
     expect(screen.getByRole('dialog', { name: 'Account required to trade' })).toBeVisible();
     expect(screen.getByText(/order will not be sent automatically/i)).toBeVisible();
-    expect(screen.getByRole('button', { name: /log in to live account/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /log in to real account/i })).toBeEnabled();
     const demo = screen.getByRole('button', { name: /create demo account/i });
     await waitFor(() => expect(demo).toBeEnabled());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -369,7 +422,7 @@ describe('desktop demo account from the trade login', () => {
 
     expect(await screen.findByText('This broker does not offer demo accounts')).toBeVisible();
     expect(screen.getByRole('button', { name: /create demo account/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /log in to live account/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /log in to real account/i })).toBeEnabled();
   });
 
   it('offers a netting demo account when the connected broker has one', async () => {
@@ -419,10 +472,10 @@ describe('desktop demo account from the trade login', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/broker servers could not be loaded/i);
     expect(screen.getByRole('button', { name: /create demo account/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /log in to live account/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /log in to real account/i })).toBeEnabled();
 
     mocks.loadDirectory.mockResolvedValue(tcpBrokers);
-    fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in to real account/i }));
     expect(await screen.findByRole('dialog', { name: 'Log in to trade' })).toBeVisible();
   });
 

@@ -80,7 +80,7 @@ describe('SquareChartGridPrimitive', () => {
     };
   };
 
-  it.each([[1, 1], [2, 2], [2, 1]])('draws thin 0.25px micro-dotted segments at pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
+  it.each([[1, 1], [2, 2], [2, 1]])('draws crisp 1px micro-dotted segments at pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {
     const primitive = new SquareChartGridPrimitive({
       visible: true, cellSizeCssPx: 64,
       verticalColor: '#222', horizontalColor: '#333',
@@ -120,6 +120,21 @@ describe('SquareChartGridPrimitive', () => {
     primitive.applyOptions({ visible: false });
     primitive.paneViews()[0]!.renderer()!.draw(target as never);
     expect(context.stroke).not.toHaveBeenCalled();
+  });
+
+  it('does not halve Fine solid grid opacity with the dashed dot multiplier', () => {
+    const primitive = new SquareChartGridPrimitive({
+      visible: true,
+      lineStyle: 'solid',
+      profile: 'fine',
+      cellSizeCssPx: FINE_CHART_GRID_CELL_SIZE_PX,
+      verticalColor: '#778899',
+      horizontalColor: '#778899',
+    });
+    const { context, target, strokeAlphas } = createDrawTarget(1, 1);
+    primitive.paneViews()[0]!.renderer()!.draw(target as never);
+    expect(context.setLineDash.mock.calls).toEqual([[[]], [[]]]);
+    expect(strokeAlphas).toEqual([1, 1]);
   });
 
   it.each([[1, 1], [1.25, 1.25], [1.5, 1.5], [1.75, 1.75], [2, 2], [2, 1]])('keeps Fine cells, pixel-snapped strokes, crisp MT5 dots, and equal visual opacity across desktop and laptop pixel ratios %s/%s', (horizontalPixelRatio, verticalPixelRatio) => {

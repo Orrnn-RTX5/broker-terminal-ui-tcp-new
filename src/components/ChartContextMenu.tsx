@@ -98,7 +98,6 @@ interface ChartContextMenuProps {
     gridLineStyle?: ChartGridLineStyle;
     showVolumes?: boolean;
     autoScroll?: boolean;
-    chartShift?: boolean;
     showTradeLevels?: boolean;
     showTradeHistory?: boolean;
     showTradeHistoryLine?: boolean;
@@ -112,7 +111,6 @@ interface ChartContextMenuProps {
     onChangeGridLineStyle?: (style: ChartGridLineStyle) => void;
     onToggleVolumes: () => void;
     onToggleAutoScroll: () => void;
-    onToggleChartShift: () => void;
     onToggleTradeLevels?: () => void;
     onToggleTradeHistory?: () => void;
     onToggleTradeHistoryLine?: () => void;
@@ -499,7 +497,6 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
     gridLineStyle = 'dashed',
     showVolumes = false,
     autoScroll = false,
-    chartShift = false,
     showTradeLevels = true,
     showTradeHistory = true,
     showTradeHistoryLine = true,
@@ -513,7 +510,6 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
     onChangeGridLineStyle,
     onToggleVolumes,
     onToggleAutoScroll,
-    onToggleChartShift,
     onToggleTradeLevels,
     onToggleTradeHistory,
     onToggleTradeHistoryLine,
@@ -687,8 +683,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
             <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                padding: '4px 12px 4px 10px',
+                padding: '4px 12px',
                 minHeight: 26,
                 fontSize: 11.5,
                 fontWeight: 600,
@@ -698,7 +693,6 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                 borderBottom: `1px solid ${C_BORDER}`,
                 marginBottom: 2,
             }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ctx-active-bg, #3b82f6)', boxShadow: '0 0 8px var(--ctx-active-bg, rgba(59,130,246,0.6))' }} />
                 {symbol}
             </div>
 
@@ -955,6 +949,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
             <MenuItem
                 icon={<AreaChart size={13} strokeWidth={1.5} style={{ color: currentChartType === 'area' ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
                 label={tr("Area Chart")}
+                shortcut="Alt+4"
                 checked={currentChartType === 'area'}
                 active={currentChartType === 'area'}
                 onClick={() => closeThen(() => { onChangeChartType('area'); })}
@@ -1105,14 +1100,6 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
                 label={tr("Auto Scroll")}
                 checked={autoScroll}
                 onClick={() => closeThen(() => { onToggleAutoScroll(); })}
-            />
-
-            {/* ── Chart Shift ── */}
-            <MenuItem
-                icon={<AlignJustify size={13} strokeWidth={1.5} style={{ color: chartShift ? 'var(--ctx-blue, #74b9ff)' : 'var(--ctx-icon, #8a8a9a)' }} />}
-                label={tr("Chart Shift")}
-                checked={chartShift}
-                onClick={() => closeThen(() => { onToggleChartShift(); })}
             />
 
             <MenuSeparator />

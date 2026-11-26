@@ -37,12 +37,12 @@ export const FloatingTerminalPanels = ({ panels, onCloseBulk, onPlaceOrder }: Fl
           height: panels.domSize.h,
           minWidth: 360,
           minHeight: 200,
-          borderRadius: 10,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
-          background: '#131316',
+          borderRadius: 6,
+          boxShadow: '0 14px 38px rgba(0, 0, 0, 0.58), 0 0 0 1px var(--border-primary, #444444)',
+          background: 'var(--bg-secondary, #1f1f1f)',
         }}
       >
-        <Suspense fallback={<div className="h-full w-full bg-[#131316]" />}>
+        <Suspense fallback={<div className="h-full w-full" style={{ background: 'var(--bg-secondary, #1f1f1f)' }} />}>
           <LazyDepthOfMarket
             symbol={panels.domSymbol}
             onClose={() => panels.setShowDOM(false)}
@@ -60,10 +60,23 @@ export const FloatingTerminalPanels = ({ panels, onCloseBulk, onPlaceOrder }: Fl
         ))}
         <div
           onMouseDown={(event) => panels.handleDomResizeMouseDown(event, 'se')}
-          style={{ position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize', zIndex: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '0 0 10px 0' }}
+          style={{
+            position: 'absolute',
+            bottom: 1,
+            right: 1,
+            width: 11,
+            height: 11,
+            cursor: 'nwse-resize',
+            zIndex: 11,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '0 0 5px 0',
+            color: 'var(--text-tertiary, #66666e)',
+          }}
         >
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
-            <path d="M7 1L1 7M7 4L4 7" stroke="rgba(255,255,255,0.28)" strokeWidth="1.25" strokeLinecap="round" />
+          <svg width="7" height="7" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+            <path d="M7 1.5L1.5 7M7 4.5L4.5 7" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
         </div>
       </div>

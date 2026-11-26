@@ -882,6 +882,7 @@ export const TradingChart = React.memo(function TradingChart({
     renderLivePriceOnCanvas,
     repaintLivePriceOverlayFromCurrentPrice,
     requestLivePriceCanvasUpdateRef,
+    refreshSupplementalPriceLines,
     syncSupplementalPriceLines,
     useEnterpriseLightPricePaletteRef,
   } = useTradingChartLivePriceOverlay({
@@ -1171,6 +1172,15 @@ export const TradingChart = React.memo(function TradingChart({
   useLayoutEffect(() => {
     chartThemeRef.current = chartTheme;
   }, [chartTheme]);
+
+  useEffect(() => {
+    refreshSupplementalPriceLines();
+  }, [
+    chartColors,
+    chartSettings.showAskPriceLine,
+    chartSettings.showLastPriceLine,
+    refreshSupplementalPriceLines,
+  ]);
 
   useEffect(() => {
     const wrapper = containerRef.current?.closest<HTMLElement>('.rtx-chart-wrapper') ?? null;
@@ -3586,7 +3596,6 @@ useTradingChartTradeRuntime({
     handleCtxTimeframeChange,
     handleCtxToggleAutoScroll,
     handleCtxToggleBackgroundLogo,
-    handleCtxToggleChartShift,
     handleCtxToggleGrid,
     handleCtxToggleOHLC,
     handleCtxToggleTradeHistory,
@@ -3618,7 +3627,6 @@ useTradingChartTradeRuntime({
     resetViewportOnRefresh: handleResetViewportOnRefresh,
     setBackgroundImageDialogOpen,
     setCtxAutoScroll,
-    setCtxChartShift,
     setCtxMenu,
     setCtxShowTradeHistory,
     setCtxShowTradeHistoryLine,
@@ -3644,7 +3652,6 @@ return (
       closeCtxMenu={closeCtxMenu}
       containerRef={containerRef}
       ctxAutoScroll={ctxAutoScroll}
-      ctxChartShift={ctxChartShift}
       ctxMenu={ctxMenu}
       ctxShowTradeHistory={ctxShowTradeHistory}
       ctxShowTradeHistoryLine={ctxShowTradeHistoryLine}
@@ -3665,7 +3672,6 @@ return (
       handleCtxTimeframeChange={handleCtxTimeframeChange}
       handleCtxToggleAutoScroll={handleCtxToggleAutoScroll}
       handleCtxToggleBackgroundLogo={handleCtxToggleBackgroundLogo}
-      handleCtxToggleChartShift={handleCtxToggleChartShift}
       handleCtxToggleGrid={handleCtxToggleGrid}
       handleCtxToggleOHLC={handleCtxToggleOHLC}
       handleCtxToggleTradeHistory={handleCtxToggleTradeHistory}

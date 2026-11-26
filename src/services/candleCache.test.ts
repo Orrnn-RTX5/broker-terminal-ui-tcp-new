@@ -199,4 +199,42 @@ describe('candleCache', () => {
     expect(cached?.oldestTime).toBe(6);
     expect(cached?.newestTime).toBe(MAX_CANDLES_PER_CACHE_ENTRY + 5);
   });
+
+  it('finds the latest matching entry for symbol and timeframe while preferring backend history', () => {
+    const derivedKey = candleCache.createKey({ ...baseKeyParts, timeframe: 'D1', limit: 30 });
+    const backendKey = candleCache.createKey({ ...baseKeyParts, timeframe: 'D1', limit: 500 });
+    const otherScopeKey = candleCache.createKey({
+      ...baseKeyParts,
+      scope: 'https://other.example/api/v2',
+      timeframe: 'D1',
+      limit: 500,
+    });
+
+    candleCache.setLatest(derivedKey, [candle(86_400, 10)], {
+      ...baseKeyParts,
+      timeframe: 'D1',
+      limit: 30,
+      source: 'derived-m1',
+    });
+    candleCache.setLatest(otherScopeKey, [candle(86_400, 99)], {
+      ...baseKeyParts,
+      scope: 'https://other.example/api/v2',
+      timeframe: 'D1',
+      limit: 500,
+      source: 'backend',
+    });
+
+    expect(candleCache.getLatestForSymbolTimeframe(baseKeyParts.scope, 'eurusd', 'd1')?.candles[0].close).toBe(10);
+
+    candleCache.setLatest(backendKey, [candle(86_400, 20), candle(172_800, 21)], {
+      ...baseKeyParts,
+      timeframe: 'D1',
+      limit: 500,
+      source: 'backend',
+    });
+
+    const match = candleCache.getLatestForSymbolTimeframe(baseKeyParts.scope, 'EURUSD', 'D1');
+    expect(match?.source).toBe('backend');
+    expect(match?.candles.map(c => c.close)).toEqual([20, 21]);
+  });
 });

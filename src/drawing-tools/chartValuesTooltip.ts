@@ -249,7 +249,7 @@ export const installChartValuesTooltip = (
   const onPointerDown = (event: PointerEvent) => {
     const cursor = useChartCursorStore.getState();
     if (event.button !== 0 || event.defaultPrevented || !cursor.valuesTooltipOnLongPress) return;
-    if (cursor.mode === 'demonstration' || cursor.mode === 'magic' || cursor.mode === 'eraser') return;
+    if (cursor.mode === 'demonstration' || cursor.mode === 'eraser') return;
     if (wrapper.dataset.trendDrawingActive === 'true') return;
     if (event.target instanceof Element && event.target.closest(PRESS_IGNORE)) return;
     endHold();

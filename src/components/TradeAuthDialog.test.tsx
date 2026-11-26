@@ -68,7 +68,7 @@ describe('TradeAuthDialog', () => {
     const view = render(<TradeAuthDialog isOpen intent={null} onClose={vi.fn()} onAuthenticated={vi.fn()} />);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/verifying.*broker configuration/i)).not.toBeInTheDocument();
-    const login = screen.getByRole('button', { name: /log in to live account/i });
+    const login = screen.getByRole('button', { name: /log in to real account/i });
     expect(login).toBeEnabled();
     expect(screen.getByRole('button', { name: /create demo account/i })).toBeEnabled();
     fireEvent.click(login);
@@ -89,7 +89,7 @@ describe('TradeAuthDialog', () => {
     (window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, string> }).__RTX_RUNTIME_CONFIG__!.API_HOST = '';
     const view = render(<TradeAuthDialog isOpen intent={null} onClose={vi.fn()} onAuthenticated={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveTextContent(/API_HOST/i);
-    expect(screen.getByRole('button', { name: /log in to live account/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /log in to real account/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /create demo account/i })).toBeDisabled();
     expect(screen.queryByText(/verifying.*broker configuration/i)).not.toBeInTheDocument();
     view.unmount();
@@ -99,12 +99,12 @@ describe('TradeAuthDialog', () => {
     let resolveDirectory!: (brokers: Array<{ broker_id: string; enabled: boolean }>) => void;
     vi.mocked(loadBrokerDirectory).mockReturnValue(new Promise(resolve => { resolveDirectory = resolve; }));
     const view = render(<TradeAuthDialog isOpen intent={null} onClose={vi.fn()} onAuthenticated={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /log in to live account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /log in to real account/i }));
     expect(await screen.findByPlaceholderText(/search broker/i)).toBeInTheDocument();
     await act(async () => { resolveDirectory([{ broker_id: 'runtime-broker', enabled: false }]); });
     expect(screen.queryByPlaceholderText(/search broker/i)).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(/unavailable for account access/i);
-    expect(screen.getByRole('button', { name: /log in to live account/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /log in to real account/i })).toBeDisabled();
     view.unmount();
   });
 
@@ -207,7 +207,7 @@ describe('TradeAuthDialog', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /log in to live account/i }));
+    await user.click(screen.getByRole('button', { name: /log in to real account/i }));
     const serverInput = await screen.findByPlaceholderText(/search broker/i);
     expect(serverInput).toHaveAttribute('readonly');
     await waitFor(() => expect(serverInput).toHaveValue('Runtime Broker'));
@@ -410,7 +410,7 @@ describe('TradeAuthDialog', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: 'Account required to trade' });
-    const loginButton = screen.getByRole('button', { name: /log in to live account/i });
+    const loginButton = screen.getByRole('button', { name: /log in to real account/i });
     const demoButton = screen.getByRole('button', { name: /create demo account/i });
 
     expect(document.activeElement).toBe(dialog);

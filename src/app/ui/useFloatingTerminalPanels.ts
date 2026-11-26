@@ -37,8 +37,8 @@ const resolveDefaultDomSize = (): Size => {
     return { w: 520, h: 540 };
   }
   const compactLaptop = vw <= 1440 || vh <= 780;
-  const targetW = compactLaptop ? 452 : 476;
-  const targetH = compactLaptop ? 368 : 416;
+  const targetW = compactLaptop ? 468 : 498;
+  const targetH = compactLaptop ? 380 : 426;
   const chartRect = resolveChartPanelRect();
   if (chartRect) {
     return {
