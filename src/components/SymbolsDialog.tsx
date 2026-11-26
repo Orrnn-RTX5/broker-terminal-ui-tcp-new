@@ -13,6 +13,7 @@ import { isShortcutOwnedBy, shouldIgnoreShortcutEvent } from '../services/keyboa
 import { getAccessToken } from '../services/brokerSession';
 import { getBrokerConfigurationError, isConfiguredBrokerEndpoint } from '../config/backendTarget.js';
 import { resolveSpecDigits } from '../utils/symbolUtils';
+import { readSpecificationSectorIndustry } from '../utils/symbolSectorIndustry';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,8 +32,8 @@ interface SymbolSpec {
   ask?: number;
   symbol?: string;
   // Extended spec fields
-  sector?: string;
-  industry?: string;
+  /** The catalogue row this symbol came from. Sector and Industry are read from it only for the selected symbol. */
+  specSource?: unknown;
   spread?: string | number;
   stopsLevel?: number | null;
   marginCurrency?: string;
@@ -132,26 +133,6 @@ const isExpiredSymbol = (value: unknown): boolean => {
   return Number.isFinite(parsed) && parsed < Date.now();
 };
 
-const SYMBOL_SECTOR_MAP: Record<string, { sector: string; industry: string }> = {
-  XAU: { sector: 'Commodities', industry: 'Precious Metals' },
-  XAG: { sector: 'Commodities', industry: 'Precious Metals' },
-  BTC: { sector: 'Crypto', industry: 'Digital Assets' },
-  ETH: { sector: 'Crypto', industry: 'Digital Assets' },
-  EUR: { sector: 'Forex', industry: 'Major Pairs' },
-  GBP: { sector: 'Forex', industry: 'Major Pairs' },
-  USD: { sector: 'Forex', industry: 'Major Pairs' },
-  OIL: { sector: 'Commodities', industry: 'Energy' },
-  NAS: { sector: 'Indices', industry: 'US Indices' },
-  SPX: { sector: 'Indices', industry: 'US Indices' },
-};
-
-const getSymbolSector = (sym: string) => {
-  for (const prefix of Object.keys(SYMBOL_SECTOR_MAP)) {
-    if (sym.startsWith(prefix)) return SYMBOL_SECTOR_MAP[prefix];
-  }
-  return { sector: 'Forex', industry: 'Currency Pairs' };
-};
-
 const getAuthHeaders = (): HeadersInit => {
   const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -213,7 +194,6 @@ const formatSpecPrice = (value: number, digits: unknown): string => {
 const normalizeInstrument = (raw: any): SymbolSpec | null => {
   const name = String(raw?.symbol ?? raw?.name ?? raw?.id ?? '').trim();
   if (!name) return null;
-  const sector = getSymbolSector(name);
   // TERM-DIGITS-WL: broker spec only. Unknown digits/tick/contract stay null
   // (rendered raw or as an honest unknown), never a 5-digit default.
   const digits = resolveSpecDigits(raw?.digits);
@@ -240,7 +220,7 @@ const normalizeInstrument = (raw: any): SymbolSpec | null => {
     tradingEnabled: Boolean(raw?.enabled ?? raw?.trading_enabled ?? raw?.tradingEnabled ?? true),
     bid: Number.isFinite(bid) ? bid : undefined,
     ask: Number.isFinite(ask) ? ask : undefined,
-    ...sector,
+    specSource: raw,
     spread: raw?.spread ?? 'floating',
     stopsLevel: parsedStopsLevel !== null && Number.isFinite(parsedStopsLevel) && parsedStopsLevel >= 0
       ? Math.trunc(parsedStopsLevel)
@@ -908,12 +888,19 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
     nextItem.focus();
   };
 
+  // Sector and Industry come from the selected row only. Reading them for every row on load made a long list pay for
+  // symbols that are never shown. The memo keeps one result per selected row, so re-renders do not read it again.
+  const selectedSectorIndustry = useMemo(
+    () => (selectedSymbol ? readSpecificationSectorIndustry(selectedSymbol.specSource) : null),
+    [selectedSymbol],
+  );
+
   if (!isOpen) return null;
 
   // ── Spec fields ───────────────────────────────────────────────────────────
   const specFields = selectedSymbol ? [
-    { label: 'Sector', value: selectedSymbol.sector || 'Forex', color: 'text-[var(--text-primary)]' },
-    { label: 'Industry', value: selectedSymbol.industry || 'Currency Pairs', color: 'text-[var(--text-primary)]', alignRight: true },
+    { label: 'Sector', value: selectedSectorIndustry?.sector || '—', color: 'text-[var(--text-primary)]' },
+    { label: 'Industry', value: selectedSectorIndustry?.industry || '—', color: 'text-[var(--text-primary)]', alignRight: true },
     { label: 'Digits', value: selectedSymbol.digits ?? '—', color: 'text-[var(--text-primary)]' },
     { label: 'Contract size', value: selectedSymbol.contractSize === null ? '—' : `${selectedSymbol.contractSize} ${selectedSymbol.marginCurrency || ''}`.trim(), color: 'text-[var(--text-primary)]' },
     { label: 'Spread', value: selectedSymbol.spread || 'floating', color: 'text-[var(--text-primary)]' },

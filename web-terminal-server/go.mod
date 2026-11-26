@@ -7,6 +7,6 @@ require (
 	rtx5-tcp-protocol v0.0.0
 )
 
-require golang.org/x/crypto v0.36.0 // indirect
+require golang.org/x/crypto v0.52.0 // indirect
 
 replace rtx5-tcp-protocol => ../pkg/rtx5-tcp-protocol

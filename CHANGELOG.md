@@ -1,5 +1,11 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.15] - 2026-11-26 (VERSION file; web terminal)
+### Changed
+- Symbols and Symbol specification dialogs: Sector and Industry now come from the broker's symbol specification. The old built-in symbol-name guesses are removed; an unknown sector or industry shows '—'. The Symbols dialog loads faster because it no longer pulls in the specification dialog code.
+### Security
+- Go modules (web terminal server, desktop clients, OTA packager, protocol package): golang.org/x/crypto upgraded to v0.52.0.
+
 ## [1.2.13] - 2026-11-26 (VERSION file; web terminal)
 ### Added
 - Web terminal one-click login (SSO): a manager-issued one-time link opens the terminal already logged in to the client account. The one-time token is read only after the broker checks pass, and is never stored. Needs backend 1.30.0 or later.

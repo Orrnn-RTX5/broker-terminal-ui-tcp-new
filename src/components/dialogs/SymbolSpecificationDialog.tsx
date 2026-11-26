@@ -2,6 +2,14 @@ import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useFloatingPanelDrag } from '../../hooks/useFloatingPanelDrag';
 import i18n from '../../i18n';
 import { normalizeSymbolDescriptionText, resolveSymbolDescription } from '../../utils/symbolDescription';
+import {
+  asRecord,
+  collectSpecificationRecords,
+  normalizeSpecificationKey,
+  readRaw,
+  readString,
+  readSpecificationSectorIndustry,
+} from '../../utils/symbolSectorIndustry';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -214,88 +222,6 @@ interface DisplayRow {
   tone?: 'default' | 'positive' | 'negative';
   kind?: 'text' | 'integer' | 'decimal' | 'enum' | 'calendar';
 }
-
-const NESTED_SPECIFICATION_KEYS = [
-  'brokerSpecification',
-  'instrument',
-  'specification',
-  'spec',
-  'contract',
-  'trading_conditions',
-  'tradingConditions',
-  'volume',
-  'costs',
-  'metadata',
-  'details',
-] as const;
-
-const asRecord = (value: unknown): Record<string, unknown> | null => (
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
-);
-
-const normalizeSpecificationKey = (value: string): string => value
-  .trim()
-  .toLowerCase()
-  .replace(/^symbol[_-]?/, '')
-  .replace(/[^a-z0-9]/g, '');
-
-const collectSpecificationRecords = (value: unknown): Record<string, unknown>[] => {
-  const root = asRecord(value);
-  if (!root) return [];
-
-  const records: Record<string, unknown>[] = [];
-  const seen = new Set<Record<string, unknown>>([root]);
-  const visit = (record: Record<string, unknown>, depth: number) => {
-    // Rich nested broker snapshots are authoritative over normalized catalog
-    // fields on their wrapper. Traverse them first and keep the walk bounded.
-    if (depth < 3) {
-      NESTED_SPECIFICATION_KEYS.forEach((key) => {
-        const nested = asRecord(record[key]);
-        if (!nested || seen.has(nested)) return;
-        seen.add(nested);
-        visit(nested, depth + 1);
-      });
-    }
-    records.push(record);
-  };
-  visit(root, 0);
-
-  return records;
-};
-
-const readRaw = (
-  records: readonly Record<string, unknown>[],
-  keys: readonly string[],
-): unknown => {
-  for (const record of records) {
-    for (const key of keys) {
-      const value = record[key];
-      if (value !== undefined && value !== null && value !== '') return value;
-    }
-
-    // Some MT5 adapters expose the native SYMBOL_* property names while the
-    // HTTP catalog uses snake_case or camelCase. Match those spellings without
-    // making the rest of the parser depend on a particular adapter.
-    const normalizedKeys = new Set(keys.map(normalizeSpecificationKey));
-    for (const [key, value] of Object.entries(record)) {
-      if (value === undefined || value === null || value === '') continue;
-      if (normalizedKeys.has(normalizeSpecificationKey(key))) return value;
-    }
-  }
-  return undefined;
-};
-
-const readString = (
-  records: readonly Record<string, unknown>[],
-  keys: readonly string[],
-): string | null => {
-  const value = readRaw(records, keys);
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed || null;
-};
 
 const readNumber = (
   records: readonly Record<string, unknown>[],
@@ -1015,6 +941,7 @@ export const buildSymbolSpecificationSnapshot = (
   const profitCurrency = readString(records, ['currency_profit', 'currencyProfit', 'profit_currency', 'profitCurrency']);
   const marginCurrency = readString(records, ['currency_margin', 'currencyMargin', 'margin_currency', 'marginCurrency']);
   const depositCurrency = readString(records, ['currency_deposit', 'currencyDeposit', 'deposit_currency', 'depositCurrency', 'account_currency', 'accountCurrency']);
+  const sectorIndustry = readSpecificationSectorIndustry(instrument);
 
   return {
     description: readSpecificationDescription(identityRecords),
@@ -1024,8 +951,8 @@ export const buildSymbolSpecificationSnapshot = (
     category: readString(records, ['category', 'asset_class', 'assetClass', 'type']),
     exchange: readString(records, ['exchange', 'exchange_name', 'exchangeName', 'exchange_id', 'exchangeId']),
     cfi: readString(records, ['cfi', 'classification_of_financial_instruments', 'classificationOfFinancialInstruments']),
-    sector: readString(records, ['sector', 'sector_name', 'sectorName']),
-    industry: readString(records, ['industry', 'industry_name', 'industryName']),
+    sector: sectorIndustry.sector,
+    industry: sectorIndustry.industry,
     country: readString(records, ['country', 'country_name', 'countryName']),
     digits: digits === null ? null : Math.max(0, Math.min(12, Math.trunc(digits))),
     spread: readNumber(records, ['spread', 'spread_points', 'spreadPoints']),
