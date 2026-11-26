@@ -95,7 +95,7 @@ type TabType = 'Toolbox' | 'Trade' | 'Exposure' | 'History' | 'News' | 'Mailbox'
 const TABS: { id: TabType; locked?: boolean }[] = [
   { id: 'Trade' },
   { id: 'History' },
-  { id: 'Exposure' },
+  { id: 'Exposure', locked: true },
   { id: 'Toolbox' },
   { id: 'News' },
   { id: 'Mailbox', locked: true },

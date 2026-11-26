@@ -27,7 +27,7 @@ export interface ChartValuesTooltipSource {
   timeframe: string;
   /** Broker price precision; null when unpublished (values render raw). */
   digits: number | null;
-  offsetSeconds?: number;
+  offsetSeconds?: number | ((timeSeconds: number) => number);
   candles: readonly Candle[];
   clientX: number;
   chartLeft: number;
@@ -58,12 +58,15 @@ export const buildChartValuesTooltip = (source: ChartValuesTooltipSource): Value
   const time = source.coordinateToTime(source.clientX - source.chartLeft);
   if (time === null) return null;
   const candle = nearestCandle(source.candles, time);
+  const resolvedOffsetSeconds = candle
+    ? (typeof source.offsetSeconds === 'function' ? source.offsetSeconds(candle.time) : (source.offsetSeconds ?? 0))
+    : 0;
   const snapshot = createChartDataSnapshot(
     candle,
     source.symbol,
     source.timeframe,
     source.digits,
-    source.offsetSeconds ?? 0,
+    resolvedOffsetSeconds,
   );
   if (!snapshot || !candle) return null;
   // TERM-DIGITS-WL: broker digits only; unknown precision renders raw

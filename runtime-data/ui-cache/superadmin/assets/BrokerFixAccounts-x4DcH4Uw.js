@@ -1,0 +1,1 @@
+import{Gt as e,qt as t}from"./index-MiARzmFH.js";import n from"./MarketDataHub-Cgdu0Nc2.js";t();var r=e();function i(){return(0,r.jsx)(n,{brokerFixAccountsMode:!0})}export{i as default};

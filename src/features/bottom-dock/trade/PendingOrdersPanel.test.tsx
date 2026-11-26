@@ -239,4 +239,23 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
     expect(screen.queryByText('SELL_LIMIT')).toBeNull();
     expect(screen.queryByText('SELL_STOP_LIMIT')).toBeNull();
   });
+
+  it('uses neutral button background without red fill on Cancel All and Cancel row buttons', () => {
+    render(<PendingOrdersPanel onModifyOrder={vi.fn()} onCancelOrder={vi.fn()} />);
+
+    const cancelAllBtn = document.querySelector('.rtx-pending-bulk-btn--all') as HTMLButtonElement | null;
+    const cancelRowBtn = document.querySelector('.rtx-pending-row-btn--cancel') as HTMLButtonElement | null;
+
+    expect(cancelAllBtn).not.toBeNull();
+    expect(cancelAllBtn?.className).toContain('bg-zinc-800/75');
+    expect(cancelAllBtn?.className).toContain('border-zinc-700/80');
+    expect(cancelAllBtn?.className).not.toContain('bg-[#ff5858]/15');
+    expect(cancelAllBtn?.className).not.toContain('border-[#ff5858]/50');
+
+    expect(cancelRowBtn).not.toBeNull();
+    expect(cancelRowBtn?.className).toContain('bg-zinc-800/80');
+    expect(cancelRowBtn?.className).toContain('border-zinc-600/60');
+    expect(cancelRowBtn?.className).not.toContain('bg-[#ff5858]/15');
+    expect(cancelRowBtn?.className).not.toContain('border-[#ff5858]/50');
+  });
 });

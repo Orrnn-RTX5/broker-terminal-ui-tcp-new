@@ -125,4 +125,58 @@ describe('imperative chart resources during effect replay', () => {
     expect(replacement.remove).not.toHaveBeenCalled();
     expect(options.chartRef.current).toBe(replacement);
   });
+
+  it('formats SquareChartGridPrimitive bottom axis ticks in local browser time for intraday charts', () => {
+    vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(-330);
+    const hostSeries = { attachPrimitive: vi.fn(), detachPrimitive: vi.fn() };
+    const utcSec = Math.floor(Date.UTC(2026, 10, 26, 4, 54, 0) / 1000);
+    const scale = {
+      coordinateToTime: vi.fn((coordinate: number) => (coordinate === 0 ? utcSec - 1200 : utcSec) as never),
+      subscribeSizeChange: vi.fn(),
+      subscribeVisibleLogicalRangeChange: vi.fn(),
+      unsubscribeSizeChange: vi.fn(),
+      unsubscribeVisibleLogicalRangeChange: vi.fn(),
+    };
+    const chart = {
+      addSeries: vi.fn(() => hostSeries),
+      options: () => ({
+        layout: { textColor: '#ccc', fontSize: 12, fontFamily: 'Arial', background: { color: '#000' } },
+        timeScale: { borderColor: '#333' },
+      }),
+      timeScale: () => scale,
+      subscribeCrosshairMove: vi.fn(),
+      unsubscribeCrosshairMove: vi.fn(),
+      remove: vi.fn(),
+    };
+    vi.mocked(createChartEx).mockReturnValue(chart as unknown as ReturnType<typeof createChartEx>);
+
+    const options = createOptions();
+    options.chartSettings = { showGrid: true, gridType: 'mt5' } as Options['chartSettings'];
+    options.chartSettingsRef = { current: options.chartSettings };
+    renderHook(() => useTradingChartInitialization(options));
+
+    const primitive = options.squareGridPrimitiveRef.current!;
+    const context = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 5 })),
+      font: '',
+      fillStyle: '',
+      textBaseline: '',
+      textAlign: '',
+    };
+    const target = {
+      useMediaCoordinateSpace: (draw: (scope: unknown) => void) =>
+        draw({ context, mediaSize: { width: 160, height: 26 } }),
+    };
+
+    primitive.timeAxisPaneViews()[0]!.renderer()!.draw(target as never);
+
+    expect(context.fillText.mock.calls.map(([text]) => text)).toEqual([
+      '26 Nov 2026',
+      '26 Nov 10:24',
+    ]);
+  });
 });

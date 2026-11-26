@@ -124,7 +124,7 @@ describe('Toolbox header close control', () => {
             expect(onClose).toHaveBeenCalledTimes(sectionsClosed);
         }
 
-        expect(sectionsClosed).toBe(7);
+        expect(sectionsClosed).toBe(6);
         expect(openSpy).not.toHaveBeenCalled();
         expect(onCloseBulk).not.toHaveBeenCalled();
         expect(onClosePosition).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe('Toolbox header close control', () => {
         expect(onCancelOrder).not.toHaveBeenCalled();
     });
 
-    it('removes Historical Data, Articles, Code Base, and Experts, opens Company in-app like News, and keeps Mailbox/Calendar/Alerts locked', async () => {
+    it('removes Historical Data, Articles, Code Base, and Experts, opens Company in-app like News, and keeps Exposure/Mailbox/Calendar/Alerts locked', async () => {
         const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
         const { container } = render(
             <BottomDock
@@ -147,6 +147,7 @@ describe('Toolbox header close control', () => {
         }
 
         const lockedTabs = [
+            'Exposure',
             'Mailbox',
             'Calendar',
             'Alerts',

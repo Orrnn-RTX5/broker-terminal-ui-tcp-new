@@ -16,6 +16,8 @@ interface LabelMeasurement {
   width: number;
 }
 
+export type CrosshairTimeOffset = number | ((time: Time) => number);
+
 export interface UseCrosshairOptions {
   chartRef: RefObject<IChartApi | null>;
   seriesRef: RefObject<ISeriesApi<any> | null>;
@@ -23,7 +25,7 @@ export interface UseCrosshairOptions {
   enabled: boolean;
   digits?: number | null;
   timeframe?: string;
-  brokerOffsetSeconds?: number;
+  brokerOffsetSeconds?: CrosshairTimeOffset;
   marker?: 'cross' | 'dot';
 }
 
@@ -209,7 +211,10 @@ export function useCrosshair({
         if (time === null) {
           timeLabel.style.opacity = '0';
         } else {
-          const text = formatTradingChartCrosshairLabel(time as Time, latestTimeframe, latestOffset);
+          const resolvedOffset = typeof latestOffset === 'function'
+            ? latestOffset(time as Time)
+            : latestOffset;
+          const text = formatTradingChartCrosshairLabel(time as Time, latestTimeframe, resolvedOffset);
           if (timeLabel.textContent !== text) timeLabel.textContent = text;
           const labelWidth = measureTimeLabel(timeLabel);
           timeLabel.style.opacity = '1';

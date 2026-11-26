@@ -37,9 +37,10 @@ interface HarnessProps {
   enabled: boolean;
   renderVersion?: number;
   initialCursor?: string;
+  brokerOffsetSeconds?: number | ((time: Time) => number);
 }
 
-function Harness({ chartRef, seriesRef, enabled, initialCursor }: HarnessProps) {
+function Harness({ chartRef, seriesRef, enabled, initialCursor, brokerOffsetSeconds }: HarnessProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const refs = useCrosshair({
     chartRef,
@@ -48,6 +49,7 @@ function Harness({ chartRef, seriesRef, enabled, initialCursor }: HarnessProps) 
     enabled,
     digits: 2,
     timeframe: 'M1',
+    brokerOffsetSeconds,
   });
 
   return (
@@ -397,5 +399,23 @@ describe('useCrosshair dirty rendering', () => {
     expect(requestFrame).not.toHaveBeenCalled();
     view.unmount();
     expect(container.style.cursor).toBe('crosshair');
+  });
+
+  it('resolves dynamic local display offset callbacks for crosshair time labels', () => {
+    const fixture = createChart();
+    const utcTimestamp = Math.floor(Date.UTC(2026, 10, 26, 5, 14, 0) / 1000) as Time;
+    fixture.timeScale.coordinateToTime.mockReturnValue(utcTimestamp);
+    const view = render(
+      <Harness
+        chartRef={{ current: fixture.chart as unknown as IChartApi }}
+        seriesRef={{ current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any> }}
+        enabled
+        brokerOffsetSeconds={() => 19_800}
+      />,
+    );
+    fireEvent.pointerMove(view.getByTestId('container'), { clientX: 50, clientY: 60 });
+    flushFrames();
+
+    expect(view.getByTestId('time-label').textContent).toBe('26 Nov 2026 10:44');
   });
 });

@@ -69,7 +69,11 @@ describe('TopToolbar primary command cluster', () => {
 
   it('uses restrained tokenized states in dark, light, and desktop chrome', () => {
     expect(themeCss).toMatch(/\.rtx-toolbar-action,[\s\S]*\.rtx-toolbar-icon-button \{[\s\S]*height: 32px;[\s\S]*transition: background-color 140ms ease/);
-    expect(themeCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent;[^}]*border-color: transparent;[^}]*border-radius: 0;/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent;[^}]*border-color: transparent;[^}]*border-radius: var\(--radius-sm\);/);
+    expect(themeCss).toMatch(/\.rtx-toolbar-action:hover,[\s\S]*?\.rtx-toolbar-action--primary:focus-visible \{[^}]*background: var\(--bg-quaternary\);[^}]*border-color: transparent;/);
+    expect(themeCss).not.toMatch(/\.rtx-toolbar-action--primary:hover[^}]*border-color: var\(--border-tertiary\);/);
+    expect(timeframePickerSource).toContain('hover:border-transparent hover:bg-[var(--bg-quaternary)] hover:text-zinc-100');
+    expect(timeframePickerSource).not.toContain('hover:border-zinc-700');
     expect(advancedCss).toMatch(/\.rtx-toolbar-action--primary \{[^}]*background: transparent !important;[^}]*border-color: transparent !important;/);
     expect(themeCss).toMatch(/\.rtx-toolbar-icon-button\[role='radio'\]\[aria-checked='true'\] \{[^}]*background: rgb\(59 130 246 \/ 0\.15\);[^}]*border-color: rgb\(59 130 246 \/ 0\.5\);[^}]*box-shadow: none;/);
     expect(themeCss).toMatch(/html\.rtx-desktop-shell-active \.rtx-desktop-command-row \.rtx-toolbar-icon-button:is\(\[role='radio'\]\[aria-checked='true'\], \[aria-pressed='true'\]\) \{[^}]*background: rgb\(59 130 246 \/ 0\.15\);[^}]*border-color: rgb\(59 130 246 \/ 0\.5\);[^}]*box-shadow: none;/);

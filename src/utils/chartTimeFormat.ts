@@ -101,6 +101,43 @@ const getTimeframeMetrics = (timeframe: string) => {
   };
 };
 
+const toUnixSecondsForTimezone = (time: Time | number): number | null => {
+  if (typeof time === 'number') {
+    return Number.isFinite(time) ? time : null;
+  }
+  if (typeof time === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(time)) return null;
+    const ms = Date.parse(time);
+    return Number.isFinite(ms) ? ms / 1000 : null;
+  }
+  return null;
+};
+
+/**
+ * Browser local UTC offset in seconds at the supplied instant (DST-aware).
+ * Negative-zero is normalized to 0 so UTC labels format cleanly.
+ */
+export const getLocalChartDisplayOffsetSeconds = (time?: Time | number): number => {
+  const unixSeconds = time === undefined ? Date.now() / 1000 : toUnixSecondsForTimezone(time);
+  if (unixSeconds === null || !Number.isFinite(unixSeconds)) return 0;
+  const offsetSeconds = -new Date(unixSeconds * 1000).getTimezoneOffset() * 60;
+  return offsetSeconds === 0 ? 0 : offsetSeconds;
+};
+
+/**
+ * Display offset for chart labels: intraday charts follow local browser time,
+ * while daily/weekly/monthly bars keep their calendar-date basis.
+ */
+export const getChartDisplayOffsetSeconds = (
+  time: Time | number | undefined,
+  timeframe: string,
+  brokerOffsetSeconds = 0,
+): number => (
+  getTimeframeMetrics(timeframe).isIntraday
+    ? getLocalChartDisplayOffsetSeconds(time)
+    : brokerOffsetSeconds
+);
+
 const toDisplayDate = (time: Time, brokerOffsetSeconds: number): Date | null => {
   const brokerOffsetMs = brokerOffsetSeconds * 1000;
 

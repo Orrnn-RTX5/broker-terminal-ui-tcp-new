@@ -76,7 +76,7 @@ export const TimeframePicker: React.FC<TimeframePickerProps> = ({
             : 'border-blue-500/50 bg-blue-500/15 text-blue-300'
           : advancedViewEnabled
             ? 'border-transparent bg-transparent text-[#667085] hover:border-[#d0d5dd] hover:bg-[#f9fafb] hover:text-[#344054]'
-            : 'border-transparent bg-transparent text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-100';
+            : 'border-transparent bg-transparent text-zinc-200 hover:border-transparent hover:bg-[var(--bg-quaternary)] hover:text-zinc-100';
 
         return (
           <button

@@ -2477,7 +2477,6 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
     const bottomTabs: Array<{ id: string; label: string; desc: string; keywords: string[] }> = [
       { id: 'trade', label: 'Trade Tab', desc: 'View and manage active positions, pending orders, balance, equity, and margin', keywords: ['trade tab', 'positions', 'open orders', 'pending orders', 'balance', 'equity', 'margin'] },
       { id: 'history', label: 'History Tab', desc: 'View historical trades, closed positions, deposit history, withdrawal history, profit/loss summary, and custom date exports', keywords: ['history tab', 'closed trades', 'deals', 'account history', 'deposit history', 'withdrawal history', 'statement', 'export'] },
-      { id: 'exposure', label: 'Exposure Tab', desc: 'Analyze portfolio net exposure by asset and currency with visual distribution', keywords: ['exposure', 'portfolio', 'currency exposure', 'risk'] },
       { id: 'toolbox', label: 'Toolbox Tab', desc: 'Calculate required margin, pip value, swap rates, and risk-based position size', keywords: ['toolbox', 'calculator', 'margin calculator', 'pip value', 'position size'] },
       { id: 'journal', label: 'Journal Tab', desc: 'Inspect real-time terminal activity, order execution telemetry, and connection status logs', keywords: ['journal', 'logs', 'activity log', 'execution log', 'errors'] },
     ];

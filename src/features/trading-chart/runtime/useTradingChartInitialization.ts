@@ -27,6 +27,7 @@ import { computePriceAxisDragRange } from '../../../utils/priceAxisDragZoom';
 import { createChartWheelSmoothing } from '../../../utils/chartWheelSmoothing';
 import {
   formatTradingChartTickLabel,
+  getChartDisplayOffsetSeconds,
   getTradingChartShiftRightOffset,
   getTradingChartTickMarkCharacterLength,
   shouldTradingChartFooterPromoteLeftEdgeDateLabel,
@@ -203,7 +204,11 @@ useChartInitializationLifetime(() => {
     // Footer tick steps follow the timeframe (M1 → 1m, M5 → 5m, ...).
     const timeScaleBehavior = new TradingChartTimeScaleBehavior({
       getTimeframe: () => timeScaleTimeframeRef.current,
-      getDisplayOffsetSeconds: () => brokerTimeOffsetSecRef.current,
+      getDisplayOffsetSeconds: (timeSeconds) => getChartDisplayOffsetSeconds(
+        timeSeconds,
+        timeScaleTimeframeRef.current,
+        brokerTimeOffsetSecRef.current,
+      ),
     });
     const gridRenderingOptions = getChartGridRenderingOptions(chartSettings, chartTheme);
     const chart = createChartEx(containerRef.current, timeScaleBehavior, {
@@ -311,7 +316,7 @@ useChartInitializationLifetime(() => {
           time,
           activeTimeframe,
           promoteDateLabel ? TickMarkType.DayOfMonth : TickMarkType.Time,
-          brokerTimeOffsetSecRef.current,
+          getChartDisplayOffsetSeconds(time, activeTimeframe, brokerTimeOffsetSecRef.current),
           { forceDateLabel: promoteDateLabel },
         );
       },

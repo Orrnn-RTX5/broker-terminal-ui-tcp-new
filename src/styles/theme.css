@@ -562,7 +562,7 @@ html:is(.rtx-skin-untitled-light, .theme-light) .rtx-toolbar-brand__logo {
 .rtx-toolbar-action--primary {
   background: transparent;
   border-color: transparent;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
 }
 
@@ -579,15 +579,12 @@ html:is(.rtx-skin-untitled-light, .theme-light) .rtx-toolbar-brand__logo {
 .rtx-toolbar-action:hover,
 .rtx-toolbar-action:focus-visible,
 .rtx-toolbar-icon-button:hover,
-.rtx-toolbar-icon-button:focus-visible {
-  background: var(--bg-quaternary);
-  border-color: var(--border-secondary);
-  color: var(--color-zinc-100, #f4f4f5);
-}
-
+.rtx-toolbar-icon-button:focus-visible,
 .rtx-toolbar-action--primary:hover,
 .rtx-toolbar-action--primary:focus-visible {
-  border-color: var(--border-tertiary);
+  background: var(--bg-quaternary);
+  border-color: transparent;
+  color: var(--color-zinc-100, #f4f4f5);
 }
 
 .rtx-toolbar-action:focus-visible,

@@ -46,6 +46,16 @@ describe('long-press values tooltip', () => {
     expect(buildChartValuesTooltip({
       symbol: 'XAUUSD', timeframe: 'M1', digits: 2, candles, clientX: 10, chartLeft: 0, coordinateToTime: () => null,
     })).toBeNull();
+    expect(buildChartValuesTooltip({
+      symbol: 'XAUUSD',
+      timeframe: 'M1',
+      digits: 2,
+      offsetSeconds: () => 19_800,
+      candles,
+      clientX: 40,
+      chartLeft: 10,
+      coordinateToTime: () => 200,
+    })?.subtitle).toContain('05:33:20');
   });
 
   it('renders raw values instead of zero decimals when broker digits are unknown (TERM-DIGITS-WL)', () => {

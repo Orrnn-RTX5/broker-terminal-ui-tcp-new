@@ -79,6 +79,8 @@ const calendarWeight = (current: Date, previous: Date): number => {
   return 0;
 };
 
+export type TimeScaleDisplayOffset = number | ((timeSeconds: number) => number);
+
 /**
  * Assigns tick weights so that every label level is evenly spaced in bars.
  *
@@ -91,7 +93,7 @@ const calendarWeight = (current: Date, previous: Date): number => {
 export const computeTradingChartTimeScaleWeights = (
   timesSec: readonly number[],
   levels: readonly TimeScaleLabelLevel[],
-  displayOffsetSec: number,
+  displayOffsetSec: TimeScaleDisplayOffset,
   startIndex: number,
   existingWeights: readonly number[],
 ): number[] => {
@@ -100,7 +102,10 @@ export const computeTradingChartTimeScaleWeights = (
   if (count === 0 || levels.length === 0) return weights;
   const from = Math.max(0, Math.min(startIndex, count));
 
-  const display = (index: number) => timesSec[index] + displayOffsetSec;
+  const resolveOffset = typeof displayOffsetSec === 'function'
+    ? displayOffsetSec
+    : () => displayOffsetSec;
+  const display = (index: number) => timesSec[index] + resolveOffset(timesSec[index]);
   const calendar = new Array<number>(count).fill(0);
   for (let index = Math.max(1, from); index < count; index++) {
     calendar[index] = calendarWeight(new Date(display(index) * 1000), new Date(display(index - 1) * 1000));
@@ -173,7 +178,7 @@ const DefaultTimeBehavior = defaultHorzScaleBehavior();
 
 export interface TradingChartTimeScaleBehaviorSource {
   getTimeframe: () => string;
-  getDisplayOffsetSeconds: () => number;
+  getDisplayOffsetSeconds: (timeSeconds?: number) => number;
 }
 
 /**
@@ -203,7 +208,7 @@ export class TradingChartTimeScaleBehavior extends DefaultTimeBehavior {
     const weights = computeTradingChartTimeScaleWeights(
       points.map(point => Number(this.key(point.time))),
       levels,
-      this.source.getDisplayOffsetSeconds() || 0,
+      (timeSeconds) => this.source.getDisplayOffsetSeconds(timeSeconds) || 0,
       startIndex,
       points.map(point => point.timeWeight as number),
     );

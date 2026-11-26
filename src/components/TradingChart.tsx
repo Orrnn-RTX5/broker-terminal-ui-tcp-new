@@ -72,7 +72,7 @@ import { ChartOverlayGeometryPrimitive } from '../utils/chartOverlayGeometryPrim
 import { getRawQuoteSides } from '../utils/spreadMarkup';
 import { getEffectiveChartColors, useChartSettingsStore } from '../store/useChartSettingsStore';
 import { defaultChartObjectState, getChartObjectState, useChartObjectStateStore } from '../store/useChartObjectStateStore';
-import { getTradingChartDefaultVisibleBars, getTradingChartShiftRightOffset, formatTradingChartCrosshairLabel, formatTradingChartTickLabel, getTradingChartTickMarkCharacterLength, shouldTradingChartFooterPromoteLeftEdgeDateLabel } from '../utils/chartTimeFormat';
+import { getChartDisplayOffsetSeconds, getTradingChartDefaultVisibleBars, getTradingChartShiftRightOffset, formatTradingChartCrosshairLabel, formatTradingChartTickLabel, getTradingChartTickMarkCharacterLength, shouldTradingChartFooterPromoteLeftEdgeDateLabel } from '../utils/chartTimeFormat';
 import { getSynchronizedMarketNowMs, synchronizeMarketClock, type SynchronizedMarketClockAnchor } from '../utils/synchronizedMarketClock';
 import { bindChartKeyboardScroll } from '../utils/chartKeyboardScroll';
 import { isShortcutInput, isShortcutLocalScope, isShortcutOverlay, shouldIgnoreShortcutEvent } from '../services/keyboardShortcutManager';
@@ -429,6 +429,11 @@ export const TradingChart = React.memo(function TradingChart({
     brokerTimeOffsetSecRef.current = brokerTimeOffsetSec;
   }, [brokerTimeOffsetSec]);
 
+  const resolveCrosshairTimeOffset = useCallback(
+    (time: Time) => getChartDisplayOffsetSeconds(time, timeframe, brokerTimeOffsetSec),
+    [brokerTimeOffsetSec, timeframe],
+  );
+
   const { vertLineRef, horizLineRef, centerRef, timeLabelRef, priceLabelRef } = useCrosshair({
     chartRef,
     seriesRef,
@@ -437,7 +442,7 @@ export const TradingChart = React.memo(function TradingChart({
     marker: cursorMode === 'dot' ? 'dot' : 'cross',
     digits: resolvedPriceDigits,
     timeframe,
-    brokerOffsetSeconds: brokerTimeOffsetSec,
+    brokerOffsetSeconds: resolveCrosshairTimeOffset,
   });
 
   useEffect(() => {
@@ -692,7 +697,13 @@ export const TradingChart = React.memo(function TradingChart({
     const hoverTime = dataWindowHoverTimeRef.current;
     const candle = hoverTime === null ? (currentCandleRef.current ?? candlesRef.current.at(-1) ?? null) :
       candlesRef.current.find(item => item.time === hoverTime) ?? currentCandleRef.current;
-    return createChartDataSnapshot(candle, symbol, activeTimeframe, resolvedPriceDigitsRef.current, brokerTimeOffsetSecRef.current);
+    return createChartDataSnapshot(
+      candle,
+      symbol,
+      activeTimeframe,
+      resolvedPriceDigitsRef.current,
+      getChartDisplayOffsetSeconds(candle?.time, activeTimeframe, brokerTimeOffsetSecRef.current),
+    );
   };
   useEffect(() => { dataWindowHoverTimeRef.current = null; }, [symbol, activeTimeframe, brokerAccountSessionScope]);
   useEffect(() => {
@@ -702,7 +713,11 @@ export const TradingChart = React.memo(function TradingChart({
       symbol,
       timeframe: activeTimeframe,
       digits: resolvedPriceDigitsRef.current,
-      offsetSeconds: brokerTimeOffsetSecRef.current,
+      offsetSeconds: (timeSeconds) => getChartDisplayOffsetSeconds(
+        timeSeconds,
+        activeTimeframe,
+        brokerTimeOffsetSecRef.current,
+      ),
       candles: candlesRef.current,
       clientX: point.clientX,
       chartLeft: containerRef.current?.getBoundingClientRect().left ?? point.clientX,
@@ -1183,12 +1198,13 @@ export const TradingChart = React.memo(function TradingChart({
       const barY = series.priceToCoordinate(candle.close);
       if (barX === null || barY === null) return null;
 
+      const areaTimeframe = prevTimeframeRef.current || activeTimeframe;
       const label = buildAreaPointHoverLabel(
         candle.time,
         candle.close,
         resolvedPriceDigitsRef.current,
-        prevTimeframeRef.current || activeTimeframe,
-        brokerTimeOffsetSecRef.current,
+        areaTimeframe,
+        getChartDisplayOffsetSeconds(candle.time, areaTimeframe, brokerTimeOffsetSecRef.current),
         i18n.resolvedLanguage || 'en',
       );
       if (!label) return null;
@@ -1470,7 +1486,12 @@ export const TradingChart = React.memo(function TradingChart({
     );
   }, [rememberVisibleLogicalRange]);
   const formatCrosshairTime = useCallback(
-    (time: Time) => formatTradingChartCrosshairLabel(time, timeframe, brokerTimeOffsetSec, i18n.resolvedLanguage || 'en'),
+    (time: Time) => formatTradingChartCrosshairLabel(
+      time,
+      timeframe,
+      getChartDisplayOffsetSeconds(time, timeframe, brokerTimeOffsetSec),
+      i18n.resolvedLanguage || 'en',
+    ),
     [brokerTimeOffsetSec, timeframe, tr],
   );
   const formatTimeScaleTick = useCallback(
@@ -1486,7 +1507,7 @@ export const TradingChart = React.memo(function TradingChart({
         time,
         timeframe,
         tickMarkType,
-        brokerTimeOffsetSec,
+        getChartDisplayOffsetSeconds(time, timeframe, brokerTimeOffsetSec),
         { forceDateLabel, locale: i18n.resolvedLanguage || 'en' },
       );
     },
@@ -3369,7 +3390,15 @@ useTradingChartDrawingCommands({
           x: index => chart.timeScale().logicalToCoordinate(index as Logical),
           y: price => series.priceToCoordinate(price),
           formatPrice: price => series.priceFormatter().format(price),
-          formatTime: time => formatTradingChartCrosshairLabel(time as Time, drawingRuntimeContextRef.current.timeframe, brokerTimeOffsetSecRef.current),
+          formatTime: time => formatTradingChartCrosshairLabel(
+            time as Time,
+            drawingRuntimeContextRef.current.timeframe,
+            getChartDisplayOffsetSeconds(
+              time as Time,
+              drawingRuntimeContextRef.current.timeframe,
+              brokerTimeOffsetSecRef.current,
+            ),
+          ),
         };
       },
       metrics: (start, end) => rulerMetrics(start, end, lastRenderedCandlesRef.current, resolvedPriceDigitsRef.current as number, getPricePointFromDigits(resolvedPriceDigitsRef.current)),

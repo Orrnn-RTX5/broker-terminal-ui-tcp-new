@@ -27,8 +27,8 @@ vi.mock('../hooks/useToolboxTradeData', () => ({
 }));
 
 // openBottomDockTab only routes the Terminal-level tabs (History/Toolbox/Historical Data).
-// Trade and Exposure are selected through the same window event BottomDock listens for.
-const selectDockSurfaceTab = (tab: 'Trade' | 'Exposure') => {
+// Locked tabs like Exposure stay unselectable even when targeted via window events.
+const requestDockSurfaceTab = (tab: 'Trade' | 'Exposure') => {
   window.dispatchEvent(new CustomEvent('rtx:open-bottom-dock-tab', { detail: { tab } }));
 };
 
@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe('Toolbox utility commands', () => {
-  it.each(['Journal', 'Toolbox', 'Exposure'] as const)('keeps %s selected throughout order placement and confirmation', async tab => {
+  it.each(['Journal', 'Toolbox'] as const)('keeps %s selected throughout order placement and confirmation', async tab => {
     const { container } = render(<BottomDock height={300} onClosePosition={vi.fn()} onModifyPosition={vi.fn()} />);
     fireEvent.click(screen.getByText(tab, { selector: '.rtx-dock-tab' }));
     if (tab === 'Journal') expect(await screen.findByText('Journal entries')).toBeVisible();
@@ -69,7 +69,7 @@ describe('Toolbox utility commands', () => {
     expect(container.querySelector('.rtx-trade-tab')).toBeVisible();
   });
 
-  it('mounts optional Toolbox and Exposure content on first activation and retains their surfaces', () => {
+  it('mounts optional Toolbox content on first activation, retains its surface, and keeps Exposure locked', () => {
     const { container } = render(<BottomDock height={300} onClosePosition={vi.fn()} onModifyPosition={vi.fn()} />);
     expect(screen.queryByTitle('Cascade')).not.toBeInTheDocument();
     expect(container.querySelector('.rtx-exposure-tab')).toBeNull();
@@ -81,19 +81,19 @@ describe('Toolbox utility commands', () => {
     fireEvent.click(toolboxCommand);
     expect(runTerminalShortcutAction).toHaveBeenLastCalledWith('window.cascade');
 
-    act(() => selectDockSurfaceTab('Exposure'));
-    const exposure = container.querySelector('.rtx-exposure-tab');
-    expect(exposure).toBeVisible();
+    const exposureTab = screen.getByRole('button', { name: 'Exposure' });
+    expect(exposureTab).toBeDisabled();
+    expect(exposureTab).toHaveClass('rtx-dock-tab--locked');
+    fireEvent.click(exposureTab);
+    act(() => requestDockSurfaceTab('Exposure'));
+    expect(container.querySelector('.rtx-exposure-tab')).toBeNull();
+    expect(toolboxCommand).toBeVisible();
+
+    act(() => requestDockSurfaceTab('Trade'));
     expect(toolboxCommand).toBeInTheDocument();
     expect(toolboxCommand).not.toBeVisible();
-
-    act(() => selectDockSurfaceTab('Trade'));
-    expect(exposure).toBeInTheDocument();
-    expect(exposure).not.toBeVisible();
     act(() => openBottomDockTab('Toolbox'));
     expect(screen.getByTitle('Cascade')).toBe(toolboxCommand);
-    act(() => selectDockSurfaceTab('Exposure'));
-    expect(container.querySelector('.rtx-exposure-tab')).toBe(exposure);
   });
 
   it('uses the executable shortcut catalog for every enabled tool', () => {

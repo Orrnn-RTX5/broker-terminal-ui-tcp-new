@@ -105,4 +105,17 @@ describe('computeTradingChartTimeScaleWeights', () => {
       .map(time => new Date((time + 3 * 60 * MINUTE) * 1000).toISOString().slice(11, 16));
     expect(labels).toEqual(['06:00', '09:00', '12:00', '15:00']);
   });
+
+  it('aligns intraday ticks using a per-timestamp local display offset resolver', () => {
+    const levels = getTradingChartTimeScaleLabelLevels('M1')!;
+    const istOffset = 330 * MINUTE;
+    const times = series(65, MINUTE, Date.UTC(2026, 10, 26, 4, 28) / 1000);
+    const weights = computeTradingChartTimeScaleWeights(times, levels, () => istOffset, 0, []);
+    const hourLevel = levels.find(level => level.seconds === 60 * MINUTE)!;
+
+    const hourLabels = times
+      .filter((_, index) => weights[index] >= hourLevel.weight)
+      .map(time => new Date((time + istOffset) * 1000).toISOString().slice(11, 16));
+    expect(hourLabels).toEqual(['10:00', '11:00']);
+  });
 });

@@ -228,7 +228,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
         type="button"
         disabled={busy}
         onClick={() => void cancelMany('ALL')}
-        className="rtx-pending-bulk-btn rtx-pending-bulk-btn--all inline-flex h-[21px] items-center justify-center rounded-[3px] border border-[#ff5858]/50 bg-[#ff5858]/15 px-2.5 text-[11px] font-medium leading-none text-[#ff5858] transition-colors hover:border-[#ff5858] hover:bg-[#ff5858] hover:text-white disabled:pointer-events-none disabled:opacity-40"
+        className="rtx-pending-bulk-btn rtx-pending-bulk-btn--all inline-flex h-[21px] items-center justify-center rounded-[3px] border border-zinc-700/80 bg-zinc-800/75 px-2.5 text-[11px] font-medium leading-none text-[#ff5858] transition-colors hover:border-[#ff5858] hover:bg-[#ff5858] hover:text-white disabled:pointer-events-none disabled:opacity-40"
       >
         {tr('Cancel All')}
       </button>
@@ -324,7 +324,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
                       type="button"
                       disabled={busy}
                       onClick={() => void cancelOne(order.ticket)}
-                      className="rtx-pending-row-btn rtx-pending-row-btn--cancel inline-flex h-[21px] items-center justify-center rounded-[3px] border border-[#ff5858]/50 bg-[#ff5858]/15 px-2 text-[11px] font-medium leading-none text-[#ff5858] transition-colors hover:border-[#ff5858] hover:bg-[#ff5858] hover:text-white disabled:pointer-events-none disabled:opacity-45"
+                      className="rtx-pending-row-btn rtx-pending-row-btn--cancel inline-flex h-[21px] items-center justify-center rounded-[3px] border border-zinc-600/60 bg-zinc-800/80 px-2 text-[11px] font-medium leading-none text-[#ff5858] transition-colors hover:border-[#ff5858] hover:bg-[#ff5858] hover:text-white disabled:pointer-events-none disabled:opacity-45"
                     >
                       {tr('Cancel')}
                     </button>

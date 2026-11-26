@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TickMarkType, type UTCTimestamp } from 'lightweight-charts';
 import {
+  getChartDisplayOffsetSeconds,
+  getLocalChartDisplayOffsetSeconds,
   getTradingChartDefaultRightPadBars,
   getTradingChartDefaultVisibleBars,
   getTradingChartInitialLogicalRange,
@@ -13,6 +15,29 @@ import {
 } from '../utils/chartTimeFormat';
 
 describe('chartTimeFormat', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('resolves local browser display offset for intraday charts and preserves broker offset on daily+ frames', () => {
+    const winter = Math.floor(Date.UTC(2026, 0, 15, 10, 0, 0) / 1000) as UTCTimestamp;
+    const summer = Math.floor(Date.UTC(2026, 6, 15, 10, 0, 0) / 1000) as UTCTimestamp;
+    const offsetSpy = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockImplementation(function (this: Date) {
+      return this.getUTCMonth() === 0 ? -330 : 240;
+    });
+
+    expect(getLocalChartDisplayOffsetSeconds(winter)).toBe(19_800);
+    expect(getLocalChartDisplayOffsetSeconds(summer)).toBe(-14_400);
+    expect(getChartDisplayOffsetSeconds(winter, 'M1', 0)).toBe(19_800);
+    expect(getChartDisplayOffsetSeconds(summer, 'H1', 7200)).toBe(-14_400);
+    expect(getChartDisplayOffsetSeconds(winter, 'D1', 0)).toBe(0);
+    expect(getChartDisplayOffsetSeconds(winter, 'W1', 7200)).toBe(7200);
+    expect(getChartDisplayOffsetSeconds(winter, 'MN', 0)).toBe(0);
+    expect(formatTradingChartTickLabel(winter, 'M1', TickMarkType.Time, getChartDisplayOffsetSeconds(winter, 'M1', 0)))
+      .toBe('15 Jan 15:30');
+    expect(offsetSpy).toHaveBeenCalled();
+  });
+
   it('formats the area-chart point card like a broker-time stamp', () => {
     const timestamp = Math.floor(Date.UTC(2026, 8, 29, 6, 8, 0, 0) / 1000) as UTCTimestamp;
     expect(formatAreaPointHoverTime(timestamp, 'M1', 5.5 * 60 * 60)).toEqual({
