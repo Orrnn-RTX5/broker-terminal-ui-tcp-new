@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render } from '@testing-library/react';
-import { createRef } from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { createRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultChartProperties } from '../../../store/useChartSettingsStore';
 import {
@@ -15,7 +15,6 @@ vi.mock('../../../components/OneClickTrading', () => ({
     visible ? <div data-testid="mock-one-click" className="rtx-oct z-30" /> : null
   ),
 }));
-vi.mock('../../../components/ChartContextMenu', () => ({ ChartContextMenu: () => null }));
 vi.mock('../../../components/ChartSymbolDropdown', () => ({
   ChartSymbolTrigger: ({ symbol }: { symbol: string }) => <span>{symbol}</span>,
 }));
@@ -25,8 +24,8 @@ vi.mock('../../../components/dialogs/ChartBackgroundImageDialog', () => ({
 }));
 vi.mock('../../../components/DrawingContextMenu', () => ({ DrawingContextMenu: () => null }));
 
-const buildViewProps = (loadingPhase: 'connecting' | 'receiving' | 'ready' | 'hidden') => ({
-  activeChartSourceId: 'chart-1',
+const buildViewProps = (loadingPhase: 'connecting' | 'receiving' | 'ready' | 'hidden', activeChartSourceId = 'chart-1') => ({
+  activeChartSourceId,
   activeTimeframe: 'M1' as const,
   addLocalIndicator: () => true,
   bindDrawingManagerToChart: () => true,
@@ -58,7 +57,7 @@ const buildViewProps = (loadingPhase: 'connecting' | 'receiving' | 'ready' | 'hi
   ctxShowTradeLevels: true,
   currentIndicators: [],
   drawingRuntimeContextRef: {
-    current: { contextId: 'chart-1', symbol: 'BTCUSD', timeframe: 'M1' as const },
+    current: { contextId: activeChartSourceId, symbol: 'BTCUSD', timeframe: 'M1' as const },
   },
   handleContextMenu: () => undefined,
   handleCtxChartTypeChange: () => undefined,
@@ -88,6 +87,7 @@ const buildViewProps = (loadingPhase: 'connecting' | 'receiving' | 'ready' | 'hi
     badgeBackground: '#778899',
     badgeTextColor: '#ffffff',
   },
+  isActive: true,
   isAdvancedUntitledLight: false,
   livePriceBadgeRef: createRef<HTMLDivElement>(),
   livePriceCountdownRef: createRef<HTMLSpanElement>(),
@@ -130,6 +130,31 @@ const buildViewProps = (loadingPhase: 'connecting' | 'receiving' | 'ready' | 'hi
   useEnterpriseLightChartPalette: false,
   vertLineRef: createRef<HTMLDivElement>(),
 });
+
+function ZoomChartFixture({ viewProps }: { viewProps: ReturnType<typeof buildViewProps> }) {
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  return (
+    <TradingChartView
+      {...viewProps}
+      ctxMenu={{ ...viewProps.ctxMenu, visible: menuVisible }}
+      handleContextMenu={(event) => {
+        event.preventDefault();
+        setMenuVisible(true);
+      }}
+      closeCtxMenu={() => setMenuVisible(false)}
+    />
+  );
+}
+
+const chooseChartZoom = (chart: HTMLElement) => {
+  fireEvent.contextMenu(chart);
+  const menu = screen.getByRole('menu', { name: 'Chart context menu' });
+  const zoomItems = within(menu).getAllByRole('menuitem', { name: /^Zoom/ });
+  expect(zoomItems).toHaveLength(1);
+  expect(zoomItems[0]).toHaveAccessibleName('Zoom');
+  fireEvent.click(zoomItems[0]);
+};
 
 describe('TradingChartView loading overlay stacking order', () => {
   it('covers price-anchored trade control bars while keeping the HUD and One-Click panel above it', () => {
@@ -220,5 +245,69 @@ describe('TradingChartView loading overlay stacking order', () => {
       expect(value.style.padding).toBe('');
       expect(value.style.borderRadius).toBe('');
     }
+  });
+});
+
+describe('TradingChartView zoom mode', () => {
+  it('opens both controls from one Zoom menu item without applying a zoom step', async () => {
+    const viewProps = {
+      ...buildViewProps('hidden'),
+      handleCtxZoomIn: vi.fn(),
+      handleCtxZoomOut: vi.fn(),
+    };
+    const { rerender } = render(<ZoomChartFixture viewProps={viewProps} />);
+
+    expect(screen.queryByRole('group', { name: 'Zoom In / Zoom Out' })).toBeNull();
+    chooseChartZoom(viewProps.containerRef.current!);
+
+    const controls = await screen.findByRole('group', { name: 'Zoom In / Zoom Out' });
+    const zoomIn = within(controls).getByRole('button', { name: 'Zoom In' });
+    const zoomOut = within(controls).getByRole('button', { name: 'Zoom Out' });
+    expect(zoomIn).toHaveFocus();
+    expect(screen.queryByRole('menu', { name: 'Chart context menu' })).toBeNull();
+    expect(viewProps.handleCtxZoomIn).not.toHaveBeenCalled();
+    expect(viewProps.handleCtxZoomOut).not.toHaveBeenCalled();
+
+    fireEvent.click(viewProps.containerRef.current!);
+    fireEvent.click(zoomIn);
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomIn);
+    expect(controls).toBeInTheDocument();
+    expect(viewProps.handleCtxZoomIn).toHaveBeenCalledTimes(2);
+    expect(viewProps.handleCtxZoomOut).toHaveBeenCalledTimes(1);
+
+    rerender(<ZoomChartFixture viewProps={{ ...viewProps, isActive: false }} />);
+    expect(controls).not.toBeVisible();
+    rerender(<ZoomChartFixture viewProps={viewProps} />);
+    expect(controls).toBeVisible();
+
+    fireEvent.click(within(controls).getByRole('button', { name: 'Close' }));
+    expect(controls).not.toBeInTheDocument();
+  });
+
+  it('dismisses the focused chart controls with Escape while leaving another chart in zoom mode', async () => {
+    const firstChart = buildViewProps('hidden', 'chart-1');
+    const secondChart = buildViewProps('hidden', 'chart-2');
+    render(
+      <>
+        <ZoomChartFixture viewProps={firstChart} />
+        <ZoomChartFixture viewProps={secondChart} />
+      </>,
+    );
+
+    chooseChartZoom(firstChart.containerRef.current!);
+    const firstControls = await screen.findByRole('group', { name: 'Zoom In / Zoom Out' });
+    const secondChartView = within(secondChart.containerRef.current!.parentElement!);
+    expect(secondChartView.queryByRole('group', { name: 'Zoom In / Zoom Out' })).toBeNull();
+
+    chooseChartZoom(secondChart.containerRef.current!);
+    const secondControls = await secondChartView.findByRole('group', { name: 'Zoom In / Zoom Out' });
+    const zoomIn = within(secondControls).getByRole('button', { name: 'Zoom In' });
+    expect(zoomIn).toHaveFocus();
+    fireEvent.keyDown(zoomIn, { key: 'Escape' });
+
+    expect(secondControls).not.toBeInTheDocument();
+    expect(secondChart.containerRef.current).toHaveFocus();
+    expect(firstControls).toBeInTheDocument();
   });
 });

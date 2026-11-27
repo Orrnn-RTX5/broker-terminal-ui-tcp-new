@@ -3682,6 +3682,7 @@ return (
       handleOpenTemplateDialog={handleOpenTemplateDialog}
       horizLineRef={horizLineRef}
       initialLivePriceOverlayColors={initialLivePriceOverlayColors}
+      isActive={isActive}
       isAdvancedUntitledLight={isAdvancedUntitledLight}
       livePriceBadgeRef={livePriceBadgeRef}
       livePriceCountdownRef={livePriceCountdownRef}

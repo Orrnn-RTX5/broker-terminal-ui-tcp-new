@@ -149,6 +149,7 @@
     "place, drag, or delete orders from the chart, DOM, or Toolbox",
     "Canceled",
     "Canceled Buy",
-    "Canceled Sell"
+    "Canceled Sell",
+    "Zoom"
   ]
 }

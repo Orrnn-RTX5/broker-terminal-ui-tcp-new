@@ -1,7 +1,8 @@
 import { useUiTranslation } from '../hooks/useUiTranslation';
-import React, { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useId, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useLastSymbolStore } from '../store/useLastSymbolStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
 import {
   resolveDefaultTradeDeviation,
   resolveDefaultTradeVolume,
@@ -63,6 +64,7 @@ import { depthExecutionForLevel } from './depthOfMarketModel';
 import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
 import { accountMetricProvided } from '../services/accountMetrics';
 import { formatOrderError } from '../utils/orderError';
+import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
 import '../styles/order-panel-dialog.css';
 
 // Symbol display names
@@ -2877,8 +2879,38 @@ export function OrderPanelDialog({
   const [marginCurrency, setMarginCurrency] = useState('');
 
   // Left sidebar & right pane view toggles (MT5 desktop layout)
+  const disclaimerOwnerId = useId();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const [isOneClickSectionOpen, setIsOneClickSectionOpen] = useState(false);
   const [showOneClickTrading, setShowOneClickTrading] = useState(true);
+  const oneClickTradingSetting = useSettingsStore((state) => state.trade.oneClickTrading);
+  const acceptedInSession = useOneClickDisclaimerStore((state) => state.acceptedInSession);
+  const oneClickActive = oneClickTradingSetting && acceptedInSession;
+  // Turning One Click Trading on shows the disclaimer sheet on its own: the
+  // order ticket closes first, so the sheet is never stacked on top of it.
+  // The app-level disclaimer host keeps the sheet on screen after this dialog
+  // unmounts.
+  const showOneClickDisclaimer = useCallback(() => {
+    onClose();
+    void useOneClickDisclaimerStore.getState().requestOneClickAcceptance(disclaimerOwnerId);
+  }, [disclaimerOwnerId, onClose]);
+  const handleOneClickToggle = useCallback(() => {
+    if (oneClickActive) {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+      useSettingsStore.getState().updateTradeSettings({ oneClickTrading: false });
+      return;
+    }
+    showOneClickDisclaimer();
+  }, [oneClickActive, showOneClickDisclaimer]);
+  // Sidebar entry: while the mode is off it goes straight to the disclaimer
+  // sheet; once accepted it opens the status section with the Off control.
+  const handleOpenOneClickSection = useCallback(() => {
+    if (!oneClickActive) {
+      showOneClickDisclaimer();
+      return;
+    }
+    setIsOneClickSectionOpen(true);
+  }, [oneClickActive, showOneClickDisclaimer]);
   const [showTickChart, setShowTickChart] = useState(true);
   const [showDom, setShowDom] = useState(true);
   const [marketRangeEnabled, setMarketRangeEnabled] = useState(true);
@@ -2987,6 +3019,7 @@ export function OrderPanelDialog({
 
   useEffect(() => {
     if (isOpen) {
+      setIsOneClickSectionOpen(false);
       setSymbol(initialSymbol);
       setError(null);
       // SUI-T8: re-seed ticket defaults from Options on every open so the
@@ -3617,9 +3650,12 @@ export function OrderPanelDialog({
               <button
                 type="button"
                 data-testid="order-mode-market"
-                className={`rtx-order-dialog__mode-btn ${orderType === 'Market Execution' ? 'rtx-order-dialog__mode-btn--active' : ''}`}
+                className={`rtx-order-dialog__mode-btn ${!isOneClickSectionOpen && orderType === 'Market Execution' ? 'rtx-order-dialog__mode-btn--active' : ''}`}
                 title={tr("Market Execution")}
-                onClick={() => handleOrderTypeChange('Market Execution')}
+                onClick={() => {
+                  setIsOneClickSectionOpen(false);
+                  handleOrderTypeChange('Market Execution');
+                }}
               >
                 <span className="rtx-order-dialog__mode-text">{tr("Market order")}</span>
                 {isSidebarExpanded && <span className="rtx-order-dialog__mode-label">{tr("Market Execution")}</span>}
@@ -3628,9 +3664,12 @@ export function OrderPanelDialog({
               <button
                 type="button"
                 data-testid="order-mode-limit"
-                className={`rtx-order-dialog__mode-btn ${isLimitOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
+                className={`rtx-order-dialog__mode-btn ${!isOneClickSectionOpen && isLimitOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
                 title={tr("Limit Order")}
-                onClick={() => handleOrderTypeChange('Limit Order')}
+                onClick={() => {
+                  setIsOneClickSectionOpen(false);
+                  handleOrderTypeChange('Limit Order');
+                }}
               >
                 <span className="rtx-order-dialog__mode-text">{tr("Limit order")}</span>
                 {isSidebarExpanded && <span className="rtx-order-dialog__mode-label">{tr("Limit Order")}</span>}
@@ -3639,9 +3678,12 @@ export function OrderPanelDialog({
               <button
                 type="button"
                 data-testid="order-mode-stop"
-                className={`rtx-order-dialog__mode-btn ${isStopOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
+                className={`rtx-order-dialog__mode-btn ${!isOneClickSectionOpen && isStopOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
                 title={tr("Stop Order")}
-                onClick={() => handleOrderTypeChange('Stop Order')}
+                onClick={() => {
+                  setIsOneClickSectionOpen(false);
+                  handleOrderTypeChange('Stop Order');
+                }}
               >
                 <span className="rtx-order-dialog__mode-text">{tr("Stop order")}</span>
                 {isSidebarExpanded && <span className="rtx-order-dialog__mode-label">{tr("Stop Order")}</span>}
@@ -3650,12 +3692,32 @@ export function OrderPanelDialog({
               <button
                 type="button"
                 data-testid="order-mode-stop-limit"
-                className={`rtx-order-dialog__mode-btn ${isStopLimitOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
+                className={`rtx-order-dialog__mode-btn ${!isOneClickSectionOpen && isStopLimitOrderType(orderType) ? 'rtx-order-dialog__mode-btn--active' : ''}`}
                 title={tr("Stop Limit Order")}
-                onClick={() => handleOrderTypeChange('Stop Limit Order')}
+                onClick={() => {
+                  setIsOneClickSectionOpen(false);
+                  handleOrderTypeChange('Stop Limit Order');
+                }}
               >
                 <span className="rtx-order-dialog__mode-text">{tr("Stop-limit order")}</span>
                 {isSidebarExpanded && <span className="rtx-order-dialog__mode-label">{tr("Stop Limit Order")}</span>}
+              </button>
+
+              <div className="rtx-order-dialog__sidebar-divider" aria-hidden="true" />
+
+              <button
+                type="button"
+                data-testid="order-mode-one-click"
+                className={`rtx-order-dialog__mode-btn ${isOneClickSectionOpen ? 'rtx-order-dialog__mode-btn--active' : ''}`}
+                title={tr("One Click Trading")}
+                onClick={handleOpenOneClickSection}
+              >
+                <span className="rtx-order-dialog__mode-text">{tr("One Click Trading")}</span>
+                {isSidebarExpanded && (
+                  <span className="rtx-order-dialog__mode-label">
+                    {oneClickActive ? tr("On") : tr("Off")}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -3740,7 +3802,9 @@ export function OrderPanelDialog({
           <div className="rtx-order-dialog__form">
             {/* Hero Title Bar */}
             <div className="rtx-order-dialog__hero-bar">
-              <span className="rtx-order-dialog__hero-title">{orderHeadingTitle}</span>
+              <span className="rtx-order-dialog__hero-title">
+                {isOneClickSectionOpen ? tr("One Click Trading") : orderHeadingTitle}
+              </span>
               <div className="rtx-order-dialog__hero-actions">
                 <button
                   type="button"
@@ -3782,6 +3846,72 @@ export function OrderPanelDialog({
               </div>
             </div>
 
+            {isOneClickSectionOpen ? (
+              <div className="rtx-order-dialog__one-click" data-testid="order-one-click-section">
+                <div className="rtx-order-dialog__one-click-card">
+                  <div className="rtx-order-dialog__one-click-header">
+                    <div className="rtx-order-dialog__one-click-heading">
+                      <span className="rtx-order-dialog__one-click-title">{tr("One Click Trading")}</span>
+                      <span
+                        className={`rtx-order-dialog__one-click-badge ${oneClickActive ? 'rtx-order-dialog__one-click-badge--active' : ''}`}
+                        data-testid="order-one-click-status"
+                      >
+                        {oneClickActive ? tr("Accepted") : tr("Off")}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={oneClickActive}
+                      aria-label={tr("One Click Trading")}
+                      data-testid="order-one-click-switch"
+                      onClick={handleOneClickToggle}
+                      className={`rtx-order-dialog__one-click-switch ${oneClickActive ? 'is-checked' : ''}`}
+                    >
+                      <span className="rtx-order-dialog__one-click-switch-thumb" />
+                    </button>
+                  </div>
+
+                  <p className="rtx-order-dialog__one-click-copy">
+                    {tr("Allows performing trade operations with a single mouse click without additional confirmation.")}
+                  </p>
+                  <p className="rtx-order-dialog__one-click-copy">
+                    {tr("1. Default mode is a two-step process requiring order setup and explicit confirmation before submission.")}
+                  </p>
+                  <p className="rtx-order-dialog__one-click-copy">
+                    {tr("2. One Click Trading mode is a one-step process. Orders submit immediately when you:")}
+                  </p>
+                  <ul className="rtx-order-dialog__one-click-list">
+                    <li>{tr("click BUY or SELL on a chart panel or Market Watch Trading tab")}</li>
+                    <li>{tr("click Buy, Sell, or Close in the Depth of Market window")}</li>
+                    <li>{tr("place, drag, or delete orders from the chart, DOM, or Toolbox")}</li>
+                  </ul>
+
+                  <div className="rtx-order-dialog__one-click-actions">
+                    {oneClickActive ? (
+                      <button
+                        type="button"
+                        data-testid="order-one-click-action"
+                        className="rtx-order-dialog__one-click-btn rtx-order-dialog__one-click-btn--secondary"
+                        onClick={handleOneClickToggle}
+                      >
+                        {tr("Off")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="order-one-click-action"
+                        className="rtx-order-dialog__one-click-btn rtx-order-dialog__one-click-btn--primary"
+                        onClick={handleOneClickToggle}
+                      >
+                        {tr("Enable")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Instrument Status Subheader */}
             <div className="rtx-order-dialog__instrument-meta">
               <span className="rtx-order-dialog__instrument-desc">
@@ -4436,6 +4566,8 @@ export function OrderPanelDialog({
             <div className="rtx-order-dialog__status-box" aria-live="polite">
               {isPlacing && <div className="rtx-order-dialog__progress-bar" />}
             </div>
+              </>
+            )}
           </div>
 
           {/* Column 3: Right Candlestick + Tick Chart Pane */}
@@ -4476,6 +4608,7 @@ export function OrderPanelDialog({
           )}
         </div>
       </div>
+      <OneClickDisclaimerDialog ownerId={disclaimerOwnerId} />
     </div>
   );
 }

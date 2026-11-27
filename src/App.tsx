@@ -158,6 +158,7 @@ import { OneClickDisclaimerDialog } from './components/ui/OneClickDisclaimerDial
 import { confirmBulkCloseForSession } from './features/trading/mutations/confirmBulkCloseForSession';
 import { useBulkCloseConfirmStore } from './store/useBulkCloseConfirmStore';
 import { useConfirmStore } from './store/useConfirmStore';
+import { useOneClickDisclaimerStore } from './store/useOneClickDisclaimerStore';
 import { useChartSettingsStore } from './store/useChartSettingsStore';
 import {
   getActiveChartCommandTarget,
@@ -840,6 +841,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   // Handle Escape key for closing order panel
   useEffect(() => {
     const handleCloseModal = () => {
+      if (useOneClickDisclaimerStore.getState().isOpen) return;
       if (orderPanelOpen) {
         setOrderPanelOpen(false);
       }

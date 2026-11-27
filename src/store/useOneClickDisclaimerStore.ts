@@ -2,28 +2,34 @@ import { create } from 'zustand';
 import { selectOneClickTrading, useSettingsStore } from './useSettingsStore';
 
 export const ONE_CLICK_DISCLAIMER_SESSION_KEY = 'rtx5_one_click_disclaimer_accepted';
+export const ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY = 'rtx5_one_click_disclaimer_declined';
 
-const readSessionAccepted = (): boolean => {
+const readSessionFlag = (key: string): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    return window.sessionStorage.getItem(ONE_CLICK_DISCLAIMER_SESSION_KEY) === '1';
+    return window.sessionStorage.getItem(key) === '1';
   } catch {
     return false;
   }
 };
 
-const writeSessionAccepted = (accepted: boolean): void => {
+const writeSessionFlag = (key: string, value: boolean): void => {
   if (typeof window === 'undefined') return;
   try {
-    if (accepted) {
-      window.sessionStorage.setItem(ONE_CLICK_DISCLAIMER_SESSION_KEY, '1');
+    if (value) {
+      window.sessionStorage.setItem(key, '1');
     } else {
-      window.sessionStorage.removeItem(ONE_CLICK_DISCLAIMER_SESSION_KEY);
+      window.sessionStorage.removeItem(key);
     }
   } catch {
     // Ignore storage access failures in restricted environments.
   }
 };
+
+const readSessionAccepted = (): boolean => readSessionFlag(ONE_CLICK_DISCLAIMER_SESSION_KEY);
+const writeSessionAccepted = (accepted: boolean): void => writeSessionFlag(ONE_CLICK_DISCLAIMER_SESSION_KEY, accepted);
+const readSessionDeclined = (): boolean => !readSessionAccepted() && readSessionFlag(ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY);
+const writeSessionDeclined = (declined: boolean): void => writeSessionFlag(ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY, declined);
 
 interface OneClickDisclaimerState {
   requestId: number;
@@ -37,6 +43,12 @@ interface OneClickDisclaimerState {
    *   and reopened, so the disclaimer is shown again on the next launch.
    */
   acceptedInSession: boolean;
+  /**
+   * Tracks when the user explicitly canceled/dismissed the disclaimer in this
+   * session so subsequent chart BUY/SELL clicks open the Order sheet instead
+   * of repeatedly popping up the disclaimer.
+   */
+  declinedInSession: boolean;
   onAccept: () => void;
   onCancel: () => void;
   registerGlobalHost: () => () => void;
@@ -74,14 +86,17 @@ export const useOneClickDisclaimerStore = create<OneClickDisclaimerState>((set, 
   ownerId: null,
   globalHostCount: 0,
   acceptedInSession: readSessionAccepted(),
+  declinedInSession: readSessionDeclined(),
   onAccept: () => {
     writeSessionAccepted(true);
+    writeSessionDeclined(false);
     useSettingsStore.getState().updateTradeSettings({ oneClickTrading: true });
-    set({ isOpen: false, ownerId: null, acceptedInSession: true });
+    set({ isOpen: false, ownerId: null, acceptedInSession: true, declinedInSession: false });
     resolveAllPending(true);
   },
   onCancel: () => {
-    set({ isOpen: false, ownerId: null });
+    writeSessionDeclined(true);
+    set({ isOpen: false, ownerId: null, declinedInSession: true });
     resolveAllPending(false);
   },
   registerGlobalHost: () => {
@@ -111,21 +126,28 @@ export const useOneClickDisclaimerStore = create<OneClickDisclaimerState>((set, 
   },
   setAcceptedInSession: (accepted) => {
     writeSessionAccepted(accepted);
-    set({ acceptedInSession: accepted });
+    if (accepted) {
+      writeSessionDeclined(false);
+      set({ acceptedInSession: true, declinedInSession: false });
+      return;
+    }
+    set({ acceptedInSession: false });
   },
   syncSessionAcceptanceFromStorage: () => {
     const accepted = readSessionAccepted();
-    set({ acceptedInSession: accepted });
+    const declined = accepted ? false : readSessionDeclined();
+    set({ acceptedInSession: accepted, declinedInSession: declined });
     return accepted;
   },
   resetSessionAcceptance: () => {
     writeSessionAccepted(false);
+    writeSessionDeclined(false);
     if (get().isOpen) {
-      set({ isOpen: false, ownerId: null, acceptedInSession: false });
+      set({ isOpen: false, ownerId: null, acceptedInSession: false, declinedInSession: false });
       resolveAllPending(false);
       return;
     }
-    set({ acceptedInSession: false });
+    set({ acceptedInSession: false, declinedInSession: false });
   },
   closeDisclaimer: () => {
     if (get().isOpen) {

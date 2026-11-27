@@ -27,6 +27,7 @@ import { supportedLanguages } from '../../config/supportedLanguages';
 import { changeInterfaceLanguage } from '../../i18n';
 import { getTerminalShortcutHint, runTerminalShortcutAction } from '../../services/shortcutCatalog';
 import { getAppVersion } from '../../config/appVersion';
+import { canCheckTerminalUpdates, checkTerminalReleaseChannel } from '../../services/terminalUpdateChannel';
 import { BrokerLogoImage } from '../BrokerLogoImage';
 import { toPublicAssetPath } from '../welcomeHeroAssets';
 import { useActiveBrokerBrand } from '../../hooks/useActiveBrokerBrand';
@@ -72,14 +73,15 @@ const lockedHelpResource = {
     unavailableReason: 'This Help resource is currently unavailable.',
 } as const;
 
-// T14: release/beta notes have no surface to open. No changelog or
-// release-notes view exists in-app, and broker config exposes no
-// release-notes URL, so these stay disabled-with-reason (never a dead
-// click, never a hardcoded link).
-const unavailableReleaseNotes = {
+// T14: Latest Release Version unlocks only when the terminal's host can check
+// for updates, so a click is never dead and never a hardcoded link. Without a
+// host update bridge it stays locked with this reason.
+const updatesRequireDesktopApp = {
     disabled: true,
-    unavailableReason: 'Documentation is not configured for this deployment',
+    unavailableReason: 'Updates are available in the installed desktop app',
 } as const;
+
+const formatUpdateVersion = (version: string): string => (/^\d/.test(version) ? `v${version}` : version);
 
 const DESKTOP_MENU_KEYS = ['File', 'View', 'Insert', 'Charts', 'Tools', 'Window', 'Help'] as const;
 
@@ -447,6 +449,28 @@ export const MenuBar = ({
         }));
     };
 
+    // T14: Latest Release Version asks the terminal's host to check the release
+    // channel and reports its answer through the same feedback toast surface.
+    // The host shows its own reload/restart prompt when an update was applied.
+    const checkLatestRelease = () => {
+        const publish = (status: string, type: 'success' | 'error') => {
+            window.dispatchEvent(new CustomEvent('rtx:order-feedback', {
+                detail: { message: `${tr('Latest Release Version')}: ${status}`, type },
+            }));
+        };
+        publish(tr('Checking...'), 'success');
+        void checkTerminalReleaseChannel().then((result) => {
+            if (!result.ok) {
+                publish(tr('Update failed'), 'error');
+                return;
+            }
+            const state = result.state === 'update-ready'
+                ? tr('Update ready')
+                : result.state === 'update-available' ? tr('Update available') : tr('Up to date');
+            publish(result.version ? `${formatUpdateVersion(result.version)} · ${state}` : state, 'success');
+        });
+    };
+
     const fontSizeMenuItem: MenuItem = {
         label: 'Font Size',
         icon: <Icon name="text" size="sm" />,
@@ -810,8 +834,11 @@ export const MenuBar = ({
                 label: t('menu.help.checkForUpdates'),
                 icon: <Icon name="download" size="sm" className="text-blue-500" />,
                 children: [
-                    { label: 'Latest Release Version', icon: <Icon name="check-circle" size="xs" className="text-emerald-500" />, ...unavailableReleaseNotes },
-                    { label: 'Latest Beta Version', icon: <Icon name="alert-triangle" size="xs" className="text-amber-500" />, ...unavailableReleaseNotes }
+                    {
+                        label: 'Latest Release Version',
+                        icon: <Icon name="check-circle" size="xs" className="text-emerald-500" />,
+                        ...(canCheckTerminalUpdates() ? { action: checkLatestRelease } : updatesRequireDesktopApp),
+                    },
                 ]
             },
             { divider: true, label: '' },

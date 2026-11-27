@@ -15,7 +15,7 @@ import type { ChartTemplate } from '../store/useTemplateStore';
 import type { ChartGridLineStyle, ChartGridType } from '../store/useChartSettingsStore';
 import { stripFloatPrecisionNoise } from '../utils/symbolUtils';
 import {
-    CandlestickChart, BarChart2, LineChart, AreaChart, ZoomIn, ZoomOut,
+    CandlestickChart, BarChart2, LineChart, AreaChart, Search,
     Grid3X3, RefreshCw, Camera, Settings, ChevronRight,
     Activity, AlignJustify, Volume2, Layers,
     Trash2, FileText, TrendingUp,
@@ -121,8 +121,7 @@ interface ChartContextMenuProps {
     onSaveAsPicture: () => void;
     onPrintChart: () => void;
     onRefresh: () => void;
-    onZoomIn: () => void;
-    onZoomOut: () => void;
+    onOpenZoomControls: () => void;
     onAddIndicator: (indicator: {
         name: string;
         indicatorType: string;
@@ -519,8 +518,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
     onOpenProperties,
     onSaveAsPicture,
     onRefresh,
-    onZoomIn,
-    onZoomOut,
+    onOpenZoomControls,
     onAddIndicator,
     onDeleteIndicators,
     onOpenNewOrder,
@@ -1136,16 +1134,9 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
 
             {/* ── Zoom ── */}
             <MenuItem
-                icon={<ZoomIn size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
-                label={tr("Zoom In")}
-                shortcut="+"
-                onClick={() => closeThen(() => { onZoomIn(); })}
-            />
-            <MenuItem
-                icon={<ZoomOut size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
-                label={tr("Zoom Out")}
-                shortcut="-"
-                onClick={() => closeThen(() => { onZoomOut(); })}
+                icon={<Search size={13} strokeWidth={1.5} style={{ color: 'var(--ctx-icon, #8a8a9a)' }} />}
+                label={tr("Zoom")}
+                onClick={() => closeThen(onOpenZoomControls)}
             />
 
             {/* ── Delete Indicators Window ── */}

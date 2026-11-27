@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { ChartSymbolAnchor } from '../../components/ChartSymbolDropdown';
 import type { ChartType, Timeframe } from '../../types/chart';
 import type { DockContainer, DockPanelConfig } from '../../services/dockManager';
@@ -21,6 +21,8 @@ import { hasArrangedChartWindows } from '../../utils/chartSymbolTabs';
 import { writePersistedTimeframe } from '../../utils/chartTimeframePersistence';
 import { normalizeSymbolName } from '../../utils/symbolEligibility';
 import { resolveQuickTradeRoute, selectOneClickTrading, useSettingsStore } from '../../store/useSettingsStore';
+import { isOneClickTradingAccepted, useOneClickDisclaimerStore } from '../../store/useOneClickDisclaimerStore';
+import { requireTradingAuth } from '../../services/tradingAuthGate';
 import { translateUi } from '../../hooks/useUiTranslation';
 import type { OrderPanelSubmission } from '../trading/useOrderExecution';
 import type { UiMessage } from '../../utils/uiFeedback';
@@ -127,6 +129,25 @@ export const useTerminalCommandEvents = ({
   setChartPropsContextId,
   setChartObjectsTarget,
 }: UseTerminalCommandEventsOptions): void => {
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const latestQuickPendingDepsRef = useRef({
+    handleOrderPanelSubmit,
+    setSelectedSymbol,
+    volume,
+  });
+  latestQuickPendingDepsRef.current = {
+    handleOrderPanelSubmit,
+    setSelectedSymbol,
+    volume,
+  };
+
   useEffect(() => {
     const commitSelectedChartSymbol = (symbol: string) => {
       const normalized = normalizeSymbolName(symbol);
@@ -284,21 +305,52 @@ export const useTerminalCommandEvents = ({
         });
         return;
       }
-      setSelectedSymbol(allowedSymbol);
       const side: 'buy' | 'sell' = String(detail?.side || detail?.orderType || '').toUpperCase().includes('SELL') ? 'sell' : 'buy';
+      const sideUpper: 'BUY' | 'SELL' = side === 'sell' ? 'SELL' : 'BUY';
       const pendingType = side === 'sell' ? 'sell_limit' : 'buy_limit';
       const orderTypeLabel = side === 'sell' ? 'Sell Limit' : 'Buy Limit';
       const parsedVolume = Number(detail?.volume);
       const submitVolume = Number.isFinite(parsedVolume) && parsedVolume > 0 ? parsedVolume : volume;
-      void handleOrderPanelSubmit({
-        type: side,
-        orderKind: 'pending',
-        pendingType,
-        orderType: orderTypeLabel,
+
+      if (!requireTradingAuth({
+        source: 'quick-trade',
+        side: sideUpper,
         symbol: allowedSymbol,
         volume: submitVolume,
-        price,
-      }).catch(() => undefined);
+      })) {
+        return;
+      }
+
+      const submitPendingOrder = () => {
+        const latestDeps = latestQuickPendingDepsRef.current;
+        if (!latestDeps.handleOrderPanelSubmit) return;
+        latestDeps.setSelectedSymbol(allowedSymbol);
+        void latestDeps.handleOrderPanelSubmit({
+          type: side,
+          orderKind: 'pending',
+          pendingType,
+          orderType: orderTypeLabel,
+          symbol: allowedSymbol,
+          volume: Number.isFinite(parsedVolume) && parsedVolume > 0 ? parsedVolume : latestDeps.volume,
+          price,
+        }).catch(() => undefined);
+      };
+
+      if (!isOneClickTradingAccepted()) {
+        if (useOneClickDisclaimerStore.getState().isOpen) return;
+        const preAcceptSessionScope = getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope());
+        void useOneClickDisclaimerStore.getState().requestOneClickAcceptance().then((accepted) => {
+          if (!accepted || !isMountedRef.current) return;
+          if (getCommittedBrokerAccountSessionScopeKey(getCommittedBrokerAccountSessionScope()) !== preAcceptSessionScope) {
+            return;
+          }
+          if (!isOneClickTradingAccepted()) return;
+          submitPendingOrder();
+        });
+        return;
+      }
+
+      submitPendingOrder();
     };
     // SUI-T9: one-click OFF opens the prefilled order dialog (never an
     // instant order); ON places immediately. Fail-closed (unreadable

@@ -1,3 +1,5 @@
+import { Minus, Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Dispatch,
   MouseEvent as ReactMouseEvent,
@@ -13,7 +15,14 @@ import { OneClickTrading } from '../../../components/OneClickTrading';
 import { commandBus } from '../../../services/commandBus';
 import { drawingManager } from '../../../services/drawingManager';
 import type { IndicatorConfig } from '../../../services/indicatorManager';
-import { activateActiveChartSource } from '../../../services/activeChartSource';
+import { activateActiveChartSource, getActiveChartSourceId } from '../../../services/activeChartSource';
+import {
+  getShortcutEventTarget,
+  isShortcutInput,
+  isShortcutLocalScope,
+  isShortcutOverlay,
+  shouldIgnoreShortcutEvent,
+} from '../../../services/keyboardShortcutManager';
 import type { SymbolMarketStatusState } from '../../../hooks/useSymbolMarketStatus';
 import { getChartDirectionalQuoteColors, type ChartProperties } from '../../../store/useChartSettingsStore';
 import { isChartBackgroundLogoVisible } from '../../../utils/brokerWatermark';
@@ -29,6 +38,8 @@ import { LIVE_PRICE_SCALE_WIDTH_FALLBACK_PX } from '../../../components/TradingC
 import { CHART_AXIS_FONT_FAMILY } from './chartTheme';
 
 type LoadingPhase = 'connecting' | 'receiving' | 'ready' | 'hidden';
+
+const ZOOM_BUTTON_CLASS_NAME = 'grid size-8 cursor-pointer place-items-center rounded hover:bg-[var(--ctx-hover,#3b3b40)] focus-visible:outline-2 focus-visible:outline-[var(--ctx-blue,#60a5fa)]';
 
 interface TextInputOverlay {
   x: number;
@@ -89,6 +100,7 @@ interface TradingChartViewProps {
   handleOpenTemplateDialog: (mode: 'save' | 'load') => void;
   horizLineRef: RefObject<HTMLDivElement | null>;
   initialLivePriceOverlayColors: LivePriceOverlayColors;
+  isActive: boolean;
   isAdvancedUntitledLight: boolean;
   livePriceBadgeRef: RefObject<HTMLDivElement | null>;
   livePriceCountdownRef: RefObject<HTMLSpanElement | null>;
@@ -144,7 +156,7 @@ export const TradingChartView = (props: TradingChartViewProps) => {
     handleCtxToggleOHLC, handleCtxToggleTradeHistory, handleCtxToggleTradeHistoryLine,
     handleCtxToggleTradeLevels, handleCtxToggleVolumes, handleCtxZoomIn, handleCtxZoomOut,
     handleLoadTemplate, handleOpenTemplateDialog, horizLineRef, initialLivePriceOverlayColors,
-    isAdvancedUntitledLight, livePriceBadgeRef, livePriceCountdownRef, livePriceLineRef,
+    isActive, isAdvancedUntitledLight, livePriceBadgeRef, livePriceCountdownRef, livePriceLineRef,
     livePriceValueRef, loadingMessageIdx, loadingMessages, loadingPhase, retainedPublicChartSurface, localChartType,
     marketStatus, maxVolume, minVolume, ohlcCloseRef, ohlcHighRef, ohlcLowRef, ohlcOpenRef,
     overlayRef, panelId, priceDigits, priceLabelRef, setBackgroundImageDialogOpen, setTemplateDialogOpen,
@@ -153,6 +165,35 @@ export const TradingChartView = (props: TradingChartViewProps) => {
     toggleOneClickTrading, tradeAllowed, tr, useEnterpriseLightChartPalette, vertLineRef,
     volumeStep,
   } = props;
+
+  const [zoomControlsOpen, setZoomControlsOpen] = useState(false);
+  const zoomControlsRef = useRef<HTMLDivElement>(null);
+  const closeZoomMode = useCallback(() => {
+    if (zoomControlsRef.current?.contains(document.activeElement)) {
+      containerRef.current?.focus({ preventScroll: true });
+    }
+    setZoomControlsOpen(false);
+  }, [containerRef]);
+
+  useEffect(() => {
+    if (!isActive || !zoomControlsOpen || ctxMenu.visible) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || shouldIgnoreShortcutEvent(event)
+        || isShortcutInput(event) || isShortcutOverlay(event) || isShortcutLocalScope(event)) return;
+
+      const focusedChart = getShortcutEventTarget(event)?.closest<HTMLElement>('.rtx-chart-wrapper');
+      const contextId = focusedChart?.dataset.chartContextId ?? getActiveChartSourceId();
+      if (contextId !== activeChartSourceId) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      closeZoomMode();
+    };
+
+    document.addEventListener('keydown', handleEscape, true);
+    return () => document.removeEventListener('keydown', handleEscape, true);
+  }, [activeChartSourceId, closeZoomMode, ctxMenu.visible, isActive, zoomControlsOpen]);
 
 return (
     <div
@@ -470,9 +511,65 @@ return (
       */}
       <div
         ref={containerRef}
+        tabIndex={-1}
         className="absolute inset-0 w-full h-full"
         style={{ zIndex: chartSettings.chartOnForeground ? 11 : 0 }}
       />
+
+      {zoomControlsOpen && (
+        <div
+          ref={zoomControlsRef}
+          role="group"
+          aria-label={`${tr('Zoom In')} / ${tr('Zoom Out')}`}
+          hidden={!isActive}
+          className="absolute bottom-8 left-1/2 z-[27] flex -translate-x-1/2 gap-0.5 rounded-md border p-0.5 shadow-lg"
+          style={{
+            backgroundColor: 'var(--ctx-bg, #242426)',
+            borderColor: 'var(--ctx-border, #45454a)',
+            color: 'var(--ctx-text, #e4e4e7)',
+          }}
+          onFocus={() => activateActiveChartSource(activeChartSourceId)}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            activateActiveChartSource(activeChartSourceId);
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <button
+            type="button"
+            aria-label={tr('Zoom In')}
+            title={tr('Zoom In')}
+            autoFocus
+            className={ZOOM_BUTTON_CLASS_NAME}
+            onClick={handleCtxZoomIn}
+          >
+            <Plus size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label={tr('Zoom Out')}
+            title={tr('Zoom Out')}
+            className={ZOOM_BUTTON_CLASS_NAME}
+            onClick={handleCtxZoomOut}
+          >
+            <Minus size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label={tr('Close')}
+            title={tr('Close')}
+            className={ZOOM_BUTTON_CLASS_NAME}
+            onClick={closeZoomMode}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {/* Drawing Overlay — always pointer-events:none so chart canvas receives all mouse events */}
       <div
@@ -660,8 +757,7 @@ return (
           window.dispatchEvent(new CustomEvent('printChart'));
         }}
         onRefresh={handleCtxRefresh}
-        onZoomIn={handleCtxZoomIn}
-        onZoomOut={handleCtxZoomOut}
+        onOpenZoomControls={() => setZoomControlsOpen(true)}
         onAddIndicator={addLocalIndicator}
         onDeleteIndicators={handleCtxDeleteIndicators}
         onOpenNewOrder={handleCtxOpenNewOrder}

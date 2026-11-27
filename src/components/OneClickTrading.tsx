@@ -454,6 +454,20 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
             getAccountLogin,
         };
         if (!isOneClickTradingAccepted()) {
+            // If the user canceled the One-Click disclaimer in this session, open the
+            // Order sheet (Market Execution prefilled with symbol and side) on subsequent
+            // chart BUY/SELL clicks until they agree to One-Click Trading again.
+            if (useOneClickDisclaimerStore.getState().declinedInSession) {
+                const upperSide = side.toUpperCase() as 'BUY' | 'SELL';
+                window.dispatchEvent(new CustomEvent('openNewOrder', {
+                    detail: {
+                        symbol,
+                        side: upperSide,
+                        draft: { side: upperSide },
+                    },
+                }));
+                return;
+            }
             // Prevent a rapid double-click before the modal backdrop mounts
             // from queuing a second trade behind the same disclaimer prompt.
             if (useOneClickDisclaimerStore.getState().isOpen) return;

@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useEffect, useState } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import api from '../services/api';
+import { commitBrokerAccountSessionScope } from '../services/brokerSession';
 import { useAppStore } from '../store/useAppStore';
+import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { normalizeMarketStatus } from '../utils/marketStatus';
+import { OneClickTrading } from './OneClickTrading';
 import { formatPendingOrderBadgeLabel, OrderPanelDialog } from './OrderPanelDialog';
+import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
 import { tradeApi } from '../api/trade';
 
 vi.mock('../hooks/useSymbolMarketStatus', () => ({
@@ -24,6 +32,55 @@ const mockUseLiveOrderBook = vi.fn<() => unknown>();
 vi.mock('../hooks/useLiveMarketData', () => ({
   useLiveOrderBook: () => mockUseLiveOrderBook(),
 }));
+
+const DISCLAIMER_NAME = 'One Click Trading';
+const ACCEPT_LABEL = 'I Accept these Terms and Conditions';
+
+/**
+ * Mirrors the terminal shell: the order ticket mounts on `openNewOrder`,
+ * unmounts on close, and one app-level host owns the disclaimer sheet.
+ */
+const OrderTicketShell = ({ withChartPanel = false }: { withChartPanel?: boolean }) => {
+  const [ticket, setTicket] = useState<{ side?: 'BUY' | 'SELL' } | null>(null);
+  useEffect(() => {
+    const openTicket = (event: Event) => {
+      setTicket({ side: (event as CustomEvent<{ side?: 'BUY' | 'SELL' }>).detail?.side });
+    };
+    window.addEventListener('openNewOrder', openTicket);
+    return () => window.removeEventListener('openNewOrder', openTicket);
+  }, []);
+
+  return (
+    <>
+      {withChartPanel && (
+        <OneClickTrading
+          symbol="XAUUSD"
+          timeframe="M1"
+          visible
+          tradeAllowed
+          marketStatus={normalizeMarketStatus({ symbol: 'XAUUSD', status: 'open' })}
+        />
+      )}
+      {ticket && (
+        <OrderPanelDialog
+          isOpen
+          onClose={() => setTicket(null)}
+          symbol="XAUUSD"
+          currentPrice={{ bid: 4173.23, ask: 4173.77 }}
+          onSubmitOrder={vi.fn()}
+          initialSide={ticket.side}
+        />
+      )}
+      <OneClickDisclaimerDialog globalHost />
+    </>
+  );
+};
+
+const openOrderTicket = () => {
+  act(() => {
+    window.dispatchEvent(new CustomEvent('openNewOrder', { detail: { symbol: 'XAUUSD' } }));
+  });
+};
 
 describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
   beforeEach(() => {
@@ -993,6 +1050,172 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
       getContextSpy.mockRestore();
       rafSpy.mockRestore();
       cancelRafSpy.mockRestore();
+    }
+  });
+
+  it('offers One Click Trading from the order ticket: shows only the disclaimer sheet and restores chart one-click trading after agreement', async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useSettingsStore.getState().resetToDefaults();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    useAppStore.setState({
+      isAuthenticated: true,
+      accountId: '900001',
+      authToken: 'oct-panel-token',
+      tokenExpiresAt: Date.now() + 60_000,
+    });
+    commitBrokerAccountSessionScope({
+      authenticated: true,
+      accountId: '900001',
+      brokerId: 'test-broker',
+      serverUrl: 'https://test-broker.invalid',
+    });
+    const placeMarketSpy = vi.spyOn(api.orders, 'placeMarketOrder').mockResolvedValue({ ticket: 7001, symbol: 'XAUUSD' } as never);
+    const openedOrders: Array<Record<string, unknown>> = [];
+    const onOpenNewOrder = (event: Event) => openedOrders.push((event as CustomEvent).detail ?? {});
+    window.addEventListener('openNewOrder', onOpenNewOrder);
+
+    try {
+      render(<OrderTicketShell withChartPanel />);
+
+      // 1. User clicks BUY on the chart OneClickTrading panel -> clicks Cancel on disclaimer
+      fireEvent.click(screen.getByRole('button', { name: /^BUY XAUUSD/ }));
+      expect(screen.getByRole('dialog', { name: DISCLAIMER_NAME })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(useOneClickDisclaimerStore.getState().declinedInSession).toBe(true);
+      expect(placeMarketSpy).not.toHaveBeenCalled();
+
+      // 2. Clicking SELL again on the chart opens the Order sheet (Market Execution prefilled with SELL)
+      fireEvent.click(screen.getByRole('button', { name: /^SELL XAUUSD/ }));
+      expect(openedOrders).toEqual([{ symbol: 'XAUUSD', side: 'SELL', draft: { side: 'SELL' } }]);
+      expect(placeMarketSpy).not.toHaveBeenCalled();
+
+      const orderDialog = screen.getByRole('dialog', { name: /New Order/i });
+      expect(orderDialog).toHaveAttribute('data-order-mode', 'Market Execution');
+      expect(orderDialog).toHaveAttribute('data-side', 'sell');
+
+      // 3. Clicking One Click Trading in the Order sheet closes it: only the disclaimer sheet is on screen
+      fireEvent.click(screen.getByTestId('order-mode-one-click'));
+      expect(screen.queryByRole('dialog', { name: /New Order/i })).toBeNull();
+      const disclaimer = screen.getByRole('dialog', { name: DISCLAIMER_NAME });
+      expect(screen.getAllByRole('dialog')).toEqual([disclaimer]);
+
+      // Accepting enables One Click Trading and does not bring the Order sheet back
+      await act(async () => {
+        fireEvent.click(within(disclaimer).getByRole('button', { name: ACCEPT_LABEL }));
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(true);
+      expect(useOneClickDisclaimerStore.getState().declinedInSession).toBe(false);
+      expect(useSettingsStore.getState().trade.oneClickTrading).toBe(true);
+      expect(placeMarketSpy).not.toHaveBeenCalled();
+
+      // 4. Trading on the chart now executes One-Click immediately
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^BUY XAUUSD/ }));
+      });
+      await waitFor(() => expect(placeMarketSpy).toHaveBeenCalledTimes(1));
+      expect(placeMarketSpy).toHaveBeenCalledWith(
+        { side: 'buy', symbol: 'XAUUSD', volume: 0.01, login: 900001 },
+        { intentAtMs: expect.any(Number) },
+      );
+    } finally {
+      window.removeEventListener('openNewOrder', onOpenNewOrder);
+      placeMarketSpy.mockRestore();
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+      useSettingsStore.getState().resetToDefaults();
+      commitBrokerAccountSessionScope({ authenticated: false, brokerId: '', serverUrl: '' });
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+  });
+
+  it('closes the order ticket and shows only the disclaimer sheet when One Click Trading is clicked from a pending order mode', async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useSettingsStore.getState().resetToDefaults();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+
+    try {
+      render(<OrderTicketShell />);
+      openOrderTicket();
+
+      // Pending order mode: nothing prompts until One Click Trading is clicked
+      fireEvent.click(screen.getByTestId('order-mode-limit'));
+      expect(screen.queryByRole('dialog', { name: DISCLAIMER_NAME })).toBeNull();
+
+      // The ticket is gone (no One Click section either); the disclaimer sheet is the only dialog
+      fireEvent.click(screen.getByTestId('order-mode-one-click'));
+      expect(screen.queryByRole('dialog', { name: /New Order/i })).toBeNull();
+      expect(screen.queryByTestId('order-one-click-section')).toBeNull();
+      const disclaimer = screen.getByRole('dialog', { name: DISCLAIMER_NAME });
+      expect(screen.getAllByRole('dialog')).toEqual([disclaimer]);
+      expect(within(disclaimer).getByText('Disclaimer')).toBeInTheDocument();
+
+      // Cancel: the sheet closes, the ticket stays closed, One Click Trading stays off
+      fireEvent.click(within(disclaimer).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(false);
+      expect(useSettingsStore.getState().trade.oneClickTrading).toBe(false);
+
+      // Reopened ticket: One Click Trading shows the sheet again; Accept turns the mode on
+      openOrderTicket();
+      fireEvent.click(screen.getByTestId('order-mode-one-click'));
+      expect(screen.queryByRole('dialog', { name: /New Order/i })).toBeNull();
+      await act(async () => {
+        fireEvent.click(within(screen.getByRole('dialog', { name: DISCLAIMER_NAME })).getByRole('button', { name: ACCEPT_LABEL }));
+      });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(true);
+      expect(useSettingsStore.getState().trade.oneClickTrading).toBe(true);
+    } finally {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+      useSettingsStore.getState().resetToDefaults();
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+  });
+
+  it('opens the One Click Trading status section without a disclaimer once accepted, and leaves the ticket for the disclaimer when it is enabled again', () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    useSettingsStore.getState().resetToDefaults();
+    useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+
+    try {
+      act(() => {
+        useOneClickDisclaimerStore.getState().onAccept();
+      });
+      render(<OrderTicketShell />);
+      openOrderTicket();
+
+      // Already accepted: the ticket stays and shows the status section, with no disclaimer
+      fireEvent.click(screen.getByTestId('order-mode-one-click'));
+      expect(screen.queryByRole('dialog', { name: DISCLAIMER_NAME })).toBeNull();
+      expect(screen.getByRole('dialog', { name: /New Order/i })).toBeInTheDocument();
+      expect(screen.getByTestId('order-one-click-status')).toHaveTextContent('Accepted');
+
+      // Switching to an order mode leaves the section cleanly
+      fireEvent.click(screen.getByTestId('order-mode-limit'));
+      expect(screen.queryByTestId('order-one-click-section')).toBeNull();
+      fireEvent.click(screen.getByTestId('order-mode-one-click'));
+
+      // Turning it off keeps the ticket open
+      fireEvent.click(screen.getByTestId('order-one-click-action'));
+      expect(screen.getByTestId('order-one-click-status')).toHaveTextContent('Off');
+      expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(false);
+      expect(useSettingsStore.getState().trade.oneClickTrading).toBe(false);
+      expect(screen.getByRole('dialog', { name: /New Order/i })).toBeInTheDocument();
+
+      // Turning it on again closes the ticket: only the disclaimer sheet is on screen
+      fireEvent.click(screen.getByTestId('order-one-click-switch'));
+      expect(screen.queryByRole('dialog', { name: /New Order/i })).toBeNull();
+      expect(screen.getAllByRole('dialog')).toEqual([screen.getByRole('dialog', { name: DISCLAIMER_NAME })]);
+    } finally {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+      useSettingsStore.getState().resetToDefaults();
+      localStorage.clear();
+      sessionStorage.clear();
     }
   });
 });

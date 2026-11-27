@@ -16,6 +16,7 @@ vi.mock('../../services/api', () => ({
 
 import { useAppStore } from '../../store/useAppStore';
 import {
+  ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY,
   ONE_CLICK_DISCLAIMER_SESSION_KEY,
   useOneClickDisclaimerStore,
 } from '../../store/useOneClickDisclaimerStore';
@@ -105,29 +106,91 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
   });
 
   it.each(['Cancel', 'Close dialog', 'Escape', 'backdrop'] as const)(
-    're-shows the disclaimer on the next trade click when dismissed via %s',
+    'opens the Order sheet (Market Execution) on subsequent chart BUY/SELL clicks after dismissing via %s',
     (dismissal) => {
-      renderOneClick();
+      const openedOrders: Array<Record<string, unknown>> = [];
+      const onOpenNewOrder = (event: Event) => openedOrders.push((event as CustomEvent).detail ?? {});
+      window.addEventListener('openNewOrder', onOpenNewOrder);
+      try {
+        renderOneClick();
 
-      fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
-      expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
+        expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
 
-      if (dismissal === 'Escape') {
-        fireEvent.keyDown(screen.getByRole('dialog', { name: DIALOG_NAME }), { key: 'Escape' });
-      } else if (dismissal === 'backdrop') {
-        fireEvent.pointerDown(screen.getByTestId('one-click-disclaimer-backdrop'));
-      } else {
-        fireEvent.click(screen.getByRole('button', { name: dismissal }));
+        if (dismissal === 'Escape') {
+          fireEvent.keyDown(screen.getByRole('dialog', { name: DIALOG_NAME }), { key: 'Escape' });
+        } else if (dismissal === 'backdrop') {
+          fireEvent.pointerDown(screen.getByTestId('one-click-disclaimer-backdrop'));
+        } else {
+          fireEvent.click(screen.getByRole('button', { name: dismissal }));
+        }
+
+        expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
+        expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(false);
+        expect(useOneClickDisclaimerStore.getState().declinedInSession).toBe(true);
+        expect(sessionStorage.getItem(ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY)).toBe('1');
+        expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+
+        // Subsequent chart BUY/SELL opens the Order sheet (Market Execution) instead of re-prompting
+        fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
+        expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
+        expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
+        expect(openedOrders).toEqual([
+          {
+            symbol: 'BTCUSD',
+            side: 'BUY',
+            draft: { side: 'BUY' },
+          },
+        ]);
+      } finally {
+        window.removeEventListener('openNewOrder', onOpenNewOrder);
       }
-
-      expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
-      expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(false);
-      expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
-
-      fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
-      expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
     },
   );
+
+  it('preserves declined state across page refresh and clears it on session restart or Options agreement', async () => {
+    const openedOrders: Array<Record<string, unknown>> = [];
+    const onOpenNewOrder = (event: Event) => openedOrders.push((event as CustomEvent).detail ?? {});
+    window.addEventListener('openNewOrder', onOpenNewOrder);
+    try {
+      const view = renderOneClick();
+      fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(sessionStorage.getItem(ONE_CLICK_DISCLAIMER_DECLINED_SESSION_KEY)).toBe('1');
+
+      // Simulated refresh preserves declinedInSession -> still opens Order sheet
+      view.unmount();
+      act(() => {
+        useOneClickDisclaimerStore.setState({ declinedInSession: false });
+        useOneClickDisclaimerStore.getState().syncSessionAcceptanceFromStorage();
+      });
+      expect(useOneClickDisclaimerStore.getState().declinedInSession).toBe(true);
+
+      const afterRefresh = renderOneClick();
+      fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
+      expect(screen.queryByRole('dialog', { name: DIALOG_NAME })).not.toBeInTheDocument();
+      expect(openedOrders).toEqual([{ symbol: 'BTCUSD', side: 'SELL', draft: { side: 'SELL' } }]);
+
+      // Simulated app close/reopen clears sessionStorage -> disclaimer prompts again
+      afterRefresh.unmount();
+      sessionStorage.clear();
+      act(() => {
+        useOneClickDisclaimerStore.getState().syncSessionAcceptanceFromStorage();
+      });
+      expect(useOneClickDisclaimerStore.getState().declinedInSession).toBe(false);
+
+      renderOneClick();
+      fireEvent.click(screen.getByRole('button', { name: /^BUY BTCUSD/ }));
+      expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: ACCEPT_LABEL }));
+      });
+      await waitFor(() => expect(orderMocks.placeMarketOrder).toHaveBeenCalledTimes(1));
+    } finally {
+      window.removeEventListener('openNewOrder', onOpenNewOrder);
+    }
+  });
 
   it('preserves acceptance across page refresh / hard refresh (sessionStorage), and re-shows disclaimer when page or app is closed and reopened', async () => {
     const view = renderOneClick();
@@ -225,10 +288,10 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     );
   });
 
-  it('executes only the latest trade after a prior disclaimer was canceled and never duplicates rapid double-clicks', async () => {
+  it('executes only the latest trade after a prior disclaimer was canceled in Options and never duplicates rapid double-clicks', async () => {
     renderOneClick();
 
-    // Trigger SELL then cancel -> must never execute later
+    // Trigger SELL then cancel -> must never execute later; clear declined state as if re-opened in Options
     fireEvent.click(screen.getByRole('button', { name: /^SELL BTCUSD/ }));
     expect(screen.getByRole('dialog', { name: DIALOG_NAME })).toBeInTheDocument();
     await act(async () => {
@@ -236,7 +299,10 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     });
     expect(orderMocks.placeMarketOrder).not.toHaveBeenCalled();
 
-    // Trigger BUY twice while disclaimer is open -> only 1 BUY order should run on Accept
+    // Re-reset session flag and trigger BUY twice while disclaimer is open -> only 1 BUY order runs on Accept
+    act(() => {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
+    });
     const buyButton = screen.getByRole('button', { name: /^BUY BTCUSD/ });
     fireEvent.click(buyButton);
     fireEvent.click(buyButton);
@@ -354,6 +420,7 @@ describe('OneClickDisclaimerDialog (flat short MT5 sheet with session-default be
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     act(() => {
+      useOneClickDisclaimerStore.getState().resetSessionAcceptance();
       localStorage.setItem('broker_name', 'Acme Markets Ltd');
       useSettingsStore.getState().updateServerSettings({ serverName: 'Acme Markets Ltd' });
     });
