@@ -1195,14 +1195,21 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
       expect(screen.getByRole('dialog', { name: /New Order/i })).toBeInTheDocument();
       expect(screen.getByTestId('order-one-click-status')).toHaveTextContent('Accepted');
 
+      // The switch is the only control in the section: there is no separate Off/Enable button
+      const section = screen.getByTestId('order-one-click-section');
+      expect(within(section).getByRole('switch', { name: 'One Click Trading' })).toHaveAttribute('aria-checked', 'true');
+      expect(within(section).queryAllByRole('button')).toHaveLength(0);
+      expect(screen.queryByTestId('order-one-click-action')).toBeNull();
+
       // Switching to an order mode leaves the section cleanly
       fireEvent.click(screen.getByTestId('order-mode-limit'));
       expect(screen.queryByTestId('order-one-click-section')).toBeNull();
       fireEvent.click(screen.getByTestId('order-mode-one-click'));
 
-      // Turning it off keeps the ticket open
-      fireEvent.click(screen.getByTestId('order-one-click-action'));
+      // Turning it off with the switch keeps the ticket open
+      fireEvent.click(screen.getByTestId('order-one-click-switch'));
       expect(screen.getByTestId('order-one-click-status')).toHaveTextContent('Off');
+      expect(screen.getByTestId('order-one-click-switch')).toHaveAttribute('aria-checked', 'false');
       expect(useOneClickDisclaimerStore.getState().acceptedInSession).toBe(false);
       expect(useSettingsStore.getState().trade.oneClickTrading).toBe(false);
       expect(screen.getByRole('dialog', { name: /New Order/i })).toBeInTheDocument();

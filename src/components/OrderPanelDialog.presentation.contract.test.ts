@@ -54,4 +54,35 @@ describe('OrderPanelDialog presentation contract', () => {
     expect(baseSideTag).not.toContain('border-radius');
     expect(lightSideTag).toContain('background: transparent !important;');
   });
+
+  it('shows the One Click Trading state as plain text beside the switch, with no pill and no separate button', () => {
+    const status = dialogCss.match(/\.rtx-order-dialog__one-click-status\s*\{([^}]*)\}/)?.[1] ?? '';
+    const activeStatus = dialogCss.match(/\.rtx-order-dialog__one-click-status--active\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    // Plain text: no pill surface, outline or inset.
+    expect(status).toContain('color: var(--order-supporting-text);');
+    expect(status).not.toMatch(/background|border|padding/);
+    // "Accepted" takes the theme's primary text colour (white in the dark theme).
+    expect(activeStatus).toContain('color: var(--text-primary);');
+    expect(activeStatus).not.toMatch(/background|border/);
+
+    expect(dialogCss).not.toContain('one-click-badge');
+    expect(dialogCss).not.toContain('one-click-btn');
+    expect(dialogCss).not.toContain('one-click-actions');
+    expect(dialogSource).not.toContain('order-one-click-action');
+    expect(dialogSource).toContain('data-testid="order-one-click-switch"');
+  });
+
+  it('gives the One Click Trading section its hierarchy through type roles, since every text shares one size', () => {
+    const rule = (name: string) => dialogCss.match(new RegExp(`\\.rtx-order-dialog__one-click-${name}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+
+    expect(rule('title')).toContain('--rtx-type-weight: var(--rtx-font-weight-control);');
+    expect(rule('status')).toContain('--rtx-type-weight: var(--rtx-font-weight-body);');
+    expect(rule('lead')).toContain('color: var(--text-primary);');
+    expect(rule('body')).toContain('color: var(--order-supporting-text);');
+    // Sizes follow the user's font-size preference: nothing in the section pins one.
+    for (const name of ['card', 'header', 'title', 'status', 'body', 'lead', 'list']) {
+      expect(rule(name), name).not.toMatch(/font-size|--rtx-ui-font-size/);
+    }
+  });
 });

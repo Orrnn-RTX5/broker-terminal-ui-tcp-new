@@ -3849,64 +3849,45 @@ export function OrderPanelDialog({
             {isOneClickSectionOpen ? (
               <div className="rtx-order-dialog__one-click" data-testid="order-one-click-section">
                 <div className="rtx-order-dialog__one-click-card">
+                  {/* Control row: the switch is the only on/off control; its state is plain text beside it. */}
                   <div className="rtx-order-dialog__one-click-header">
-                    <div className="rtx-order-dialog__one-click-heading">
-                      <span className="rtx-order-dialog__one-click-title">{tr("One Click Trading")}</span>
+                    <span className="rtx-order-dialog__one-click-title">{tr("One Click Trading")}</span>
+                    <div className="rtx-order-dialog__one-click-control">
                       <span
-                        className={`rtx-order-dialog__one-click-badge ${oneClickActive ? 'rtx-order-dialog__one-click-badge--active' : ''}`}
+                        className={`rtx-order-dialog__one-click-status ${oneClickActive ? 'rtx-order-dialog__one-click-status--active' : ''}`}
                         data-testid="order-one-click-status"
                       >
                         {oneClickActive ? tr("Accepted") : tr("Off")}
                       </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={oneClickActive}
+                        aria-label={tr("One Click Trading")}
+                        data-testid="order-one-click-switch"
+                        onClick={handleOneClickToggle}
+                        className={`rtx-order-dialog__one-click-switch ${oneClickActive ? 'is-checked' : ''}`}
+                      >
+                        <span className="rtx-order-dialog__one-click-switch-thumb" />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={oneClickActive}
-                      aria-label={tr("One Click Trading")}
-                      data-testid="order-one-click-switch"
-                      onClick={handleOneClickToggle}
-                      className={`rtx-order-dialog__one-click-switch ${oneClickActive ? 'is-checked' : ''}`}
-                    >
-                      <span className="rtx-order-dialog__one-click-switch-thumb" />
-                    </button>
                   </div>
 
-                  <p className="rtx-order-dialog__one-click-copy">
-                    {tr("Allows performing trade operations with a single mouse click without additional confirmation.")}
-                  </p>
-                  <p className="rtx-order-dialog__one-click-copy">
-                    {tr("1. Default mode is a two-step process requiring order setup and explicit confirmation before submission.")}
-                  </p>
-                  <p className="rtx-order-dialog__one-click-copy">
-                    {tr("2. One Click Trading mode is a one-step process. Orders submit immediately when you:")}
-                  </p>
-                  <ul className="rtx-order-dialog__one-click-list">
-                    <li>{tr("click BUY or SELL on a chart panel or Market Watch Trading tab")}</li>
-                    <li>{tr("click Buy, Sell, or Close in the Depth of Market window")}</li>
-                    <li>{tr("place, drag, or delete orders from the chart, DOM, or Toolbox")}</li>
-                  </ul>
-
-                  <div className="rtx-order-dialog__one-click-actions">
-                    {oneClickActive ? (
-                      <button
-                        type="button"
-                        data-testid="order-one-click-action"
-                        className="rtx-order-dialog__one-click-btn rtx-order-dialog__one-click-btn--secondary"
-                        onClick={handleOneClickToggle}
-                      >
-                        {tr("Off")}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        data-testid="order-one-click-action"
-                        className="rtx-order-dialog__one-click-btn rtx-order-dialog__one-click-btn--primary"
-                        onClick={handleOneClickToggle}
-                      >
-                        {tr("Enable")}
-                      </button>
-                    )}
+                  <div className="rtx-order-dialog__one-click-body">
+                    <p className="rtx-order-dialog__one-click-lead">
+                      {tr("Allows performing trade operations with a single mouse click without additional confirmation.")}
+                    </p>
+                    <p>
+                      {tr("1. Default mode is a two-step process requiring order setup and explicit confirmation before submission.")}
+                    </p>
+                    <p>
+                      {tr("2. One Click Trading mode is a one-step process. Orders submit immediately when you:")}
+                    </p>
+                    <ul className="rtx-order-dialog__one-click-list">
+                      <li>{tr("click BUY or SELL on a chart panel or Market Watch Trading tab")}</li>
+                      <li>{tr("click Buy, Sell, or Close in the Depth of Market window")}</li>
+                      <li>{tr("place, drag, or delete orders from the chart, DOM, or Toolbox")}</li>
+                    </ul>
                   </div>
                 </div>
               </div>
