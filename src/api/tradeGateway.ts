@@ -97,6 +97,7 @@ export type GatewayDeal = {
   position?: number;
   account_login?: number;
   symbol?: string;
+  side?: string;
   action?: string | number;
   type?: string | number;
   entry?: string | number;
@@ -113,6 +114,8 @@ export type GatewayDeal = {
   contractSize?: number;
   time?: number;
   time_ms?: number;
+  canceled?: boolean;
+  canceled_at?: number;
 };
 
 export type GatewayClosedPosition = GatewayPosition & {
@@ -306,7 +309,7 @@ const buildClosedDealHistoryTrade = (groupDeals: Trade[], id: number): Trade | n
     return totalVolume > 0 ? weightedTotal / totalVolume : undefined;
   };
 
-  const profit = sorted.reduce((sum, deal) => sum + Number(deal.profit ?? 0), 0);
+  const profit = sorted.reduce((sum, deal) => sum + (deal.canceled === true ? 0 : Number(deal.profit ?? 0)), 0);
   const commission = sorted.reduce((sum, deal) => sum + Number(deal.commission ?? 0), 0);
   const swap = sorted.reduce((sum, deal) => sum + Number(deal.swap ?? 0), 0);
   const fee = sorted.reduce((sum, deal) => sum + Number(deal.fee ?? 0), 0);
@@ -517,13 +520,22 @@ export const normalizePosition = (raw: GatewayPosition): Position => {
 };
 
 export const normalizeDeal = (raw: GatewayDeal, index = 0): Trade => {
-  const action = String(raw.action ?? raw.type ?? '').toLowerCase();
+  const action = String(raw.action ?? raw.type ?? '').trim().toLowerCase();
+  const normalizedAction = action.replace(/^deal_(?:type_)?/, '').replace(/[\s-]+/g, '_');
+  const rawSide = String(raw.side ?? '').trim().toLowerCase();
   const entry = normalizeDealEntryKind(raw.entry);
-  const side = action.includes('sell') || action === '1'
-    ? 'SELL'
-    : action.includes('buy') || action === '0'
-      ? 'BUY'
-      : action.toUpperCase();
+  const canceled = raw.canceled === true
+    || normalizedAction === 'buy_canceled'
+    || normalizedAction === 'sell_canceled'
+    || action === '13'
+    || action === '14';
+  const isSell = rawSide.includes('sell') || action.includes('sell') || action === '1' || action === '14';
+  const isBuy = !isSell && (rawSide.includes('buy') || action.includes('buy') || action === '0' || action === '13');
+  const side = isSell ? 'SELL' : isBuy ? 'BUY' : action.toUpperCase();
+  const dealType = canceled
+    ? (isSell ? 'sell_canceled' : isBuy ? 'buy_canceled' : (action || 'canceled'))
+    : action;
+  const canceledAt = finiteNumberOrUndefined(raw.canceled_at);
   const time = raw.time_ms ?? raw.time;
   const dealTicket = finiteNumberOrUndefined(raw.ticket ?? raw.deal ?? index);
   const positionId = finiteNumberOrUndefined(raw.position_ticket ?? raw.position_id ?? raw.position);
@@ -543,14 +555,16 @@ export const normalizeDeal = (raw: GatewayDeal, index = 0): Trade => {
     closePrice: dealPrice,
     openTime: toIsoFromSeconds(time),
     closeTime: toIsoFromSeconds(time),
-    profit: Number(raw.profit ?? 0),
+    profit: canceled ? 0 : Number(raw.profit ?? 0),
     commission: Number(raw.commission ?? 0),
     swap: Number(raw.swap ?? 0),
     positionId,
     orderTicket: finiteNumberOrUndefined(raw.order_ticket ?? raw.order),
     dealTicket,
-    dealType: action,
+    dealType,
     entry: entry || undefined,
+    ...(canceled ? { canceled: true } : {}),
+    ...(canceledAt === undefined ? {} : { canceledAt }),
     ...(fee === undefined ? {} : { fee }),
     ...(magicNumber === undefined ? {} : { magicNumber }),
     ...(comment ? { comment } : {}),

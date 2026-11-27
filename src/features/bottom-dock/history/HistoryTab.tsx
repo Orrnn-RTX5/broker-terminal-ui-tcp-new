@@ -46,7 +46,9 @@ import {
   HISTORY_SHOW_MILLISECONDS_STORAGE_KEY,
   HISTORY_SHOW_ON_CHARTS_AUTO_UPDATE_STORAGE_KEY,
   HISTORY_VOLUME_MODE_STORAGE_KEY,
+  resolveHistoryRowProfit,
   resolveHistoryRowStatus,
+  resolveHistoryRowTypeLabel,
   type HistoryColumnKey,
   type HistoryColumnVisibility,
   type HistoryContextMenuState,
@@ -654,7 +656,7 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         { label: 'Time', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatBalanceTs(row.operation.time) : formatTs(row.trade.openTime)) },
         { label: 'Symbol', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : row.trade.symbol || '-') },
         ...(isColumnVisible('ticket') ? [{ label: 'Ticket', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.id : getHistoryTicket(row.trade)) }] : []),
-        { label: 'Type', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.type : String(row.trade.orderType || row.trade.side || row.trade.type || '-').replace(/_+/g, ' ').toLowerCase()) },
+        { label: 'Type', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? row.operation.type : resolveHistoryRowTypeLabel(row.trade)) },
         { label: 'Volume', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatHistoryVolume(row.trade)) },
         { label: 'Price', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatPriceCell(row.trade.openPrice, row.trade.symbol, row.trade.digits)) },
         { label: 'S/L', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : formatLevelCell(row.trade.sl, row.trade.symbol, row.trade.digits)) },
@@ -669,7 +671,7 @@ export function HistoryTab({ formatMoney, instrumentCatalog = [], accountBalance
         ...(isColumnVisible('commission') ? [{ label: 'Commission', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.commission)) }] : []),
         ...(isColumnVisible('swap') ? [{ label: 'Swap', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.swap)) }] : []),
         ...(isColumnVisible('fee') ? [{ label: 'Fee', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatMoney(row.trade.fee)) }] : []),
-        { label: 'Profit', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatMoney(row.operation.amount) : formatMoney(row.trade.profit)) },
+        { label: 'Profit', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatMoney(row.operation.amount) : formatMoney(resolveHistoryRowProfit(row.trade))) },
         ...(isColumnVisible('changePercent') ? [{ label: 'Change %', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '\u2014' : formatHistoryPercent(row.trade)) }] : []),
         ...(isColumnVisible('magicNumber') ? [{ label: 'Magic Number', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? '-' : row.trade.magicNumber ?? '-') }] : []),
         ...(isColumnVisible('comment') ? [{ label: 'Comment', value: (row: HistoryTableRow): string | number => (row.kind === 'balance' ? formatBalanceNote(row.operation) : row.trade.comment || '-') }] : []),
@@ -1168,14 +1170,15 @@ ${rows}
                                 );
                             }
                             const order = row.trade;
-                            const sideLabel = String(order.orderType || order.side || order.type || '-').replace(/_+/g, ' ').toLowerCase();
+                            const sideLabel = resolveHistoryRowTypeLabel(order);
                             const tradeKey = row.key;
                             const volumeLabel = formatHistoryVolume(order);
                             const marketValue = getHistoryMarketValue(order);
                             const marketValueLabel = marketValue === null ? '\u2014' : formatGroupedNumber(marketValue, 2, 2);
                             const changePercent = getHistoryChangePercent(order);
                             const changePercentLabel = formatHistoryPercent(order);
-                            const profitLabel = formatMoney(order.profit);
+                            const displayProfit = resolveHistoryRowProfit(order);
+                            const profitLabel = formatMoney(displayProfit);
                             const rowStatus = resolveHistoryRowStatus(order);
                             const ticket = getHistoryTicket(order);
                             const closePriceCellLabel = rowStatus !== 'FILLED' && !(Number(order.closePrice) > 0)
@@ -1231,7 +1234,7 @@ ${rows}
                                         {isColumnVisible('commission') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.commission)}`} title={tr("Commission: {{value0}}", { value0: formatMoney(order.commission) })}>{formatMoney(order.commission)}</td>}
                                         {isColumnVisible('swap') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.swap)}`} title={tr("Swap: {{value0}}", { value0: formatMoney(order.swap) })}>{formatMoney(order.swap)}</td>}
                                         {isColumnVisible('fee') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(order.fee)}`} title={tr("Fee: {{value0}}", { value0: formatMoney(order.fee) })}>{formatMoney(order.fee)}</td>}
-                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal tabular-nums ${moneyColor(order.profit)}`} title={tr("Profit: {{value0}}", { value0: profitLabel })}>{profitLabel}</td>
+                                        <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center font-normal tabular-nums ${moneyColor(displayProfit)}`} title={tr("Profit: {{value0}}", { value0: profitLabel })}>{profitLabel}</td>
                                         {isColumnVisible('changePercent') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center tabular-nums ${moneyColor(changePercent)}`} title={tr("Change %: {{value0}}", { value0: changePercentLabel })}>{changePercentLabel}</td>}
                                         {isColumnVisible('magicNumber') && <td className={`px-1.5 py-[2px] ${cellDividerClass} text-center text-zinc-100 tabular-nums`} title={tr("Magic Number: {{value0}}", { value0: order.magicNumber ?? '-' })}>{order.magicNumber ?? '-'}</td>}
                                         {isColumnVisible('comment') && <td className="px-1.5 py-[2px] text-center text-zinc-100 whitespace-nowrap" title={tr("Comment: {{value0}}", { value0: order.comment || '-' })}>{order.comment || '-'}</td>}

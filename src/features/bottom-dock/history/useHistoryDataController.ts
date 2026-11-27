@@ -8,6 +8,7 @@ import {
   onCommittedBrokerAccountSessionScopeChange,
 } from '../../../services/brokerSession';
 import {
+  invalidateTerminalHistory,
   loadTerminalHistory,
   peekTerminalHistory,
   registerHistoryTabMounted,
@@ -31,6 +32,8 @@ export type HistoryDataControllerOptions = {
 };
 
 const BALANCE_REALTIME_POLL_MS = 4_000;
+const HISTORY_STATE_REFRESH_LEAD_MS = 150;
+const HISTORY_STATE_REFRESH_COALESCE_MS = 1_000;
 const REALTIME_BALANCE_ENTITIES = new Set([
   '*',
   'account',
@@ -41,12 +44,23 @@ const REALTIME_BALANCE_ENTITIES = new Set([
   'deals',
   'deposit',
   'deposits',
+  'history',
   'ledger',
   'transaction',
   'transactions',
   'withdraw',
   'withdrawal',
   'withdrawals',
+]);
+const REALTIME_TRADE_HISTORY_ENTITIES = new Set([
+  '*',
+  'history',
+  'deal',
+  'deals',
+  'order',
+  'orders',
+  'position',
+  'positions',
 ]);
 
 const getCurrentSessionScopeKey = (): string => getCommittedBrokerAccountSessionScopeKey(
@@ -132,6 +146,8 @@ export const useHistoryDataController = (
   const requestSerialRef = useRef(0);
   const ledgerSerialRef = useRef(0);
   const mountedRef = useRef(false);
+  const historyStateRefreshTimerRef = useRef<number | null>(null);
+  const lastHistoryStateRefreshAtRef = useRef<number>(Number.NEGATIVE_INFINITY);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -270,6 +286,11 @@ export const useHistoryDataController = (
     const handleCompleted = (event: Event) => {
       const detail = (event as CustomEvent<TradeHistoryRefreshCompletedEventDetail>).detail;
       if (!detail || detail.ok === false || detail.login !== activeLogin) return;
+      if (historyStateRefreshTimerRef.current !== null) {
+        window.clearTimeout(historyStateRefreshTimerRef.current);
+        historyStateRefreshTimerRef.current = null;
+      }
+      lastHistoryStateRefreshAtRef.current = Date.now();
       void fetchHistory({ background: true, refresh: true });
     };
     window.addEventListener(TRADE_HISTORY_REFRESH_COMPLETED_EVENT, handleCompleted);
@@ -365,9 +386,48 @@ export const useHistoryDataController = (
     })
       : () => undefined;
 
+    const scheduleHistoryStateRefresh = (leadDelayMs = HISTORY_STATE_REFRESH_LEAD_MS) => {
+      if (historyStateRefreshTimerRef.current !== null) return;
+      const now = Date.now();
+      const elapsed = now - lastHistoryStateRefreshAtRef.current;
+      const delayMs = elapsed >= HISTORY_STATE_REFRESH_COALESCE_MS
+        ? leadDelayMs
+        : Math.max(0, HISTORY_STATE_REFRESH_COALESCE_MS - elapsed);
+      historyStateRefreshTimerRef.current = window.setTimeout(() => {
+        historyStateRefreshTimerRef.current = null;
+        lastHistoryStateRefreshAtRef.current = Date.now();
+        if (balanceRefreshTimer !== null) {
+          window.clearTimeout(balanceRefreshTimer);
+          balanceRefreshTimer = null;
+        }
+        void fetchHistory({ background: true, refresh: true });
+      }, delayMs);
+    };
+
     const handleStateChanged = (event: Event) => {
-      const entities = ((event as CustomEvent<{ entities?: unknown[] }>).detail?.entities ?? [])
-        .map((item) => String(item ?? '').toLowerCase());
+      const detail = (event as CustomEvent<{
+        entities?: unknown[];
+        login?: unknown;
+        historyPurgeScheduled?: unknown;
+      }>).detail;
+      if (detail?.login !== undefined && detail.login !== null && detail.login !== '') {
+        const eventLogin = Number.parseInt(String(detail.login), 10);
+        if (Number.isFinite(eventLogin) && eventLogin > 0 && eventLogin !== login) return;
+      }
+      const entities = (detail?.entities ?? [])
+        .map((item) => String(item ?? '').trim().toLowerCase())
+        .filter(Boolean);
+      if (entities.some((entity) => REALTIME_TRADE_HISTORY_ENTITIES.has(entity))) {
+        // The stream already invalidated the cache and armed one full read.
+        // TRADE_HISTORY_REFRESH_COMPLETED reloads this tab once when that read
+        // finishes. Starting the 150 ms timer as well is a second History reload
+        // inside the same 1 s burst. deals/orders/positions without the flag
+        // still use the timer (the refresh controller only matches "history").
+        if (detail?.historyPurgeScheduled === true) return;
+        invalidateTerminalHistory();
+        scheduleHistoryStateRefresh(HISTORY_STATE_REFRESH_LEAD_MS);
+        return;
+      }
       if (entities.length === 0 || entities.some((entity) => REALTIME_BALANCE_ENTITIES.has(entity))) {
         scheduleLedgerRefresh(150);
       }
@@ -381,13 +441,17 @@ export const useHistoryDataController = (
 
     return () => {
       if (balanceRefreshTimer !== null) window.clearTimeout(balanceRefreshTimer);
+      if (historyStateRefreshTimerRef.current !== null) {
+        window.clearTimeout(historyStateRefreshTimerRef.current);
+        historyStateRefreshTimerRef.current = null;
+      }
       unsubscribeStore();
       unsubscribeSocket();
       window.removeEventListener('rtx:state-changed', handleStateChanged);
       window.removeEventListener('rtx:trade-stream-recovered', handleStreamRecovered);
       window.removeEventListener('rtx:balance-history-updated', handleBalanceUpdated);
     };
-  }, [activeLogin, activeScopeKey, refreshBalanceHistory, requestScope]);
+  }, [activeLogin, activeScopeKey, fetchHistory, refreshBalanceHistory, requestScope]);
 
   useEffect(() => {
     if (!liveWithdrawalSync) return undefined;

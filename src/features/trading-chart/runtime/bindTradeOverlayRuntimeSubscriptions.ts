@@ -210,6 +210,9 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
       const status = getTradeOverlayCloseState(detail);
       const tradeKeys = getTradeOverlayCloseTicketKeys(detail);
       if (!status || tradeKeys.length === 0) return;
+      const isDeleted = Boolean(
+        detail && typeof detail === 'object' && (detail as { deleted?: unknown }).deleted === true,
+      );
       const closeSnapshotsByKey = new Map(
         getTradeOverlayCloseSnapshots(detail).map((snapshot) => [snapshot.key, snapshot]),
       );
@@ -235,15 +238,20 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
           } else {
             didClearTradeLevels = clearTradeLevelRuntimeStateByKey(key) || didClearTradeLevels;
           }
-          const eventCloseSnapshot = closeSnapshotsByKey.get(key);
-          const existingClosedTrade = optimisticClosedTradeSnapshotsRef.current.get(key);
-          const closedTrade = eventCloseSnapshot
-            ? buildClosedTradeFromEventSnapshot(eventCloseSnapshot, capturedTrade, existingClosedTrade)
-            : capturedTrade
-              ? buildImmediateClosedTrade(capturedTrade, existingClosedTrade)
-              : existingClosedTrade ?? null;
-          if (closedTrade) {
-            optimisticClosedTradeSnapshotsRef.current.set(key, closedTrade);
+          if (isDeleted) {
+            optimisticClosedTradeSnapshotsRef.current.delete(key);
+            forgetTradeOverlayOptimisticClosedSnapshot(key);
+          } else {
+            const eventCloseSnapshot = closeSnapshotsByKey.get(key);
+            const existingClosedTrade = optimisticClosedTradeSnapshotsRef.current.get(key);
+            const closedTrade = eventCloseSnapshot
+              ? buildClosedTradeFromEventSnapshot(eventCloseSnapshot, capturedTrade, existingClosedTrade)
+              : capturedTrade
+                ? buildImmediateClosedTrade(capturedTrade, existingClosedTrade)
+                : existingClosedTrade ?? null;
+            if (closedTrade) {
+              optimisticClosedTradeSnapshotsRef.current.set(key, closedTrade);
+            }
           }
           if (capturedTrade) {
             if (status === 'confirmed') {
@@ -263,7 +271,7 @@ export const bindTradeOverlayRuntimeSubscriptions = ({
           tradeLevelCrossRefreshPendingRef.current.delete(key);
         });
         if (didClearTradeLevels) persistTradeLevelOverrides();
-        scheduleHistoryRefresh();
+        if (!isDeleted) scheduleHistoryRefresh();
       }
 
       // No sync wipe of the active layer: the keyed reconcile removes only the closed (or restores the

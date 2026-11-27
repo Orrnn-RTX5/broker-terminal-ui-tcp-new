@@ -20,7 +20,57 @@ export type HistoryColumnKey =
 
 export type CanonicalHistoryOrderStatus = 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'PENDING';
 
+const normalizeHistoryDealType = (value: unknown): string => (
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^deal_(?:type_)?/, '')
+    .replace(/[\s-]+/g, '_')
+);
+
+export function isCanceledDeal(trade: Trade): boolean {
+  if (trade.canceled === true) return true;
+  const dealType = normalizeHistoryDealType(trade.dealType);
+  if (dealType === 'buy_canceled' || dealType === 'sell_canceled' || dealType === '13' || dealType === '14') {
+    return true;
+  }
+  const type = normalizeHistoryDealType(trade.type);
+  return type === 'buy_canceled' || type === 'sell_canceled';
+}
+
+export function resolveHistoryRowTypeLabel(trade: Trade): string {
+  if (isCanceledDeal(trade)) {
+    const dealType = normalizeHistoryDealType(trade.dealType);
+    const side = String(trade.side ?? '').trim().toLowerCase();
+    const orderType = String(trade.orderType ?? '').trim().toLowerCase();
+    const rawType = String(trade.type ?? '').trim().toLowerCase();
+    const isSell = side.includes('sell')
+      || dealType === 'sell_canceled'
+      || dealType === '14'
+      || orderType.includes('sell')
+      || rawType.includes('sell');
+    const isBuy = !isSell && (
+      side.includes('buy')
+      || dealType === 'buy_canceled'
+      || dealType === '13'
+      || orderType.includes('buy')
+      || rawType.includes('buy')
+    );
+    if (isSell) return 'Canceled Sell';
+    if (isBuy) return 'Canceled Buy';
+    return 'Canceled';
+  }
+  return String(trade.orderType || trade.side || trade.type || '-').replace(/_+/g, ' ').toLowerCase();
+}
+
+export function resolveHistoryRowProfit(trade: Trade): number {
+  if (isCanceledDeal(trade)) return 0;
+  const profit = Number(trade.profit ?? 0);
+  return Number.isFinite(profit) ? profit : 0;
+}
+
 export function resolveHistoryRowStatus(trade: Trade): CanonicalHistoryOrderStatus {
+  if (isCanceledDeal(trade)) return 'CANCELLED';
   const raw = String(trade.status ?? '').trim().toLowerCase();
   if (raw === 'cancelled' || raw === 'canceled') return 'CANCELLED';
   if (raw === 'expired') return 'EXPIRED';

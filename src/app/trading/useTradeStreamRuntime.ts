@@ -14,6 +14,7 @@ import { isTradeSubscriptionControlFrame } from '../../services/tradeStreamMessa
 import { decodePositionStreamMessage, getPositionStreamTicket } from '../../services/tradePositionStream';
 import { markPositionsStreamFrameIfStructural, requestPositionSnapshotRevalidation } from '../../services/positionSnapshotSafety';
 import {
+  isDeletedPositionStreamMessage,
   POSITION_BULK_CLOSED_EVENTS,
   POSITION_CLOSED_EVENTS,
   readPositionBulkCloseEvent,
@@ -22,6 +23,7 @@ import {
   reconcilePositionBulkClose,
   reconcilePositionStreamBatch,
 } from '../../services/positionStream';
+import { invalidateTerminalHistory } from '../../services/terminalHistory';
 import { dispatchTradeOverlayCloseState } from '../../services/tradeOverlayHistory';
 import { markPositionsClosed, useAppStore, type Account, type Position } from '../../store/useAppStore';
 import { useAlertStore } from '../../store/useAlertStore';
@@ -36,7 +38,7 @@ import {
   getPositionEventTicket,
   normalizeAccountSummary,
 } from './positionRuntime';
-import { createStreamHistoryCoalescer } from './tradeHistoryFreshness';
+import { createHistoryPurgeCoalescer, createStreamHistoryCoalescer } from './tradeHistoryFreshness';
 
 type Subscribe = (channel: string, callback: (data: unknown) => void) => () => void;
 type UnknownRecord = Record<string, unknown>;
@@ -65,6 +67,47 @@ const asRecord = (value: unknown): UnknownRecord | null => (
   value !== null && typeof value === 'object' ? value as UnknownRecord : null
 );
 
+const isDeletedPendingOrderFrame = (frame: unknown): boolean => {
+  const root = asRecord(frame);
+  const outer = asRecord(root?.data) ?? root;
+  const inner = asRecord(outer?.data) ?? asRecord(outer?.order) ?? outer;
+  if (inner?.deleted === true || outer?.deleted === true || root?.deleted === true) return true;
+  const candidates = [
+    inner?.type, inner?.event, inner?.status,
+    outer?.type, outer?.event, outer?.status,
+    root?.type, root?.event,
+  ];
+  return candidates.some((value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === 'pending_deleted' || normalized === 'order_deleted';
+  });
+};
+
+const readPendingOrderTicket = (frame: unknown): number | null => {
+  const root = asRecord(frame);
+  const outer = asRecord(root?.data) ?? root;
+  const inner = asRecord(outer?.data) ?? asRecord(outer?.order) ?? outer;
+  const candidate = Number(
+    inner?.ticket ?? inner?.order_ticket ?? inner?.order_id ?? inner?.id
+    ?? outer?.ticket ?? outer?.order_ticket ?? outer?.order_id ?? outer?.id
+    ?? root?.ticket ?? root?.order_ticket ?? root?.id,
+  );
+  return Number.isSafeInteger(candidate) && candidate > 0 ? candidate : null;
+};
+
+const isHistoryPurgeDealFrame = (frame: unknown): boolean => {
+  const root = asRecord(frame);
+  const outer = asRecord(root?.data) ?? root;
+  const inner = asRecord(outer?.data) ?? outer;
+  if (inner?.deleted === true || outer?.deleted === true || root?.deleted === true) return true;
+  const entity = String(inner?.entity ?? outer?.entity ?? root?.entity ?? '').trim().toLowerCase();
+  if (entity === 'history') return true;
+  const eventType = String(
+    inner?.type ?? inner?.event ?? outer?.type ?? outer?.event ?? root?.type ?? root?.event ?? '',
+  ).trim().toLowerCase();
+  return eventType === 'deal_deleted' || eventType === 'deal_canceled' || eventType === 'deal_cancelled';
+};
+
 interface UseTradeStreamRuntimeOptions {
   isAuthenticated: boolean;
   subscribe: Subscribe;
@@ -76,7 +119,7 @@ interface UseTradeStreamRuntimeOptions {
   markServerClosedTickets: (ticketIds?: number[]) => void;
   markTradeWsMessage: () => void;
   reconcileOptimisticClosedPositions: (positions: Position[]) => Position[];
-  refreshOrdersAndHistory: (login?: number, options?: { skipHistory?: boolean }) => Promise<void>;
+  refreshOrdersAndHistory: (login?: number, options?: { skipHistory?: boolean; full?: boolean }) => Promise<void>;
   reloadMarketSymbols: () => void | Promise<unknown>;
 }
 
@@ -107,19 +150,40 @@ export const useTradeStreamRuntime = ({
     if (!isAuthenticated) return undefined;
 
     let configurationChanged = false;
+    let historyPurgeScheduled = false;
     const changedEntities = new Set<string>();
     const invalidator = createStateInvalidator((login) => {
       if (!isSessionActive() || getLiveTradingLogin() !== login) return;
-      window.dispatchEvent(new Event('rtx:trade-stream-recovered'));
-      if (changedEntities.has('positions') || changedEntities.has('*')) {
+      const entities = [...changedEntities];
+      changedEntities.clear();
+      const purgeScheduled = historyPurgeScheduled;
+      historyPurgeScheduled = false;
+      const historyOnly = entities.length > 0 && entities.every((item) => item === 'history');
+      if (!historyOnly) {
+        window.dispatchEvent(new Event('rtx:trade-stream-recovered'));
+      }
+      if (entities.includes('positions') || entities.includes('*')) {
         requestPositionSnapshotRevalidation();
       }
-      window.dispatchEvent(new CustomEvent('rtx:state-changed', { detail: { entities: [...changedEntities] } }));
-      changedEntities.clear();
+      window.dispatchEvent(new CustomEvent('rtx:state-changed', {
+        detail: {
+          entities,
+          login,
+          ...(purgeScheduled ? { historyPurgeScheduled: true } : {}),
+        },
+      }));
       if (configurationChanged) {
         configurationChanged = false;
         void reloadMarketSymbols();
       }
+    });
+
+    const historyPurgeCoalescer = createHistoryPurgeCoalescer({
+      refresh: (login) => {
+        invalidateTerminalHistory();
+        return refreshOrdersAndHistory(login, { full: true });
+      },
+      isCurrent: (login) => isSessionActive() && getLiveTradingLogin() === login,
     });
 
     // Stream-driven History refetches: leading + trailing + close fallback, see tradeHistoryFreshness.
@@ -189,16 +253,47 @@ export const useTradeStreamRuntime = ({
         );
         const isLiveQuote = data.channel?.startsWith('quotes.');
 
-        if (data.channel?.startsWith('state.')) {
-          const login = getAcceptedChannelLogin(data.channel);
+        const isStateChannel = Boolean(
+          data.channel?.startsWith('state.')
+          || data.channel?.startsWith('rtx5.state.')
+          || (!data.channel && data.type === 'state_changed'),
+        );
+        if (isStateChannel) {
           const payloadData = asRecord(data.data);
           const entityData = asRecord(payloadData?.data) ?? payloadData;
-          const entity = typeof entityData?.entity === 'string' ? entityData.entity : '*';
+          let login: number | null = null;
+          if (data.channel?.startsWith('state.')) {
+            login = getAcceptedChannelLogin(data.channel);
+          } else if (data.channel?.startsWith('rtx5.state.')) {
+            const rest = data.channel.slice('rtx5.state.'.length).trim();
+            const lastSeg = rest.includes('.') ? rest.slice(rest.lastIndexOf('.') + 1).trim() : rest;
+            login = lastSeg ? getAcceptedChannelLogin(`state.${lastSeg}`) : null;
+          }
+          if (!login) {
+            const candidateLogin = Number(
+              data.account_login ?? data.login
+              ?? payloadData?.account_login ?? payloadData?.login
+              ?? entityData?.account_login ?? entityData?.login,
+            );
+            if (Number.isSafeInteger(candidateLogin) && candidateLogin > 0) {
+              login = getAcceptedChannelLogin(`state.${candidateLogin}`);
+            }
+          }
+          if (!login) return;
+          const rawEntity = entityData?.entity ?? payloadData?.entity ?? data.entity;
+          const entity = typeof rawEntity === 'string' && rawEntity.trim()
+            ? rawEntity.trim().toLowerCase()
+            : '*';
           changedEntities.add(entity);
           if (['groups', 'group_symbol_settings', 'instruments', 'brokers'].includes(entity)) {
             configurationChanged = true;
           }
-          if (login) invalidator.invalidate(login);
+          if (entity === 'history' && isSessionActive() && getLiveTradingLogin() === login) {
+            invalidateTerminalHistory();
+            historyPurgeCoalescer.trigger(login);
+            historyPurgeScheduled = true;
+          }
+          invalidator.invalidate(login);
           return;
         }
 
@@ -288,7 +383,8 @@ export const useTradeStreamRuntime = ({
               .map((row) => getPositionStreamTicket(row))
               .filter((value): value is number => value !== null);
             let batchClosedTickets: number[] = [];
-            if (POSITION_CLOSED_EVENTS.has(eventName) && ticket) {
+            if ((POSITION_CLOSED_EVENTS.has(eventName) || POSITION_CLOSED_EVENTS.has(decoded.event)) && ticket) {
+              const isDeletedPosition = decoded.deleted === true || isDeletedPositionStreamMessage(data);
               const { position } = readPositionStreamEvent(data);
               const closeResult = reconcilePositionStreamBatch(useAppStore.getState().positions, {
                 mode: 'delta',
@@ -296,13 +392,23 @@ export const useTradeStreamRuntime = ({
               });
               if (!closeResult.closedTickets.includes(ticket)) return;
               markServerClosedTickets(closeResult.closedTickets);
-              dispatchTradeOverlayCloseState(closeResult.closedTickets, 'confirmed');
+              dispatchTradeOverlayCloseState(
+                closeResult.closedTickets,
+                'confirmed',
+                isDeletedPosition ? { deleted: true } : undefined,
+              );
               useAppStore.getState().setPositions(
                 useAppStore.getState().positions.filter((position) => position.id !== ticket),
                 { closedTickets: closeResult.closedTickets },
               );
               requestPositionSnapshotRevalidation();
-              scheduleStreamHistoryRefresh(acceptedLogin, 'close');
+              if (isDeletedPosition) {
+                invalidateTerminalHistory();
+                historyPurgeCoalescer.trigger(acceptedLogin);
+              } else {
+                scheduleStreamHistoryRefresh(acceptedLogin, 'close');
+              }
+              return;
             } else if (batch) {
               const result = reconcilePositionStreamBatch(useAppStore.getState().positions, batch);
               batchClosedTickets = result.closedTickets;
@@ -345,9 +451,19 @@ export const useTradeStreamRuntime = ({
               !hasServerClosedTicket(closedTicket) && !openTickets.has(closedTicket)
             ));
             if (confirmedClosedTickets.length) {
+              const isDeletedPosition = decoded.deleted === true || isDeletedPositionStreamMessage(data);
               markServerClosedTickets(confirmedClosedTickets);
-              dispatchTradeOverlayCloseState(confirmedClosedTickets, 'confirmed');
-              scheduleStreamHistoryRefresh(acceptedLogin, 'close');
+              dispatchTradeOverlayCloseState(
+                confirmedClosedTickets,
+                'confirmed',
+                isDeletedPosition ? { deleted: true } : undefined,
+              );
+              if (isDeletedPosition) {
+                invalidateTerminalHistory();
+                historyPurgeCoalescer.trigger(acceptedLogin);
+              } else {
+                scheduleStreamHistoryRefresh(acceptedLogin, 'close');
+              }
             }
           } catch (error) {
             console.error('[WS POSITIONS ERROR]', error);
@@ -366,6 +482,22 @@ export const useTradeStreamRuntime = ({
           // History is skipped only for frames positively known not to change it.
           let frameMayChangeHistory = !data.channel.startsWith('deals.') && !isKnownPendingLifecycleFrame(data);
           if (data.channel.startsWith('orders.') || data.channel.startsWith('rtx5.pending_orders.')) {
+            if (isDeletedPendingOrderFrame(data)) {
+              const deletedTicket = readPendingOrderTicket(data);
+              if (deletedTicket !== null) {
+                const currentOrders = useAppStore.getState().orders;
+                const nextOrders = currentOrders.filter(
+                  (ord) => Number((ord as unknown as UnknownRecord)?.ticket ?? ord.id) !== deletedTicket
+                    && Number(ord.id) !== deletedTicket,
+                );
+                if (nextOrders.length !== currentOrders.length) {
+                  useAppStore.getState().setOrders(nextOrders);
+                }
+              }
+              invalidateTerminalHistory();
+              historyPurgeCoalescer.trigger(login);
+              return;
+            }
             const currentOrders = (useAppStore.getState().orders ?? []) as unknown as ReadonlyArray<Record<string, unknown>>;
             const notice = parsePendingOrderLifecycleFrame(data.channel, data.data ?? data, currentOrders);
             if (notice) {
@@ -504,6 +636,11 @@ export const useTradeStreamRuntime = ({
               }
             }
           }
+          if (data.channel.startsWith('deals.') && isHistoryPurgeDealFrame(data)) {
+            invalidateTerminalHistory();
+            historyPurgeCoalescer.trigger(login);
+            return;
+          }
           if (data.channel.startsWith('deals.') && !isEntryInDealFrame(data)) frameMayChangeHistory = true;
           scheduleStreamHistoryRefresh(login, 'order', !frameMayChangeHistory);
           return;
@@ -608,6 +745,7 @@ export const useTradeStreamRuntime = ({
       invalidator.dispose();
       unsubscribe();
       historyCoalescer.dispose();
+      historyPurgeCoalescer.dispose();
       openCoalescer.dispose();
       if (openRefreshTimerRef.current !== null) {
         window.clearTimeout(openRefreshTimerRef.current);

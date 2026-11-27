@@ -146,6 +146,9 @@
     "You accept all risks of errors or accidental clicks and agree to indemnify {{brokerName}} from related losses. You can enable or disable this mode anytime in Options → Trade.",
     "click BUY or SELL on a chart panel or Market Watch Trading tab",
     "click Buy, Sell, or Close in the Depth of Market window",
-    "place, drag, or delete orders from the chart, DOM, or Toolbox"
+    "place, drag, or delete orders from the chart, DOM, or Toolbox",
+    "Canceled",
+    "Canceled Buy",
+    "Canceled Sell"
   ]
 }

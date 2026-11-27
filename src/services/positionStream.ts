@@ -128,9 +128,39 @@ export const getPositionId = (raw: any): number => (
   toFinite(raw?.position_id ?? raw?.ticket ?? raw?.id ?? raw?.position_ticket ?? raw?.closed_ticket, 0)
 );
 
+export const isDeletedPositionRecord = (raw: any): boolean => {
+  if (!raw || typeof raw !== 'object') return false;
+  if (raw.deleted === true) return true;
+  const closeReason = String(raw.close_reason ?? raw.closeReason ?? '').trim().toLowerCase();
+  if (closeReason === 'deleted') return true;
+  const lifecycle = String(raw.event ?? raw.type ?? raw.status ?? raw.state ?? '').trim().toLowerCase();
+  if (lifecycle === 'position_deleted' || lifecycle === 'deleted') return true;
+  const action = String(raw.action ?? '').trim().toLowerCase();
+  return action === 'position_deleted' || action === 'deleted';
+};
+
+export const isDeletedPositionStreamMessage = (message: any): boolean => {
+  const envelopes = [message, message?.data, message?.data?.data];
+  for (const env of envelopes) {
+    if (!env || typeof env !== 'object') continue;
+    if (isDeletedPositionRecord(env)) return true;
+    if (
+      isDeletedPositionRecord(env.position)
+      || isDeletedPositionRecord(env.closed_position)
+      || isDeletedPositionRecord(env.result)
+    ) {
+      return true;
+    }
+    const list = Array.isArray(env) ? env : Array.isArray(env.positions) ? env.positions : null;
+    if (list && list.some((item: unknown) => isDeletedPositionRecord(item))) return true;
+  }
+  return false;
+};
+
 export const isClosedPositionRecord = (raw: any): boolean => {
+  if (isDeletedPositionRecord(raw)) return true;
   const lifecycle = String(raw?.event ?? raw?.status ?? raw?.state ?? '').trim().toLowerCase();
-  if (raw?.closed === true || ['close', 'closed', 'sl_hit', 'tp_hit', 'stop_out'].includes(lifecycle)) {
+  if (raw?.closed === true || ['close', 'closed', 'deleted', 'position_deleted', 'sl_hit', 'tp_hit', 'stop_out'].includes(lifecycle)) {
     return true;
   }
   const closedAt = readBrokerTimestampMs([raw], [
@@ -278,7 +308,7 @@ export const DELTA_EVENTS = new Set([
 ]);
 
 export const POSITION_CLOSED_EVENTS = new Set([
-  'close', 'closed', 'position_closed', 'sl_hit', 'tp_hit', 'stop_out',
+  'close', 'closed', 'position_closed', 'position_deleted', 'deleted', 'sl_hit', 'tp_hit', 'stop_out',
 ]);
 
 export const POSITION_BULK_CLOSED_EVENTS = new Set([
@@ -423,9 +453,15 @@ export const reconcilePositionBulkClose = <T extends { id: number }>(
   return { positions: remaining, closedTickets };
 };
 
+const SIDE_ONLY_ACTIONS = new Set(['buy', 'sell', 'long', 'short']);
+
 export const readPositionStreamEvent = (message: any): { event: string; position: any } => {
   const envelopes = [message?.data?.data, message?.data, message];
-  const event = envelopes.flatMap((value) => [value?.event, value?.type, value?.action])
+  const event = envelopes.flatMap((value) => [
+    value?.event,
+    value?.type,
+    SIDE_ONLY_ACTIONS.has(String(value?.action ?? '').trim().toLowerCase()) ? undefined : value?.action,
+  ])
     .map((value) => String(value ?? '').trim().toLowerCase())
     .find((value) => value && value !== 'channel_message') ?? '';
   const allowResult = event.startsWith('position_') || POSITION_CLOSED_EVENTS.has(event);

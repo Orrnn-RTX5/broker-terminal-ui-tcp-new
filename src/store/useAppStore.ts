@@ -342,6 +342,8 @@ export interface Trade {
   contractSize?: number;
   digits?: number;
   historySource?: 'closed-position' | 'deal' | 'order';
+  canceled?: boolean;
+  canceledAt?: number;
   clientOrderId?: string;
   placementErrorCode?: string;
   placementErrorMessage?: string;

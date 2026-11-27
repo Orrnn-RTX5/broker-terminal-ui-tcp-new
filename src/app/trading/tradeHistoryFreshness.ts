@@ -30,6 +30,10 @@ export const STREAM_HISTORY_MAX_WAIT_MS = 1000;
 export const STREAM_CLOSE_FALLBACK_MS = 1500;
 /** Fallback refetch after a fill or close ACK. */
 export const ACK_HISTORY_FALLBACK_MS = 1500;
+/** Leading delay before a full history purge reload runs after a delete or history invalidation. */
+export const HISTORY_PURGE_LEAD_MS = 50;
+/** Minimum spacing between full history purge reloads for one login (at most one per 1 s burst). */
+export const HISTORY_PURGE_COALESCE_MS = 1000;
 
 /**
  * skipHistory: the fill only opened a position (or placed a pending order), so closed-trade
@@ -37,6 +41,7 @@ export const ACK_HISTORY_FALLBACK_MS = 1500;
  */
 export interface HistoryRefreshOptions {
   skipHistory?: boolean;
+  full?: boolean;
 }
 
 export type HistoryRefresh = (login: number, options?: HistoryRefreshOptions) => unknown;
@@ -73,7 +78,9 @@ const reportRefreshError = (error: unknown): void => {
 
 const runRefresh = (refresh: HistoryRefresh, login: number, options?: HistoryRefreshOptions): void => {
   try {
-    void Promise.resolve(options?.skipHistory ? refresh(login, options) : refresh(login)).catch(reportRefreshError);
+    void Promise.resolve(
+      options?.skipHistory || options?.full ? refresh(login, options) : refresh(login),
+    ).catch(reportRefreshError);
   } catch (error) {
     reportRefreshError(error);
   }
@@ -280,4 +287,75 @@ export const createStreamHistoryCoalescer = (owner: {
   };
 
   return { onFrame, dispose };
+};
+
+export interface HistoryPurgeCoalescer {
+  trigger: (login: number) => void;
+  dispose: () => void;
+}
+
+/**
+ * Coalesces full-history purge reloads (deleted position/pending order or history
+ * state invalidation) so at most one reload runs per HISTORY_PURGE_COALESCE_MS (1 s)
+ * burst while guaranteeing the final state is always fetched.
+ */
+export const createHistoryPurgeCoalescer = (owner: {
+  refresh: (login: number) => void | Promise<unknown>;
+  isCurrent: (login: number) => boolean;
+}): HistoryPurgeCoalescer => {
+  let timer: number | null = null;
+  let pendingLogin: number | null = null;
+  let lastFireAt = Number.NEGATIVE_INFINITY;
+  let lastFireLogin: number | null = null;
+  let disposed = false;
+
+  const runOwnerRefresh = (login: number): void => {
+    try {
+      void Promise.resolve(owner.refresh(login)).catch(reportRefreshError);
+    } catch (error) {
+      reportRefreshError(error);
+    }
+  };
+
+  const fire = (): void => {
+    if (isBinaryTcpOrderEnabled() && getActiveBinaryTcpOrderCount() > 0) {
+      timer = window.setTimeout(fire, 600);
+      return;
+    }
+    timer = null;
+    const login = pendingLogin;
+    pendingLogin = null;
+    if (login === null || !owner.isCurrent(login)) return;
+    lastFireAt = Date.now();
+    lastFireLogin = login;
+    runOwnerRefresh(login);
+  };
+
+  const trigger = (login: number): void => {
+    if (disposed || !Number.isSafeInteger(login) || login <= 0) return;
+    pendingLogin = login;
+    if (timer !== null) return;
+    const now = Date.now();
+    const elapsed = login === lastFireLogin ? now - lastFireAt : Number.POSITIVE_INFINITY;
+    const delayMs = elapsed >= HISTORY_PURGE_COALESCE_MS
+      ? HISTORY_PURGE_LEAD_MS
+      : Math.max(0, HISTORY_PURGE_COALESCE_MS - elapsed);
+    timer = window.setTimeout(fire, delayMs);
+  };
+
+  const dispose = (): void => {
+    const hadPending = timer !== null;
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+    const login = pendingLogin;
+    pendingLogin = null;
+    disposed = true;
+    if (hadPending && login !== null && owner.isCurrent(login)) {
+      runOwnerRefresh(login);
+    }
+  };
+
+  return { trigger, dispose };
 };

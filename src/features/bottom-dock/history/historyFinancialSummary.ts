@@ -54,7 +54,7 @@ export const calculateHistoryFinancialSummary = (
       seenTickets.add(ticket);
     }
     const type = operationType(deal);
-    if (['balance', 'deposit', 'withdrawal', 'credit', 'buy_canceled', 'sell_canceled'].includes(type)) continue;
+    if (deal.canceled === true || ['balance', 'deposit', 'withdrawal', 'credit', 'buy_canceled', 'sell_canceled'].includes(type)) continue;
     if (!MT5_DEAL_TYPES.includes(type as typeof MT5_DEAL_TYPES[number])
       || ![deal.profit, deal.commission, deal.swap, deal.fee ?? 0].every(value => typeof value === 'number' && Number.isFinite(value))) {
       invalidFinancialRecord = true;

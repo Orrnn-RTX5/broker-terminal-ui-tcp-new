@@ -1,5 +1,9 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.18] - 2026-11-27 (VERSION file; terminal UI)
+### Added
+- **Manager trade delete and deal cancel sync**: handled real-time delete/cancel stream invalidations (`useTradeStreamRuntime`, `useTradeRefreshController`, `positionStream`, `tradePositionStream`), purged deleted positions/orders/deals from stores and chart overlays, refreshed History with burst coalescing, and displayed `"Canceled"` / `"Canceled Buy"` / `"Canceled Sell"` status and zeroed profit on canceled deals (excluded from summary totals). Requires backend 1.31.1 (migration 839). Not tested on a broker.
+
 ## [1.2.17] - 2026-11-26 (VERSION file; terminal UI)
 ### Tests
 - No change to the terminal itself. The remaining pre-existing failing tests from the test-environment and stale-expectation backlog are fixed: chart runtime, overlays and drawing tools; trade socket, WebSocket, API, public market, positions store and chart data; Market Watch, Journal, History, session and order execution contracts; desktop shell, startup and style contracts.

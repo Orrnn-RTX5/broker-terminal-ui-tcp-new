@@ -64,6 +64,8 @@ interface RefreshOrdersOptions {
   quiet?: boolean;
   /** Read only the newest rows and merge them into the loaded history. Omit for the full load. */
   historyLimit?: number;
+  /** Force cache invalidation and a full history reload that replaces store.trades (setTrades). */
+  full?: boolean;
 }
 
 /** Rows read per source by post-trade and event-driven history refreshes. */
@@ -89,6 +91,8 @@ interface PostTradeRefreshBurst {
   /** Merged options of the positions requests in the burst; null when there were none. */
   positions: RefreshPositionsOptions | null;
   history: boolean;
+  /** Require an unlimited history read that replaces store.trades instead of merging. */
+  fullHistory: boolean;
   /** Orders and metrics only (no closed-history read): fills that only opened a position. */
   orders: boolean;
   timer: number | null;
@@ -106,7 +110,7 @@ const createPostTradeRefreshBurst = (login: number): PostTradeRefreshBurst => {
     resolve = resolvePromise;
     reject = rejectPromise;
   });
-  return { login, positions: null, history: false, orders: false, timer: null, startedAt: Date.now(), settled, resolve, reject };
+  return { login, positions: null, history: false, fullHistory: false, orders: false, timer: null, startedAt: Date.now(), settled, resolve, reject };
 };
 
 const mergePositionsOptions = (
@@ -314,7 +318,8 @@ export const useTradeRefreshController = ({
   }, []);
   const refreshOrdersAndHistory = useCallback(async (login?: number, options?: RefreshOrdersOptions): Promise<void> => {
     const skipHistory = options?.skipHistory === true;
-    const historyLimit = options?.historyLimit;
+    const full = options?.full === true;
+    const historyLimit = full ? undefined : options?.historyLimit;
     const resolvedLogin = login || getLiveTradingLogin();
     if (!resolvedLogin) return;
     if (skipHistory && options?.quiet !== true) {
@@ -343,6 +348,7 @@ export const useTradeRefreshController = ({
     }
 
     if (!skipHistory) {
+      if (full) invalidateTerminalHistory();
       beginTradeHistoryRefresh();
       window.dispatchEvent(new CustomEvent('rtx:trade-history-refresh-started', {
         detail: { login: resolvedLogin },
@@ -429,6 +435,7 @@ export const useTradeRefreshController = ({
             const followUp = refreshOrdersAndHistory(pendingLogin, {
               skipHistory: !pendingNeedsHistory,
               quiet: true,
+              ...(pendingNeedsHistory && pendingFull ? { full: true } : {}),
               historyLimit: pendingNeedsHistory && !pendingFull ? (historyLimit ?? BACKGROUND_HISTORY_LIMIT) : undefined,
             });
             refreshHistoryFollowUpRef.current = followUp;
@@ -466,25 +473,26 @@ export const useTradeRefreshController = ({
   // Per-login 2 s gate on closed-history reads (post-trade, close events, stream close frames).
   // The first read runs at once with limit 100; later requests collapse into one trailing read.
   // After a limited read that could not verify a new close, the next gated read is a full one.
-  const gatedHistoryRead = useCallback((login: number): Promise<void> => {
+  const gatedHistoryRead = useCallback((login: number, options?: { full?: boolean }): Promise<void> => {
     const gates = historyGatesRef.current;
     let gate = gates.get(login);
     if (!gate) {
       gate = { retriesLeft: 1, wantsFull: false, lastRunAt: Number.NEGATIVE_INFINITY, timer: null, waiters: [] };
       gates.set(login, gate);
     }
+    if (options?.full) gate.wantsFull = true;
     const activeGate = gate;
     const runOptions = (): RefreshOrdersOptions | undefined => {
       const full = activeGate.wantsFull;
       activeGate.wantsFull = false;
-      return full ? undefined : { historyLimit: BACKGROUND_HISTORY_LIMIT };
+      return full ? { full: true } : { historyLimit: BACKGROUND_HISTORY_LIMIT };
     };
     const runners = postTradeRunnersRef.current;
     // A read whose history part failed is retried once through the gate, keeping its full flag.
-    const runRead = (read: typeof refreshOrdersAndHistory, options: RefreshOrdersOptions | undefined): Promise<void> => {
-      const wasFull = options === undefined;
+    const runRead = (read: typeof refreshOrdersAndHistory, readOptions: RefreshOrdersOptions | undefined): Promise<void> => {
+      const wasFull = readOptions === undefined || readOptions.full === true;
       historyOutcomeRef.current.delete(login);
-      return read(login, options).then(() => {
+      return read(login, readOptions).then(() => {
         if (historyOutcomeRef.current.get(login) === false) {
           if (activeGate.retriesLeft > 0) {
             activeGate.retriesLeft -= 1;
@@ -551,20 +559,24 @@ export const useTradeRefreshController = ({
     if (isLive && burst.positions) reads.push(runners.refreshPositions(burst.login, burst.positions));
     // Positions start first: the orders+history read skips its own metrics read while a
     // positions read is in flight, so the burst issues one account-metrics read.
-    if (isLive && burst.history) reads.push(gatedHistoryRead(burst.login));
+    if (isLive && burst.history) reads.push(gatedHistoryRead(burst.login, burst.fullHistory ? { full: true } : undefined));
     else if (isLive && burst.orders) reads.push(runners.refreshOrdersAndHistory(burst.login, { skipHistory: true }));
     Promise.all(reads).then(burst.resolve, burst.reject);
   }, [gatedHistoryRead]);
 
   const requestPostTradeRefresh = useCallback((
     login: number,
-    request: { positions?: RefreshPositionsOptions; history?: boolean; orders?: boolean },
+    request: { positions?: RefreshPositionsOptions; history?: boolean; fullHistory?: boolean; orders?: boolean },
   ): Promise<void> => {
     const bursts = postTradeBurstsRef.current;
     const burst = bursts.get(login) ?? createPostTradeRefreshBurst(login);
     bursts.set(login, burst);
     if (request.positions) burst.positions = mergePositionsOptions(burst.positions, request.positions);
     if (request.history) burst.history = true;
+    if (request.fullHistory) {
+      burst.history = true;
+      burst.fullHistory = true;
+    }
     if (request.orders) burst.orders = true;
     if (burst.timer !== null) window.clearTimeout(burst.timer);
     const untilMaxWait = burst.startedAt + POST_TRADE_REFRESH_MAX_WAIT_MS - Date.now();
@@ -585,6 +597,10 @@ export const useTradeRefreshController = ({
   const refreshOrdersAndHistoryAfterTrade = useCallback((login?: number, options?: RefreshOrdersOptions): Promise<void> => {
     const resolvedLogin = login || getLiveTradingLogin();
     if (!resolvedLogin) return Promise.resolve();
+    if (options?.full) {
+      invalidateTerminalHistory();
+      return requestPostTradeRefresh(resolvedLogin, { history: true, fullHistory: true });
+    }
     // A fill that only opened a position cannot change closed history: refresh orders/metrics only.
     return requestPostTradeRefresh(resolvedLogin, options?.skipHistory ? { orders: true } : { history: true });
   }, [getLiveTradingLogin, requestPostTradeRefresh]);
@@ -649,17 +665,49 @@ export const useTradeRefreshController = ({
   useEffect(() => {
     const handleHistoryRefreshRequest = (event: Event) => {
       if (!isAuthenticatedRef.current) return;
-      const requestedLogin = parsePositiveLogin(String((event as CustomEvent)?.detail?.login ?? ''));
+      const detail = (event as CustomEvent<{ login?: unknown; full?: unknown }>)?.detail;
+      const requestedLogin = parsePositiveLogin(String(detail?.login ?? ''));
       const liveLogin = getLiveTradingLogin();
       if (!requestedLogin || !liveLogin || requestedLogin !== liveLogin) return;
       // Debounced post-trade burst plus the per-login 2 s history gate: a burst of requests
       // collapses into at most one read per window, with a trailing read.
-      void refreshOrdersAndHistoryAfterTrade(requestedLogin).catch((error) => {
+      void refreshOrdersAndHistoryAfterTrade(
+        requestedLogin,
+        detail?.full === true ? { full: true } : undefined,
+      ).catch((error) => {
         console.error('[History] Failed to refresh orders/history:', error);
       });
     };
     window.addEventListener('rtx:refresh-trade-history-requested', handleHistoryRefreshRequest);
     return () => window.removeEventListener('rtx:refresh-trade-history-requested', handleHistoryRefreshRequest);
+  }, [getLiveTradingLogin, isAuthenticatedRef, refreshOrdersAndHistoryAfterTrade]);
+
+  useEffect(() => {
+    const handleStateChanged = (event: Event) => {
+      if (!isAuthenticatedRef.current) return;
+      const detail = (event as CustomEvent<{
+        entities?: unknown;
+        login?: unknown;
+        historyPurgeScheduled?: unknown;
+      }>)?.detail;
+      if (detail?.historyPurgeScheduled === true) return;
+      const entities = Array.isArray(detail?.entities)
+        ? detail.entities.map((item) => String(item ?? '').trim().toLowerCase())
+        : [];
+      if (!entities.includes('history')) return;
+      const liveLogin = getLiveTradingLogin();
+      if (!liveLogin) return;
+      if (detail?.login !== undefined && detail.login !== null && detail.login !== '') {
+        const eventLogin = parsePositiveLogin(String(detail.login));
+        if (!eventLogin || eventLogin !== liveLogin) return;
+      }
+      invalidateTerminalHistory();
+      void refreshOrdersAndHistoryAfterTrade(liveLogin, { full: true }).catch((error) => {
+        console.error('[History] Failed to refresh orders/history:', error);
+      });
+    };
+    window.addEventListener('rtx:state-changed', handleStateChanged);
+    return () => window.removeEventListener('rtx:state-changed', handleStateChanged);
   }, [getLiveTradingLogin, isAuthenticatedRef, refreshOrdersAndHistoryAfterTrade]);
 
   // Order and close call sites outside hooks refresh History through this owner.

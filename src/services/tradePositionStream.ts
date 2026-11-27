@@ -11,6 +11,8 @@ export interface DecodedPositionStreamMessage {
   event: string;
   /** Candidates only: ordering checks still apply before accepting a close. */
   closedTickets: number[];
+  /** True when the message represents a deleted position (play no close sound/toast, purge history). */
+  deleted?: boolean;
   bulkClose?: {
     account_login?: number;
     broker_id?: string;
@@ -38,13 +40,24 @@ export const getPositionStreamVersion = (value: PositionRecord): string | null =
   readPositionStateVersion(value.state_version_text ?? value.state_version)
 );
 
+const SIDE_ONLY_ACTIONS = new Set(['buy', 'sell', 'long', 'short']);
+
 const isCloseEvent = (event: string): boolean => (
-  ['close', 'closed', 'position_close', 'position_closed', 'sl_hit', 'tp_hit', 'stop_out'].includes(event)
+  ['close', 'closed', 'position_close', 'position_closed', 'position_deleted', 'deleted', 'sl_hit', 'tp_hit', 'stop_out'].includes(event)
+);
+
+const isDeletedRow = (row: PositionRecord, event: string): boolean => (
+  event === 'position_deleted'
+  || event === 'deleted'
+  || row.deleted === true
+  || String(row.close_reason ?? row.closeReason ?? '').trim().toLowerCase() === 'deleted'
+  || ['deleted', 'position_deleted'].includes(String(row.status ?? row.state ?? '').trim().toLowerCase())
 );
 
 const isClosed = (row: PositionRecord, event: string): boolean => (
   isCloseEvent(event)
-  || ['close', 'closed'].includes(String(row.status ?? row.state ?? '').toLowerCase())
+  || isDeletedRow(row, event)
+  || ['close', 'closed', 'deleted', 'position_deleted'].includes(String(row.status ?? row.state ?? '').toLowerCase())
 );
 
 /** Accept both gateway {channel,data:{type,data}} and older channel envelopes. */
@@ -62,27 +75,33 @@ export function decodePositionStreamMessage(message: unknown): DecodedPositionSt
     if (Array.isArray(payload)) {
       const rows = payload.filter(record).map(row => ({ ...inherited, ...row }));
       const isDelta = rows.some(row => row.update_kind === 'pnl')
-        || (!listSnapshot && /^(position_(update|opened|modified|closed)|update|patch|open|close|closed)$/.test(event))
+        || (!listSnapshot && /^(position_(update|opened|modified|closed|deleted)|update|patch|open|close|closed|deleted)$/.test(event))
         // An incomplete row collection has no authority to delete omitted
         // tickets. Empty arrays remain valid authoritative empty snapshots.
         || payload.length !== rows.length
         || rows.some(row => !hasStructuralPositionFields(row));
       const kind = isDelta ? 'patch' : 'snapshot';
+      const deleted = rows.some(row => isDeletedRow(row, event));
       return {
         kind,
         rows,
         event,
         closedTickets: rows.filter(row => isClosed(row, event))
           .map(getPositionStreamTicket).filter((id): id is number => id !== null),
+        ...(deleted ? { deleted: true } : {}),
       };
     }
     if (!record(payload)) return null;
 
-    const nextEvent = [payload.event, payload.type, payload.action]
+    const actionCandidate = typeof payload.action === 'string'
+      && !SIDE_ONLY_ACTIONS.has(payload.action.trim().toLowerCase())
+      ? payload.action
+      : undefined;
+    const nextEvent = [payload.event, payload.type, actionCandidate]
       .find(value => typeof value === 'string' && value.trim()
         && !['channel_message', 'subscribed', 'unsubscribed'].includes(value.trim().toLowerCase()));
     if (typeof nextEvent === 'string') event = nextEvent.trim().toLowerCase();
-    for (const key of ['account_login', 'broker_id', 'state_version', 'state_version_text', 'symbol', 'filter_type', 'filterType', 'closed_tickets', 'closedTickets']) {
+    for (const key of ['account_login', 'broker_id', 'state_version', 'state_version_text', 'symbol', 'filter_type', 'filterType', 'closed_tickets', 'closedTickets', 'deleted', 'close_reason', 'closeReason']) {
       if (payload[key] !== undefined) inherited[key] = payload[key];
     }
 
@@ -117,9 +136,11 @@ export function decodePositionStreamMessage(message: unknown): DecodedPositionSt
 
     if (getPositionStreamTicket(payload)) {
       const row = { ...inherited, ...payload };
+      const deleted = isDeletedRow(row, event);
       return {
         kind: 'patch', rows: [row], event,
         closedTickets: isClosed(row, event) ? [getPositionStreamTicket(row)!] : [],
+        ...(deleted ? { deleted: true } : {}),
       };
     }
     if (Array.isArray(payload.positions)) {

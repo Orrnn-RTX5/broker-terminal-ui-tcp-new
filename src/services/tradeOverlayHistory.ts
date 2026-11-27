@@ -78,6 +78,7 @@ export type TradeOverlayCloseSnapshotPayload = Record<string, unknown> & {
 
 interface TradeOverlayCloseStateDispatchOptions {
   snapshots?: readonly TradeOverlayCloseSnapshotPayload[];
+  deleted?: boolean;
 }
 
 interface TradeOverlayCandleTimeSource {
@@ -391,9 +392,10 @@ export const dispatchTradeOverlayCloseState = (
     status,
     ticketIds: tickets,
     ...(options.snapshots?.length ? { snapshots: options.snapshots } : {}),
+    ...(options.deleted ? { deleted: true } : {}),
   };
 
-  if (status === 'failed') {
+  if (status === 'failed' || options.deleted) {
     clearTradeOverlayOptimisticClosedSnapshots(tickets.map((ticket) => `trade:${ticket}`));
   } else {
     rememberTradeOverlayOptimisticClosedSnapshots(detail);
