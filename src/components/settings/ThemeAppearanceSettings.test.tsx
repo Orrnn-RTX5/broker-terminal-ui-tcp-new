@@ -51,6 +51,20 @@ describe('ThemeAppearanceSettings', () => {
     expect(container.textContent).not.toMatch(/vs\s*code/i);
   });
 
+  it('resets to the Light theme, the default, even after Dark was chosen', () => {
+    render(<ThemeAppearanceSettings />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dark theme' }));
+    expect(useThemeAppearanceStore.getState().themeMode).toBe('dark');
+    expect(document.documentElement).toHaveClass('theme-dark');
+
+    useThemeAppearanceStore.getState().resetToDefaults();
+    expect(useThemeAppearanceStore.getState().themeMode).toBe('light');
+    expect(document.documentElement).toHaveClass('theme-light', 'rtx-skin-untitled-light');
+    expect(document.documentElement).not.toHaveClass('theme-dark');
+    expect(localStorage.getItem('rtx5-theme')).toBe('light');
+  });
+
   it('renders ThemeSettingsDialog without any subtitle line, noisy descriptions, or VS Code text', () => {
     const { container } = render(<ThemeSettingsDialog isOpen={true} onClose={() => {}} />);
     expect(screen.getByRole('heading', { name: 'Appearance & Themes' })).toBeInTheDocument();

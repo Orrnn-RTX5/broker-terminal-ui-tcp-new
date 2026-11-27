@@ -1,3 +1,5 @@
+import { isSavedThemeLight, THEME_APPEARANCE_STORAGE_KEY } from './savedTheme';
+
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type ThemeContrast = 'default' | 'strong';
 
@@ -111,7 +113,7 @@ export interface ThemeAppearanceState {
   dark: ThemeVariantSettings<DarkThemePresetId>;
 }
 
-export const RTX_THEME_APPEARANCE_STORAGE_KEY = 'rtx5-theme-appearance';
+export const RTX_THEME_APPEARANCE_STORAGE_KEY = THEME_APPEARANCE_STORAGE_KEY;
 export const RTX_THEME_APPEARANCE_CHANGE_EVENT = 'rtx:theme-appearance-change';
 
 export const THEME_PRESET_CATEGORIES: readonly ThemePresetCategory[] = [
@@ -839,8 +841,9 @@ export const DEFAULT_DARK_THEME_SETTINGS: ThemeVariantSettings<DarkThemePresetId
   accent: '#007ACC',
 };
 
+// Light is the terminal's default theme (see savedTheme.ts).
 export const DEFAULT_THEME_APPEARANCE_STATE: ThemeAppearanceState = {
-  themeMode: 'dark',
+  themeMode: 'light',
   contrast: 'default',
   light: { ...DEFAULT_LIGHT_THEME_SETTINGS },
   dark: { ...DEFAULT_DARK_THEME_SETTINGS },
@@ -1261,15 +1264,7 @@ export function applyThemeAppearanceToRoot(
 }
 
 export function loadStoredThemeAppearance(): ThemeAppearanceState {
-  let fallbackThemeMode: ThemeMode = 'dark';
-  try {
-    const savedLight =
-      localStorage.getItem('rtx5-advanced-view-enabled') === 'true' ||
-      localStorage.getItem('rtx5-theme') === 'light';
-    fallbackThemeMode = savedLight ? 'light' : 'dark';
-  } catch {
-    fallbackThemeMode = 'dark';
-  }
+  const fallbackThemeMode: ThemeMode = isSavedThemeLight() ? 'light' : 'dark';
 
   try {
     const raw = localStorage.getItem(RTX_THEME_APPEARANCE_STORAGE_KEY);

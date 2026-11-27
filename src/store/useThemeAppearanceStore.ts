@@ -249,7 +249,7 @@ export const useThemeAppearanceStore = create<ThemeAppearanceStore>()((set, get)
 
     resetToDefaults: () => {
       const next: ThemeAppearanceState = {
-        themeMode: 'dark',
+        themeMode: DEFAULT_THEME_APPEARANCE_STATE.themeMode,
         contrast: 'default',
         light: { ...DEFAULT_LIGHT_THEME_SETTINGS },
         dark: { ...DEFAULT_DARK_THEME_SETTINGS },

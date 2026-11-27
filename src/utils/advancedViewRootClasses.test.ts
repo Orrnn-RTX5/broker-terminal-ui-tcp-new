@@ -115,6 +115,8 @@ describe('advanced view root classes', () => {
   });
 
   it('restores this tab focus at startup in Dark theme without using a shared saved focus flag', () => {
+    // Dark chosen after light became the default (see savedTheme.ts).
+    localStorage.setItem('rtx5-default-light-theme-v1', '1');
     localStorage.setItem('rtx5-advanced-view-enabled', 'false');
     localStorage.removeItem('rtx5-theme');
     persistChartFocusPreference(true);
@@ -155,8 +157,22 @@ describe('advanced view root classes', () => {
     expect(root.className).toBe('theme-dark sentinel');
   });
 
+  it('starts in the Light theme when no theme was ever saved', () => {
+    const root = document.documentElement;
+    localStorage.removeItem('rtx5-default-light-theme-v1');
+    localStorage.removeItem('rtx5-advanced-view-enabled');
+    localStorage.removeItem('rtx5-theme');
+    initRootTheme(root);
+
+    expect(isSavedThemeLight()).toBe(true);
+    expect(root).toHaveClass('rtx-advanced-view', 'rtx-skin-untitled-light', 'theme-light');
+    expect(root).not.toHaveClass('theme-dark');
+    expect(root.getAttribute('data-theme')).toBe('light');
+  });
+
   it('initializes root theme based on saved preferences', () => {
     const root = document.documentElement;
+    localStorage.setItem('rtx5-default-light-theme-v1', '1');
     localStorage.setItem('rtx5-advanced-view-enabled', 'true');
     initRootTheme(root);
 

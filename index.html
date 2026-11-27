@@ -219,10 +219,33 @@
         );
       } catch (_) { /* Storage can be unavailable in hardened browser contexts. */ }
 
-      var isLightTheme = false;
+      // Light is the default theme. A theme saved before light became the
+      // default is replaced once; every later choice is kept. This mirrors
+      // src/utils/savedTheme.ts so the first paint already has the right theme.
+      var isLightTheme = true;
       try {
-        isLightTheme = localStorage.getItem('rtx5-advanced-view-enabled') === 'true' ||
-                       localStorage.getItem('rtx5-theme') === 'light';
+        if (localStorage.getItem('rtx5-default-light-theme-v1') !== '1') {
+          localStorage.setItem('rtx5-advanced-view-enabled', 'true');
+          localStorage.setItem('rtx5-theme', 'light');
+          var rawAppearance = localStorage.getItem('rtx5-theme-appearance');
+          if (rawAppearance) {
+            try {
+              var appearance = JSON.parse(rawAppearance);
+              var appearanceRecord = appearance && typeof appearance.state === 'object' && appearance.state !== null
+                ? appearance.state
+                : appearance;
+              if (appearanceRecord && typeof appearanceRecord === 'object') {
+                appearanceRecord.themeMode = 'light';
+                localStorage.setItem('rtx5-theme-appearance', JSON.stringify(appearance));
+              }
+            } catch (_) { /* An unreadable record already loads as the defaults. */ }
+          }
+          localStorage.setItem('rtx5-default-light-theme-v1', '1');
+        }
+        var savedLight = localStorage.getItem('rtx5-advanced-view-enabled');
+        var savedThemeName = localStorage.getItem('rtx5-theme');
+        isLightTheme = savedLight === 'true' || savedThemeName === 'light' ||
+                       (savedLight === null && savedThemeName === null);
       } catch (_) { /* Storage can be unavailable in hardened browser contexts. */ }
 
       if (isLightTheme) {

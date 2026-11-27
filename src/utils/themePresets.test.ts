@@ -251,6 +251,24 @@ describe('themePresets', () => {
     expect(loaded.dark.preset).toBe('vesper');
   });
 
+  it('defaults to the Light theme, and follows a dark choice saved after that default', () => {
+    expect(DEFAULT_THEME_APPEARANCE_STATE.themeMode).toBe('light');
+
+    // Nothing saved: light.
+    localStorage.removeItem('rtx5-default-light-theme-v1');
+    expect(loadStoredThemeAppearance().themeMode).toBe('light');
+
+    // Dark chosen afterwards, with no appearance record yet: dark.
+    localStorage.setItem('rtx5-advanced-view-enabled', 'false');
+    localStorage.setItem('rtx5-theme', 'dark');
+    expect(loadStoredThemeAppearance().themeMode).toBe('dark');
+
+    // An unreadable appearance record falls back to the same saved choice.
+    localStorage.setItem(RTX_THEME_APPEARANCE_STORAGE_KEY, '{not json');
+    expect(loadStoredThemeAppearance().themeMode).toBe('dark');
+    localStorage.removeItem('rtx5-default-light-theme-v1');
+  });
+
   it('marks data-rtx-theme-preset as custom when hex colors diverge from default-light or default-dark', () => {
     const root = document.documentElement;
     applyThemeAppearanceToRoot(

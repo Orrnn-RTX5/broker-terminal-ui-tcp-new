@@ -98,7 +98,10 @@ afterEach(() => {
 describe('toolbar selection synchronization', () => {
   it.each([false, true])('toggles chart focus from the menu when Light is %s and clears it on arrangement', (light) => {
     Object.defineProperty(window, 'electron', { configurable: true, writable: true, value: undefined });
+    // A theme chosen after light became the default (see savedTheme.ts).
+    localStorage.setItem('rtx5-default-light-theme-v1', '1');
     localStorage.setItem('rtx5-advanced-view-enabled', String(light));
+    localStorage.setItem('rtx5-theme', light ? 'light' : 'dark');
     sessionStorage.removeItem('rtx5-focus-chart');
     render(<TopToolbar {...toolbarProps()} />);
     const openFocusMenu = () => {
@@ -123,6 +126,31 @@ describe('toolbar selection synchronization', () => {
     cleanup();
     sessionStorage.removeItem('rtx5-focus-chart');
     localStorage.removeItem('rtx5-advanced-view-enabled');
+    localStorage.removeItem('rtx5-theme');
+    localStorage.removeItem('rtx5-default-light-theme-v1');
+  });
+
+  it('opens in the Light theme when no theme was ever saved, and saves that as the choice', () => {
+    Object.defineProperty(window, 'electron', { configurable: true, writable: true, value: undefined });
+    localStorage.removeItem('rtx5-default-light-theme-v1');
+    localStorage.removeItem('rtx5-advanced-view-enabled');
+    localStorage.removeItem('rtx5-theme');
+    render(<TopToolbar {...toolbarProps()} />);
+
+    expect(document.documentElement).toHaveClass('theme-light', 'rtx-advanced-view', 'rtx-skin-untitled-light');
+    expect(document.documentElement).not.toHaveClass('theme-dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(localStorage.getItem('rtx5-advanced-view-enabled')).toBe('true');
+    expect(localStorage.getItem('rtx5-theme')).toBe('light');
+    // The menu offers the way out of the default, not into it.
+    fireEvent.click(screen.getByRole('button', { name: 'Open application menu' }));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Application menu' })).getByRole('menuitem', { name: 'Theme' }));
+    expect(screen.getByRole('menuitem', { name: 'Dark Theme' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Light Theme' })).toBeNull();
+    cleanup();
+    localStorage.removeItem('rtx5-advanced-view-enabled');
+    localStorage.removeItem('rtx5-theme');
+    localStorage.removeItem('rtx5-default-light-theme-v1');
   });
 
   it.each(['web', 'desktop'])('keeps the %s bug-report button in the header outside the scrolling chart commands', (surface) => {

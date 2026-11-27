@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { isSavedThemeLight } from '../utils/savedTheme';
 
 export type ThemeMode = 'dark' | 'light' | 'custom';
 
@@ -15,12 +16,10 @@ const THEME_STORAGE_KEY = 'rtx5-theme';
 const ACCENT_STORAGE_KEY = 'rtx5-accent-color';
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    // Light is the default theme; only a saved dark or custom choice replaces it.
     const [theme, setThemeState] = useState<ThemeMode>(() => {
-        if (typeof window === 'undefined') return 'dark';
-        const isAdvancedLight = localStorage.getItem('rtx5-advanced-view-enabled') === 'true';
-        if (isAdvancedLight) return 'light';
-        const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode;
-        return saved || 'dark';
+        if (isSavedThemeLight()) return 'light';
+        return localStorage.getItem(THEME_STORAGE_KEY) === 'custom' ? 'custom' : 'dark';
     });
 
     const [accentColor, setAccentColorState] = useState(() => {

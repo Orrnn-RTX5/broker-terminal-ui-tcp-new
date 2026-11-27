@@ -5,6 +5,7 @@ import {
   loadStoredThemeAppearance,
   RTX_THEME_APPEARANCE_STORAGE_KEY,
 } from './themePresets';
+import { isSavedThemeLight } from './savedTheme';
 
 export type AdvancedViewFontSize = 'small' | 'normal' | 'large';
 export type AdvancedViewDensity = 'comfortable' | 'compact';
@@ -116,15 +117,7 @@ export const clearAdvancedViewRootClasses = (root: HTMLElement) => {
   clearThemeAppearanceFromRoot(root);
 };
 
-export const isSavedThemeLight = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    return localStorage.getItem('rtx5-advanced-view-enabled') === 'true' ||
-           localStorage.getItem('rtx5-theme') === 'light';
-  } catch {
-    return false;
-  }
-};
+export { isSavedThemeLight };
 
 export const initRootTheme = (root: HTMLElement = document.documentElement) => {
   if (typeof document === 'undefined') return;

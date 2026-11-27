@@ -78,6 +78,7 @@ import {
     RTX_THEME_APPEARANCE_CHANGE_EVENT,
     RTX_THEME_APPEARANCE_STORAGE_KEY,
 } from '../../utils/themePresets';
+import { isSavedThemeLight } from '../../utils/savedTheme';
 import { useThemeAppearanceStore } from '../../store/useThemeAppearanceStore';
 import { suppressThemeTransitions } from '../../utils/themeTransitionSuppression';
 
@@ -433,13 +434,8 @@ const MainToolbar = ({
 
     const [showHistoryOverlayMenu, setShowHistoryOverlayMenu] = useState(false);
     const [, setHistoryOverlayLayoutVersion] = useState(0);
-    const [advancedViewEnabled, setAdvancedViewEnabled] = useState(() => {
-        try {
-            return localStorage.getItem('rtx5-advanced-view-enabled') === 'true';
-        } catch {
-            return false;
-        }
-    });
+    // Light unless dark was chosen: the same answer the page painted with.
+    const [advancedViewEnabled, setAdvancedViewEnabled] = useState(isSavedThemeLight);
     const [advancedOptions, setAdvancedOptions] = useState<AdvancedViewOptions>(loadAdvancedOptions);
     useEffect(() => {
         const exitFocus = () => setAdvancedOptions(current => current.focusChart
