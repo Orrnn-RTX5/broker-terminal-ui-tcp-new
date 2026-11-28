@@ -35,6 +35,7 @@ export const useDesktopRelease = (options: { enabled?: boolean } = {}): UseDeskt
     let cancelled = false;
 
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets or initializes release lookup state synchronously when enabled or release channel configuration changes
       setStatus('idle');
       setRelease(null);
       setError(configured ? null : new Error(RELEASE_CHANNEL_UNAVAILABLE_MESSAGE));

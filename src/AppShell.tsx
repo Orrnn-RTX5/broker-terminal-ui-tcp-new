@@ -32,6 +32,7 @@ const importAppModule = (): Promise<AppModule> => {
 };
 
 /** Safe presentation-only warmup that may overlap the authentication request. */
+// eslint-disable-next-line react-refresh/only-export-components -- keep preload/session helpers co-located with AppShell for existing importers and contract tests
 export const preloadAuthenticatedPresentation = (): Promise<AuthenticatedStylesModule> => {
   if (!authenticatedStylesPromise) {
     authenticatedStylesPromise = import('./authenticatedStyles').catch((error) => {
@@ -48,6 +49,7 @@ export const preloadAuthenticatedPresentation = (): Promise<AuthenticatedStylesM
  * after submit only evaluates code; App is not mounted and cannot open an
  * authenticated connection until WelcomeTerminal commits a valid handoff.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep preload/session helpers co-located with AppShell for existing importers and contract tests
 export const preloadAuthenticatedTerminal = (): Promise<AppModule> => {
   if (!appModulePromise) {
     // Begin public market discovery while the terminal modules download. The
@@ -111,6 +113,7 @@ function StoredSessionTerminalLoader({
 
     let active = true;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears any prior load error synchronously when starting a terminal load attempt
     setLoadFailed(false);
     void loadTerminal().then(
       (module) => {
@@ -194,6 +197,7 @@ function StoredSessionTerminalLoader({
   return <TerminalLoadFallback />;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- keep preload/session helpers co-located with AppShell for existing importers and contract tests
 export const hasStoredSessionCandidate = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (!ensureConfiguredWebSession()) return false;

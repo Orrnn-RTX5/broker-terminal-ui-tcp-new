@@ -26,6 +26,7 @@ export interface BrokerLogoSource {
 }
 
 // Neutral generic app icon (no vendor brand); a configured broker logo always comes first.
+// eslint-disable-next-line react-refresh/only-export-components -- shared fallback logo constant co-located with BrokerLogoImage
 export const APP_FALLBACK_LOGO_SRC = toPublicAssetPath('brand/terminal-icon.png');
 const ABSOLUTE_IMAGE_URL = /^(?:https?:|data:|blob:)/i;
 
@@ -39,10 +40,12 @@ const normalizeLogoBaseUrl = (value: unknown): string => {
   return normalized.replace(/\/+$/, '');
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- logo URL helper co-located with BrokerLogoImage for non-component callers
 export const isPlaceholderBrokerLogoUrl = (value: unknown): boolean =>
   /(?:^|\/)(?:assets\/logo\.png|brand\/terminal-icon\.png|brand\/rtx5-app-icon\.png)(?:[?#].*)?$/i.test(String(value || '').trim());
 
 /** Deployment branding belongs only to its configured web broker. */
+// eslint-disable-next-line react-refresh/only-export-components -- configured broker logo lookup helper co-located with BrokerLogoImage
 export const getConfiguredBrokerLogoUrl = (brokerId: string | number | null | undefined): string => {
   if (isDesktopBackendTarget()) return '';
   const config = getRuntimeBrokerConfiguration();
@@ -51,6 +54,7 @@ export const getConfiguredBrokerLogoUrl = (brokerId: string | number | null | un
   return isPlaceholderBrokerLogoUrl(logoUrl) ? '' : logoUrl;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- broker directory logo URL builder co-located with BrokerLogoImage
 export const buildBrokerDirectoryLogoUrl = (
   brokerId: string | number | null | undefined,
   discoveryBaseUrl = getRuntimeDiscoveryBaseUrl(),
@@ -64,6 +68,7 @@ export const buildBrokerDirectoryLogoUrl = (
 const DYNAMIC_BROKER_LOGO_PATH_RE = /\/api\/v[12]\/brokers\/[^/]+\/logo$/i;
 
 /** Upgrade same-host http:// asset URLs to https:// on TLS pages (e.g. behind reverse proxies). */
+// eslint-disable-next-line react-refresh/only-export-components -- URL protocol normalizer helper co-located with BrokerLogoImage
 export const normalizeSameOriginHttpsUrl = (value: string): string => {
   const trimmed = String(value || '').trim();
   if (!trimmed || typeof window === 'undefined' || window.location?.protocol !== 'https:') {
@@ -85,6 +90,7 @@ const hasLogoVersionQuery = (parsed: URL): boolean =>
   Boolean(parsed.searchParams.get('v') || parsed.searchParams.get('version') || parsed.searchParams.get('t'));
 
 /** Append `?v=<version>` to dynamic/remote broker logo URLs when not already versioned. */
+// eslint-disable-next-line react-refresh/only-export-components -- cache-busting logo URL helper co-located with BrokerLogoImage
 export const appendBrokerLogoVersionParam = (rawUrl: unknown, versionHint?: unknown): string => {
   const trimmed = String(rawUrl || '').trim();
   if (!trimmed || isPlaceholderBrokerLogoUrl(trimmed)) return '';
@@ -103,6 +109,7 @@ export const appendBrokerLogoVersionParam = (rawUrl: unknown, versionHint?: unkn
   }
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- logo version query check helper co-located with BrokerLogoImage
 export const hasBrokerLogoVersionQuery = (rawUrl: unknown): boolean =>
   /[?&](?:v|version|t)=[^&]+/i.test(String(rawUrl || '').trim());
 
@@ -111,6 +118,7 @@ export const hasBrokerLogoVersionQuery = (rawUrl: unknown): boolean =>
  * BROKER_LOGO_URL when both target the same broker logo route or the live URL
  * adds a cache-busting version token to an unversioned dynamic endpoint.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- logo precedence helper co-located with BrokerLogoImage
 export const shouldPreferDynamicLogoOverConfigured = (
   configuredUrl: unknown,
   dynamicUrl: unknown,
@@ -145,6 +153,7 @@ export const shouldPreferDynamicLogoOverConfigured = (
   return false;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- logo candidate list builder co-located with BrokerLogoImage
 export const buildBrokerLogoCandidates = (
   broker: BrokerLogoSource | null | undefined,
   discoveryBaseUrl = getRuntimeDiscoveryBaseUrl(),

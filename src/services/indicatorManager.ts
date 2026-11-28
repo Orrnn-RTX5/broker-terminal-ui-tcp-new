@@ -3,7 +3,7 @@
  * Calculates and manages technical indicators using background Web Workers
  */
 
-import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, SeriesType, Time } from 'lightweight-charts';
 import { LineSeries } from 'lightweight-charts';
 import { getWorkerManager } from './aggregationWorkerManager';
 
@@ -11,7 +11,7 @@ export interface IndicatorConfig {
   id: string;
   name: string;
   type: string;
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
   visible: boolean;
   color?: string;
 }
@@ -27,7 +27,7 @@ export interface OHLCData {
 
 export class IndicatorManager {
   private indicators: Map<string, IndicatorConfig> = new Map();
-  private indicatorSeries: Map<string, ISeriesApi<any>> = new Map();
+  private indicatorSeries: Map<string, ISeriesApi<SeriesType>> = new Map();
   private indicatorValues: Map<string, Map<number, number>> = new Map();
   private chart: IChartApi | null = null;
   private ohlcData: OHLCData[] = [];
@@ -111,7 +111,9 @@ export class IndicatorManager {
         ...config,
         id: `${config.id}_upper`,
         name: `${config.name} (Upper)`,
-        color: config.parameters.upperColor || '#E91E63'
+        color: typeof config.parameters.upperColor === 'string' && config.parameters.upperColor
+          ? config.parameters.upperColor
+          : '#E91E63'
       });
       if (upperSeries) {
         this.indicatorSeries.set(`${config.id}_upper`, upperSeries);
@@ -122,7 +124,9 @@ export class IndicatorManager {
         ...config,
         id: `${config.id}_lower`,
         name: `${config.name} (Lower)`,
-        color: config.parameters.lowerColor || '#E91E63'
+        color: typeof config.parameters.lowerColor === 'string' && config.parameters.lowerColor
+          ? config.parameters.lowerColor
+          : '#E91E63'
       });
       if (lowerSeries) {
         this.indicatorSeries.set(`${config.id}_lower`, lowerSeries);
@@ -183,7 +187,7 @@ export class IndicatorManager {
   /**
    * Update indicator parameters
    */
-  updateIndicator(id: string, parameters: Record<string, any>): void {
+  updateIndicator(id: string, parameters: Record<string, unknown>): void {
     const config = this.indicators.get(id);
     if (!config) return;
 
@@ -224,7 +228,7 @@ export class IndicatorManager {
   /**
    * Create series for indicator
    */
-  private createIndicatorSeries(config: IndicatorConfig): ISeriesApi<any> | null {
+  private createIndicatorSeries(config: IndicatorConfig): ISeriesApi<SeriesType> | null {
     if (!this.chart) return null;
 
     const isCompanion = config.id.endsWith('_upper') || config.id.endsWith('_lower');
@@ -259,7 +263,7 @@ export class IndicatorManager {
     switch (config.type.toLowerCase()) {
       case 'ma':
       case 'sma': {
-        const period = config.parameters.period || 20;
+        const period = Number(config.parameters.period) || 20;
         worker.calculateSMA(prices, period, (smaValues) => {
           if (!this.indicators.has(id)) return;
           const data = smaValues
@@ -275,7 +279,7 @@ export class IndicatorManager {
       }
 
       case 'ema': {
-        const period = config.parameters.period || 12;
+        const period = Number(config.parameters.period) || 12;
         worker.calculateEMA(prices, period, (emaValues) => {
           if (!this.indicators.has(id)) return;
           const data = emaValues
@@ -291,7 +295,7 @@ export class IndicatorManager {
       }
 
       case 'rsi': {
-        const period = config.parameters.period || 14;
+        const period = Number(config.parameters.period) || 14;
         worker.calculateRSI(prices, period, (rsiValues) => {
           if (!this.indicators.has(id)) return;
           const data = rsiValues
@@ -307,9 +311,9 @@ export class IndicatorManager {
       }
 
       case 'macd': {
-        const fast = config.parameters.fast || 12;
-        const slow = config.parameters.slow || 26;
-        const signal = config.parameters.signal || 9;
+        const fast = Number(config.parameters.fast) || 12;
+        const slow = Number(config.parameters.slow) || 26;
+        const signal = Number(config.parameters.signal) || 9;
         worker.calculateMACD(prices, fast, slow, signal, (res) => {
           if (!this.indicators.has(id)) return;
           const data = res.macd
@@ -326,8 +330,8 @@ export class IndicatorManager {
 
       case 'bollinger':
       case 'bb': {
-        const period = config.parameters.period || 20;
-        const stdDev = config.parameters.stdDev || 2;
+        const period = Number(config.parameters.period) || 20;
+        const stdDev = Number(config.parameters.stdDev) || 2;
         worker.calculateBollinger(prices, period, stdDev, (res) => {
           if (!this.indicators.has(id)) return;
 

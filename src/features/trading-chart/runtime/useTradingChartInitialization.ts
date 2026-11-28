@@ -171,6 +171,7 @@ export const useTradingChartInitialization = (options: UseTradingChartInitializa
     scheduleQueuedChartRenderFlush,
     updateLegendDOM,
   });
+  // eslint-disable-next-line react-hooks/refs -- chart listeners read these callbacks from the ref; a render write keeps the same commit's handlers on the latest closures without a per-render layout effect
   runtimeCallbacksRef.current = {
     applyLivePriceHorizontalGeometry,
     cancelQueuedChartRender,

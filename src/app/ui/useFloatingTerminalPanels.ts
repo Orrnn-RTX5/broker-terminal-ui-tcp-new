@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -123,11 +124,9 @@ const isValidSize = (value: unknown): value is Size => (
 );
 
 export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTerminalPanelsController => {
-  const persistedInitialRef = useRef<PersistedFloatingPanelsState | null>(null);
-  if (persistedInitialRef.current === null) {
-    persistedInitialRef.current = readSessionJson<PersistedFloatingPanelsState>(SESSION_VIEW_KEYS.floatingPanels, {});
-  }
-  const persistedInitial = persistedInitialRef.current;
+  const [persistedInitial] = useState<PersistedFloatingPanelsState>(() => (
+    readSessionJson<PersistedFloatingPanelsState>(SESSION_VIEW_KEYS.floatingPanels, {})
+  ));
 
   const [showDOM, setShowDOM] = useState(() => persistedInitial.showDOM === true);
   const [domSymbol, setDomSymbol] = useState(() => (
@@ -153,7 +152,9 @@ export const useFloatingTerminalPanels = (initialSymbol: string): FloatingTermin
 
   const domHasDraggedOrResizedRef = useRef(persistedInitial.domHasDraggedOrResized === true);
   const domSizeRef = useRef(domSize);
-  domSizeRef.current = domSize;
+  useLayoutEffect(() => {
+    domSizeRef.current = domSize;
+  }, [domSize]);
   const domDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const domResizeRef = useRef<{
     startX: number;

@@ -461,12 +461,25 @@ export const collapseDealHistory = (deals: Trade[]): Trade[] => {
 export const normalizeAccount = (raw: GatewayAccount, previous?: Account | null): Account =>
   normalizeAccountMetrics(raw, previous, { partial: true });
 
+type GatewayPositionInput = GatewayPosition & {
+  id?: number | string;
+  quantity?: number;
+  openPrice?: number;
+  entryPrice?: number;
+  chartEntryPrice?: number;
+  price?: number;
+  currentPrice?: number;
+  livePrice?: number;
+  unrealized_pnl?: number;
+};
+
 export const normalizePosition = (raw: GatewayPosition): Position => {
+  const input = raw as GatewayPositionInput;
   const side = String(raw.side ?? raw.action ?? '').toLowerCase();
-  const volume = Number(raw.volume_lots ?? raw.volume ?? (raw as any).quantity ?? 0);
-  const openPrice = stripFloatPrecisionNoise(Number(raw.price_open ?? raw.open_price ?? (raw as any).openPrice ?? (raw as any).entryPrice ?? (raw as any).chartEntryPrice ?? (raw as any).price ?? 0));
-  const backendCurrentPrice = readBackendNumber(raw.price_current ?? raw.current_price ?? (raw as any).currentPrice ?? (raw as any).livePrice);
-  const backendProfit = readBackendNumber(raw.profit ?? (raw as any).unrealized_pl ?? (raw as any).unrealized_pnl ?? (raw as any).unrealizedPnL);
+  const volume = Number(raw.volume_lots ?? raw.volume ?? input.quantity ?? 0);
+  const openPrice = stripFloatPrecisionNoise(Number(raw.price_open ?? raw.open_price ?? input.openPrice ?? input.entryPrice ?? input.chartEntryPrice ?? input.price ?? 0));
+  const backendCurrentPrice = readBackendNumber(raw.price_current ?? raw.current_price ?? input.currentPrice ?? input.livePrice);
+  const backendProfit = readBackendNumber(raw.profit ?? input.unrealized_pl ?? input.unrealized_pnl ?? input.unrealizedPnL);
   const backendMargin = readBackendNumber(raw.margin ?? raw.used_margin);
   const hasBackendCurrentPrice = raw.pnl_available !== false && raw.hasBackendCurrentPrice !== false && backendCurrentPrice !== undefined;
   const hasBackendProfit = raw.pnl_available !== false && raw.hasBackendProfit !== false && backendProfit !== undefined;
@@ -479,7 +492,7 @@ export const normalizePosition = (raw: GatewayPosition): Position => {
   const digits = resolveSpecDigits(raw.digits);
   return {
     ...raw,
-    id: Number(raw.ticket ?? raw.position_id ?? (raw as any).id ?? 0),
+    id: Number(raw.ticket ?? raw.position_id ?? input.id ?? 0),
     state_version: raw.state_version_text ?? raw.state_version,
     protection_version: raw.protection_version,
     price_time_msc: raw.price_time_msc,

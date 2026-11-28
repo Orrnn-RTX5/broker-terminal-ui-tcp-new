@@ -133,7 +133,7 @@ interface UseTradeRefreshControllerOptions {
   ) => Position[];
   accountIdRef: MutableRefObject<string>;
   isAuthenticatedRef: MutableRefObject<boolean>;
-  positionsStreamVersionRef: MutableRefObject<number>;
+  positionsStreamVersionRef?: MutableRefObject<number>;
   setOrders?: Dispatch<SetStateAction<unknown[]>>;
 }
 
@@ -154,7 +154,6 @@ export const useTradeRefreshController = ({
   reconcileOptimisticClosedPositions,
   accountIdRef,
   isAuthenticatedRef,
-  positionsStreamVersionRef,
   setOrders,
 }: UseTradeRefreshControllerOptions): TradeRefreshController => {
   const refreshPositionsInFlightRef = useRef<Promise<void> | null>(null);
@@ -178,6 +177,7 @@ export const useTradeRefreshController = ({
   const refreshMetricsStartedAtRef = useRef(0);
   const refreshMetricsPendingLoginRef = useRef<number | null>(null);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- reads MutableRefObject params inside async closure; dependency list intentionally matches existing callback memoization
   const refreshAccountMetrics = useCallback(async (login?: number): Promise<void> => {
     if (typeof api.account?.getAccountMetrics !== 'function') return;
     const requestedLogin = login || getLiveTradingLogin();
@@ -230,6 +230,7 @@ export const useTradeRefreshController = ({
     await request;
   }, [accountIdRef, beginTradeRestRead, getLiveTradingLogin, isAuthenticatedRef, isStaleTradeRestRead]);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- reads MutableRefObject params inside async closure; dependency list intentionally matches existing callback memoization
   const refreshPositions = useCallback(async (
     login?: number,
     options: RefreshPositionsOptions = {},

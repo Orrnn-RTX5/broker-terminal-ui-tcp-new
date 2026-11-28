@@ -35,7 +35,7 @@ describe('protection geometry (SL/TP user experience)', () => {
     it.each([
       ['profit', 82000, 81900],
       ['loss', 81800, 81900],
-    ])('BUY %s: SL below Bid, TP above Bid', (_label, bid, _open) => {
+    ])('BUY %s: SL below Bid, TP above Bid', (_label, bid) => {
       const sl = defaultProtectionLevel({ side: 'BUY', role: 'SL', bid, ask: bid + 1, digits: 2 });
       const tp = defaultProtectionLevel({ side: 'BUY', role: 'TP', bid, ask: bid + 1, digits: 2 });
       expect(sl).not.toBeNull();
@@ -48,7 +48,7 @@ describe('protection geometry (SL/TP user experience)', () => {
     it.each([
       ['profit', 81800, 81900],
       ['loss', 82000, 81900],
-    ])('SELL %s: SL above Ask, TP below Ask', (_label, ask, _open) => {
+    ])('SELL %s: SL above Ask, TP below Ask', (_label, ask) => {
       const sl = defaultProtectionLevel({ side: 'SELL', role: 'SL', bid: ask - 1, ask, digits: 2 });
       const tp = defaultProtectionLevel({ side: 'SELL', role: 'TP', bid: ask - 1, ask, digits: 2 });
       expect(sl).not.toBeNull();

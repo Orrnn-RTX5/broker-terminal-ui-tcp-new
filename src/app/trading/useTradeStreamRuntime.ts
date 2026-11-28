@@ -15,7 +15,6 @@ import { decodePositionStreamMessage, getPositionStreamTicket } from '../../serv
 import { markPositionsStreamFrameIfStructural, requestPositionSnapshotRevalidation } from '../../services/positionSnapshotSafety';
 import {
   isDeletedPositionStreamMessage,
-  POSITION_BULK_CLOSED_EVENTS,
   POSITION_CLOSED_EVENTS,
   readPositionBulkCloseEvent,
   readPositionStreamBatch,
@@ -302,7 +301,7 @@ export const useTradeStreamRuntime = ({
           || data.channel?.startsWith('metrics.')
           || (
             data.channel?.startsWith('positions.')
-            && ((data.data as any)?.type === 'metrics_update' || (data.data as any)?.type === 'account_metrics')
+            && ((data.data as { type?: unknown } | undefined)?.type === 'metrics_update' || (data.data as { type?: unknown } | undefined)?.type === 'account_metrics')
           )
         ) {
           const acceptedLogin = getAcceptedChannelLogin(data.channel);

@@ -63,9 +63,7 @@ export const resolveDesktopToolbarStatus = ({
   }
 
   let feedState: DesktopFeedState = 'unverified';
-  let feedLabel = normalizedSymbol
-    ? tr('{{value0}} feed status unverified', { value0: normalizedSymbol })
-    : tr('Feed status unverified');
+  let feedLabel: string;
 
   if (!socketConnected) {
     feedState = connectionState === 'connecting' || connectionState === 'reconnecting'

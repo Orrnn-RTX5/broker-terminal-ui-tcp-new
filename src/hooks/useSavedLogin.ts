@@ -29,6 +29,7 @@ export function useSavedLogin(
   useEffect(() => {
     edits.current += 1;
     userEditedLogin.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets form credentials and edit guards synchronously when dialog open, initialLogin, or restoreEmptyLogin inputs change before the restore effect runs
     updateLogin(initialLogin);
     updatePassword('');
     updateSavePassword(false);

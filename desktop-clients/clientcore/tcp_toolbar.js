@@ -90,7 +90,7 @@
       if (!m) return;
       var lum = (0.299 * parseInt(m[1], 10) + 0.587 * parseInt(m[2], 10) + 0.114 * parseInt(m[3], 10)) / 255;
       container.style.setProperty('--tcp-accent-fg', lum > 0.64 ? '#111111' : '#ffffff');
-    } catch (_) {}
+    } catch { /* Keep default --tcp-accent-fg if computed style lookup fails */ }
   }
 
   function ensureStyles() {
@@ -603,9 +603,9 @@
 
     if (bootUIKey === null && uiKey) {
       bootUIKey = uiKey;
-      try { localStorage.setItem(ACK_UI_STORAGE_KEY, uiKey); } catch (_) {}
+      try { localStorage.setItem(ACK_UI_STORAGE_KEY, uiKey); } catch { /* Ignore localStorage write failure in restricted WebView */ }
       if (ota.ui_reload_ready) {
-        try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch (_) {}
+        try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch { /* Best-effort UI ack; local bootUIKey suppresses duplicate banner */ }
         ota.ui_reload_ready = false;
       }
     }
@@ -615,14 +615,14 @@
     try {
       ackedUI = localStorage.getItem(ACK_UI_STORAGE_KEY) || '';
       ackedExe = localStorage.getItem(ACK_EXE_STORAGE_KEY) || '';
-    } catch (_) {}
+    } catch { /* Fallback to empty acked keys when localStorage is inaccessible */ }
 
     var needExe = !!ota.exe_restart_ready && (!exeKey || exeKey !== ackedExe);
     var needUI = !!ota.ui_reload_ready && (!uiKey || (uiKey !== bootUIKey && uiKey !== ackedUI));
     var existing = document.getElementById('rtx5-ota-toast');
 
     if (ota.ui_reload_ready && !needUI) {
-      try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch (_) {}
+      try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch { /* Best-effort UI ack when UI key is already current or dismissed */ }
     }
 
     if (!needExe && !needUI) {
@@ -648,11 +648,11 @@
 
     document.getElementById('rtx5-ota-apply-btn').onclick = async function () {
       if (needExe) {
-        try { if (exeKey) localStorage.setItem(ACK_EXE_STORAGE_KEY, exeKey); } catch (_) {}
-        try { await fetch('/api/tcp-client/ota-restart', { method: 'POST' }); } catch (_) {}
+        try { if (exeKey) localStorage.setItem(ACK_EXE_STORAGE_KEY, exeKey); } catch { /* Ignore localStorage write failure in restricted WebView */ }
+        try { await fetch('/api/tcp-client/ota-restart', { method: 'POST' }); } catch { /* Restart request failure is tolerated; status polling reflects state */ }
       } else {
-        try { if (uiKey) localStorage.setItem(ACK_UI_STORAGE_KEY, uiKey); } catch (_) {}
-        try { await fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch (_) {}
+        try { if (uiKey) localStorage.setItem(ACK_UI_STORAGE_KEY, uiKey); } catch { /* Ignore localStorage write failure before reload */ }
+        try { await fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch { /* Proceed with page reload even if UI ack fails */ }
         window.location.reload();
       }
     };
@@ -660,9 +660,9 @@
       try {
         if (needExe && exeKey) localStorage.setItem(ACK_EXE_STORAGE_KEY, exeKey);
         if (needUI && uiKey) localStorage.setItem(ACK_UI_STORAGE_KEY, uiKey);
-      } catch (_) {}
+      } catch { /* Ignore localStorage write failure on toast dismiss */ }
       if (!needExe) {
-        try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch (_) {}
+        try { fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch { /* Best-effort UI ack on toast dismiss */ }
       }
       if (banner.parentNode) banner.parentNode.removeChild(banner);
     };
@@ -678,7 +678,7 @@
       window.dispatchEvent(new CustomEvent('rtx5-tcp-status', { detail: latestStatus }));
       if (document.body) renderOTANotificationBanner(latestStatus);
       return latestStatus;
-    } catch (_) {
+    } catch {
       return latestStatus;
     }
   }
@@ -692,7 +692,7 @@
       return data.filter(function (b) {
         return b && (b.broker_name || b.broker_id) && b.tcp_addr;
       });
-    } catch (_) {
+    } catch {
       return [];
     }
   }
@@ -729,7 +729,7 @@
 
   function closeExistingModal() {
     if (typeof activeModalCleanup === 'function') {
-      try { activeModalCleanup(); } catch (_) {}
+      try { activeModalCleanup(); } catch { /* Ensure listener cleanup error does not block closing modal */ }
       activeModalCleanup = null;
     }
     var old = document.getElementById('rtx5-tcp-endpoint-backdrop');
@@ -1074,7 +1074,7 @@
         } else {
           showErr('Unable to connect to the trading server. Please try again.');
         }
-      } catch (_) {
+      } catch {
         showErr('Unable to reach the trading connection service.');
       } finally {
         submitting = false;

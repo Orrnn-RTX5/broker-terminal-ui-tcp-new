@@ -6,7 +6,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BottomDock } from './BottomDock';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type Position } from '../store/useAppStore';
+import type { ToolboxTradePosition } from '../hooks/useToolboxTradeData';
 import {
   commitBrokerAccountSessionScope,
   getCommittedBrokerAccountSessionScope,
@@ -15,8 +16,8 @@ import {
 
 const trade = vi.hoisted(() => ({
   account: null,
-  positions: [] as any[],
-  pendingPositions: [] as any[],
+  positions: [] as Array<Position & { ticket?: number; clientOrderId?: string; placementState?: 'pending' }>,
+  pendingPositions: [] as ToolboxTradePosition[],
   loading: false,
   error: null,
   login: 1,
@@ -38,7 +39,7 @@ vi.mock('../hooks/useToolboxTradeData', () => ({
 // The dialog has its own behavior suite. This probe keeps this test focused on
 // the Trade-table handoff while still exercising BottomDock's lazy dialog host.
 vi.mock('./ModifyPositionDialog', () => ({
-  ModifyPositionDialog: ({ isOpen, onClose, position }: any) => (
+  ModifyPositionDialog: ({ isOpen, onClose, position }: { isOpen: boolean; onClose: () => void; position: Position | null }) => (
     isOpen && position ? (
       <div
         role="dialog"

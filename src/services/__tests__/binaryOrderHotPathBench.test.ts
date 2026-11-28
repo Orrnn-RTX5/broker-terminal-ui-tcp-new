@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const benchMocks = vi.hoisted(() => ({
   useMockSend: false,
-  mockResp: null as any,
+  mockResp: null as DecodedBinaryOrderResp | null,
   sendCalls: 0,
 }));
 
@@ -10,10 +10,10 @@ vi.mock('../binaryTcpOrderClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../binaryTcpOrderClient')>();
   return {
     ...actual,
-    sendBinaryTcpOrder: (params: any) => {
+    sendBinaryTcpOrder: (params: BinaryTcpOrderParams) => {
       if (benchMocks.useMockSend) {
         benchMocks.sendCalls++;
-        return Promise.resolve(benchMocks.mockResp);
+        return Promise.resolve(benchMocks.mockResp!);
       }
       return actual.sendBinaryTcpOrder(params);
     },
@@ -54,7 +54,7 @@ import {
   type DecodedBinaryOrderResp,
 } from '../binaryTcpOrderClient';
 import { api } from '../api';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type Position } from '../../store/useAppStore';
 
 describe('Binary TCP Order Hot-Path Micro-Benchmarks', () => {
   const originalWebSocket = globalThis.WebSocket;
@@ -81,7 +81,7 @@ describe('Binary TCP Order Hot-Path Micro-Benchmarks', () => {
           sl: 0,
           tp: 0,
           profit: 5,
-        } as any,
+        } as unknown as Position,
       ],
     });
   });

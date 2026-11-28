@@ -37,13 +37,15 @@ interface Options {
 const EMPTY_STATE: ContinuityState = { guest: null, authenticatedScope: null, finished: false };
 const EMPTY_CHARTS: Record<string, RetainedGuestChart> = {};
 
-/**
- * Only a canvas already displayed to a guest may bridge the first login.
- * This records presentation, never an account catalogue or trading permission.
- */
-export function useGuestChartLoginContinuity(options: Options) {
-  const stateRef = useRef<ContinuityState>(EMPTY_STATE);
-  let nextState = stateRef.current;
+function computeGuestContinuityState(
+  prevState: ContinuityState,
+  options: Options,
+): {
+  nextState: ContinuityState;
+  retainedCharts: Record<string, RetainedGuestChart>;
+  preserveGuestLayout: boolean;
+} {
+  let nextState = prevState;
   let retainedCharts = EMPTY_CHARTS;
   let preserveGuestLayout = false;
 
@@ -118,6 +120,18 @@ export function useGuestChartLoginContinuity(options: Options) {
       };
     } else nextState = EMPTY_STATE;
   } else nextState = EMPTY_STATE;
+
+  return { nextState, retainedCharts, preserveGuestLayout };
+}
+
+/**
+ * Only a canvas already displayed to a guest may bridge the first login.
+ * This records presentation, never an account catalogue or trading permission.
+ */
+export function useGuestChartLoginContinuity(options: Options) {
+  const stateRef = useRef<ContinuityState>(EMPTY_STATE);
+  // eslint-disable-next-line react-hooks/refs -- reads committed previous continuity snapshot synchronously during render so the first authenticated render retains the guest chart without an extra render cycle; stateRef mutates only on commit in useLayoutEffect
+  const { nextState, retainedCharts, preserveGuestLayout } = computeGuestContinuityState(stateRef.current, options);
 
   // Capture only committed guest canvases; discarded React renders never gain
   // authority to retain a canvas during a future login.

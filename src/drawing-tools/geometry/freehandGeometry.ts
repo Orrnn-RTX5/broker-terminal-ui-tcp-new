@@ -1,9 +1,14 @@
-import { MismatchDirection, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
+import { MismatchDirection, type IChartApi, type ISeriesApi, type SeriesType, type Time } from 'lightweight-charts';
 import type { DrawingPoint } from '../model/drawing';
 import { drawingLogicalToCoordinate } from './drawingCoordinates';
 
 /** Store a candle time plus a bar fraction, never a viewport pixel offset. */
-export function freehandPointAt(chart: IChartApi, series: ISeriesApi<any>, x: number, y: number): DrawingPoint | null {
+export function freehandPointAt<TSeriesType extends SeriesType = SeriesType>(
+  chart: IChartApi,
+  series: ISeriesApi<TSeriesType>,
+  x: number,
+  y: number,
+): DrawingPoint | null {
   const scale = chart.timeScale();
   const nearest = scale.coordinateToLogical(x);
   if (nearest === null) return null;
@@ -20,7 +25,11 @@ export function freehandPointAt(chart: IChartApi, series: ISeriesApi<any>, x: nu
   return { time, price: Number(price), logicalIndex, barOffset: logicalIndex - Number(anchorIndex) };
 }
 
-export function projectFreehandPoint(chart: IChartApi, series: ISeriesApi<any>, point: DrawingPoint) {
+export function projectFreehandPoint<TSeriesType extends SeriesType = SeriesType>(
+  chart: IChartApi,
+  series: ISeriesApi<TSeriesType>,
+  point: DrawingPoint,
+) {
   const scale = chart.timeScale();
   const anchorIndex = scale.timeToIndex(point.time as Time, false);
   const logical = anchorIndex !== null

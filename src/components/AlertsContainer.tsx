@@ -161,8 +161,9 @@ export function AlertsContainer({ wsConnection }: AlertsContainerProps) {
 
   // Cleanup timeouts on unmount
   useEffect(() => {
+    const timeouts = autoHideTimeouts.current;
     return () => {
-      autoHideTimeouts.current.forEach(timeout => clearTimeout(timeout));
+      timeouts.forEach(timeout => clearTimeout(timeout));
     };
   }, []);
 

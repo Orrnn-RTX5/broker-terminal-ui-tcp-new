@@ -1,5 +1,13 @@
 # Changelog - Broker-Terminal-UI-TCP
 
+## [1.2.20] - 2026-11-27 (VERSION file; terminal UI)
+### Fixed
+- **Web terminal drawing sync:** serialized per-account snapshot persistence off the request/WebSocket path with newest-revision ordering, explicit retry handling without a drop window, and canonical account keys matching the existing storage layout; eliminated subscriber-close panics (`sendCh` closed-channel races) and closed stalled WebSocket writers immediately on write errors.
+- **Desktop setup installer:** replaced raw `uintptr` ShellLink/IPersistFile COM pointer conversions in `createShellLinkShortcut` with typed COM struct wrappers so `go vet` passes cleanly.
+- **Lint and type-safety cleanup:** behaviour-preserving ESLint, TypeScript, and React Hooks lint cleanup across UI components, hooks, stores, services, config, and embedded toolbar/security drawer scripts.
+### Tests
+- **Lint cleanup and new pinning coverage:** fixed lint issues across test suites, added drawing-sync ordering/stall tests, control-character guard tests, and dock layout container/panel predicate pinning tests, and stabilized the Navigator account menu test against i18n initialization timing.
+
 ## [1.2.18] - 2026-11-27 (VERSION file; terminal UI)
 ### Added
 - **Manager trade delete and deal cancel sync**: handled real-time delete/cancel stream invalidations (`useTradeStreamRuntime`, `useTradeRefreshController`, `positionStream`, `tradePositionStream`), purged deleted positions/orders/deals from stores and chart overlays, refreshed History with burst coalescing, and displayed `"Canceled"` / `"Canceled Buy"` / `"Canceled Sell"` status and zeroed profit on canceled deals (excluded from summary totals). Requires backend 1.31.1 (migration 839). Not tested on a broker.

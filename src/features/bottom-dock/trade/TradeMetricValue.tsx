@@ -30,7 +30,6 @@ export function TradeMetricValue({
     const previousValue = previousValueRef.current;
     if (flashDirection && previousValue !== null && numericValue !== previousValue) {
       // A short-lived state value is intentional: it is the visual price-change flash.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChangeColor(numericValue > previousValue ? 'text-[#22c55e]' : 'text-[#ff2d2d]');
       if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
       clearTimerRef.current = setTimeout(() => setChangeColor(null), 900);

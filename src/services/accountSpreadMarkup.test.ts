@@ -19,6 +19,7 @@ import {
   enqueueLiveTick,
   flushLiveTicks,
   resetLiveTickDispatcherForTests,
+  type LiveTick,
 } from './liveTickDispatcher';
 import {
   applyAccountSpreadMarkup,
@@ -76,7 +77,7 @@ describe('account spread markup at the live-tick funnel', () => {
   it('leaves guest quotes raw', () => {
     enqueueLiveTick('EURUSD', rawTick());
     flush();
-    const tick = useAppStore.getState().ticks.EURUSD as any;
+    const tick = useAppStore.getState().ticks.EURUSD;
     expect(tick.bid).toBe(1.1);
     expect(tick.ask).toBe(1.10012);
     expect(tick.rawBid).toBeUndefined();
@@ -98,10 +99,11 @@ describe('account spread markup at the live-tick funnel', () => {
     enqueueLiveTick('EURUSD', rawTick());
     flush();
 
-    const appTick = useAppStore.getState().ticks.EURUSD as any;
-    const marketTick = useMarketDataStore.getState().symbolData.EURUSD?.currentTick as any;
-    const cached = window.rtxTickCache.get('EURUSD') as any;
-    for (const tick of [appTick, marketTick, cached]) {
+    const appTick = useAppStore.getState().ticks.EURUSD;
+    const marketTick = useMarketDataStore.getState().symbolData.EURUSD?.currentTick as LiveTick;
+    const cached = window.rtxTickCache.get('EURUSD')!;
+    const ticks: Array<Pick<LiveTick, 'bid' | 'ask' | 'spread' | 'rawBid' | 'rawAsk'>> = [appTick, marketTick, cached];
+    for (const tick of ticks) {
       expect(tick.bid).toBe(1.09997);
       expect(tick.ask).toBe(1.10014);
       expect(tick.spread).toBe(0.00017);
@@ -122,7 +124,7 @@ describe('account spread markup at the live-tick funnel', () => {
     setAccountSpreadMarkups('1001', eurusdMarkup(10));
     flush();
 
-    const tick = useAppStore.getState().ticks.EURUSD as any;
+    const tick = useAppStore.getState().ticks.EURUSD;
     expect(tick.bid).toBe(1.09995);
     expect(tick.ask).toBe(1.10017);
     expect(tick.rawBid).toBe(1.1);
@@ -141,7 +143,7 @@ describe('account spread markup at the live-tick funnel', () => {
 
     enqueueLiveTick('EURUSD', rawTick(1.2, 1.20012, TIMESTAMP + 1_000));
     flush();
-    const tick = useAppStore.getState().ticks.EURUSD as any;
+    const tick = useAppStore.getState().ticks.EURUSD;
     expect(tick.bid).toBe(1.2);
     expect(tick.ask).toBe(1.20012);
     expect(tick.rawBid).toBeUndefined();

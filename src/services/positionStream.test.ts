@@ -35,7 +35,7 @@ describe('account position stream reconciliation', () => {
   });
   it('applies ordered display profit without changing protection or creating unknown tickets', () => {
     const current = [normalizePosition({ ...gold, state_version: '12', price_time_msc: 1000 })];
-    const apply = (rows: any[]) => reconcilePositionStreamBatch(current, { mode: 'delta', positions: rows });
+    const apply = (rows: Record<string, unknown>[]) => reconcilePositionStreamBatch(current, { mode: 'delta', positions: rows });
     const result = apply([{ ticket: gold.ticket, state_version: '12', update_kind: 'pnl', price_time_msc: 2000, profit: 9, volume: 99, price_sl: 0 }]);
     expect(result.positions[0]).toMatchObject({ profit: 9, volume: 0.01, sl: 4200 });
     const stale = reconcilePositionStreamBatch(result.positions, { mode: 'delta', positions: [{ ticket: gold.ticket, state_version: '12', update_kind: 'pnl', price_time_msc: 1500, profit: 1 }] });
@@ -44,10 +44,10 @@ describe('account position stream reconciliation', () => {
     expect(apply([{ ticket: gold.ticket, update_kind: 'pnl', state_version: '13', profit: 40 }])).toMatchObject({ positions: current, needsRevalidation: true });
   });
   it.each([
-    ['gateway v2', (rows: any[]) => ({ channel: 'positions.200001', data: { type: 'position_update', data: rows } })],
-    ['legacy envelope', (rows: any[]) => ({ type: 'channel_message', channel: 'positions.200001', data: { type: 'position_update', data: rows } })],
-    ['manager P&L', (rows: any[]) => ({ channel: 'positions.200001', data: { type: 'pnl_update', symbol: rows[0].symbol, positions: rows } })],
-    ['unmarked array', (rows: any[]) => ({ channel: 'positions.200001', data: rows })],
+    ['gateway v2', (rows: Record<string, unknown>[]) => ({ channel: 'positions.200001', data: { type: 'position_update', data: rows } })],
+    ['legacy envelope', (rows: Record<string, unknown>[]) => ({ type: 'channel_message', channel: 'positions.200001', data: { type: 'position_update', data: rows } })],
+    ['manager P&L', (rows: Record<string, unknown>[]) => ({ channel: 'positions.200001', data: { type: 'pnl_update', symbol: rows[0].symbol, positions: rows } })],
+    ['unmarked array', (rows: Record<string, unknown>[]) => ({ channel: 'positions.200001', data: rows })],
   ])('keeps every ticket during alternating XAUUSD/BTCUSD updates: %s', (_label, wrap) => {
     let current = initial();
     for (let index = 0; index < 20; index++) {

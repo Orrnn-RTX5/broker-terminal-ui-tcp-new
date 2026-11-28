@@ -42,7 +42,10 @@ export function WebDrawingSelectionToolbar() {
   const [position, setPosition] = useState<ToolbarPosition | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [settingsDrawing, setSettingsDrawing] = useState<Drawing | null>(null);
-  useEffect(() => { setSettingsDrawing(null); }, [selection?.drawingId, selection?.contextId]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closes the position settings dialog when selection changes or clears so re-selecting does not reopen a stale dialog
+    setSettingsDrawing(null);
+  }, [selection?.drawingId, selection?.contextId]);
 
   useEffect(() => {
     const handleSelected = (event: Event) => {
@@ -66,6 +69,7 @@ export function WebDrawingSelectionToolbar() {
 
   useLayoutEffect(() => {
     if (!selection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears cached toolbar coordinates on deselection so the next selection measures hidden before positioning
       setPosition(null);
       return;
     }

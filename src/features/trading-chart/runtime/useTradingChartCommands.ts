@@ -93,17 +93,17 @@ export const useTradingChartCommands = (options: UseTradingChartCommandsOptions)
   const {
     applyChartTypeInPlace, autoScrollEnabledRef, brokerTimeOffsetSecRef, cancelQueuedChartRender, candlesRef,
     chartInteractionOwnershipRef, chartRef, clearLocalChartPointerStateRef,
-    clearPeriodSeparators, ctxChartShiftRef, currentCandleRef, drawingRuntimeContextRef,
-    firstRenderedCandleTimeRef, getCandlesForFullRender, hasDisplayedHistoryRef,
-    historyRequestCoordinatorRef, hydrateHistoryFromCache, isChartCommandTarget,
+    ctxChartShiftRef, currentCandleRef, drawingRuntimeContextRef,
+    getCandlesForFullRender, hasDisplayedHistoryRef,
+    historyRequestCoordinatorRef, isChartCommandTarget,
     isChartInteractionActiveRef, isChartUserInteractingRef, isDisposedRef,
     lastRenderedCandlesRef, lastVisibleLogicalRangeRef, latestCandleJumpPendingRef,
     leftVisibleTimeRef, liveCandleMutationGenerationByTimeRef, liveCandleMutationGenerationRef,
-    panelId, periodSeparatorsRef, postInteractionCoordinatorRef, prevSymbolRef,
+    panelId, postInteractionCoordinatorRef, prevSymbolRef,
     prevTimeframeRef, protectedDisplayedHistoryRef, reconcileCandlesWithLiveQuote,
     renderedPriceReferenceRef, resetVisibleRangeOnNextDataRef, scrollToLatestCandleNow,
-    seriesRef, setActiveTimeframe, setCtxAutoScroll, setCtxChartShift, setLoadingPhase,
-    symbol, syncLeftVisibleTime, timeframe, updateChartData, volumeRef,
+    setActiveTimeframe, setCtxAutoScroll, setCtxChartShift, setLoadingPhase,
+    symbol, syncLeftVisibleTime, timeframe, updateChartData,
   } = options;
 
 useEffect(() => {

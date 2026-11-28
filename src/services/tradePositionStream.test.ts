@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { applyPositionStreamUpdate, decodePositionStreamMessage, positionStreamNeedsReconciliation } from './tradePositionStream';
 import { mergePositionRecord } from './positionStream';
 
+type TestPosition = { id: number; [key: string]: unknown };
+
 // Models the existing normalizer's zero/default behavior. The stream reducer
 // must prevent those defaults from overwriting fields absent from a delta.
-const normalize = (raw: Record<string, any>) => ({
+const normalize = (raw: Record<string, unknown>): TestPosition => ({
   id: Number(raw.ticket),
   symbol: raw.symbol ?? '',
   side: raw.side ?? 'BUY',
@@ -25,7 +27,7 @@ const normalize = (raw: Record<string, any>) => ({
   openTime: raw.time_create ?? '',
 });
 
-const position = (overrides: Record<string, any> = {}) => ({
+const position = (overrides: Record<string, unknown> & { id?: number } = {}): TestPosition => ({
   ...normalize({ ticket: 17, symbol: 'BTCUSD', side: 'SELL', volume_lots: 0.2,
     price_open: 81000, price_current: 80900, profit: 20, price_sl: 82000,
     price_tp: 78000, time_create: '2026-09-21T09:00:00Z', swap: -1, commission: -0.5 }),
@@ -40,7 +42,7 @@ const decode = (frame: unknown) => {
   return decoded!;
 };
 
-const pnlFrame = (patch: Record<string, any> = {}) => ({
+const pnlFrame = (patch: Record<string, unknown> = {}) => ({
   channel: 'positions.200001',
   data: { type: 'position_update', data: [{ ticket: 17, update_kind: 'pnl',
     state_version: '9007199254740993', price_time_msc: 3000,

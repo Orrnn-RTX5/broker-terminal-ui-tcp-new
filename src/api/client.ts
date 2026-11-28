@@ -479,7 +479,7 @@ const handleResponse = async <T>(
                 ...retryRequest,
                 authRecoveryEnabled: false,
               });
-            } catch (error) {
+            } catch {
               if (signal?.aborted) throw getAbortReason(signal);
             }
           }

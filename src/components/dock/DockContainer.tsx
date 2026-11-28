@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
-import { DockContainer as DockContainerType, DockPanelConfig } from '../../services/dockManager';
+import { DockContainer as DockContainerType, DockDirection, DockPanelConfig } from '../../services/dockManager';
 import { DockPanel } from './DockPanel';
 import { DockResizeHandle } from './DockResizeHandle';
 import { activateActiveChartSource } from '../../services/activeChartSource';
@@ -29,12 +29,93 @@ export interface DockContainerProps {
   renderPanel?: (panel: DockPanelConfig, isActive: boolean, isFloating?: boolean) => React.ReactNode;
 }
 
+type EdgeDirection = 'edge-top' | 'edge-bottom' | 'edge-left' | 'edge-right';
+type DockDropDirection = DockDirection | EdgeDirection;
+
+const VALID_DROP_DIRECTIONS = new Set<string>([
+  'left', 'right', 'top', 'bottom', 'center', 'tab',
+  'edge-top', 'edge-bottom', 'edge-left', 'edge-right',
+]);
+
+const toDockDropDirection = (value: string | null): DockDropDirection | null => (
+  value && VALID_DROP_DIRECTIONS.has(value) ? (value as DockDropDirection) : null
+);
+
+const readSplitPairMetrics = (
+  containerEl: HTMLDivElement | null,
+  isHorizontal: boolean,
+  firstChildId: string | undefined,
+  secondChildId: string | undefined,
+  normCur: number,
+  normNext: number,
+) => {
+  const rect = containerEl?.getBoundingClientRect();
+  const totalSize = isHorizontal
+    ? (rect?.width || containerEl?.offsetWidth || window.innerWidth)
+    : (rect?.height || containerEl?.offsetHeight || window.innerHeight);
+
+  const findDirectChildEl = (childId: string | undefined): HTMLElement | null => {
+    if (!childId || !containerEl) return null;
+    for (const node of Array.from(containerEl.children)) {
+      if (node instanceof HTMLElement && node.getAttribute('data-dock-child') === childId) {
+        return node;
+      }
+    }
+    return null;
+  };
+  const readCssMinPx = (el: HTMLElement | null): number => {
+    if (!el || typeof window === 'undefined' || !window.getComputedStyle) return 0;
+    const raw = isHorizontal ? window.getComputedStyle(el).minWidth : window.getComputedStyle(el).minHeight;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  const firstEl = findDirectChildEl(firstChildId);
+  const secondEl = findDirectChildEl(secondChildId);
+  const firstRect = firstEl?.getBoundingClientRect();
+  const secondRect = secondEl?.getBoundingClientRect();
+  const measuredFirst = isHorizontal ? (firstRect?.width ?? 0) : (firstRect?.height ?? 0);
+  const measuredSecond = isHorizontal ? (secondRect?.width ?? 0) : (secondRect?.height ?? 0);
+  const hasMeasuredPair = measuredFirst > 0 && measuredSecond > 0;
+
+  const curPx = hasMeasuredPair ? measuredFirst : normCur * totalSize;
+  const nextPx = hasMeasuredPair ? measuredSecond : normNext * totalSize;
+  const pairPx = curPx + nextPx;
+  const baseMinPx = isHorizontal ? 160 : 100;
+  const minFirstPx = Math.min(
+    pairPx * 0.45,
+    Math.max(baseMinPx, readCssMinPx(firstEl), pairPx * 0.05),
+  );
+  const minSecondPx = Math.min(
+    pairPx * 0.45,
+    Math.max(baseMinPx, readCssMinPx(secondEl), pairPx * 0.05),
+  );
+  const originCoord = hasMeasuredPair && firstRect
+    ? (isHorizontal ? firstRect.right : firstRect.bottom)
+    : undefined;
+
+  return {
+    curPx,
+    nextPx,
+    pairPx,
+    minFirstPx,
+    minSecondPx,
+    originCoord,
+    containerRect: {
+      left: rect?.left ?? 0,
+      top: rect?.top ?? 0,
+      width: rect?.width || containerEl?.offsetWidth || window.innerWidth,
+      height: rect?.height || containerEl?.offsetHeight || window.innerHeight,
+    },
+  };
+};
+
 // ─── Shared Dock State (synchronous, no React state batching issues) ──
 // Using a plain object that is mutated synchronously avoids the race condition
 // where React setState batching causes the global mouseup to read stale values.
 const dockIntent = {
   targetPanelId: null as string | null,
-  direction: null as string | null,
+  direction: null as DockDropDirection | null,
   grabOffsetX: 80,
   grabOffsetY: 15,
 };
@@ -143,7 +224,7 @@ const CompassRose: React.FC<{
     { key: 'center', icon: '■', pos: 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' },
   ];
 
-  const renderBtn = ({ key, icon, pos }: any) => (
+  const renderBtn = ({ key, icon, pos }: (typeof centerDirs)[number]) => (
     <div
       key={key}
       data-dir={key}
@@ -386,7 +467,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
       // 1. Find which panel we're hovering over
       const panels = document.querySelectorAll('[data-dock-panel]');
       let foundTarget: string | null = null;
-      let foundDir: string | null = null;
+      let foundDir: DockDropDirection | null = null;
 
       // 2. First check if we are hovering over a compass button
       const compassBtns = document.querySelectorAll('.compass-dir-btn');
@@ -396,7 +477,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
           e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top && e.clientY <= rect.bottom
         ) {
-          foundDir = btn.getAttribute('data-dir');
+          foundDir = toDockDropDirection(btn.getAttribute('data-dir'));
         }
       });
 
@@ -448,8 +529,9 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
       } else {
         suppressNextClickAfterDrag();
         if (dockIntent.targetPanelId && dockIntent.direction) {
-          // Delegate docking routing (panel vs workspace edge) to the store
-          endDrag(dockIntent.targetPanelId, dockIntent.direction as any);
+          // Delegate docking routing (panel vs workspace edge) to the store.
+          // useDockLayoutStore.endDrag handles 'edge-*' directions at runtime even though typed as DockDirection.
+          endDrag(dockIntent.targetPanelId, dockIntent.direction as unknown as DockDirection);
         } else if (dragInfo.isFloating) {
           // Keep floating, update position
           let newX = e.clientX - 200;
@@ -460,18 +542,11 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
           endDrag();
         } else {
           // Float the panel
-          let newX = e.clientX - 200;
-          let newY = e.clientY - 50;
-          newX = Math.max(20, Math.min(newX, window.innerWidth - 200));
-          newY = Math.max(20, Math.min(newY, window.innerHeight - 200));
           const floatX = Math.max(8, Math.min(e.clientX - dockIntent.grabOffsetX, window.innerWidth - 160));
           const floatY = Math.max(8, Math.min(e.clientY - dockIntent.grabOffsetY, window.innerHeight - 120));
           floatPanel(dragInfo.panelId, { x: floatX, y: floatY });
           cancelDrag();
         }
-      }
-      if (false) {
-        endDrag();
       }
 
       // Reset local state
@@ -541,6 +616,21 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
     };
   }, [isRoot, maximizedPanelId]);
 
+  const readSplitMetricsForPair = useCallback((
+    isHorizontal: boolean,
+    firstChildId: string | undefined,
+    secondChildId: string | undefined,
+    normCur: number,
+    normNext: number,
+  ) => readSplitPairMetrics(
+    containerRef.current,
+    isHorizontal,
+    firstChildId,
+    secondChildId,
+    normCur,
+    normNext,
+  ), []);
+
   const isDragging = dragState === 'dragging';
 
   // ─── Render split container ─────────────────────────────────────
@@ -572,6 +662,7 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
         )}
         style={{ ...style, ...(isHorizontal && hasCollapsedChildren ? { overflowX: 'auto' } : {}) }}
       >
+        {/* eslint-disable-next-line react-hooks/refs -- readSplitMetricsForPair reads containerRef.current only inside DockResizeHandle drag callbacks (getDragBounds/onResizeCommit), never during render */}
         {currentContainer.children.map((child, index) => {
           const isContainer = isDockContainerNode(child);
           const childContainer = isContainer ? child : null;
@@ -632,75 +723,19 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
                 const rawNext = childRatios[index + 1];
                 const normCur = totalChildRatio > 0 ? rawCur / totalChildRatio : fallbackRatio;
                 const normNext = totalChildRatio > 0 ? rawNext / totalChildRatio : fallbackRatio;
-                const combinedNorm = normCur + normNext;
                 const combinedRaw = rawCur + rawNext;
-                const readSplitMetrics = () => {
-                  const rect = containerRef.current?.getBoundingClientRect();
-                  const totalSize = isHorizontal
-                    ? (rect?.width || containerRef.current?.offsetWidth || window.innerWidth)
-                    : (rect?.height || containerRef.current?.offsetHeight || window.innerHeight);
-
-                  const findDirectChildEl = (childId: string | undefined): HTMLElement | null => {
-                    if (!childId || !containerRef.current) return null;
-                    for (const node of Array.from(containerRef.current.children)) {
-                      if (node instanceof HTMLElement && node.getAttribute('data-dock-child') === childId) {
-                        return node;
-                      }
-                    }
-                    return null;
-                  };
-                  const readCssMinPx = (el: HTMLElement | null): number => {
-                    if (!el || typeof window === 'undefined' || !window.getComputedStyle) return 0;
-                    const raw = isHorizontal ? window.getComputedStyle(el).minWidth : window.getComputedStyle(el).minHeight;
-                    const parsed = Number.parseFloat(raw);
-                    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-                  };
-
-                  const firstEl = findDirectChildEl(childItem.id);
-                  const secondEl = findDirectChildEl(nextChild?.id);
-                  const firstRect = firstEl?.getBoundingClientRect();
-                  const secondRect = secondEl?.getBoundingClientRect();
-                  const measuredFirst = isHorizontal ? (firstRect?.width ?? 0) : (firstRect?.height ?? 0);
-                  const measuredSecond = isHorizontal ? (secondRect?.width ?? 0) : (secondRect?.height ?? 0);
-                  const hasMeasuredPair = measuredFirst > 0 && measuredSecond > 0;
-
-                  const curPx = hasMeasuredPair ? measuredFirst : normCur * totalSize;
-                  const nextPx = hasMeasuredPair ? measuredSecond : normNext * totalSize;
-                  const pairPx = curPx + nextPx;
-                  const baseMinPx = isHorizontal ? 160 : 100;
-                  const minFirstPx = Math.min(
-                    pairPx * 0.45,
-                    Math.max(baseMinPx, readCssMinPx(firstEl), pairPx * 0.05),
-                  );
-                  const minSecondPx = Math.min(
-                    pairPx * 0.45,
-                    Math.max(baseMinPx, readCssMinPx(secondEl), pairPx * 0.05),
-                  );
-                  const originCoord = hasMeasuredPair && firstRect
-                    ? (isHorizontal ? firstRect.right : firstRect.bottom)
-                    : undefined;
-
-                  return {
-                    curPx,
-                    nextPx,
-                    pairPx,
-                    minFirstPx,
-                    minSecondPx,
-                    originCoord,
-                    containerRect: {
-                      left: rect?.left ?? 0,
-                      top: rect?.top ?? 0,
-                      width: rect?.width || containerRef.current?.offsetWidth || window.innerWidth,
-                      height: rect?.height || containerRef.current?.offsetHeight || window.innerHeight,
-                    },
-                  };
-                };
 
                 return (
                   <DockResizeHandle
                     direction={isHorizontal ? 'vertical' : 'horizontal'}
                     getDragBounds={() => {
-                      const { curPx, nextPx, minFirstPx, minSecondPx, originCoord, containerRect } = readSplitMetrics();
+                      const { curPx, nextPx, minFirstPx, minSecondPx, originCoord, containerRect } = readSplitMetricsForPair(
+                        isHorizontal,
+                        childItem.id,
+                        nextChild?.id,
+                        normCur,
+                        normNext,
+                      );
                       return {
                         minDelta: -Math.max(0, curPx - minFirstPx),
                         maxDelta: Math.max(0, nextPx - minSecondPx),
@@ -710,7 +745,13 @@ const DockContainerContent: React.FC<DockContainerProps> = ({
                     }}
                     onResizeCommit={(totalDelta) => {
                       if (!childItem.id || !nextChild?.id) return;
-                      const { curPx, pairPx, minFirstPx, minSecondPx } = readSplitMetrics();
+                      const { curPx, pairPx, minFirstPx, minSecondPx } = readSplitMetricsForPair(
+                        isHorizontal,
+                        childItem.id,
+                        nextChild?.id,
+                        normCur,
+                        normNext,
+                      );
                       if (pairPx <= 0) return;
 
                       const targetFirstPx = Math.max(
@@ -1032,7 +1073,6 @@ const FloatingPanelsContent: React.FC<{
     layout,
     maximizedPanelId,
     removePanel,
-    dockPanel,
     redockPanel,
     updateFloatingPosition,
     updateFloatingSize,
@@ -1043,7 +1083,7 @@ const FloatingPanelsContent: React.FC<{
   } = useDockLayoutStore();
 
   // 8-directional resize
-  const startResize = (e: React.MouseEvent, floating: any, direction: string) => {
+  const startResize = (e: React.MouseEvent, floating: DockContainerType, direction: string) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -1087,7 +1127,7 @@ const FloatingPanelsContent: React.FC<{
   };
 
   // Floating drag
-  const handleFloatingDrag = (floating: any, panel: DockPanelConfig) => (e: React.MouseEvent) => {
+  const handleFloatingDrag = (floating: DockContainerType, panel: DockPanelConfig) => (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const startMX = e.clientX, startMY = e.clientY;
     const startPX = floating.position?.x ?? 100;

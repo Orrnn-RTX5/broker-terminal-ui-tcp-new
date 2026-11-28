@@ -23,8 +23,8 @@ const renderQuickTrade = (): QuickTradeHarness => {
   const placeOrder = vi.fn();
   const openOrderPanelForSymbol = vi.fn();
   const useHarness = () => {
-    const [showDataWindow, setShowDataWindow] = useState(false);
-    const [showAccountPanel, setShowAccountPanel] = useState(false);
+    const [, setShowDataWindow] = useState(false);
+    const [, setShowAccountPanel] = useState(false);
     useTerminalCommandEvents({
       selectedSymbol: 'EURUSD',
       setSelectedSymbol: setter<string>(),

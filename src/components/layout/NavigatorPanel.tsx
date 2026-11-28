@@ -256,25 +256,33 @@ export const NavigatorPanel: React.FC = () => {
 
     // Keep every saved account for future login; scope only the authenticated
     // tree and Favorites. Logged-out Favorites remain quick-login shortcuts.
-    const visibleSavedAccounts = isAuthenticated ? savedAccounts.filter(account => (
-        isSavedAccountInBrokerSession(account, brokerScope, accountServerIdentities)
-    )) : [];
-    const visibleAccounts = [...visibleSavedAccounts];
+    const visibleSavedAccounts = useMemo(
+        () => (isAuthenticated
+            ? savedAccounts.filter(account => isSavedAccountInBrokerSession(account, brokerScope, accountServerIdentities))
+            : []),
+        [isAuthenticated, savedAccounts, brokerScope, accountServerIdentities],
+    );
     // A validated session exists independently of its optional saved bookmark.
     // Restored/legacy accounts must not be presented as logged out. Never use
     // a same-login bookmark from an unproven broker to fill this row's name.
-    const activeLogin = Number(accountId);
-    if (isAuthenticated && brokerScope.authenticated && brokerScope.accountId === accountId
-        && Number.isSafeInteger(activeLogin) && activeLogin > 0
-        && !visibleAccounts.some(account => String(account.login) === accountId)) {
-        visibleAccounts.push({
-            login: activeLogin,
-            name: '',
-            server: brokerScope.serverUrl || brokerScope.brokerId,
-            brokerId: brokerScope.brokerId,
-            serverUrl: brokerScope.serverUrl,
-        });
-    }
+    const visibleAccounts = useMemo(() => {
+        const activeLogin = Number(accountId);
+        if (isAuthenticated && brokerScope.authenticated && brokerScope.accountId === accountId
+            && Number.isSafeInteger(activeLogin) && activeLogin > 0
+            && !visibleSavedAccounts.some(account => String(account.login) === accountId)) {
+            return [
+                ...visibleSavedAccounts,
+                {
+                    login: activeLogin,
+                    name: '',
+                    server: brokerScope.serverUrl || brokerScope.brokerId,
+                    brokerId: brokerScope.brokerId,
+                    serverUrl: brokerScope.serverUrl,
+                },
+            ];
+        }
+        return visibleSavedAccounts;
+    }, [isAuthenticated, brokerScope, accountId, visibleSavedAccounts]);
     const favoriteAccounts = (isAuthenticated ? visibleSavedAccounts : savedAccounts).filter(account => account.isFavorite);
     const isAccountActive = useCallback((account: SavedAccount) => isAuthenticated
         && account.login.toString() === accountId

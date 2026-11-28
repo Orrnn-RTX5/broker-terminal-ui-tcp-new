@@ -128,6 +128,28 @@ export const parseExposureSymbol = (symbol: unknown): { base: string; quote: str
   return null;
 };
 
+interface StoreExposureSymbol {
+  symbol?: unknown;
+  name?: unknown;
+  contractSize?: unknown;
+  contract_size?: unknown;
+  specification?: {
+    contractSize?: unknown;
+    contract_size?: unknown;
+  } | null;
+}
+
+const EMPTY_STORE_SYMBOLS: readonly StoreExposureSymbol[] = [];
+
+const readStoreSymbolList = (
+  state: unknown,
+  key: 'symbols' | 'instruments'
+): readonly StoreExposureSymbol[] | undefined => {
+  if (typeof state !== 'object' || state === null) return undefined;
+  const candidate = (state as { readonly symbols?: unknown; readonly instruments?: unknown })[key];
+  return Array.isArray(candidate) ? (candidate as readonly StoreExposureSymbol[]) : undefined;
+};
+
 /**
  * Broker contract size only: the position row's own field, then the scoped
  * instrument catalog. Null when neither publishes one (TERM-DIGITS-WL: never a
@@ -140,15 +162,13 @@ export const getExposureContractSize = (position: ExposurePositionInput): number
   if (registered && registered > 0) return registered;
   const sym = normalizeAsset(position.symbol, '');
   if (sym) {
-    const appSymbols = (useAppStore.getState() as any)?.symbols;
-    const marketInstruments = (useMarketDataStore.getState() as any)?.instruments;
-    const list = Array.isArray(appSymbols) && appSymbols.length > 0
+    const appSymbols = readStoreSymbolList(useAppStore.getState(), 'symbols');
+    const marketInstruments = readStoreSymbolList(useMarketDataStore.getState(), 'instruments');
+    const list = appSymbols && appSymbols.length > 0
       ? appSymbols
-      : Array.isArray(marketInstruments)
-        ? marketInstruments
-        : [];
+      : marketInstruments ?? EMPTY_STORE_SYMBOLS;
     const storeSym = list.find(
-      (s: any) => normalizeAsset(s?.symbol ?? s?.name, '') === sym
+      (s: StoreExposureSymbol) => normalizeAsset(s?.symbol ?? s?.name, '') === sym
     );
     const storeContractSize = toFiniteNumber(
       storeSym?.contractSize ?? storeSym?.contract_size ?? storeSym?.specification?.contractSize ?? storeSym?.specification?.contract_size,

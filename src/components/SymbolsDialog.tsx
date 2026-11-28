@@ -75,6 +75,82 @@ interface TickRow {
   flags: string;
 }
 
+interface RawInstrumentInput {
+  id?: unknown;
+  symbol?: unknown;
+  name?: unknown;
+  description?: unknown;
+  category?: unknown;
+  digits?: unknown;
+  tick_size?: unknown;
+  tickSize?: unknown;
+  contract_size?: unknown;
+  contractSize?: unknown;
+  bid?: unknown;
+  ask?: unknown;
+  stops_level?: unknown;
+  stopsLevel?: unknown;
+  margin_rate?: unknown;
+  marginRate?: unknown;
+  enabled?: unknown;
+  trading_enabled?: unknown;
+  tradingEnabled?: unknown;
+  spread?: unknown;
+  margin_currency?: unknown;
+  marginCurrency?: unknown;
+  swap_long?: unknown;
+  swapLong?: unknown;
+  swap_short?: unknown;
+  swapShort?: unknown;
+  min_volume?: unknown;
+  minVolume?: unknown;
+  max_volume?: unknown;
+  maxVolume?: unknown;
+  volume_step?: unknown;
+  volumeStep?: unknown;
+  expiration?: unknown;
+}
+
+interface RawBarInput {
+  time?: unknown;
+  Time?: unknown;
+  timestamp?: unknown;
+  t?: unknown;
+  date?: unknown;
+  open?: unknown;
+  Open?: unknown;
+  o?: unknown;
+  high?: unknown;
+  High?: unknown;
+  h?: unknown;
+  low?: unknown;
+  Low?: unknown;
+  l?: unknown;
+  close?: unknown;
+  Close?: unknown;
+  c?: unknown;
+  volume?: unknown;
+  Volume?: unknown;
+  v?: unknown;
+  tick_count?: unknown;
+  tickCount?: unknown;
+  spread?: unknown;
+  Spread?: unknown;
+}
+
+interface RawTickInput {
+  time?: unknown;
+  timestamp?: unknown;
+  ts?: unknown;
+  created_at?: unknown;
+  bid?: unknown;
+  ask?: unknown;
+  last?: unknown;
+  close?: unknown;
+  volume?: unknown;
+  flags?: unknown;
+}
+
 type Tab = 'Specification' | 'Bars' | 'Ticks';
 
 const SYMBOL_TABS: readonly Tab[] = ['Specification', 'Bars', 'Ticks'];
@@ -176,8 +252,8 @@ const SYMBOL_ENDPOINTS = ['/api/v2/instruments', '/api/v1/market/symbols', '/api
 // to the public broker list.
 const ACCOUNT_SYMBOL_ENDPOINTS = ['/api/v2/instruments'];
 
-const extractInstrumentRows = (payload: unknown): any[] =>
-  asArray<any>(payload, ['symbols', 'instruments', 'data', 'result']);
+const extractInstrumentRows = (payload: unknown): unknown[] =>
+  asArray<unknown>(payload, ['symbols', 'instruments', 'data', 'result']);
 
 const readPositiveSpecNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
@@ -191,61 +267,74 @@ const formatSpecPrice = (value: number, digits: unknown): string => {
   return resolved === null ? String(value) : value.toFixed(resolved);
 };
 
-const normalizeInstrument = (raw: any): SymbolSpec | null => {
-  const name = String(raw?.symbol ?? raw?.name ?? raw?.id ?? '').trim();
+const normalizeInstrument = (raw: unknown): SymbolSpec | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as RawInstrumentInput;
+  const name = String(item.symbol ?? item.name ?? item.id ?? '').trim();
   if (!name) return null;
   // TERM-DIGITS-WL: broker spec only. Unknown digits/tick/contract stay null
   // (rendered raw or as an honest unknown), never a 5-digit default.
-  const digits = resolveSpecDigits(raw?.digits);
-  const tickSize = readPositiveSpecNumber(raw?.tick_size ?? raw?.tickSize)
+  const digits = resolveSpecDigits(item.digits);
+  const tickSize = readPositiveSpecNumber(item.tick_size ?? item.tickSize)
     ?? (digits !== null ? Math.pow(10, -digits) : null);
-  const contractSize = readPositiveSpecNumber(raw?.contract_size ?? raw?.contractSize);
-  const bid = Number(raw?.bid);
-  const ask = Number(raw?.ask);
-  const rawStopsLevel = raw?.stops_level ?? raw?.stopsLevel;
+  const contractSize = readPositiveSpecNumber(item.contract_size ?? item.contractSize);
+  const bid = Number(item.bid);
+  const ask = Number(item.ask);
+  const rawStopsLevel = item.stops_level ?? item.stopsLevel;
   const parsedStopsLevel = rawStopsLevel === null || rawStopsLevel === undefined || rawStopsLevel === ''
     ? null
     : Number(rawStopsLevel);
+  const rawSpread = item.spread;
+  const spread = typeof rawSpread === 'string' || typeof rawSpread === 'number' ? rawSpread : 'floating';
+  const rawMarginCurrency = item.margin_currency ?? item.marginCurrency;
+  const marginCurrency = typeof rawMarginCurrency === 'string' ? rawMarginCurrency : undefined;
+  const expiration = typeof item.expiration === 'string'
+    ? item.expiration
+    : typeof item.expiration === 'number' && Number.isFinite(item.expiration) && item.expiration !== 0
+      ? String(item.expiration)
+      : undefined;
 
   return {
-    id: String(raw?.id ?? name),
+    id: String(item.id ?? name),
     name,
     symbol: name,
-    description: String(raw?.description ?? name),
-    category: String(raw?.category ?? 'Forex'),
+    description: String(item.description ?? name),
+    category: String(item.category ?? 'Forex'),
     digits,
     tickSize,
     contractSize,
-    marginRate: Number(raw?.margin_rate ?? raw?.marginRate ?? 0),
-    tradingEnabled: Boolean(raw?.enabled ?? raw?.trading_enabled ?? raw?.tradingEnabled ?? true),
+    marginRate: Number(item.margin_rate ?? item.marginRate ?? 0),
+    tradingEnabled: Boolean(item.enabled ?? item.trading_enabled ?? item.tradingEnabled ?? true),
     bid: Number.isFinite(bid) ? bid : undefined,
     ask: Number.isFinite(ask) ? ask : undefined,
     specSource: raw,
-    spread: raw?.spread ?? 'floating',
+    spread,
     stopsLevel: parsedStopsLevel !== null && Number.isFinite(parsedStopsLevel) && parsedStopsLevel >= 0
       ? Math.trunc(parsedStopsLevel)
       : null,
     // Broker-published only; never sliced from the symbol name.
-    marginCurrency: raw?.margin_currency ?? raw?.marginCurrency,
-    swapLong: Number(raw?.swap_long ?? raw?.swapLong ?? 0),
-    swapShort: Number(raw?.swap_short ?? raw?.swapShort ?? 0),
-    minVolume: Number(raw?.min_volume ?? raw?.minVolume ?? 0),
-    maxVolume: Number(raw?.max_volume ?? raw?.maxVolume ?? 0),
-    volumeStep: Number(raw?.volume_step ?? raw?.volumeStep ?? 0),
-    expiration: raw?.expiration,
+    marginCurrency,
+    swapLong: Number(item.swap_long ?? item.swapLong ?? 0),
+    swapShort: Number(item.swap_short ?? item.swapShort ?? 0),
+    minVolume: Number(item.min_volume ?? item.minVolume ?? 0),
+    maxVolume: Number(item.max_volume ?? item.maxVolume ?? 0),
+    volumeStep: Number(item.volume_step ?? item.volumeStep ?? 0),
+    expiration,
   };
 };
 
-const normalizeBar = (raw: any): BarRow | null => {
-  const rawTime = raw?.time ?? raw?.Time ?? raw?.timestamp ?? raw?.t ?? raw?.date;
-  const open = Number(raw?.open ?? raw?.Open ?? raw?.o);
-  const high = Number(raw?.high ?? raw?.High ?? raw?.h);
-  const low = Number(raw?.low ?? raw?.Low ?? raw?.l);
-  const close = Number(raw?.close ?? raw?.Close ?? raw?.c);
-  const volume = Number(raw?.volume ?? raw?.Volume ?? raw?.v ?? raw?.tick_count ?? raw?.tickCount ?? 0);
+const normalizeBar = (raw: unknown): BarRow | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const bar = raw as RawBarInput;
+  const rawTime = bar.time ?? bar.Time ?? bar.timestamp ?? bar.t ?? bar.date;
+  const open = Number(bar.open ?? bar.Open ?? bar.o);
+  const high = Number(bar.high ?? bar.High ?? bar.h);
+  const low = Number(bar.low ?? bar.Low ?? bar.l);
+  const close = Number(bar.close ?? bar.Close ?? bar.c);
+  const volume = Number(bar.volume ?? bar.Volume ?? bar.v ?? bar.tick_count ?? bar.tickCount ?? 0);
   if (rawTime == null || ![open, high, low, close].every(Number.isFinite)) return null;
   if (open <= 0 && close <= 0) return null;
-  const rawSpread = raw?.spread ?? raw?.Spread;
+  const rawSpread = bar.spread ?? bar.Spread;
   const parsedSpread = rawSpread === null || rawSpread === undefined || rawSpread === '' ? Number.NaN : Number(rawSpread);
   const barSpread = Number.isFinite(parsedSpread) && parsedSpread >= 0 ? parsedSpread : null;
   return {
@@ -259,12 +348,14 @@ const normalizeBar = (raw: any): BarRow | null => {
   };
 };
 
-const normalizeTick = (raw: any): TickRow | null => {
-  const rawTime = raw?.time ?? raw?.timestamp ?? raw?.ts ?? raw?.created_at;
-  const bid = Number(raw?.bid);
-  const ask = Number(raw?.ask);
-  const last = Number(raw?.last ?? raw?.close ?? raw?.bid);
-  const volume = Number(raw?.volume ?? 0);
+const normalizeTick = (raw: unknown): TickRow | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const tick = raw as RawTickInput;
+  const rawTime = tick.time ?? tick.timestamp ?? tick.ts ?? tick.created_at;
+  const bid = Number(tick.bid);
+  const ask = Number(tick.ask);
+  const last = Number(tick.last ?? tick.close ?? tick.bid);
+  const volume = Number(tick.volume ?? 0);
   if (rawTime == null || !Number.isFinite(bid) || !Number.isFinite(ask)) return null;
   if (bid <= 0 && ask <= 0) return null;
   return {
@@ -273,7 +364,7 @@ const normalizeTick = (raw: any): TickRow | null => {
     ask,
     last: Number.isFinite(last) ? last : bid,
     volume: Number.isFinite(volume) ? volume : 0,
-    flags: String(raw?.flags ?? ''),
+    flags: String(tick.flags ?? ''),
   };
 };
 
@@ -336,16 +427,16 @@ const TreeItem: React.FC<TreeItemProps> = ({
   treeFocusId,
   onTreeFocus,
 }) => {
-    useUiTranslation();
-  const [expanded, setExpanded] = useState(depth < 2);
+  useUiTranslation();
+  const [expanded, setExpanded] = useState(() => depth < 2 || Boolean(searchQuery));
+  const [prevSearchQuery, setPrevSearchQuery] = useState(searchQuery);
+  if (prevSearchQuery !== searchQuery) {
+    setPrevSearchQuery(searchQuery);
+    if (searchQuery) setExpanded(true);
+  }
   const hasChildren = node.children && Object.keys(node.children).length > 0;
   const hasSymbols = node.symbols && node.symbols.length > 0;
   const folderFocusId = `folder:${path}`;
-
-  // Auto-expand when searching
-  useEffect(() => {
-    if (searchQuery) setExpanded(true);
-  }, [searchQuery]);
 
   return (
     <div>
@@ -448,7 +539,7 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
   title = 'Symbols',
   chartActionLabel = 'Open Chart',
 }) => {
-    const tr = useUiTranslation();
+  const tr = useUiTranslation();
   const isDesktopShell = Boolean(window.electron?.window);
   const [activeTab, setActiveTab] = useState<Tab>('Specification');
   const [searchQuery, setSearchQuery] = useState('');
@@ -470,62 +561,28 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
   const [ticksVisibleCount, setTicksVisibleCount] = useState(100);
   const [treeFocusId, setTreeFocusId] = useState<string | null>(null);
 
-  // Bars tab specific state
-  const TIMEFRAMES = useMemo(() => ['M1','M5','M15','M30','H1','H4','D1','W1','MN'], []);
-  const [barsSymbolInput, setBarsSymbolInput] = useState('');
-  const [barsTimeframe, setBarsTimeframe] = useState('M15');
-  
-  const formatDateForInput = (d: Date) => d.toISOString().slice(0, 16);
-  const [barsStartTime, setBarsStartTime] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return formatDateForInput(d);
-  });
-  const [barsEndTime, setBarsEndTime] = useState(() => formatDateForInput(new Date()));
-  const [barsFetchTrigger, setBarsFetchTrigger] = useState(0);
-  const [symbolsFetchTrigger, setSymbolsFetchTrigger] = useState(0);
-
-  useEffect(() => {
-    if (selectedSymbol && !barsSymbolInput) {
-      setBarsSymbolInput(selectedSymbol.symbol || selectedSymbol.name);
-    }
-  }, [selectedSymbol, barsSymbolInput]);
-
-  // Watchlist integration
-  const watchlists = useWatchlistStore(s => s.watchlists);
-  const activeWatchlistId = useWatchlistStore(s => s.activeWatchlistId);
-  const addSymbolToWatchlist = useWatchlistStore(s => s.addSymbolToWatchlist);
-  const removeSymbolFromWatchlist = useWatchlistStore(s => s.removeSymbolFromWatchlist);
-
-  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
-  const watchlistSymbols = activeWatchlist?.symbols || [];
-  
-  const isSelectedSymbolShown = selectedSymbol ? watchlistSymbols.includes(selectedSymbol.symbol || selectedSymbol.name) : false;
-
-  const openChartForSymbol = useCallback((instrument: SymbolSpec | null) => {
-    const brokerSymbol = instrument?.symbol?.trim();
-    if (!brokerSymbol || !onOpenChart) return;
-
-    onOpenChart(brokerSymbol);
-    onClose();
-  }, [onClose, onOpenChart]);
-
   // Drag state — centered on screen when first rendered
   const [size, setSize] = useState(getDialogSizeForViewport);
   const sizeRef = useRef(size);
   const [pos, setPos] = useState(() => getCenteredDialogPosition(size));
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const resizeRef = useRef<{ sx: number; sy: number; ow: number; oh: number } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // ── Reset position to center every time the dialog opens ──────────────────
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      const nextSize = getDialogSizeForViewport();
+      setSize(nextSize);
+      setPos(getCenteredDialogPosition(nextSize));
+    }
+  }
+
   useEffect(() => {
-    if (!isOpen) return;
-    const nextSize = getDialogSizeForViewport();
-    sizeRef.current = nextSize;
-    setSize(nextSize);
-    setPos(getCenteredDialogPosition(nextSize));
-  }, [isOpen]);
+    sizeRef.current = size;
+  }, [size]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -547,11 +604,102 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
     return () => window.removeEventListener('resize', fitToViewport);
   }, [isOpen]);
 
+  // Bars tab specific state
+  const TIMEFRAMES = useMemo(() => ['M1','M5','M15','M30','H1','H4','D1','W1','MN'], []);
+  const [barsTimeframe, setBarsTimeframe] = useState('M15');
+
+  const formatDateForInput = (d: Date) => d.toISOString().slice(0, 16);
+  const [barsStartTime, setBarsStartTime] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return formatDateForInput(d);
+  });
+  const [barsEndTime, setBarsEndTime] = useState(() => formatDateForInput(new Date()));
+  const [barsFetchTrigger, setBarsFetchTrigger] = useState(0);
+  const [symbolsFetchTrigger, setSymbolsFetchTrigger] = useState(0);
+
+  // Ticks tab specific state
+  const TICK_TYPES = useMemo(() => ['Bid/Ask ticks', 'Info ticks'], []);
+  const [ticksType, setTicksType] = useState('Bid/Ask ticks');
+  const [ticksStartTime, setTicksStartTime] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() - 1);
+    return formatDateForInput(d);
+  });
+  const [ticksEndTime, setTicksEndTime] = useState(() => formatDateForInput(new Date()));
+  const [ticksFetchTrigger, setTicksFetchTrigger] = useState(0);
+
+  const [barsSymbolInput, setBarsSymbolInput] = useState(() =>
+    selectedSymbol ? (selectedSymbol.symbol || selectedSymbol.name) : '',
+  );
+  if (selectedSymbol && !barsSymbolInput) {
+    setBarsSymbolInput(selectedSymbol.symbol || selectedSymbol.name);
+  }
+
+  const [ticksSymbolInput, setTicksSymbolInput] = useState(() =>
+    selectedSymbol ? (selectedSymbol.symbol || selectedSymbol.name) : '',
+  );
+  if (selectedSymbol && !ticksSymbolInput) {
+    setTicksSymbolInput(selectedSymbol.symbol || selectedSymbol.name);
+  }
+
+  const barsQueryKey = activeTab === 'Bars' && barsSymbolInput
+    ? `${barsFetchTrigger}:${barsSymbolInput}:${barsTimeframe}:${barsStartTime}:${barsEndTime}`
+    : null;
+  const [prevBarsQueryKey, setPrevBarsQueryKey] = useState<string | null>(null);
+  if (prevBarsQueryKey !== barsQueryKey) {
+    setPrevBarsQueryKey(barsQueryKey);
+    if (barsQueryKey !== null) {
+      setBarsLoading(true);
+      setBarsProgress(35);
+      setBarsError(null);
+      setBars([]);
+      setBarsVisibleCount(100);
+    }
+  }
+
+  const ticksQueryKey = activeTab === 'Ticks' && ticksSymbolInput
+    ? `${ticksFetchTrigger}:${ticksSymbolInput}:${ticksStartTime}:${ticksEndTime}`
+    : null;
+  const [prevTicksQueryKey, setPrevTicksQueryKey] = useState<string | null>(null);
+  if (prevTicksQueryKey !== ticksQueryKey) {
+    setPrevTicksQueryKey(ticksQueryKey);
+    if (ticksQueryKey !== null) {
+      setTicksLoading(true);
+      setTicksProgress(35);
+      setTicksError(null);
+      setTicks([]);
+      setTicksVisibleCount(100);
+    }
+  }
+
+  // Watchlist integration
+  const watchlists = useWatchlistStore(s => s.watchlists);
+  const activeWatchlistId = useWatchlistStore(s => s.activeWatchlistId);
+  const addSymbolToWatchlist = useWatchlistStore(s => s.addSymbolToWatchlist);
+  const removeSymbolFromWatchlist = useWatchlistStore(s => s.removeSymbolFromWatchlist);
+
+  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
+  const watchlistSymbols = activeWatchlist?.symbols || [];
+
+  const isSelectedSymbolShown = selectedSymbol
+    ? watchlistSymbols.includes(selectedSymbol.symbol || selectedSymbol.name)
+    : false;
+
+  const openChartForSymbol = useCallback((instrument: SymbolSpec | null) => {
+    const brokerSymbol = instrument?.symbol?.trim();
+    if (!brokerSymbol || !onOpenChart) return;
+
+    onOpenChart(brokerSymbol);
+    onClose();
+  }, [onClose, onOpenChart]);
+
   // ── Load symbols on open ──────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
     if (instruments) {
       const normalized = instruments.map(normalizeInstrument).filter((symbol): symbol is SymbolSpec => Boolean(symbol));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Preserve 1.2.18 prop-catalog sync on open/change so catalog state and selection match 1.2.18.
       setAllSymbols(normalized);
       const initialMatch = normalized.find(symbol => normalizeExactBrokerSymbol(symbol.symbol) === normalizeExactBrokerSymbol(initialSymbol));
       setSelectedSymbol(
@@ -572,8 +720,8 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
       for (const endpoint of isAuthenticated ? ACCOUNT_SYMBOL_ENDPOINTS : SYMBOL_ENDPOINTS) {
         try {
           const payload = await fetchJson<unknown>(buildSymbolEndpointUrl(endpoint));
-          const instruments = extractInstrumentRows(payload);
-          const normalized = instruments
+          const rows = extractInstrumentRows(payload);
+          const normalized = rows
             .map(normalizeInstrument)
             .filter((symbol): symbol is SymbolSpec => Boolean(symbol));
 
@@ -632,6 +780,7 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
     if (selectedSymbol && (showExpired || !isExpiredSymbol(selectedSymbol.expiration))) return;
     const nextSelection = allSymbols.find(symbol => showExpired || !isExpiredSymbol(symbol.expiration)) || null;
     if ((nextSelection?.symbol || nextSelection?.name) !== (selectedSymbol?.symbol || selectedSymbol?.name)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Preserve 1.2.18 post-commit selection fallback when hiding expired contracts or reloading catalog.
       setSelectedSymbol(nextSelection);
     }
   }, [allSymbols, isOpen, selectedSymbol, showExpired]);
@@ -642,6 +791,8 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
       : false;
     const renderedItems = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('[data-symbol-tree-item]') ?? []);
     const renderedIds = new Set(renderedItems.map(item => item.dataset.symbolTreeItem).filter(Boolean));
+    // Sync roving tree tabIndex after commit from mounted [data-symbol-tree-item] elements;
+    // [filteredSymbols, selectedSymbol] deps match 1.2.18 so folder focus stays intact across reopen while loading.
     setTreeFocusId(current => {
       if (current && renderedIds.has(current)) return current;
 
@@ -661,12 +812,9 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
 
   // Load bar data from swagger v2/history APIs. Empty/error responses stay visible instead of fabricating candles.
   useEffect(() => {
-    if (activeTab !== 'Bars' || !barsSymbolInput) return;
-    setBarsLoading(true);
-    setBarsProgress(0);
-    setBarsError(null);
-    setBars([]);
-    setBarsVisibleCount(100);
+    if (!barsQueryKey) return;
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const symName = barsSymbolInput;
 
     const fetchBars = async () => {
@@ -686,16 +834,16 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
           limit: '5000',
         });
 
-        setBarsProgress(35);
         let payload: unknown;
         try {
           payload = await fetchJson<unknown>(`${API_ENDPOINTS.v2.history.candles(symName)}?${historyParams.toString()}`);
         } catch {
-          setBarsProgress(65);
+          if (!cancelled) setBarsProgress(65);
           payload = await fetchJson<unknown>(`${API_ENDPOINTS.v2.market.candles(symName)}?${v2Params.toString()}`);
         }
 
-        const parsed = asArray<any>(payload, ['candles', 'data'])
+        if (cancelled) return;
+        const parsed = asArray<unknown>(payload, ['candles', 'data'])
           .map(normalizeBar)
           .filter((bar): bar is BarRow => Boolean(bar));
         setBars(parsed);
@@ -703,44 +851,32 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
           setBarsError(`No bars returned for ${symName} ${barsTimeframe}.`);
         }
       } catch (err) {
+        if (cancelled) return;
         setBars([]);
         setBarsError(err instanceof Error ? err.message : `Failed to load bars for ${symName}.`);
       } finally {
-        setBarsProgress(100);
-        setTimeout(() => setBarsLoading(false), 200);
+        if (!cancelled) {
+          setBarsProgress(100);
+          timeoutId = setTimeout(() => {
+            if (!cancelled) setBarsLoading(false);
+          }, 200);
+        }
       }
     };
 
     fetchBars();
-  }, [activeTab, barsFetchTrigger, barsSymbolInput, barsTimeframe, barsStartTime, barsEndTime]);
-
-  // Ticks tab specific state
-  const TICK_TYPES = useMemo(() => ['Bid/Ask ticks', 'Info ticks'], []);
-  const [ticksSymbolInput, setTicksSymbolInput] = useState('');
-  const [ticksType, setTicksType] = useState('Bid/Ask ticks');
-  const [ticksStartTime, setTicksStartTime] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() - 1);
-    return formatDateForInput(d);
-  });
-  const [ticksEndTime, setTicksEndTime] = useState(() => formatDateForInput(new Date()));
-  const [ticksFetchTrigger, setTicksFetchTrigger] = useState(0);
-
-  useEffect(() => {
-    if (selectedSymbol && !ticksSymbolInput) {
-      setTicksSymbolInput(selectedSymbol.symbol || selectedSymbol.name);
-    }
-  }, [selectedSymbol, ticksSymbolInput]);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    };
+  }, [barsQueryKey, barsSymbolInput, barsTimeframe, barsStartTime, barsEndTime]);
 
   // ── Load tick data ────────────────────────────────────────────────────────
   // Load tick data from swagger v2/history APIs. Empty/error responses stay visible instead of fabricating ticks.
   useEffect(() => {
-    if (activeTab !== 'Ticks' || !ticksSymbolInput) return;
-    setTicksLoading(true);
-    setTicksProgress(0);
-    setTicksError(null);
-    setTicks([]);
-    setTicksVisibleCount(100);
+    if (!ticksQueryKey) return;
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const symName = ticksSymbolInput;
 
     const fetchTicks = async () => {
@@ -754,16 +890,16 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
         });
         const v2Params = new URLSearchParams({ limit: '1000' });
 
-        setTicksProgress(35);
         let payload: unknown;
         try {
           payload = await fetchJson<unknown>(`${API_ENDPOINTS.v2.history.ticks(symName)}?${historyParams.toString()}`);
         } catch {
-          setTicksProgress(65);
+          if (!cancelled) setTicksProgress(65);
           payload = await fetchJson<unknown>(`${API_ENDPOINTS.v2.market.ticks(symName)}?${v2Params.toString()}`);
         }
 
-        const parsed = asArray<any>(payload, ['ticks', 'data'])
+        if (cancelled) return;
+        const parsed = asArray<unknown>(payload, ['ticks', 'data'])
           .map(normalizeTick)
           .filter((tick): tick is TickRow => Boolean(tick));
         setTicks(parsed);
@@ -771,16 +907,25 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
           setTicksError(`No ticks returned for ${symName}.`);
         }
       } catch (err) {
+        if (cancelled) return;
         setTicks([]);
         setTicksError(err instanceof Error ? err.message : `Failed to load ticks for ${symName}.`);
       } finally {
-        setTicksProgress(100);
-        setTimeout(() => setTicksLoading(false), 200);
+        if (!cancelled) {
+          setTicksProgress(100);
+          timeoutId = setTimeout(() => {
+            if (!cancelled) setTicksLoading(false);
+          }, 200);
+        }
       }
     };
 
     fetchTicks();
-  }, [activeTab, ticksFetchTrigger, ticksSymbolInput, ticksStartTime, ticksEndTime]);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    };
+  }, [ticksQueryKey, ticksSymbolInput, ticksStartTime, ticksEndTime]);
 
   const handleBarsScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -838,9 +983,14 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
   // ── Keyboard shortcut ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
+    const dialog = dialogRef.current;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialogRef.current?.focus();
-    return () => { if (document.activeElement === document.body || dialogRef.current?.contains(document.activeElement)) previousFocus?.focus(); };
+    dialog?.focus();
+    return () => {
+      if (document.activeElement === document.body || dialog?.contains(document.activeElement)) {
+        previousFocus?.focus();
+      }
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -874,7 +1024,7 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
     const currentIndex = items.indexOf(target);
     if (currentIndex < 0) return;
 
-    let nextIndex = currentIndex;
+    let nextIndex: number;
     if (event.key === 'ArrowDown') nextIndex = Math.min(items.length - 1, currentIndex + 1);
     else if (event.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - 1);
     else if (event.key === 'Home') nextIndex = 0;
@@ -1338,7 +1488,7 @@ export const SymbolsDialog: React.FC<SymbolsDialogProps> = ({
                         onKeyDown={event => {
                           const rows = Array.from(event.currentTarget.closest('tbody')?.querySelectorAll<HTMLTableRowElement>('tr[data-symbol-row]') ?? []);
                           const currentIndex = rows.indexOf(event.currentTarget);
-                          let nextIndex = currentIndex;
+                          let nextIndex: number;
                           if (event.key === 'ArrowDown') nextIndex = Math.min(rows.length - 1, currentIndex + 1);
                           else if (event.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - 1);
                           else if (event.key === 'Home') nextIndex = 0;

@@ -85,7 +85,7 @@ function OpenOptionsDialog({ onClose, activeTab, setActiveTab }: {
         };
     }, []);
     const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-        let next = index;
+        let next: number;
         if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (index + 1) % TABS.length;
         else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
         else if (event.key === 'Home') next = 0;

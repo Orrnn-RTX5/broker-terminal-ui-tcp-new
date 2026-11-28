@@ -422,8 +422,15 @@ func createShellLinkShortcut(lnkPath, targetPath, workingDir, description, iconP
 	// IID_IPersistFile = {0000010b-0000-0000-C000-000000000046}
 	iidIPersistFile := [16]byte{0x0B, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}
 
+	type shellLinkObj struct {
+		vtbl *[32]uintptr
+	}
+	type persistFileObj struct {
+		vtbl *[16]uintptr
+	}
+
 	const clsctxInprocServer = 1
-	var pShellLink uintptr
+	var pShellLink *shellLinkObj
 	hr, _, _ := procCoCreateInstance.Call(
 		uintptr(unsafe.Pointer(&clsidShellLink[0])),
 		0,
@@ -431,23 +438,23 @@ func createShellLinkShortcut(lnkPath, targetPath, workingDir, description, iconP
 		uintptr(unsafe.Pointer(&iidIShellLinkW[0])),
 		uintptr(unsafe.Pointer(&pShellLink)),
 	)
-	if int32(hr) < 0 || pShellLink == 0 {
+	if int32(hr) < 0 || pShellLink == nil {
 		return fmt.Errorf("CoCreateInstance IShellLinkW failed: 0x%x", hr)
 	}
-	vtable := (*[32]uintptr)(*(*unsafe.Pointer)(unsafe.Pointer(pShellLink)))
-	defer syscall.SyscallN(vtable[2], pShellLink) // Release
+	vtable := pShellLink.vtbl
+	defer syscall.SyscallN(vtable[2], uintptr(unsafe.Pointer(pShellLink))) // Release
 
 	// SetPath (index 20)
 	if uTarget, err := syscall.UTF16PtrFromString(targetPath); err == nil {
-		_, _, _ = syscall.SyscallN(vtable[20], pShellLink, uintptr(unsafe.Pointer(uTarget)))
+		_, _, _ = syscall.SyscallN(vtable[20], uintptr(unsafe.Pointer(pShellLink)), uintptr(unsafe.Pointer(uTarget)))
 	}
 	// SetWorkingDirectory (index 9)
 	if uWork, err := syscall.UTF16PtrFromString(workingDir); err == nil {
-		_, _, _ = syscall.SyscallN(vtable[9], pShellLink, uintptr(unsafe.Pointer(uWork)))
+		_, _, _ = syscall.SyscallN(vtable[9], uintptr(unsafe.Pointer(pShellLink)), uintptr(unsafe.Pointer(uWork)))
 	}
 	// SetDescription (index 7)
 	if uDesc, err := syscall.UTF16PtrFromString(description); err == nil {
-		_, _, _ = syscall.SyscallN(vtable[7], pShellLink, uintptr(unsafe.Pointer(uDesc)))
+		_, _, _ = syscall.SyscallN(vtable[7], uintptr(unsafe.Pointer(pShellLink)), uintptr(unsafe.Pointer(uDesc)))
 	}
 	// SetIconLocation (index 17)
 	iconSource := iconPath
@@ -455,22 +462,22 @@ func createShellLinkShortcut(lnkPath, targetPath, workingDir, description, iconP
 		iconSource = targetPath
 	}
 	if uIcon, err := syscall.UTF16PtrFromString(iconSource); err == nil {
-		_, _, _ = syscall.SyscallN(vtable[17], pShellLink, uintptr(unsafe.Pointer(uIcon)), 0)
+		_, _, _ = syscall.SyscallN(vtable[17], uintptr(unsafe.Pointer(pShellLink)), uintptr(unsafe.Pointer(uIcon)), 0)
 	}
 
 	// QueryInterface (index 0) for IID_IPersistFile
-	var pPersistFile uintptr
+	var pPersistFile *persistFileObj
 	hr, _, _ = syscall.SyscallN(
 		vtable[0],
-		pShellLink,
+		uintptr(unsafe.Pointer(pShellLink)),
 		uintptr(unsafe.Pointer(&iidIPersistFile[0])),
 		uintptr(unsafe.Pointer(&pPersistFile)),
 	)
-	if int32(hr) < 0 || pPersistFile == 0 {
+	if int32(hr) < 0 || pPersistFile == nil {
 		return fmt.Errorf("QueryInterface IPersistFile failed: 0x%x", hr)
 	}
-	pfVtable := (*[16]uintptr)(*(*unsafe.Pointer)(unsafe.Pointer(pPersistFile)))
-	defer syscall.SyscallN(pfVtable[2], pPersistFile) // Release
+	pfVtable := pPersistFile.vtbl
+	defer syscall.SyscallN(pfVtable[2], uintptr(unsafe.Pointer(pPersistFile))) // Release
 
 	_ = os.MkdirAll(filepath.Dir(lnkPath), 0755)
 	uLnk, err := syscall.UTF16PtrFromString(lnkPath)
@@ -478,7 +485,7 @@ func createShellLinkShortcut(lnkPath, targetPath, workingDir, description, iconP
 		return err
 	}
 	// IPersistFile::Save (index 6)
-	hr, _, _ = syscall.SyscallN(pfVtable[6], pPersistFile, uintptr(unsafe.Pointer(uLnk)), 1)
+	hr, _, _ = syscall.SyscallN(pfVtable[6], uintptr(unsafe.Pointer(pPersistFile)), uintptr(unsafe.Pointer(uLnk)), 1)
 	if int32(hr) < 0 {
 		return fmt.Errorf("IPersistFile.Save failed: 0x%x", hr)
 	}

@@ -16,9 +16,14 @@ import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { chartPrinter } from '../../services/chartPrinter';
 import { getTerminalShortcutHint, TERMINAL_SHORTCUTS } from '../../services/shortcutCatalog';
 import { applyBrokerChrome } from '../../services/brokerPresentation';
+import type { SaveWorkspaceDialogProps } from '../dialogs/SaveWorkspaceDialog';
+import type { PrintSetupDialogProps } from '../dialogs/PrintSetupDialog';
+import type { PrintPreviewDialogProps } from '../dialogs/PrintPreviewDialog';
+import type { SavePictureDialogProps } from '../dialogs/SavePictureDialog';
+import type { ExitConfirmDialogProps } from '../dialogs/ExitConfirmDialog';
 
 const savePictureDialogMock = vi.hoisted(() => ({
-    props: [] as any[],
+    props: [] as SavePictureDialogProps[],
 }));
 const catalogApiMock = vi.hoisted(() => ({
     getSymbols: vi.fn(async (): Promise<Array<Record<string, string>>> => []),
@@ -70,10 +75,12 @@ vi.mock('react-i18next', async (importOriginal) => {
 vi.mock('../../store/useAppStore', () => {
     const mockStoreState = appStoreMock;
 
-    const mockUseAppStore = vi.fn((selector) => {
-        return selector ? selector(mockStoreState) : mockStoreState;
-    });
-    (mockUseAppStore as any).getState = () => mockStoreState;
+    const mockUseAppStore = Object.assign(
+        vi.fn((selector?: (state: typeof mockStoreState) => unknown) => {
+            return selector ? selector(mockStoreState) : mockStoreState;
+        }),
+        { getState: () => mockStoreState },
+    );
 
     return {
         useAppStore: mockUseAppStore
@@ -121,7 +128,7 @@ vi.mock('../../services/localWorkspaceProfiles', () => ({
 
 // 5. Mock all child dialogs
 vi.mock('../dialogs/SaveWorkspaceDialog', () => ({
-    SaveWorkspaceDialog: ({ onConfirm, onCancel }: any) => (
+    SaveWorkspaceDialog: ({ onConfirm, onCancel }: SaveWorkspaceDialogProps) => (
         <div data-testid="save-workspace-dialog">
             <span>Save Workspace</span>
             <button onClick={() => onConfirm('Default')}>Confirm Save</button>
@@ -131,10 +138,28 @@ vi.mock('../dialogs/SaveWorkspaceDialog', () => ({
 }));
 
 vi.mock('../dialogs/PrintSetupDialog', () => ({
-    PrintSetupDialog: ({ onConfirm, onCancel }: any) => (
+    PrintSetupDialog: ({ onConfirm, onCancel }: PrintSetupDialogProps) => (
         <div data-testid="print-setup-dialog">
             <span>Print Setup</span>
-            <button onClick={() => onConfirm({ paperSize: 'A4', orientation: 'landscape' })}>Confirm Print Setup</button>
+            <button
+                onClick={() => onConfirm({
+                    pageSize: 'A4',
+                    orientation: 'landscape',
+                    colorMode: 'color',
+                    includeHeader: true,
+                    includeFooter: true,
+                    includeGrid: true,
+                    includeIndicators: true,
+                    includeDrawings: true,
+                    marginTop: 20,
+                    marginBottom: 20,
+                    marginLeft: 20,
+                    marginRight: 20,
+                    scaleToFit: true,
+                })}
+            >
+                Confirm Print Setup
+            </button>
             <button onClick={onCancel}>Cancel Print Setup</button>
         </div>
     )
@@ -142,17 +167,17 @@ vi.mock('../dialogs/PrintSetupDialog', () => ({
 
 
 vi.mock('../dialogs/PrintPreviewDialog', () => ({
-    PrintPreviewDialog: ({ onPrint, onClose }: any) => (
+    PrintPreviewDialog: ({ onPrint, onClose }: PrintPreviewDialogProps) => (
         <div data-testid="print-preview-dialog">
             <span>Print Preview</span>
-            <button onClick={onPrint}>Print from Preview</button>
+            <button onClick={() => { void onPrint(); }}>Print from Preview</button>
             <button onClick={onClose}>Close Preview</button>
         </div>
     )
 }));
 
 vi.mock('../dialogs/SavePictureDialog', () => ({
-    SavePictureDialog: (props: any) => {
+    SavePictureDialog: (props: SavePictureDialogProps) => {
         savePictureDialogMock.props.push(props);
         return props.isOpen ? (
             <div data-testid="save-picture-dialog">
@@ -164,7 +189,7 @@ vi.mock('../dialogs/SavePictureDialog', () => ({
 }));
 
 vi.mock('../dialogs/ExitConfirmDialog', () => ({
-    ExitConfirmDialog: ({ isOpen, onConfirm, onCancel }: any) => isOpen ? (
+    ExitConfirmDialog: ({ isOpen, onConfirm, onCancel }: ExitConfirmDialogProps) => isOpen ? (
         <div data-testid="exit-confirm-dialog">
             <span>Unsaved Changes</span>
             <button onClick={() => onConfirm(true)}>Confirm Exit</button>
@@ -174,7 +199,7 @@ vi.mock('../dialogs/ExitConfirmDialog', () => ({
 }));
 
 vi.mock('../dialogs/OpenAccountDialog', () => ({
-    OpenAccountDialog: ({ isOpen, forceDemoCreation, onClose }: any) => isOpen ? (
+    OpenAccountDialog: ({ isOpen, forceDemoCreation, onClose }: { isOpen: boolean; forceDemoCreation?: boolean; onClose: () => void }) => isOpen ? (
         <div data-testid="open-account-dialog" data-force-demo={forceDemoCreation ? 'true' : 'false'}>
             <span>Open Account</span>
             <button onClick={onClose}>Close Open Account</button>

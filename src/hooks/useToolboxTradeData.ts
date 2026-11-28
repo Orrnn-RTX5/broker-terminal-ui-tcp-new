@@ -6,7 +6,7 @@ import { calculateLivePositionProfit, type TradeProfitSource } from '../componen
 import { parseExposureSymbol } from '../components/BottomDock.exposure';
 import { applyAccountSpreadMarkup } from '../services/accountSpreadMarkup';
 import { binaryTcpMarketStream } from '../services/binaryTcpMarketStream';
-import { getStoredAccountLogin, normalizePosition } from '../api/tradeGateway';
+import { getStoredAccountLogin, normalizePosition, type GatewayPosition } from '../api/tradeGateway';
 import {
   getAccessToken,
   getCommittedBrokerAccountSessionScope,
@@ -130,15 +130,36 @@ const toNumber = (value: unknown, fallback = 0): number => {
   return Number.isFinite(next) ? next : fallback;
 };
 
+type RawPositionLike = Record<string, unknown>;
+
+type RawToolboxPosition = Record<string, unknown> & {
+  account_login?: number;
+  login?: number;
+  time_create?: number | string;
+  open_time?: string;
+  time?: string | number;
+  time_update?: number | string;
+  clientOrderId?: string;
+  client_order_id?: string;
+  placementState?: MarketOrderPlacementState;
+  placement_state?: MarketOrderPlacementState;
+  placementErrorCode?: string;
+  placement_error_code?: string;
+  placementErrorMessage?: string;
+  placement_error_message?: string;
+  comment?: string;
+};
+
 // Retained for tests; the production account path normalizes via `applyMetrics`.
 // `partial` preserves the previous value for any field a packet omits.
-export const normalizeToolboxAccount = (raw: any, previous?: Account | null): Account => (
+export const normalizeToolboxAccount = (raw: unknown, previous?: Account | null): Account => (
   normalizeAccountMetrics(raw, previous, { partial: true })
 );
 
-const getPositionTicket = (position: any): number => (
-  toNumber(position?.ticket ?? position?.position_id ?? position?.position_ticket ?? position?.id, 0)
-);
+const getPositionTicket = (position: unknown): number => {
+  const record = position as RawPositionLike | null | undefined;
+  return toNumber(record?.ticket ?? record?.position_id ?? record?.position_ticket ?? record?.id, 0);
+};
 
 const pickPositiveToolboxPrice = (...values: unknown[]): number => {
   for (const value of values) {
@@ -148,57 +169,58 @@ const pickPositiveToolboxPrice = (...values: unknown[]): number => {
   return 0;
 };
 
-export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
-  const normalized = normalizePosition(raw) as ToolboxTradePosition;
-  const ticket = getPositionTicket(raw) || normalized.id;
+export const normalizeToolboxPosition = (raw: unknown): ToolboxTradePosition => {
+  const rawRecord = (raw && typeof raw === 'object' ? raw : {}) as RawToolboxPosition;
+  const normalized = normalizePosition(rawRecord as GatewayPosition) as ToolboxTradePosition;
+  const ticket = getPositionTicket(rawRecord) || normalized.id;
   const openPrice = stripFloatPrecisionNoise(pickPositiveToolboxPrice(
-    raw?.price_open,
-    raw?.open_price,
-    raw?.openPrice,
-    raw?.entryPrice,
-    raw?.fill_price,
-    raw?.price,
-    raw?.chartEntryPrice,
+    rawRecord.price_open,
+    rawRecord.open_price,
+    rawRecord.openPrice,
+    rawRecord.entryPrice,
+    rawRecord.fill_price,
+    rawRecord.price,
+    rawRecord.chartEntryPrice,
     normalized.openPrice,
   ));
   const rawCurrentPrice = readBackendNumber(
-    raw?.price_current ?? raw?.current_price ?? raw?.currentPrice,
+    rawRecord.price_current ?? rawRecord.current_price ?? rawRecord.currentPrice,
   );
-  const hasBackendCurrentPrice = raw?.hasBackendCurrentPrice !== false && rawCurrentPrice !== undefined;
+  const hasBackendCurrentPrice = rawRecord.hasBackendCurrentPrice !== false && rawCurrentPrice !== undefined;
   const priceCurrent = hasBackendCurrentPrice ? stripFloatPrecisionNoise(rawCurrentPrice!) : 0;
-  const rawProfit = raw?.profit ?? raw?.unrealized_pl ?? raw?.unrealizedPnL;
+  const rawProfit = rawRecord.profit ?? rawRecord.unrealized_pl ?? rawRecord.unrealizedPnL;
   const backendProfit = readBackendNumber(rawProfit);
-  const hasBackendProfit = raw?.pnl_available !== false && raw?.hasBackendProfit !== false && backendProfit !== undefined;
+  const hasBackendProfit = rawRecord.pnl_available !== false && rawRecord.hasBackendProfit !== false && backendProfit !== undefined;
   const profit = hasBackendProfit ? backendProfit! : 0;
-  const rawMargin = readBackendNumber(raw?.margin ?? raw?.used_margin ?? normalized.margin ?? normalized.used_margin);
-  const hasBackendMargin = raw?.hasBackendMargin !== false
-    && raw?.margin_available !== false
+  const rawMargin = readBackendNumber(rawRecord.margin ?? rawRecord.used_margin ?? normalized.margin ?? normalized.used_margin);
+  const hasBackendMargin = rawRecord.hasBackendMargin !== false
+    && rawRecord.margin_available !== false
     && rawMargin !== undefined
     && rawMargin >= 0;
-  const chartEntryTime = typeof raw?.chartEntryTime === 'string' && raw.chartEntryTime.trim()
-    ? raw.chartEntryTime.trim()
+  const chartEntryTime = typeof rawRecord.chartEntryTime === 'string' && rawRecord.chartEntryTime.trim()
+    ? rawRecord.chartEntryTime.trim()
     : (typeof normalized.chartEntryTime === 'string' && normalized.chartEntryTime.trim()
       ? normalized.chartEntryTime.trim()
       : undefined);
-  const rawChartEntryPrice = pickPositiveToolboxPrice(raw?.chartEntryPrice, normalized.chartEntryPrice);
+  const rawChartEntryPrice = pickPositiveToolboxPrice(rawRecord.chartEntryPrice, normalized.chartEntryPrice);
   const chartEntryPrice = rawChartEntryPrice > 0 ? stripFloatPrecisionNoise(rawChartEntryPrice) : undefined;
   const openTime = resolvePositionOpenTime(
-    raw,
+    rawRecord,
     chartEntryTime || normalized.openTime || (typeof normalized.time_create === 'string' ? normalized.time_create : undefined),
   );
-  const digits = resolveSpecDigits(raw?.digits, normalized.digits);
-  const sl = stripFloatPrecisionNoise(toNumber(raw?.price_sl ?? raw?.sl ?? normalized.sl, normalized.sl));
-  const tp = stripFloatPrecisionNoise(toNumber(raw?.price_tp ?? raw?.tp ?? normalized.tp, normalized.tp));
+  const digits = resolveSpecDigits(rawRecord.digits, normalized.digits);
+  const sl = stripFloatPrecisionNoise(toNumber(rawRecord.price_sl ?? rawRecord.sl ?? normalized.sl, normalized.sl));
+  const tp = stripFloatPrecisionNoise(toNumber(rawRecord.price_tp ?? rawRecord.tp ?? normalized.tp, normalized.tp));
 
   return {
     ...normalized,
     id: ticket,
     ticket,
-    account_login: raw?.account_login ?? raw?.login ?? normalized.account_login,
+    account_login: rawRecord.account_login ?? rawRecord.login ?? normalized.account_login,
     ...(digits !== null ? { digits } : {}),
-    contractSize: toNumber(raw?.contractSize ?? raw?.contract_size ?? normalized.contractSize, 0) || undefined,
-    contract_size: toNumber(raw?.contract_size ?? raw?.contractSize ?? normalized.contract_size, 0) || undefined,
-    lot_divisor: toNumber(raw?.lot_divisor ?? raw?.lotDivisor ?? (normalized as { lot_divisor?: unknown }).lot_divisor, 0) || undefined,
+    contractSize: toNumber(rawRecord.contractSize ?? rawRecord.contract_size ?? normalized.contractSize, 0) || undefined,
+    contract_size: toNumber(rawRecord.contract_size ?? rawRecord.contractSize ?? normalized.contract_size, 0) || undefined,
+    lot_divisor: toNumber(rawRecord.lot_divisor ?? rawRecord.lotDivisor ?? (normalized as { lot_divisor?: unknown }).lot_divisor, 0) || undefined,
     openPrice,
     price_open: openPrice,
     open_price: openPrice,
@@ -214,13 +236,13 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
       used_margin: rawMargin,
       margin_available: true,
       hasBackendMargin: true,
-    } : (raw?.margin_available === false || raw?.hasBackendMargin === false ? {
+    } : (rawRecord.margin_available === false || rawRecord.hasBackendMargin === false ? {
       margin_available: false,
       hasBackendMargin: false,
     } : {})),
-    time_create: raw?.time_create ?? normalized.time_create ?? openTime,
-    open_time: raw?.open_time ?? openTime,
-    time: raw?.time ?? openTime,
+    time_create: rawRecord.time_create ?? normalized.time_create ?? openTime,
+    open_time: rawRecord.open_time ?? openTime,
+    time: rawRecord.time ?? openTime,
     sl,
     tp,
     price_sl: sl,
@@ -228,14 +250,14 @@ export const normalizeToolboxPosition = (raw: any): ToolboxTradePosition => {
     profit,
     unrealizedPnL: profit,
     hasBackendProfit,
-    swap: toNumber(raw?.swap ?? raw?.storage ?? normalized.swap, normalized.swap),
-    commission: toNumber(raw?.commission ?? normalized.commission, normalized.commission),
-    time_update: raw?.time_update ?? normalized.time_update,
-    clientOrderId: raw?.clientOrderId ?? raw?.client_order_id,
-    placementState: raw?.placementState ?? raw?.placement_state,
-    placementErrorCode: raw?.placementErrorCode ?? raw?.placement_error_code,
-    placementErrorMessage: raw?.placementErrorMessage ?? raw?.placement_error_message,
-    comment: raw?.comment ?? normalized.comment ?? '',
+    swap: toNumber(rawRecord.swap ?? rawRecord.storage ?? normalized.swap, normalized.swap),
+    commission: toNumber(rawRecord.commission ?? normalized.commission, normalized.commission),
+    time_update: rawRecord.time_update ?? normalized.time_update,
+    clientOrderId: rawRecord.clientOrderId ?? rawRecord.client_order_id,
+    placementState: rawRecord.placementState ?? rawRecord.placement_state,
+    placementErrorCode: rawRecord.placementErrorCode ?? rawRecord.placement_error_code,
+    placementErrorMessage: rawRecord.placementErrorMessage ?? rawRecord.placement_error_message,
+    comment: rawRecord.comment ?? normalized.comment ?? '',
   };
 };
 
@@ -311,26 +333,30 @@ const accountSignature = (account: Account | null): string => (
     : ''
 );
 
-const isFullPosition = (raw: any): boolean => (
-  Boolean(raw?.symbol) &&
-  toNumber(raw?.volume_lots ?? raw?.volume ?? raw?.quantity, 0) > 0 &&
-  toNumber(raw?.price_open ?? raw?.open_price ?? raw?.openPrice, 0) > 0
-);
+const isFullPosition = (raw: unknown): boolean => {
+  const record = raw as RawPositionLike | null | undefined;
+  return (
+    Boolean(record?.symbol) &&
+    toNumber(record?.volume_lots ?? record?.volume ?? record?.quantity, 0) > 0 &&
+    toNumber(record?.price_open ?? record?.open_price ?? record?.openPrice, 0) > 0
+  );
+};
 
 const mergePatchIntoPosition = (
   existing: ToolboxTradePosition,
-  raw: any,
+  raw: unknown,
 ): ToolboxTradePosition => {
+  const record = (raw && typeof raw === 'object' ? raw : null) as RawToolboxPosition | null;
   const next: ToolboxTradePosition = { ...existing };
-  const pricePatch = readBackendNumber(raw?.price_current ?? raw?.current_price ?? raw?.currentPrice);
-  const profitPatch = readBackendNumber(raw?.profit ?? raw?.unrealized_pl ?? raw?.unrealizedPnL);
-  const hasPricePatch = raw?.price_current !== undefined || raw?.current_price !== undefined
-    || raw?.currentPrice !== undefined || raw?.hasBackendCurrentPrice !== undefined;
-  const hasProfitPatch = raw?.profit !== undefined || raw?.unrealized_pl !== undefined
-    || raw?.unrealizedPnL !== undefined || raw?.hasBackendProfit !== undefined;
+  const pricePatch = readBackendNumber(record?.price_current ?? record?.current_price ?? record?.currentPrice);
+  const profitPatch = readBackendNumber(record?.profit ?? record?.unrealized_pl ?? record?.unrealizedPnL);
+  const hasPricePatch = record?.price_current !== undefined || record?.current_price !== undefined
+    || record?.currentPrice !== undefined || record?.hasBackendCurrentPrice !== undefined;
+  const hasProfitPatch = record?.profit !== undefined || record?.unrealized_pl !== undefined
+    || record?.unrealizedPnL !== undefined || record?.hasBackendProfit !== undefined;
 
   if (hasPricePatch) {
-    const supplied = raw?.hasBackendCurrentPrice !== false && pricePatch !== undefined;
+    const supplied = record?.hasBackendCurrentPrice !== false && pricePatch !== undefined;
     const price = supplied ? pricePatch! : 0;
     next.currentPrice = price;
     next.price_current = price;
@@ -339,25 +365,25 @@ const mergePatchIntoPosition = (
   }
 
   if (hasProfitPatch) {
-    const supplied = raw?.hasBackendProfit !== false && profitPatch !== undefined;
+    const supplied = record?.hasBackendProfit !== false && profitPatch !== undefined;
     const profit = supplied ? profitPatch! : 0;
     next.unrealizedPnL = profit;
     next.profit = profit;
     next.hasBackendProfit = supplied;
   }
 
-  const marginPatch = readBackendNumber(raw?.margin ?? raw?.used_margin);
-  const hasMarginPatch = raw?.margin !== undefined || raw?.used_margin !== undefined
-    || raw?.margin_available !== undefined || raw?.hasBackendMargin !== undefined;
+  const marginPatch = readBackendNumber(record?.margin ?? record?.used_margin);
+  const hasMarginPatch = record?.margin !== undefined || record?.used_margin !== undefined
+    || record?.margin_available !== undefined || record?.hasBackendMargin !== undefined;
   if (hasMarginPatch) {
-    const supplied = raw?.hasBackendMargin !== false && raw?.margin_available !== false
+    const supplied = record?.hasBackendMargin !== false && record?.margin_available !== false
       && marginPatch !== undefined && marginPatch >= 0;
     if (supplied) {
       next.margin = marginPatch!;
       next.used_margin = marginPatch!;
       next.margin_available = true;
       next.hasBackendMargin = true;
-    } else if (raw?.margin_available === false || raw?.hasBackendMargin === false) {
+    } else if (record?.margin_available === false || record?.hasBackendMargin === false) {
       delete next.margin;
       delete next.used_margin;
       next.margin_available = false;
@@ -365,28 +391,28 @@ const mergePatchIntoPosition = (
     }
   }
 
-  if (raw?.swap !== undefined || raw?.storage !== undefined) {
-    next.swap = toNumber(raw.swap ?? raw.storage, existing.swap);
+  if (record && (record.swap !== undefined || record.storage !== undefined)) {
+    next.swap = toNumber(record.swap ?? record.storage, existing.swap);
   }
 
-  if (raw?.commission !== undefined) {
-    next.commission = toNumber(raw.commission, existing.commission);
+  if (record && record.commission !== undefined) {
+    next.commission = toNumber(record.commission, existing.commission);
   }
 
-  if (raw?.price_sl !== undefined || raw?.sl !== undefined) {
-    const sl = toNumber(raw.price_sl ?? raw.sl, existing.sl);
+  if (record && (record.price_sl !== undefined || record.sl !== undefined)) {
+    const sl = toNumber(record.price_sl ?? record.sl, existing.sl);
     next.sl = sl;
     next.price_sl = sl;
   }
 
-  if (raw?.price_tp !== undefined || raw?.tp !== undefined) {
-    const tp = toNumber(raw.price_tp ?? raw.tp, existing.tp);
+  if (record && (record.price_tp !== undefined || record.tp !== undefined)) {
+    const tp = toNumber(record.price_tp ?? record.tp, existing.tp);
     next.tp = tp;
     next.price_tp = tp;
   }
 
-  if (raw?.time_update !== undefined || raw?.time !== undefined) {
-    next.time_update = raw.time_update ?? raw.time;
+  if (record && (record.time_update !== undefined || record.time !== undefined)) {
+    next.time_update = record.time_update ?? record.time;
   }
 
   return next;
@@ -394,7 +420,7 @@ const mergePatchIntoPosition = (
 
 export const replaceToolboxPositions = (
   current: ToolboxTradePosition[],
-  rawPositions: any[],
+  rawPositions: unknown[],
 ): ToolboxTradePosition[] => {
   const previousByTicket = new Map(current.map((position) => [position.id, position]));
   const nextByTicket = new Map<number, ToolboxTradePosition>();
@@ -436,7 +462,7 @@ export const replaceToolboxPositions = (
 
 export const patchToolboxPositions = (
   current: ToolboxTradePosition[],
-  rawUpdates: any[],
+  rawUpdates: unknown[],
   closeTickets: number[] = [],
 ): ToolboxTradePosition[] => {
   let next = current;
@@ -602,18 +628,26 @@ export const mergeRetainedImmediateToolboxPositions = (
 
 export const patchPositionsFromTick = (
   current: ToolboxTradePosition[],
-  tick: any,
+  tick: unknown,
 ): ToolboxTradePosition[] => {
-  const symbol = String(tick?.symbol ?? '').toUpperCase();
+  const t = (tick && typeof tick === 'object' ? tick : null) as {
+    symbol?: unknown;
+    bid?: unknown;
+    ask?: unknown;
+    time?: unknown;
+    timestamp?: unknown;
+  } | null;
+  if (!t) return current;
+  const symbol = String(t.symbol ?? '').toUpperCase();
   if (!symbol) return current;
 
   let changed = false;
-  const tickTime = toNumber(tick.time ?? tick.timestamp, 0);
+  const tickTime = toNumber(t.time ?? t.timestamp, 0);
   const next = current.map((position) => {
     if (String(position.symbol ?? '').toUpperCase() !== symbol) return position;
 
-    const bid = toNumber(tick.bid, 0);
-    const ask = toNumber(tick.ask, bid);
+    const bid = toNumber(t.bid, 0);
+    const ask = toNumber(t.ask, bid);
     const isSell = String(position.side ?? '').toUpperCase() === 'SELL';
     const currentPrice = isSell ? ask : bid;
     if (!currentPrice || (currentPrice === position.currentPrice && position.hasBackendCurrentPrice && position.hasBackendProfit)) {
@@ -655,14 +689,15 @@ export const patchPositionsFromTick = (
   return changed ? next : current;
 };
 
-const arrayFrom = (payload: any, key?: string): any[] => {
-  if (Array.isArray(payload)) return payload;
+const arrayFrom = (payload: unknown, key?: string): RawToolboxPosition[] => {
+  if (Array.isArray(payload)) return payload as RawToolboxPosition[];
   if (!payload || typeof payload !== 'object') return [];
-  if (key && Array.isArray(payload[key])) return payload[key];
-  if (Array.isArray(payload.data)) return payload.data;
-  if (payload.data && typeof payload.data === 'object') return arrayFrom(payload.data, key);
-  if (Array.isArray(payload.items)) return payload.items;
-  if (Array.isArray(payload.results)) return payload.results;
+  const record = payload as Record<string, unknown>;
+  if (key && Array.isArray(record[key])) return record[key] as RawToolboxPosition[];
+  if (Array.isArray(record.data)) return record.data as RawToolboxPosition[];
+  if (record.data && typeof record.data === 'object') return arrayFrom(record.data, key);
+  if (Array.isArray(record.items)) return record.items as RawToolboxPosition[];
+  if (Array.isArray(record.results)) return record.results as RawToolboxPosition[];
   return [];
 };
 
@@ -767,7 +802,7 @@ async function requestBrokerJson<T>(
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  let body: any = null;
+  let body: unknown;
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
@@ -775,7 +810,10 @@ async function requestBrokerJson<T>(
   }
 
   if (!response.ok) {
-    const message = body?.message ?? body?.error ?? `HTTP ${response.status}`;
+    const errorRecord = body && typeof body === 'object'
+      ? (body as { message?: unknown; error?: unknown })
+      : null;
+    const message = errorRecord?.message ?? errorRecord?.error ?? `HTTP ${response.status}`;
     throw new Error(`${message} (${response.status})`);
   }
 
@@ -902,7 +940,7 @@ export function useToolboxTradeData() {
       // account or optional metrics latency.
       const startupRequests = getSessionTradeSnapshotRequests(login);
       const metricsRequestedAt = Date.now();
-      const metricsPromise = requestBrokerJson<any>(
+      const metricsPromise = requestBrokerJson<unknown>(
         restBaseUrl,
         `/account/${login}/metrics`,
         undefined,
@@ -922,7 +960,7 @@ export function useToolboxTradeData() {
       const livePositions = useAppStore.getState().positions;
       const startedById = new Map(startedPositions.map((position) => [position.id, position]));
       const liveById = new Map(livePositions.map((position) => [position.id, position]));
-      const rawPositions = arrayFrom(positionsBody, 'positions').map((raw) => {
+      const rawPositions = arrayFrom(positionsBody, 'positions').map((raw): RawToolboxPosition => {
         const live = liveById.get(getPositionTicket(raw));
         if (!live || live === startedById.get(live.id)) return raw;
         return {
@@ -1228,6 +1266,7 @@ export function useToolboxTradeData() {
   }, []);
 
   useEffect(() => {
+    const pendingPlacementTimers = pendingPlacementTimersRef.current;
     const handleMarketOrderPlacement = (event: Event) => {
       const login = readLogin();
       if (!login) return;
@@ -1242,10 +1281,10 @@ export function useToolboxTradeData() {
         || detail.sessionScope !== activeSessionScope
       ) return;
       const clearPlacementTimer = (clientOrderId: string) => {
-        const existingTimer = pendingPlacementTimersRef.current.get(clientOrderId);
+        const existingTimer = pendingPlacementTimers.get(clientOrderId);
         if (existingTimer !== undefined) {
           clearTimeout(existingTimer);
-          pendingPlacementTimersRef.current.delete(clientOrderId);
+          pendingPlacementTimers.delete(clientOrderId);
         }
       };
 
@@ -1309,8 +1348,8 @@ export function useToolboxTradeData() {
     window.addEventListener(MARKET_ORDER_PLACEMENT_STATE_EVENT, handleMarketOrderPlacement);
     return () => {
       window.removeEventListener(MARKET_ORDER_PLACEMENT_STATE_EVENT, handleMarketOrderPlacement);
-      pendingPlacementTimersRef.current.forEach((timer) => clearTimeout(timer));
-      pendingPlacementTimersRef.current.clear();
+      pendingPlacementTimers.forEach((timer) => clearTimeout(timer));
+      pendingPlacementTimers.clear();
     };
   }, [commitPositions]);
 
@@ -1351,6 +1390,7 @@ export function useToolboxTradeData() {
     return () => window.removeEventListener(TRADE_OVERLAY_CLOSE_STATE_EVENT, handleCloseState);
   }, [commitPositions]);
 
+  // eslint-disable-next-line react-hooks/refs -- intentional render-time session guard preventing 1-frame stale account state before the session reset effect runs
   const visibleState = stateSessionKeyRef.current === sessionKey
     ? state
     : {

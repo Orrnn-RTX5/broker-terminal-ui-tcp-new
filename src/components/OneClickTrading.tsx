@@ -214,6 +214,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     });
     useEffect(() => {
         if (settingsDefaultVolumeMode !== 'default') return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs volumeDraft when defaultVolumeMode is 'default' on live trade default changes while preserving 'last-used' drafts
         setVolumeDraft(formatTradeVolume(
             normalizeTradeVolume(
                 resolveDefaultTradeVolume(useSettingsStore.getState().trade),
@@ -225,6 +226,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     const [flashSide, setFlashSide] = useState<'buy' | 'sell' | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears stale per-symbol blocked/error banners immediately when the chart symbol changes
     useEffect(() => { setBlockedMessage(null); setError(null); }, [symbol]);
     const panelRef = useRef<HTMLDivElement>(null);
     const [compact, setCompact] = useState(false);
@@ -310,6 +312,7 @@ export const OneClickTrading: React.FC<OneClickTradingProps> = ({
     useEffect(() => {
         // FIX: A chart symbol change may bring a different broker lot grid.
         // Re-commit the visible draft to that exact min/max/step contract.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- re-commits existing volumeDraft to the new symbol's broker min/max/step lot grid when volumeConstraints changes
         setVolumeDraft((currentDraft) => formatTradeVolume(
             parseTradeVolumeDraft(currentDraft) ?? volumeConstraints.min,
             volumeConstraints,

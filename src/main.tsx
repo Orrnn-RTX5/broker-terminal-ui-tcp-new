@@ -10,9 +10,14 @@ import { installBrowserContextMenuGuard } from './utils/browserContextMenuGuard'
 // In Electron, end users must never see red error overlays or console noise.
 // In browser/dev mode everything works normally so devs still see all output.
 (function suppressInElectron() {
+  type ElectronWindow = Window & {
+    electronAPI?: unknown;
+    __originalConsole?: Console;
+  };
+  const electronWindow = window as ElectronWindow;
   const isElectron = !!(
-    (window as any).electron ||
-    (window as any).electronAPI ||
+    electronWindow.electron ||
+    electronWindow.electronAPI ||
     navigator.userAgent.includes('Electron') ||
     window.location.protocol === 'file:'
   );
@@ -20,16 +25,20 @@ import { installBrowserContextMenuGuard } from './utils/browserContextMenuGuard'
 
   // Silence all console methods
   const noop = () => { };
-  (window as any).__originalConsole = { ...console };
-  (console as any).log = noop;
-  (console as any).info = noop;
-  (console as any).warn = noop;
-  (console as any).error = noop;
-  (console as any).debug = noop;
-  (console as any).trace = noop;
-  (console as any).group = noop;
-  (console as any).groupCollapsed = noop;
-  (console as any).groupEnd = noop;
+  electronWindow.__originalConsole = { ...console };
+  const mutableConsole = console as unknown as Record<
+    'log' | 'info' | 'warn' | 'error' | 'debug' | 'trace' | 'group' | 'groupCollapsed' | 'groupEnd',
+    () => void
+  >;
+  mutableConsole.log = noop;
+  mutableConsole.info = noop;
+  mutableConsole.warn = noop;
+  mutableConsole.error = noop;
+  mutableConsole.debug = noop;
+  mutableConsole.trace = noop;
+  mutableConsole.group = noop;
+  mutableConsole.groupCollapsed = noop;
+  mutableConsole.groupEnd = noop;
 
   // Swallow all uncaught JS errors silently
   window.onerror = () => true;

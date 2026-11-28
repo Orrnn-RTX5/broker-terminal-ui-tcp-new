@@ -10,6 +10,15 @@ const DB_VERSION = 1;
 const TICKS_STORE = 'ticks';
 const METADATA_STORE = 'metadata';
 
+interface TickMetadataRecord {
+  id: string;
+  symbol: string;
+  date: string;
+  count: number;
+  size: number;
+  timestamp: number;
+}
+
 export class TicksDB {
   private db: IDBDatabase | null = null;
   private isInitialized = false;
@@ -272,16 +281,16 @@ export class TicksDB {
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const metadata = request.result;
+        const metadata = request.result as TickMetadataRecord[];
         const stats: StorageStats = {
           totalSize: 0,
           tickCount: 0,
-          symbolCount: new Set(metadata.map((m: any) => m.symbol)).size,
+          symbolCount: new Set(metadata.map((m) => m.symbol)).size,
           dateRanges: {},
           lastUpdate: Date.now()
         };
 
-        metadata.forEach((m: any) => {
+        metadata.forEach((m) => {
           stats.totalSize += m.size || 0;
           stats.tickCount += m.count || 0;
 

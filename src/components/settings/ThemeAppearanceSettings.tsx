@@ -136,10 +136,11 @@ const ColorHexInputRow: React.FC<ColorHexInputRowProps> = ({
 }) => {
   const cleanHex = value.replace(/^#/, '').toUpperCase();
   const [draft, setDraft] = useState(cleanHex);
-
-  useEffect(() => {
-    setDraft(value.replace(/^#/, '').toUpperCase());
-  }, [value]);
+  const [prevValue, setPrevValue] = useState(value);
+  if (prevValue !== value) {
+    setPrevValue(value);
+    setDraft(cleanHex);
+  }
 
   const commitDraft = (raw: string) => {
     const normalized = raw.trim().replace(/^#/, '').toUpperCase();

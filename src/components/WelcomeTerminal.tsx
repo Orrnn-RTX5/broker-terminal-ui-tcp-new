@@ -354,6 +354,7 @@ const getBrokerRuntimeUrls = (broker: BrokerServerItem): string[] =>
         .map(field => normalizeComparableRuntimeUrl(broker[field]))
         .filter((value): value is string => Boolean(value));
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared broker runtime lookup helper co-located with WelcomeTerminal for direct imports and tests
 export const findBrokerForRuntimeTarget = (brokers: BrokerServerItem[]): BrokerServerItem | undefined => {
     const runtimeTarget = normalizeComparableRuntimeUrl(getBackendTarget());
     if (!runtimeTarget) return undefined;
@@ -401,6 +402,7 @@ const getRuntimeHostname = (): string => {
     return normalizeComparableHostname(window.location?.hostname || '');
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared broker domain lookup helper co-located with WelcomeTerminal for direct imports and tests
 export const findBrokerForRuntimeDomain = (
     brokers: BrokerServerItem[],
     runtimeHostname = getRuntimeHostname()
@@ -411,6 +413,7 @@ export const findBrokerForRuntimeDomain = (
     return brokers.find(broker => getBrokerIdentityHostnames(broker).includes(hostname));
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared web runtime broker lookup helper co-located with WelcomeTerminal for direct imports and tests
 export const findBrokerForWebRuntime = (
     brokers: BrokerServerItem[],
     runtimeHostname = getRuntimeHostname()
@@ -467,6 +470,7 @@ const isLoopbackDirectoryBroker = (broker: BrokerServerItem): boolean => {
     }
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared configured broker builder co-located with WelcomeTerminal for direct imports and tests
 export const buildConfiguredRuntimeBroker = (): BrokerServerItem | undefined => {
     const configuration = getRuntimeBrokerConfiguration();
     const brokerId = String(getRuntimeConfiguredBrokerId() || '').trim();
@@ -500,6 +504,7 @@ export const buildConfiguredRuntimeBroker = (): BrokerServerItem | undefined => 
     };
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared broker discovery selector co-located with WelcomeTerminal and imported by LoginDialog
 export const pickDiscoveryBroker = (
     brokers: BrokerServerItem[],
     options: {
@@ -881,6 +886,7 @@ export function WelcomeTerminal({
 
     useEffect(() => {
         let isMounted = true;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- resets broker directory status to loading when retrying or re-syncing on endpoint change
         if (isDesktopBrokerSelection || !configuredRuntimeBroker) setBrokerListStatus('loading');
 
         // Sign-in always verifies the current directory; account tools can then
@@ -1223,6 +1229,7 @@ export function WelcomeTerminal({
         });
         if (start === 'wait') return;
         if (start === 'no-broker') {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- surfaces SSO no-broker error after async broker directory lookup settles
             setError(WEB_TERMINAL_SSO_NO_BROKER_MESSAGE);
             return;
         }
@@ -1233,6 +1240,7 @@ export function WelcomeTerminal({
     const selectedBrokerDisplayServer = formatBrokerDisplayServer(selectedBroker) || selectedBrokerName;
     const desktopLoginReady = brokerListStatus === 'ready' && selectedBroker && healthStatus === 'online'
         && (searchQuery === selectedBroker.broker_name || searchQuery === getBrokerInputLabel(selectedBroker))
+        // eslint-disable-next-line react-hooks/refs -- verifiedBrokerTargetRef updates alongside healthStatus transitions and is read synchronously by runAuthentication; keeping ref avoids extra render cycles
         && verifiedBrokerTargetRef.current === `${selectedBroker.broker_id}|${selectedBroker.server_url}`;
     const healthLabel =
         healthStatus === 'online' ? 'Online'

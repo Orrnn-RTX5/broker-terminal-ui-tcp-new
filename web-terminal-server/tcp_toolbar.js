@@ -80,7 +80,7 @@
       if (!m) return;
       var lum = (0.299 * parseInt(m[1], 10) + 0.587 * parseInt(m[2], 10) + 0.114 * parseInt(m[3], 10)) / 255;
       container.style.setProperty('--tcp-accent-fg', lum > 0.64 ? '#111111' : '#ffffff');
-    } catch (_) {}
+    } catch { /* Keep default --tcp-accent-fg if computed style lookup fails */ }
   }
 
   function ensureStyles() {
@@ -610,9 +610,9 @@
 
     document.getElementById('rtx5-ota-apply-btn').onclick = async function () {
       if (needExe) {
-        try { await fetch('/api/tcp-client/ota-restart', { method: 'POST' }); } catch (_) {}
+        try { await fetch('/api/tcp-client/ota-restart', { method: 'POST' }); } catch { /* Restart request failure is tolerated; status polling reflects state */ }
       } else {
-        try { await fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch (_) {}
+        try { await fetch('/api/tcp-client/ota-ack-ui', { method: 'POST' }); } catch { /* Proceed with page reload even if UI ack fails */ }
         window.location.reload();
       }
     };
@@ -631,7 +631,7 @@
       window.dispatchEvent(new CustomEvent('rtx5-tcp-status', { detail: latestStatus }));
       if (document.body) renderOTANotificationBanner(latestStatus);
       return latestStatus;
-    } catch (_) {
+    } catch {
       return latestStatus;
     }
   }
@@ -645,7 +645,7 @@
       return data.filter(function (b) {
         return b && (b.broker_name || b.broker_id) && b.tcp_addr;
       });
-    } catch (_) {
+    } catch {
       return [];
     }
   }
@@ -667,7 +667,7 @@
 
   function closeExistingModal() {
     if (typeof activeModalCleanup === 'function') {
-      try { activeModalCleanup(); } catch (_) {}
+      try { activeModalCleanup(); } catch { /* Ensure listener cleanup error does not block closing modal */ }
       activeModalCleanup = null;
     }
     var old = document.getElementById('rtx5-tcp-endpoint-backdrop');
@@ -973,7 +973,7 @@
         } else {
           showErr('Unable to connect to the trading server. Please try again.');
         }
-      } catch (_) {
+      } catch {
         showErr('Unable to reach the trading connection service.');
       } finally {
         submitting = false;

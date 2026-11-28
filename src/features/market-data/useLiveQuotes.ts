@@ -97,6 +97,7 @@ export function useLiveQuotes(symbols: string[]) {
   useEffect(() => {
     if (!isAuthenticated) {
       failureRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets quote error and loading state immediately when session is unauthenticated
       setError(null);
       setLoading(false);
       return;

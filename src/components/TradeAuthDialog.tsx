@@ -175,6 +175,7 @@ function TradeAuthFlow({
 
   useEffect(() => {
     // A previous answer never outlives the broker/config it was read for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clears prior broker demo-mode flags before fetching or when dialog/broker context changes
     setDemoModes(null);
     if (!isOpen || !brokerId || (desktop && !desktopServerUrl)) return undefined;
     const controller = new AbortController();
@@ -189,6 +190,7 @@ function TradeAuthFlow({
 
   useEffect(() => {
     if (!isOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets dialog mode and form state when opened or initial mode changes
     setMode(effectiveInitialMode);
     setAccountMode('hedging');
     setError(null);
@@ -240,6 +242,7 @@ function TradeAuthFlow({
     if (!isOpen || brokerPolicyError) {
       demoRequestGenerationRef.current += 1;
       if (brokerPolicyError) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- cancels pending submission state when broker policy errors while dialog is open
         setSubmitting(false);
         // The desktop login selects its own server; a demo broker that cannot
         // be named does not close it.

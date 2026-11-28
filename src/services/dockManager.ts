@@ -31,12 +31,21 @@ export interface DropZone {
   priority: number;
 }
 
+export type DockPanelProps = {
+  symbol?: string;
+  timeframe?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chartSymbolTabs stores chartType as string while TopToolbar and chartTypeCommand pass props.chartType directly into readonly ChartType[].includes
+  chartType?: any;
+  [key: string]: unknown;
+};
+
 export interface DockPanelConfig {
   id: string;
+  type?: 'panel';
   title: string;
   icon?: string;
   component: string;
-  props?: Record<string, any>;
+  props?: DockPanelProps;
   chartSymbolTabs?: ChartSymbolTab[];
   minWidth?: number;
   minHeight?: number;
@@ -173,6 +182,7 @@ const ratioMatches = (value: unknown, expected: number): boolean => (
   typeof value === 'number' && Math.abs(value - expected) < 0.0001
 );
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- 1.2.18 optional id/component/ratio probes also match panels that carry a children property; `in` guards reject those nodes */
 const getPreviousDesktopDefaultParts = (root: any): {
   leftSidebar: any;
   chartArea: any;
@@ -212,6 +222,7 @@ const getPreviousDesktopDefaultParts = (root: any): {
 
   return matchesPreviousDefault ? { leftSidebar, chartArea, toolbox } : null;
 };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 interface DockOrigin {
   parentId: string;
@@ -281,7 +292,7 @@ export class DockManager {
                 ratio: SIDEBAR_DEFAULT_RATIOS.marketWatch,
                 closable: true,
                 floatable: true,
-              } as any,
+              },
               // Navigator (Remaining height of the left sidebar)
               {
                 id: 'navigator',
@@ -291,7 +302,7 @@ export class DockManager {
                 ratio: SIDEBAR_DEFAULT_RATIOS.navigator,
                 closable: true,
                 floatable: true,
-              } as any,
+              },
             ]
           },
           // CENTER MAIN COLUMN (80% width)
@@ -313,7 +324,7 @@ export class DockManager {
                 ratio: 0.75,
                 closable: true,
                 floatable: true,
-              } as any,
+              },
               // Toolbox (25% of center main)
               {
                 id: 'toolbox',
@@ -323,7 +334,7 @@ export class DockManager {
                 ratio: 0.25,
                 closable: true,
                 floatable: true,
-              } as any,
+              },
             ]
           }
         ],
@@ -952,7 +963,7 @@ export class DockManager {
   updateFloatingPosition(panelId: string, position: { x: number; y: number }): void {
     const layout = this.getLayout();
     const floating = layout.floatingPanels.find(
-      (p) => p.id === panelId || p.children.some((c: any) => c.id === panelId)
+      (p) => p.id === panelId || p.children.some((c) => c.id === panelId)
     );
     if (floating) {
       const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
@@ -984,7 +995,7 @@ export class DockManager {
   updateFloatingSize(panelId: string, size: { width: number; height: number }): void {
     const layout = this.getLayout();
     const floating = layout.floatingPanels.find(
-      (p) => p.id === panelId || p.children.some((c: any) => c.id === panelId)
+      (p) => p.id === panelId || p.children.some((c) => c.id === panelId)
     );
     if (floating) {
       const clampedSize = {
@@ -1094,8 +1105,8 @@ export class DockManager {
         };
         if (layout.root.type === 'split' && layout.root.direction === 'horizontal') {
           const remainingRatio = 1 - DESKTOP_WEB_PARITY_RATIOS.sidebar;
-          const currentTotal = layout.root.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0) || 1;
-          layout.root.children.forEach((child: any) => {
+          const currentTotal = layout.root.children.reduce((sum, c) => sum + (c.ratio || DEFAULT_RATIO), 0) || 1;
+          layout.root.children.forEach((child) => {
             child.ratio = ((child.ratio || DEFAULT_RATIO) / currentTotal) * remainingRatio;
           });
           layout.root.children.unshift(leftSidebar);
@@ -1177,13 +1188,13 @@ export class DockManager {
 
     // Find floating panel
     const floatingIndex = layout.floatingPanels.findIndex((p) =>
-      p.children.some((c: any) => c.id === panelId)
+      p.children.some((c) => c.id === panelId)
     );
 
     if (floatingIndex === -1) return;
 
     const floating = layout.floatingPanels[floatingIndex];
-    const panel = floating.children.find((c: any) => c.id === panelId) as DockPanelConfig;
+    const panel = floating.children.find((c) => c.id === panelId) as DockPanelConfig | undefined;
     if (!panel) return;
 
     if (floating.position && floating.size) {
@@ -1194,7 +1205,7 @@ export class DockManager {
     }
 
     // Remove from floating
-    floating.children = floating.children.filter((c: any) => c.id !== panelId);
+    floating.children = floating.children.filter((c) => c.id !== panelId);
     if (floating.children.length === 0) {
       layout.floatingPanels.splice(floatingIndex, 1);
     }
@@ -1235,12 +1246,12 @@ export class DockManager {
   redockPanel(panelId: string): boolean {
     const layout = this.getLayout();
     const floatingIndex = layout.floatingPanels.findIndex((p) =>
-      p.children.some((c: any) => c.id === panelId)
+      p.children.some((c) => c.id === panelId)
     );
     if (floatingIndex === -1) return false;
 
     const floating = layout.floatingPanels[floatingIndex];
-    const panel = floating.children.find((c: any) => c.id === panelId) as DockPanelConfig;
+    const panel = floating.children.find((c) => c.id === panelId) as DockPanelConfig | undefined;
     if (!panel) return false;
 
     if (floating.position && floating.size) {
@@ -1251,7 +1262,7 @@ export class DockManager {
     }
 
     delete panel.minimized;
-    floating.children = floating.children.filter((c: any) => c.id !== panelId);
+    floating.children = floating.children.filter((c) => c.id !== panelId);
     if (floating.children.length === 0) {
       layout.floatingPanels.splice(floatingIndex, 1);
     }
@@ -1452,7 +1463,7 @@ export class DockManager {
         const centerX = rect.x + rect.width / 2;
         const centerY = rect.y + rect.height / 2;
 
-        let direction: DockDirection = 'center';
+        let direction: DockDirection;
         if (Math.abs(x - centerX) > Math.abs(y - centerY)) {
           direction = x < centerX ? 'left' : 'right';
         } else {
@@ -1542,7 +1553,8 @@ export class DockManager {
         this.layout = parsed;
 
         // Auto-sanitize corrupt symbols that might have infected chart tabs
-        const isValidSymbol = (s: any) => typeof s === 'string' && s.length > 0 && s.length <= 20 && /^[A-Za-z0-9._-]+$/.test(s);
+        const isValidSymbol = (s: unknown): s is string => typeof s === 'string' && s.length > 0 && s.length <= 20 && /^[A-Za-z0-9._-]+$/.test(s);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 1.2.18 truthiness of .children accepts primitive entries and still purges Chart nodes whose children property is null
         const sanitizeContainer = (container: any) => {
           if (!container || !container.children) return;
           for (let i = container.children.length - 1; i >= 0; i--) {
@@ -1567,7 +1579,7 @@ export class DockManager {
         const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
         const desktopMigrationKey = `${DOCK_LAYOUT_DESKTOP_WEB_PARITY_MIGRATION_PREFIX}${key}`;
         if (isDesktopShell && localStorage.getItem(desktopMigrationKey) !== '1') {
-          const root = this.layout.root as any;
+          const root = this.layout.root;
           const previousDesktopMigrationKey = `${DOCK_LAYOUT_PREVIOUS_DESKTOP_DEFAULT_MIGRATION_PREFIX}${key}`;
           const previousDefaultParts = localStorage.getItem(previousDesktopMigrationKey) === '1'
             ? getPreviousDesktopDefaultParts(root)
@@ -1657,9 +1669,9 @@ export class DockManager {
 
     // Search in floating panels
     for (const floating of layout.floatingPanels) {
-      const panel = floating.children.find((c: any) => c.id === panelId) as DockPanelConfig;
+      const panel = floating.children.find((c) => c.id === panelId) as DockPanelConfig | undefined;
       if (panel) {
-        floating.children = floating.children.filter((c: any) => c.id !== panelId);
+        floating.children = floating.children.filter((c) => c.id !== panelId);
         // Remove empty floating containers
         if (floating.children.length === 0) {
           const idx = layout.floatingPanels.indexOf(floating);
@@ -1779,7 +1791,7 @@ export class DockManager {
     if (parent.type === 'split' && parent.direction === splitDir) {
       // Same direction as parent — just insert as a sibling
       const insertIndex = (direction === 'left' || direction === 'top') ? targetIndex : targetIndex + 1;
-      const existingPanel = parent.children[targetIndex] as any;
+      const existingPanel = parent.children[targetIndex];
       const existingRatio = existingPanel.ratio || (1 / parent.children.length);
       // Split the existing panel's ratio
       const halfRatio = existingRatio / 2;
@@ -1788,7 +1800,7 @@ export class DockManager {
     } else {
       // Different direction — wrap the target in a new split
       const existingChild = parent.children[targetIndex];
-      const existingRatio = (existingChild as any).ratio || DEFAULT_RATIO;
+      const existingRatio = existingChild.ratio || DEFAULT_RATIO;
 
       const newSplit: DockContainer = {
         id: `split-${Date.now()}`,
@@ -1841,11 +1853,11 @@ export class DockManager {
   private normalizeRatios(container: DockContainer): void {
     if (container.children.length === 0) return;
 
-    const totalRatio = container.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0);
+    const totalRatio = container.children.reduce((sum, c) => sum + (c.ratio || DEFAULT_RATIO), 0);
     if (totalRatio <= 0) return;
     const factor = 1 / totalRatio;
 
-    container.children.forEach((child: any) => {
+    container.children.forEach((child) => {
       child.ratio = (child.ratio || DEFAULT_RATIO) * factor;
     });
   }
@@ -1857,7 +1869,7 @@ export class DockManager {
       }
     }
     if (container.type === 'split' && container.children.length > 0) {
-      const totalRatio = container.children.reduce((sum, c: any) => sum + (c.ratio || DEFAULT_RATIO), 0);
+      const totalRatio = container.children.reduce((sum, c) => sum + (c.ratio || DEFAULT_RATIO), 0);
       if (Math.abs(totalRatio - 1) > 0.0001) {
         this.normalizeRatios(container);
       }
@@ -1956,7 +1968,7 @@ export class DockManager {
   ): void {
     const isHorizontal = direction === 'left' || direction === 'right';
     const newDirection: 'horizontal' | 'vertical' = isHorizontal ? 'horizontal' : 'vertical';
-    const childIndex = parent.children.findIndex((c: any) => c.id === target.id);
+    const childIndex = parent.children.findIndex((c) => c.id === target.id);
 
     if (childIndex === -1) return;
 
@@ -1968,7 +1980,7 @@ export class DockManager {
     } else {
       // Different direction, wrap target in new split
       const targetChild = parent.children[childIndex];
-      const targetRatio = (targetChild as any).ratio || DEFAULT_RATIO;
+      const targetRatio = targetChild.ratio || DEFAULT_RATIO;
       const remainingRatio = 1 - DEFAULT_RATIO;
 
       const newSplit: DockContainer = {

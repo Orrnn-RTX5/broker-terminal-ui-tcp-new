@@ -24,7 +24,9 @@ interface AggregateRequest {
   timeframeMs: number;
 }
 
-type AggregationCallback = (result: any) => void;
+// Contravariant bottom parameter lets the single requestCallbacks Map store
+// typed per-method callbacks without `any` even under strictFunctionTypes.
+type StoredWorkerCallback = (result: never) => void;
 
 export interface SymbolAggregationRequest {
   symbol: string;
@@ -44,7 +46,7 @@ const MAX_AGGREGATION_BATCH_TICKS = 10_000;
 
 class AggregationWorkerManager {
   private worker: Worker | null = null;
-  private requestCallbacks: Map<string, AggregationCallback> = new Map();
+  private requestCallbacks: Map<string, StoredWorkerCallback> = new Map();
   private requestId = 0;
   private aggregationRequestIds = new Set<string>();
 
@@ -90,7 +92,7 @@ class AggregationWorkerManager {
     this.aggregationRequestIds.delete(requestId);
 
     if (type === 'success' && result !== undefined) {
-      callback(result);
+      callback(result as never);
     } else if (type === 'error') {
       console.error('[WorkerManager] Worker error:', error);
     }
@@ -113,7 +115,7 @@ class AggregationWorkerManager {
   aggregateOHLCV(
     ticks: Tick[],
     timeframeMs: number,
-    callback: AggregationCallback
+    callback: (candles: OHLCV[]) => void
   ): void {
     if (!this.worker) {
       console.error('[WorkerManager] Worker not initialized');
@@ -236,14 +238,14 @@ class AggregationWorkerManager {
     prevValue?: number | ((ema: number[]) => void),
     callback?: (ema: number[]) => void
   ): void {
-    const realCallback = typeof prevValue === 'function' ? (prevValue as any) : callback;
+    const realCallback = typeof prevValue === 'function' ? prevValue : callback;
     const realPrevVal = typeof prevValue === 'number' ? prevValue : undefined;
 
     if (!this.worker) this.initialize();
     if (!this.worker) return;
 
     const requestId = `ema_${++this.requestId}`;
-    this.requestCallbacks.set(requestId, realCallback);
+    if (realCallback) { this.requestCallbacks.set(requestId, realCallback); }
 
     this.worker.postMessage({
       type: 'ema',

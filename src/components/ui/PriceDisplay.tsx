@@ -82,6 +82,7 @@ export const PriceDisplay: React.FC<PriceDisplayProps> = ({
  * Plain string formatter that returns "small|big" for non-React contexts.
  * Mostly you should use the <PriceDisplay> component instead.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- helper co-located with PriceDisplay component for non-React price formatting callers
 export function formatPriceParts(price: number, symbol: string, explicitDigits?: number): { small: string; big: string } {
     // Spec digits only (explicit override); unknown precision renders raw.
     // The symbol parameter is retained for call-site compatibility and ignored.

@@ -66,6 +66,7 @@ export function useHoverIntent(options: HoverIntentOptions = {}) {
     onMouseMove,
     onMouseLeave,
     reset,
+    // eslint-disable-next-line react-hooks/refs -- exposes latest tracked cursor position from positionRef without triggering re-renders on every mousemove
     currentPosition: positionRef.current,
   };
 }

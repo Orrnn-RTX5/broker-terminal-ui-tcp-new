@@ -515,7 +515,7 @@ describe('live tick store pressure guards', () => {
     }));
 
     useMarketDataStore.setState({
-      symbolData: symbolData as any,
+      symbolData: symbolData as ReturnType<typeof useMarketDataStore.getState>['symbolData'],
       subscribedSymbols: new Set(symbols),
     });
     useAppStore.setState({

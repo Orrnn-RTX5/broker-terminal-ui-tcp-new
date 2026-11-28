@@ -150,7 +150,7 @@
       }
       state = await r.json();
       render();
-    } catch (_) {
+    } catch {
       var pill2 = document.getElementById('rtx5-sec-pill');
       if (pill2) {
         pill2.className = 'rtx5-sbadge err';

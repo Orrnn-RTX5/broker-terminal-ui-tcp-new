@@ -1246,6 +1246,7 @@ function validateBinaryOrderReq(params: BinaryTcpOrderParams): ValidatedBinaryOr
   const rawSl = normalizeFiniteFloat(params.sl, 'sl', clientOrderId, action);
   const rawTp = normalizeFiniteFloat(params.tp, 'tp', clientOrderId, action);
 
+  // eslint-disable-next-line no-useless-assignment -- kept byte-identical to the shipped order hot path (validateBinaryOrderReq); value is overwritten on every branch
   let expiration = 0;
   if (action === BINARY_ORDER_ACTION_CLOSE_BY) {
     const rawOtherInput = params.otherTicket !== undefined
@@ -2483,6 +2484,7 @@ async function sendBinaryTcpOrderViaHttp(
   const releaseActiveSlot = acquireActiveBinaryOrderSlot();
   let response: Response;
   let responseBuffer: ArrayBuffer;
+  // eslint-disable-next-line no-useless-assignment -- kept byte-identical to the shipped order hot path (HTTP order send)
   let fetchStartedAtPerfMs = perfNow();
   let completedAtPerfMs: number | undefined;
   let effectiveEndpoint = orderEndpoint;

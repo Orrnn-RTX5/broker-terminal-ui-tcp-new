@@ -55,6 +55,7 @@ export function useKeyboardShortcuts(
   const anonymousIds = useRef(new Map<string, string>());
   const latestHandlers = useRef(new Map<string, ShortcutDefinition['handler']>());
   const occurrences = new Map<string, number>();
+  // eslint-disable-next-line react-hooks/refs -- assigns stable per-instance IDs for anonymous shortcuts during render from anonymousIds cache so signature comparison and StrictMode registration preserve identity across reorders
   const declarations = shortcuts.map((shortcut): ShortcutDefinition => {
     if (shortcut.id) return { ...shortcut, id: shortcut.id };
     // Anonymous declarations follow their key/action identity instead of an

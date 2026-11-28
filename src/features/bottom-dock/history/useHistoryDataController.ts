@@ -265,6 +265,7 @@ export const useHistoryDataController = (
 
   useEffect(() => {
     const cached = peekTerminalHistory(activeLogin, activeScopeKey);
+    /* eslint-disable react-hooks/set-state-in-effect -- syncs cached history or clears stale account state immediately when activeLogin/activeScopeKey changes */
     if (cached) {
       setHistoryData(cached.data);
       setOrdersPending(cached.ordersPending);
@@ -276,6 +277,7 @@ export const useHistoryDataController = (
       setFinancialScope(null);
     }
     setLedger(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     void fetchHistory({ background: Boolean(cached) });
   }, [activeLogin, activeScopeKey, fetchHistory, requestScope]);
 

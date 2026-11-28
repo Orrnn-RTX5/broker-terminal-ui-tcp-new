@@ -3,16 +3,17 @@
 import { act, renderHook } from '@testing-library/react';
 import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Account } from '../store/useAppStore';
 
 const mocks = vi.hoisted(() => {
   const storeState = {
     isAuthenticated: true,
     accountId: '200001',
     authToken: 'access-token',
-    account: null as any,
-    setAccount: vi.fn((account: any) => updateStore({ account })),
-    positions: [] as any[],
-    setPositions: vi.fn((positions: any[]) => updateStore({ positions })),
+    account: null as Partial<Account> | null,
+    setAccount: vi.fn((account: Partial<Account> | null) => updateStore({ account })),
+    positions: [] as Array<Record<string, unknown>>,
+    setPositions: vi.fn((positions: Array<Record<string, unknown>>) => updateStore({ positions })),
   };
   const storeSubscribers = new Set<(state: typeof storeState, previous: typeof storeState) => void>();
   const updateStore = (patch: Partial<typeof storeState>) => {
@@ -25,7 +26,7 @@ const mocks = vi.hoisted(() => {
     storeState,
     storeSubscribers,
     updateStore,
-    scopeSubscribers: new Set<(scope: any) => void>(),
+    scopeSubscribers: new Set<(scope: Record<string, unknown>) => void>(),
     sessionScope: 'authenticated|200001|test|https://test.example.com',
     getSessionTradeSnapshotRequests: vi.fn(),
   };
@@ -60,7 +61,7 @@ vi.mock('../store/useAppStore', async () => {
 
 vi.mock('../api/tradeGateway', () => ({
   getStoredAccountLogin: () => 200001,
-  normalizePosition: (raw: any) => ({
+  normalizePosition: (raw: Record<string, unknown>) => ({
     id: Number(raw.ticket ?? raw.id),
     symbol: String(raw.symbol ?? ''),
     side: String(raw.side ?? '').toLowerCase().includes('sell') ? 'SELL' : 'BUY',
@@ -86,7 +87,7 @@ vi.mock('../services/brokerSession', () => ({
     serverUrl: 'https://test.example.com',
   }),
   getCommittedBrokerAccountSessionScopeKey: () => mocks.sessionScope,
-  onCommittedBrokerAccountSessionScopeChange: (listener: (scope: any) => void) => {
+  onCommittedBrokerAccountSessionScopeChange: (listener: (scope: Record<string, unknown>) => void) => {
     mocks.scopeSubscribers.add(listener);
     return () => { mocks.scopeSubscribers.delete(listener); };
   },

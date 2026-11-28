@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ContextMenu, type ContextMenuItemConfig } from './ContextMenu';
 
@@ -9,7 +9,7 @@ const waitForOutsideClickListener = () => new Promise(resolve => {
 });
 
 function ControlledMenuToggle() {
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [triggerElement, setTriggerElement] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const items: ContextMenuItemConfig[] = [
     { label: 'Balance', action: vi.fn(), autoClose: false },
@@ -18,9 +18,11 @@ function ControlledMenuToggle() {
   return (
     <>
       <button
-        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(prev => !prev)}
+        onClick={(event) => {
+          setTriggerElement(event.currentTarget);
+          setOpen(prev => !prev);
+        }}
       >
         Footer metrics
       </button>
@@ -30,7 +32,7 @@ function ControlledMenuToggle() {
           items={items}
           position={{ x: 0, y: 0 }}
           onClose={() => setOpen(false)}
-          ignoredElements={[triggerRef.current]}
+          ignoredElements={[triggerElement]}
         />
       )}
     </>

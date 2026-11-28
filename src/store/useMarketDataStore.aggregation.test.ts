@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getWorkerManager, terminateWorker } from '../services/aggregationWorkerManager';
-import { processWorkerMessage, type WorkerMessage } from '../workers/aggregation.worker';
-import { useMarketDataStore, type Tick } from './useMarketDataStore';
+import { getWorkerManager, terminateWorker, type SymbolAggregationResult } from '../services/aggregationWorkerManager';
+import { processWorkerMessage, type AggregateBatchRequest, type WorkerMessage } from '../workers/aggregation.worker';
+import { useMarketDataStore, type OHLCV, type Tick } from './useMarketDataStore';
 
 const timeframes = [
   { name: '1m', ms: 60_000 },
@@ -58,7 +58,7 @@ describe('batched worker aggregation', () => {
     const batch = processWorkerMessage({ type: 'aggregate-batch', requestId: 'batch',
       data: { requests: [{ symbol: 'BTCUSD', tickBuffer: ticks }], timeframes } });
     expect(batch.type).toBe('success');
-    const result = (batch.result as any[])[0].results;
+    const result = (batch.result as SymbolAggregationResult[])[0].results!;
     timeframes.forEach(({ name, ms }) => {
       const individual = processWorkerMessage({ type: 'aggregate', requestId: name,
         data: { ticks, timeframeMs: ms } });
@@ -106,7 +106,7 @@ describe('batched worker aggregation', () => {
     }));
     getWorkerManager().aggregateSymbols(requests, timeframes, vi.fn());
     expect(worker().requests).toHaveLength(3);
-    expect(worker().requests.map(message => (message.data as any).requests.length)).toEqual([1, 1, 1]);
+    expect(worker().requests.map(message => (message.data as AggregateBatchRequest).requests.length)).toEqual([1, 1, 1]);
   });
 
   it('keeps valid siblings when one symbol fails inside the worker batch', () => {
@@ -118,7 +118,7 @@ describe('batched worker aggregation', () => {
       ], timeframes,
     } });
     expect(response.type).toBe('success');
-    expect((response.result as any[]).map(row => [row.symbol, Boolean(row.results)]))
+    expect((response.result as SymbolAggregationResult[]).map(row => [row.symbol, Boolean(row.results)]))
       .toEqual([['VALID', true], ['BROKEN', false], ['ALSO_VALID', true]]);
   });
 
@@ -175,14 +175,14 @@ describe('batched worker aggregation', () => {
 
   it('isolates non-cloneable payloads so transport failure does not discard healthy siblings', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const callback = vi.fn();
+    const callback = vi.fn<(results: SymbolAggregationResult[]) => void>();
     getWorkerManager().aggregateSymbols([
       { symbol: 'VALID', tickBuffer: [tick('VALID')] },
       { symbol: 'BROKEN', tickBuffer: [{ ...tick('BROKEN'), lp: (() => {}) as unknown as string }] },
       { symbol: 'ALSO_VALID', tickBuffer: [tick('ALSO_VALID', 200)] },
     ], timeframes, callback);
     worker().drain();
-    expect(callback.mock.calls.flatMap(([rows]) => rows.map((row: any) => row.symbol)))
+    expect(callback.mock.calls.flatMap(([rows]) => rows.map((row) => row.symbol)))
       .toEqual(['VALID', 'ALSO_VALID']);
   });
 
@@ -244,7 +244,7 @@ describe('batched worker aggregation', () => {
   it('publishes healthy sibling results even if one result cannot be merged', () => {
     store().updateTicksBatch([['BTCUSD', tick('BTCUSD')], ['EURUSD', tick('EURUSD', 200)]], { syncAppStore: false });
     const response = processWorkerMessage(worker().requests[0]);
-    (response.result as any[])[0].results['1m'] = null;
+    (response.result as Array<{ results: Record<string, OHLCV[] | null> }>)[0].results['1m'] = null;
     vi.spyOn(console, 'error').mockImplementation(() => {});
     worker().onmessage?.({ data: response } as MessageEvent);
     expect(store().getOHLCV('BTCUSD', '1m')).toEqual([]);

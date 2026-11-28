@@ -55,6 +55,7 @@ export function CommandBusProvider({ children }: CommandBusProviderProps) {
  * const bus = useCommandBusContext();
  * bus.dispatch({ type: 'SET_CHART_TYPE', payload: { chartType: 'line' } });
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep hook/HOC/context exports co-located with CommandBusProvider for existing importers
 export function useCommandBusContext(): CommandBus {
   const context = useContext(CommandBusContext);
 
@@ -78,6 +79,7 @@ export function useCommandBusContext(): CommandBus {
  *
  * export default withCommandBus(MyComponent);
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep hook/HOC/context exports co-located with CommandBusProvider for existing importers
 export function withCommandBus<P extends { commandBus: CommandBus }>(
   Component: React.ComponentType<P>
 ) {
@@ -90,4 +92,5 @@ export function withCommandBus<P extends { commandBus: CommandBus }>(
 /**
  * Export the context for advanced use cases
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep hook/HOC/context exports co-located with CommandBusProvider for existing importers
 export { CommandBusContext };

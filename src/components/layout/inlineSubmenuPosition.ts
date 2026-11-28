@@ -65,6 +65,7 @@ export function useInlineSubmenuPlacement(
 
     useLayoutEffect(() => {
         if (!enabled) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- resets placement to default { topOffset: 0, alignLeft: false } when submenu closes so reopening with the same resetKey cannot render stale coordinates or trigger an extra open-time render
             setPlacement((prev) => (prev.topOffset === 0 && !prev.alignLeft ? prev : { topOffset: 0, alignLeft: false }));
             return;
         }

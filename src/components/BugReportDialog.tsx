@@ -57,6 +57,20 @@ export function BugReportDialog({ isOpen, onClose, context = {} }: BugReportDial
     const [error, setError] = useState('');
     const [receipt, setReceipt] = useState<BugReportReceipt | null>(null);
     const [storageEnabled, setStorageEnabled] = useState(true);
+    const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+    // Reset between openings so a previous submission's receipt does not greet
+    // somebody filing a second, unrelated report.
+    if (prevIsOpen !== isOpen) {
+        setPrevIsOpen(isOpen);
+        if (!isOpen) {
+            setForm(EMPTY_FORM);
+            setAttachments([]);
+            setReceipt(null);
+            setError('');
+            setShowDetails(false);
+        }
+    }
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -84,17 +98,6 @@ export function BugReportDialog({ isOpen, onClose, context = {} }: BugReportDial
             if (active) setStorageEnabled(options.enabled);
         });
         return () => { active = false; };
-    }, [isOpen]);
-
-    // Reset between openings so a previous submission's receipt does not greet
-    // somebody filing a second, unrelated report.
-    useEffect(() => {
-        if (isOpen) return;
-        setForm(EMPTY_FORM);
-        setAttachments([]);
-        setReceipt(null);
-        setError('');
-        setShowDetails(false);
     }, [isOpen]);
 
     const addFiles = useCallback((incoming: FileList | File[] | null) => {

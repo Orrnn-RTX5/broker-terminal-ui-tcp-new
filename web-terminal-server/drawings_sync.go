@@ -11,16 +11,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -82,15 +84,63 @@ type drawingWSSub struct {
 	accountKey string
 	clientID   string
 	sendCh     chan []byte
-	closed     atomic.Bool
+	done       chan struct{}
 	closeOnce  sync.Once
+}
+
+func newDrawingWSSub(accountKey, clientID string) *drawingWSSub {
+	return &drawingWSSub{
+		accountKey: accountKey,
+		clientID:   clientID,
+		sendCh:     make(chan []byte, drawingWSSendQueueCap),
+		done:       make(chan struct{}),
+	}
 }
 
 func (s *drawingWSSub) close() {
 	s.closeOnce.Do(func() {
-		s.closed.Store(true)
-		close(s.sendCh)
+		close(s.done)
 	})
+}
+
+func (s *drawingWSSub) enqueue(payload []byte) {
+	select {
+	case <-s.done:
+		return
+	default:
+	}
+	select {
+	case <-s.done:
+	case s.sendCh <- payload:
+	default:
+	}
+}
+
+func (s *drawingWSSub) enqueueDropOldest(payload []byte) {
+	select {
+	case <-s.done:
+		return
+	default:
+	}
+	select {
+	case <-s.done:
+		return
+	case s.sendCh <- payload:
+	default:
+		// Slow consumer: drop oldest queued message so real-time state stays fresh
+		// without blocking the other 99+ subscribers on the same account.
+		select {
+		case <-s.done:
+			return
+		case <-s.sendCh:
+		default:
+		}
+		select {
+		case <-s.done:
+		case s.sendCh <- payload:
+		default:
+		}
+	}
 }
 
 type verifiedTokenEntry struct {
@@ -100,6 +150,34 @@ type verifiedTokenEntry struct {
 
 type drawingTokenVerifier func(ctx context.Context, link *brokerLink, token string, claims drawingTokenClaims) error
 
+type accountPersistState struct {
+	mu           sync.Mutex
+	notifyCh     chan struct{}
+	writing      bool
+	hasSeen      bool
+	highestSeen  int64
+	hasPersisted bool
+	persistedRev int64
+	hasFailed    bool
+	failedRev    int64
+	lastErr      error
+	pending      *AccountDrawingsDocument
+}
+
+func (s *accountPersistState) signalLocked() {
+	if s.notifyCh != nil {
+		close(s.notifyCh)
+		s.notifyCh = nil
+	}
+}
+
+func (s *accountPersistState) waitChLocked() <-chan struct{} {
+	if s.notifyCh == nil {
+		s.notifyCh = make(chan struct{})
+	}
+	return s.notifyCh
+}
+
 type drawingSyncHub struct {
 	storageDir string
 
@@ -107,10 +185,23 @@ type drawingSyncHub struct {
 	accounts map[string]*AccountDrawingsDocument
 	subs     map[string]map[*drawingWSSub]struct{}
 
+	persistMu        sync.Mutex
+	persistState     map[string]*accountPersistState
+	persistWriteHook func(AccountDrawingsDocument)
+	renameSnapshotFn func(string, string) error
+	wsWriteWait      time.Duration
+
 	tokenMu        sync.RWMutex
 	verifiedTokens map[[32]byte]verifiedTokenEntry
 
 	verifyTokenFn drawingTokenVerifier
+}
+
+func (h *drawingSyncHub) effectiveWSWriteWait() time.Duration {
+	if h != nil && h.wsWriteWait > 0 {
+		return h.wsWriteWait
+	}
+	return drawingWSWriteWait
 }
 
 func newDrawingSyncHub(storageDir string) *drawingSyncHub {
@@ -118,6 +209,7 @@ func newDrawingSyncHub(storageDir string) *drawingSyncHub {
 		storageDir:     strings.TrimSpace(storageDir),
 		accounts:       make(map[string]*AccountDrawingsDocument),
 		subs:           make(map[string]map[*drawingWSSub]struct{}),
+		persistState:   make(map[string]*accountPersistState),
 		verifiedTokens: make(map[[32]byte]verifiedTokenEntry),
 	}
 }
@@ -136,7 +228,7 @@ func (c *WebTerminalServer) ensureDrawingHub() *drawingSyncHub {
 }
 
 func normalizeDrawingAccountKey(brokerID string, accountLogin int64) string {
-	return strings.ToLower(strings.TrimSpace(brokerID)) + "::" + strconv.FormatInt(accountLogin, 10)
+	return safeStorageSegment(brokerID) + "::" + strconv.FormatInt(accountLogin, 10)
 }
 
 func normalizeDrawingSymbol(symbol string) string {
@@ -208,12 +300,34 @@ func (h *drawingSyncHub) getOrLoadLocked(brokerID string, accountLogin int64) *A
 				}
 				loaded.BrokerID = doc.BrokerID
 				loaded.AccountLogin = accountLogin
+				if loaded.Revision < 0 {
+					loaded.Revision = 0
+				}
 				doc = &loaded
+				h.seedPersistStateFromLoaded(brokerID, accountLogin, doc.Revision)
 			}
 		}
 	}
 	h.accounts[key] = doc
 	return doc
+}
+
+func (h *drawingSyncHub) seedPersistStateFromLoaded(brokerID string, accountLogin int64, rev int64) {
+	if h.accountFilePath(brokerID, accountLogin) == "" {
+		return
+	}
+	key := normalizeDrawingAccountKey(brokerID, accountLogin)
+	st := h.getOrCreatePersistState(key)
+	st.mu.Lock()
+	if !st.hasSeen || rev > st.highestSeen {
+		st.highestSeen = rev
+		st.hasSeen = true
+	}
+	if !st.hasPersisted || rev > st.persistedRev {
+		st.persistedRev = rev
+		st.hasPersisted = true
+	}
+	st.mu.Unlock()
 }
 
 func cloneAccountDocumentLocked(doc *AccountDrawingsDocument) AccountDrawingsDocument {
@@ -241,24 +355,290 @@ func cloneAccountDocumentLocked(doc *AccountDrawingsDocument) AccountDrawingsDoc
 	return copyDoc
 }
 
-func (h *drawingSyncHub) persistDocumentSnapshot(doc AccountDrawingsDocument) {
+func (h *drawingSyncHub) setPersistHooks(writeHook func(AccountDrawingsDocument), renameFn func(string, string) error) {
+	h.persistMu.Lock()
+	h.persistWriteHook = writeHook
+	h.renameSnapshotFn = renameFn
+	h.persistMu.Unlock()
+}
+
+func (h *drawingSyncHub) getPersistHooks() (func(AccountDrawingsDocument), func(string, string) error) {
+	h.persistMu.Lock()
+	writeHook := h.persistWriteHook
+	renameFn := h.renameSnapshotFn
+	h.persistMu.Unlock()
+	return writeHook, renameFn
+}
+
+func (h *drawingSyncHub) getOrCreatePersistState(key string) *accountPersistState {
+	h.persistMu.Lock()
+	if h.persistState == nil {
+		h.persistState = make(map[string]*accountPersistState)
+	}
+	st := h.persistState[key]
+	if st == nil {
+		st = &accountPersistState{}
+		h.persistState[key] = st
+	}
+	h.persistMu.Unlock()
+	return st
+}
+
+// enqueuePersist schedules an account snapshot for ordered single-writer persistence off
+// the request/WebSocket path. Older revisions are discarded so they can never overwrite newer ones.
+func (h *drawingSyncHub) enqueuePersist(doc AccountDrawingsDocument) {
+	if h.accountFilePath(doc.BrokerID, doc.AccountLogin) == "" {
+		return
+	}
+	key := normalizeDrawingAccountKey(doc.BrokerID, doc.AccountLogin)
+	st := h.getOrCreatePersistState(key)
+
+	st.mu.Lock()
+	if st.hasSeen {
+		if doc.Revision < st.highestSeen {
+			st.mu.Unlock()
+			return
+		}
+		if doc.Revision == st.highestSeen {
+			// Permit an explicit retry only when this latest revision failed and no write is active or queued.
+			if !st.hasFailed || st.failedRev != doc.Revision || st.writing || st.pending != nil {
+				st.mu.Unlock()
+				return
+			}
+			st.lastErr = nil
+			st.failedRev = 0
+			st.hasFailed = false
+		}
+	}
+	st.hasSeen = true
+	st.highestSeen = doc.Revision
+	cp := doc
+	st.pending = &cp
+	startWorker := !st.writing
+	if startWorker {
+		st.writing = true
+	}
+	st.signalLocked()
+	st.mu.Unlock()
+
+	if startWorker {
+		go h.runAccountPersistLoop(key, st)
+	}
+}
+
+func (h *drawingSyncHub) runAccountPersistLoop(key string, st *accountPersistState) {
+	for {
+		st.mu.Lock()
+		next := st.pending
+		if next == nil {
+			st.writing = false
+			st.signalLocked()
+			st.mu.Unlock()
+			return
+		}
+		st.pending = nil
+		st.mu.Unlock()
+
+		writeHook, _ := h.getPersistHooks()
+		if writeHook != nil {
+			writeHook(*next)
+		}
+
+		err := h.writeDocumentSnapshotToDisk(*next)
+
+		st.mu.Lock()
+		if err != nil {
+			log.Printf("[drawing-sync] persist snapshot failed (account=%s rev=%d): %v", key, next.Revision, err)
+			// Retain failure metadata for the newest snapshot unless a newer revision has already arrived.
+			if st.pending == nil {
+				st.lastErr = err
+				st.failedRev = next.Revision
+				st.hasFailed = true
+			}
+		} else {
+			if !st.hasPersisted || next.Revision > st.persistedRev {
+				st.persistedRev = next.Revision
+				st.hasPersisted = true
+			}
+			if !st.hasFailed || next.Revision >= st.failedRev {
+				st.lastErr = nil
+				st.failedRev = 0
+				st.hasFailed = false
+			}
+		}
+		if st.pending == nil {
+			st.writing = false
+			st.signalLocked()
+			st.mu.Unlock()
+			return
+		}
+		st.signalLocked()
+		st.mu.Unlock()
+	}
+}
+
+func isRetryablePersistErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		if errors.Is(err, os.ErrPermission) {
+			return true
+		}
+		const (
+			winErrAccessDenied     syscall.Errno = 5
+			winErrSharingViolation syscall.Errno = 32
+			winErrLockViolation    syscall.Errno = 33
+		)
+		var errno syscall.Errno
+		if errors.As(err, &errno) {
+			switch errno {
+			case winErrAccessDenied, winErrSharingViolation, winErrLockViolation:
+				return true
+			}
+		}
+		return false
+	}
+	return errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EBUSY)
+}
+
+func (h *drawingSyncHub) writeDocumentSnapshotToDisk(doc AccountDrawingsDocument) error {
 	fp := h.accountFilePath(doc.BrokerID, doc.AccountLogin)
 	if fp == "" {
-		return
+		return nil
 	}
 	data, err := json.Marshal(&doc)
 	if err != nil {
-		return
+		return fmt.Errorf("marshal drawing snapshot: %w", err)
 	}
 	dir := filepath.Dir(fp)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return
+		return fmt.Errorf("create drawing dir %s: %w", dir, err)
 	}
-	tmp := fmt.Sprintf("%s.tmp.%d", fp, time.Now().UnixNano())
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return
+
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(fp)+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("create temp drawing snapshot: %w", err)
 	}
-	_ = os.Rename(tmp, fp)
+	tmpPath := tmpFile.Name()
+	cleanupTmp := true
+	defer func() {
+		if cleanupTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("write temp drawing snapshot: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("sync temp drawing snapshot: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp drawing snapshot: %w", err)
+	}
+
+	_, renameFn := h.getPersistHooks()
+	backoffs := []time.Duration{
+		2 * time.Millisecond,
+		5 * time.Millisecond,
+		10 * time.Millisecond,
+		20 * time.Millisecond,
+		35 * time.Millisecond,
+		50 * time.Millisecond,
+		75 * time.Millisecond,
+		100 * time.Millisecond,
+	}
+	var renameErr error
+	for attempt := 0; attempt <= len(backoffs); attempt++ {
+		if renameFn != nil {
+			renameErr = renameFn(tmpPath, fp)
+		} else {
+			renameErr = os.Rename(tmpPath, fp)
+		}
+		if renameErr == nil {
+			cleanupTmp = false
+			return nil
+		}
+		if attempt == len(backoffs) || !isRetryablePersistErr(renameErr) {
+			break
+		}
+		time.Sleep(backoffs[attempt])
+	}
+	return fmt.Errorf("rename drawing snapshot to %s: %w", fp, renameErr)
+}
+
+func (h *drawingSyncHub) waitForPersisted(ctx context.Context, brokerID string, accountLogin int64) error {
+	return h.waitForPersistState(ctx, brokerID, accountLogin, 0, true)
+}
+
+func (h *drawingSyncHub) waitForPersistedRevision(ctx context.Context, brokerID string, accountLogin int64, minRevision int64) error {
+	return h.waitForPersistState(ctx, brokerID, accountLogin, minRevision, false)
+}
+
+func (h *drawingSyncHub) waitForPersistState(ctx context.Context, brokerID string, accountLogin int64, minRevision int64, drainAll bool) error {
+	if h.accountFilePath(brokerID, accountLogin) == "" {
+		return nil
+	}
+	key := normalizeDrawingAccountKey(brokerID, accountLogin)
+	st := h.getOrCreatePersistState(key)
+
+	for {
+		st.mu.Lock()
+		if drainAll {
+			if !st.writing && st.pending == nil {
+				if !st.hasSeen {
+					st.mu.Unlock()
+					return nil
+				}
+				if st.lastErr != nil && st.hasFailed && st.failedRev >= st.highestSeen {
+					err := st.lastErr
+					st.mu.Unlock()
+					return err
+				}
+				if st.hasPersisted && st.persistedRev >= st.highestSeen {
+					st.mu.Unlock()
+					return nil
+				}
+			}
+		} else {
+			if st.hasPersisted && st.persistedRev >= minRevision {
+				st.mu.Unlock()
+				return nil
+			}
+			if !st.writing && st.pending == nil && st.lastErr != nil && st.hasFailed && st.failedRev >= minRevision {
+				err := st.lastErr
+				st.mu.Unlock()
+				return err
+			}
+		}
+		ch := st.waitChLocked()
+		st.mu.Unlock()
+
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (h *drawingSyncHub) persistDocumentSnapshot(doc AccountDrawingsDocument) error {
+	if h.accountFilePath(doc.BrokerID, doc.AccountLogin) == "" {
+		return nil
+	}
+	h.enqueuePersist(doc)
+	return h.waitForPersistedRevision(context.Background(), doc.BrokerID, doc.AccountLogin, doc.Revision)
+}
+
+func (h *drawingSyncHub) persistAndBroadcast(snap AccountDrawingsDocument, accountKey string, event any) {
+	if accountKey == "" {
+		accountKey = normalizeDrawingAccountKey(snap.BrokerID, snap.AccountLogin)
+	}
+	h.enqueuePersist(snap)
+	h.broadcast(accountKey, event)
 }
 
 func sortedDrawingsSlice(drawings map[string]*SyncedDrawing, symbol, timeframe string) []*SyncedDrawing {
@@ -352,6 +732,13 @@ func (h *drawingSyncHub) unregisterSub(sub *drawingWSSub) {
 	sub.close()
 }
 
+func (h *drawingSyncHub) subscriberCount(accountKey string) int {
+	h.mu.RLock()
+	n := len(h.subs[accountKey])
+	h.mu.RUnlock()
+	return n
+}
+
 func (h *drawingSyncHub) broadcast(accountKey string, event any) {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -370,23 +757,7 @@ func (h *drawingSyncHub) broadcast(accountKey string, event any) {
 	h.mu.RUnlock()
 
 	for _, sub := range targets {
-		if sub.closed.Load() {
-			continue
-		}
-		select {
-		case sub.sendCh <- payload:
-		default:
-			// Slow consumer: drop oldest queued message so real-time state stays fresh
-			// without blocking the other 99+ subscribers on the same account.
-			select {
-			case <-sub.sendCh:
-			default:
-			}
-			select {
-			case sub.sendCh <- payload:
-			default:
-			}
-		}
+		sub.enqueueDropOldest(payload)
 	}
 }
 
@@ -468,8 +839,7 @@ func (h *drawingSyncHub) upsertDrawing(
 	savedCopy.Properties = append(json.RawMessage(nil), saved.Properties...)
 	h.mu.Unlock()
 
-	go h.persistDocumentSnapshot(snap)
-	h.broadcast(auth.AccountKey, map[string]any{
+	h.persistAndBroadcast(snap, auth.AccountKey, map[string]any{
 		"type":           "drawing_upsert",
 		"brokerId":       auth.BrokerID,
 		"accountLogin":   auth.AccountLogin,
@@ -512,12 +882,11 @@ func (h *drawingSyncHub) deleteDrawing(auth drawingAuthContext, targetID string)
 	snap := cloneAccountDocumentLocked(doc)
 	h.mu.Unlock()
 
-	go h.persistDocumentSnapshot(snap)
 	clientDrawingID := extractClientDrawingID(removed.Properties)
 	if clientDrawingID == "" {
 		clientDrawingID = removed.ID
 	}
-	h.broadcast(auth.AccountKey, map[string]any{
+	h.persistAndBroadcast(snap, auth.AccountKey, map[string]any{
 		"type":            "drawing_delete",
 		"brokerId":        auth.BrokerID,
 		"accountLogin":    auth.AccountLogin,
@@ -558,8 +927,7 @@ func (h *drawingSyncHub) clearDrawings(auth drawingAuthContext, symbol, timefram
 	snap := cloneAccountDocumentLocked(doc)
 	h.mu.Unlock()
 
-	go h.persistDocumentSnapshot(snap)
-	h.broadcast(auth.AccountKey, map[string]any{
+	h.persistAndBroadcast(snap, auth.AccountKey, map[string]any{
 		"type":           "drawings_clear",
 		"brokerId":       auth.BrokerID,
 		"accountLogin":   auth.AccountLogin,
@@ -590,8 +958,7 @@ func (h *drawingSyncHub) setVisibility(auth drawingAuthContext, symbol, timefram
 	snap := cloneAccountDocumentLocked(doc)
 	h.mu.Unlock()
 
-	go h.persistDocumentSnapshot(snap)
-	h.broadcast(auth.AccountKey, map[string]any{
+	h.persistAndBroadcast(snap, auth.AccountKey, map[string]any{
 		"type":           "drawing_visibility",
 		"brokerId":       auth.BrokerID,
 		"accountLogin":   auth.AccountLogin,
@@ -1043,11 +1410,7 @@ func (c *WebTerminalServer) serveDrawingSyncWS(w http.ResponseWriter, r *http.Re
 	}
 
 	hub := c.ensureDrawingHub()
-	sub := &drawingWSSub{
-		accountKey: auth.AccountKey,
-		clientID:   auth.ClientID,
-		sendCh:     make(chan []byte, drawingWSSendQueueCap),
-	}
+	sub := newDrawingWSSub(auth.AccountKey, auth.ClientID)
 	hub.registerSub(sub)
 	defer hub.unregisterSub(sub)
 
@@ -1061,37 +1424,54 @@ func (c *WebTerminalServer) serveDrawingSyncWS(w http.ResponseWriter, r *http.Re
 			"drawings":     list,
 			"hiddenMap":    hiddenMap,
 		})
-		if merr != nil || sub.closed.Load() {
+		if merr != nil {
 			return
 		}
-		select {
-		case sub.sendCh <- payload:
-		default:
-		}
+		sub.enqueue(payload)
 	}
 
 	// Enqueue immediate full snapshot so newly joined devices hydrate instantaneously.
 	sendSnapshot()
 
+	writeWait := hub.effectiveWSWriteWait()
+
 	// Dedicated write pump so broadcasts never contend on socket writes.
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
+		defer func() {
+			sub.close()
+			_ = conn.Close()
+		}()
 		ticker := time.NewTicker(drawingWSPingInterval)
 		defer ticker.Stop()
 		for {
 			select {
-			case msg, ok := <-sub.sendCh:
-				_ = conn.SetWriteDeadline(time.Now().Add(drawingWSWriteWait))
-				if !ok {
+			case <-sub.done:
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+				_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			default:
+			}
+			select {
+			case <-sub.done:
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+				_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			case msg := <-sub.sendCh:
+				select {
+				case <-sub.done:
+					_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 					_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
 					return
+				default:
 				}
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 				if werr := conn.WriteMessage(websocket.TextMessage, msg); werr != nil {
 					return
 				}
 			case <-ticker.C:
-				_ = conn.SetWriteDeadline(time.Now().Add(drawingWSWriteWait))
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 				if perr := conn.WriteMessage(websocket.PingMessage, nil); perr != nil {
 					return
 				}
@@ -1121,11 +1501,8 @@ func (c *WebTerminalServer) serveDrawingSyncWS(w http.ResponseWriter, r *http.Re
 		}
 		switch strings.ToLower(strings.TrimSpace(msg.Action)) {
 		case "ping":
-			if pongBytes, merr := json.Marshal(map[string]any{"type": "pong", "ts": time.Now().UnixMilli()}); merr == nil && !sub.closed.Load() {
-				select {
-				case sub.sendCh <- pongBytes:
-				default:
-				}
+			if pongBytes, merr := json.Marshal(map[string]any{"type": "pong", "ts": time.Now().UnixMilli()}); merr == nil {
+				sub.enqueue(pongBytes)
 			}
 		case "sync", "snapshot":
 			sendSnapshot()

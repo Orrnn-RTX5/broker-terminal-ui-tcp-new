@@ -1,7 +1,7 @@
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { getAuthenticatedAccountName } from '../../utils/accountDisplayName';
 import { getBrokerSavedAccountTypes, resolveTradingAccountType, type TradingAccountType } from '../../services/tradingAccountType';
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useDialogFocusScope } from '../../hooks/useDialogFocusScope';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { createPortal } from 'react-dom';
@@ -258,17 +258,50 @@ const pickPreferredBrokerId = (mapped: BrokerServer[], preferCurrentBroker: bool
     return matched ? String(matched.id) : '';
 };
 
-const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoCreation = false, anchorRef }) => {
+const readCurrentTimestampMs = (): number => Date.now();
+
+const resolveBrokerCredentialScope = (targetBroker: BrokerServer | undefined): { brokerId: string; serverUrl: string } => {
+    if (!targetBroker) return { brokerId: '', serverUrl: '' };
+    const normalizedBroker = normalizeBrokerInfoForTarget(targetBroker);
+    const brokerId = String(normalizedBroker.broker_id || targetBroker.broker_id || '').trim();
+    const serverUrl = resolveBrokerExtApiUrl({ ...targetBroker, ...normalizedBroker });
+    return { brokerId, serverUrl };
+};
+
+const lookupCachedAccountPassword = (loginValue: string, targetBroker: BrokerServer | undefined): string => {
+    const trimmedLogin = loginValue.trim();
+    if (!trimmedLogin || !targetBroker) return '';
+    const { brokerId, serverUrl } = resolveBrokerCredentialScope(targetBroker);
+    const cached = getCachedAccountSession({ brokerId, serverUrl, login: trimmedLogin });
+    return cached?.password ?? '';
+};
+
+const buildInitialDirectoryState = (preferCurrentBroker: boolean) => {
+    const cached = getCachedBrokerDirectory();
+    const mapped = availableDirectoryBrokers(cached || []);
+    return {
+        brokers: mapped,
+        loading: cached === null,
+        selected: pickPreferredBrokerId(mapped, preferCurrentBroker),
+    };
+};
+
+const DesktopOpenAccountDialog: React.FC<Props> = (props) => {
+    if (!props.isOpen) return null;
+    return <OpenDesktopAccountDialog key={String(props.forceDemoCreation ?? false)} {...props} />;
+};
+
+const OpenDesktopAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoCreation = false, anchorRef }) => {
     const tr = useUiTranslation();
     const isDesktopShell = typeof window !== 'undefined' && Boolean(window.electron?.window);
     const minStep = forceDemoCreation ? 2 : 0;
+    const [initialDirectory] = useState(() => buildInitialDirectoryState(forceDemoCreation));
     const [step, setStep] = useState(minStep);
     const [anchoredLeft, setAnchoredLeft] = useState<number | null>(null);
-    const [brokers, setBrokers] = useState<BrokerServer[]>(() => availableDirectoryBrokers(getCachedBrokerDirectory() || []));
-    const [loadingBrokers, setLoadingBrokers] = useState(() => getCachedBrokerDirectory() === null);
-    const [selected, setSelected] = useState<string>(() => pickPreferredBrokerId(brokers, forceDemoCreation));
+    const [brokers, setBrokers] = useState<BrokerServer[]>(initialDirectory.brokers);
+    const [loadingBrokers, setLoadingBrokers] = useState(initialDirectory.loading);
+    const [selected, setSelected] = useState<string>(initialDirectory.selected);
     const [directoryError, setDirectoryError] = useState('');
-    const [directoryAttempt, setDirectoryAttempt] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [accountType, setAccountType] = useState<AccountType>('demo');
 
@@ -295,6 +328,10 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
     const searchRef = useRef<HTMLInputElement>(null);
     const firstNameRef = useRef<HTMLInputElement>(null);
     const existingPasswordInputRef = useRef<HTMLInputElement>(null);
+    const mountedRef = useRef(false);
+    const requestSeqRef = useRef(0);
+    const existingLoginRef = useRef('');
+    const existingBrokerRef = useRef<BrokerServer | null>(null);
     const closeDialog = () => {
         setCopiedField(null);
         setExistingPassword('');
@@ -309,6 +346,11 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
         if (ok) setCopiedField(label);
     };
     const existingPasswordCopied = Boolean(existingPassword) && copiedField === 'existing-password';
+    useEffect(() => {
+        existingLoginRef.current = existingLogin;
+        existingBrokerRef.current = existingBroker;
+    }, [existingLogin, existingBroker]);
+
     useEffect(() => {
         if (!copiedField) return undefined;
         const timer = window.setTimeout(() => setCopiedField(null), 1600);
@@ -344,11 +386,46 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
         return () => window.removeEventListener('resize', updateAnchoredLeft);
     }, [anchorRef, isOpen, step]);
 
-    useEffect(() => {
-        if (!isOpen) return;
+    const prefillCachedPassword = useCallback((loginValue: string, targetBroker: BrokerServer | undefined) => {
+        const cachedPassword = lookupCachedAccountPassword(loginValue, targetBroker);
+        if (cachedPassword) {
+            setExistingPassword(current => current || cachedPassword);
+        }
+    }, []);
 
-        let active = true;
-        setStep(forceDemoCreation ? 2 : 0);
+    const applyDirectory = useCallback((rows: BrokerDiscoveryItem[]) => {
+        const mapped = availableDirectoryBrokers(rows);
+        const nextSelected = pickPreferredBrokerId(mapped, forceDemoCreation);
+        setBrokers(mapped);
+        setSelected(nextSelected);
+        const targetBroker = existingBrokerRef.current || mapped.find(b => String(b.id) === nextSelected);
+        prefillCachedPassword(existingLoginRef.current, targetBroker);
+    }, [forceDemoCreation, prefillCachedPassword]);
+
+    const startBrokerDirectoryRequest = useCallback((seq: number) => {
+        void loadAppBrokerDirectory({ forceRefresh: true, desktop: isDesktopBackendTarget() })
+            .then(rows => {
+                if (mountedRef.current && seq === requestSeqRef.current) {
+                    applyDirectory(rows);
+                }
+            })
+            .catch(err => {
+                console.warn('[OpenAccountDialog] Could not load brokers:', err);
+                if (mountedRef.current && seq === requestSeqRef.current) {
+                    setDirectoryError('Broker servers are unavailable. Please try again.');
+                }
+            })
+            .finally(() => {
+                if (mountedRef.current && seq === requestSeqRef.current) {
+                    setLoadingBrokers(false);
+                }
+            });
+    }, [applyDirectory]);
+
+    const runBrokerDirectoryLoad = useCallback(() => {
+        // Retry used to bump a directory attempt that shared the open-reset
+        // effect, so a failed directory load cleared the wizard before reload.
+        setStep(minStep);
         setSearchQuery('');
         setAccountType('demo');
         setExistingLogin('');
@@ -358,6 +435,8 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
         setExistingServerSearch('');
         setExistingServerDropOpen(false);
         setExistingBroker(null);
+        existingLoginRef.current = '';
+        existingBrokerRef.current = null;
         setFormData(EMPTY_ACCOUNT_FORM);
         setTermsAccepted(false);
         setCreatedAccount(null);
@@ -366,55 +445,40 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
         setValidationError('');
         setDirectoryError('');
         const cached = getCachedBrokerDirectory();
-        const applyDirectory = (rows: BrokerDiscoveryItem[]) => {
-            const mapped = availableDirectoryBrokers(rows);
-            setBrokers(mapped);
-            setSelected(pickPreferredBrokerId(mapped, forceDemoCreation));
-        };
         applyDirectory(cached || []);
         setLoadingBrokers(cached === null);
-        loadAppBrokerDirectory({ forceRefresh: true, desktop: isDesktopBackendTarget() })
-            .then(rows => { if (active) applyDirectory(rows); })
-            .catch(err => {
-                console.warn('[OpenAccountDialog] Could not load brokers:', err);
-                if (active) setDirectoryError('Broker servers are unavailable. Please try again.');
-            })
-            .finally(() => { if (active) setLoadingBrokers(false); });
-
-        return () => {
-            active = false;
-        };
-    }, [isOpen, directoryAttempt, forceDemoCreation]);
+        requestSeqRef.current += 1;
+        startBrokerDirectoryRequest(requestSeqRef.current);
+    }, [applyDirectory, minStep, startBrokerDirectoryRequest]);
 
     useEffect(() => {
-        if (!isOpen) return;
+        mountedRef.current = true;
+        requestSeqRef.current += 1;
+        startBrokerDirectoryRequest(requestSeqRef.current);
+        return () => {
+            mountedRef.current = false;
+        };
+    }, [startBrokerDirectoryRequest]);
+
+    useEffect(() => {
         const trimmedLogin = existingLogin.trim();
         const targetBroker = existingBroker || brokers.find(b => String(b.id) === selected);
         if (!trimmedLogin || !targetBroker) return;
+        if (lookupCachedAccountPassword(trimmedLogin, targetBroker)) return;
+        const { brokerId, serverUrl } = resolveBrokerCredentialScope(targetBroker);
+        if (!brokerId || !serverUrl || !supportsSavedLogins()) return;
         let cancelled = false;
-        const normalizedBroker = normalizeBrokerInfoForTarget(targetBroker);
-        const brokerId = String(normalizedBroker.broker_id || targetBroker.broker_id || '').trim();
-        const serverUrl = resolveBrokerExtApiUrl({ ...targetBroker, ...normalizedBroker });
-        const cached = getCachedAccountSession({ brokerId, serverUrl, login: trimmedLogin });
-        if (cached?.password) {
-            setExistingPassword(current => current || cached.password!);
-            return;
-        }
-        if (brokerId && serverUrl && supportsSavedLogins()) {
-            void loadSavedLogin({ brokerId, serverUrl }, trimmedLogin)
-                .then(saved => {
-                    if (!cancelled && saved?.password) {
-                        setExistingPassword(current => current || saved.password);
-                    }
-                })
-                .catch(() => undefined);
-        }
+        void loadSavedLogin({ brokerId, serverUrl }, trimmedLogin)
+            .then(saved => {
+                if (!cancelled && saved?.password) {
+                    setExistingPassword(current => current || saved.password);
+                }
+            })
+            .catch(() => undefined);
         return () => {
             cancelled = true;
         };
-    }, [isOpen, existingLogin, existingBroker, brokers, selected]);
-
-    if (!isOpen) return null;
+    }, [existingLogin, existingBroker, brokers, selected]);
 
     const filteredBrokers = searchQuery.trim()
         ? brokers.filter(b =>
@@ -569,7 +633,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
             name: getAuthenticatedAccountName(data),
             server: submitBroker.broker_name || submitBroker.broker_id,
             ...(tradingAccountType ? { accountType: tradingAccountType, isLive: tradingAccountType === 'real' } : {}),
-            lastUsed: Date.now(),
+            lastUsed: readCurrentTimestampMs(),
         });
         localStorage.setItem('rtx_last_login', accountId);
         localStorage.setItem('rtx_saved_username', accountId);
@@ -680,7 +744,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                 serverUrl: createdServerUrl,
                 accountType: createdAccountType,
                 isLive: createdAccountType === 'real',
-                lastUsed: Date.now(),
+                lastUsed: readCurrentTimestampMs(),
             });
         }
         setStep(4);
@@ -698,6 +762,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
             if (suppressAccountCreation) {
                 setAccountType('existing');
                 setExistingBroker(selectedBroker);
+                prefillCachedPassword(existingLogin, selectedBroker);
             }
             setStep(1);
             return;
@@ -817,7 +882,7 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                         <button
                             type="button"
                             className="mt-3 rounded-md border border-[var(--border-primary)] px-4 py-2 text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]"
-                            onClick={() => setDirectoryAttempt(attempt => attempt + 1)}
+                            onClick={runBrokerDirectoryLoad}
                         >
                             {tr('Retry')}
                         </button>
@@ -835,7 +900,10 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                                 type="button"
                                 key={broker.id}
                                 aria-pressed={isSelected}
-                                onClick={() => setSelected(String(broker.id))}
+                                onClick={() => {
+                                    setSelected(String(broker.id));
+                                    prefillCachedPassword(existingLogin, existingBroker || broker);
+                                }}
                                 onDoubleClick={handleNext}
                                 data-selected={isSelected}
                                 className="rtx-open-account-dialog__broker rtx-open-account-dialog__broker-row"
@@ -928,7 +996,19 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                 )}</>}
                 <label className="rtx-open-account-dialog__option group" data-selected={effectiveAccountType === 'existing'}>
                     <div className="rtx-open-account-dialog__option-radio">
-                        <input aria-label={tr("Existing account")} type="radio" checked={effectiveAccountType === 'existing'} onChange={() => { setAccountType('existing'); setExistingBroker(selectedBroker || null); setValidationError(''); }} className="w-4 h-4 accent-indigo-500" />
+                        <input
+                            aria-label={tr("Existing account")}
+                            type="radio"
+                            checked={effectiveAccountType === 'existing'}
+                            onChange={() => {
+                                const nextBroker = selectedBroker || null;
+                                setAccountType('existing');
+                                setExistingBroker(nextBroker);
+                                setValidationError('');
+                                prefillCachedPassword(existingLogin, nextBroker || undefined);
+                            }}
+                            className="w-4 h-4 accent-indigo-500"
+                        />
                     </div>
                     <div className="rtx-open-account-dialog__option-copy">
                         <div className="rtx-open-account-dialog__option-title">{tr("Connect with an existing trade account")}</div>
@@ -943,7 +1023,11 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                                         enterKeyHint="next"
                                         type="text"
                                         value={existingLogin}
-                                        onChange={e => setExistingLogin(e.target.value)}
+                                        onChange={e => {
+                                            const nextLogin = e.target.value;
+                                            setExistingLogin(nextLogin);
+                                            prefillCachedPassword(nextLogin, existingBroker || selectedBroker);
+                                        }}
                                         onKeyDown={e => {
                                             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                                                 e.preventDefault();
@@ -1045,7 +1129,12 @@ const DesktopOpenAccountDialog: React.FC<Props> = ({ isOpen, onClose, forceDemoC
                                                         <button
                                                             key={b.id}
                                                             type="button"
-                                                            onClick={() => { setExistingBroker(b); setExistingServerDropOpen(false); setExistingServerSearch(''); }}
+                                                            onClick={() => {
+                                                                setExistingBroker(b);
+                                                                setExistingServerDropOpen(false);
+                                                                setExistingServerSearch('');
+                                                                prefillCachedPassword(existingLogin, b);
+                                                            }}
                                                             data-selected={existingBroker?.id === b.id}
                                                             className={`rtx-open-account-dialog__broker flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-zinc-700/60 ${existingBroker?.id === b.id ? 'bg-zinc-700/40 font-semibold text-white' : 'font-normal text-zinc-300'}`}
                                                         >

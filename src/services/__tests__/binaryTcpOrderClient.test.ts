@@ -38,6 +38,10 @@ vi.mock('../brokerSession', () => ({
   onSessionChange: () => () => {},
 }));
 
+type RuntimeConfigGlobal = typeof globalThis & {
+  __RTX5_RUNTIME_CONFIG__?: Record<string, unknown>;
+};
+
 function buildMockBinaryOrderRespBuffer(overrides?: {
   action?: number;
   status?: number;
@@ -76,12 +80,12 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
     vi.useRealTimers();
     globalThis.WebSocket = originalWebSocket;
     globalThis.fetch = originalFetch;
-    delete (globalThis as any).__RTX5_RUNTIME_CONFIG__;
+    delete (globalThis as RuntimeConfigGlobal).__RTX5_RUNTIME_CONFIG__;
   });
 
   it('switches immediately (0ms) to fixed-host WS endpoint when fast-port WS closes', () => {
     const createdUrls: string[] = [];
-    const sockets: any[] = [];
+    const sockets: MockWebSocket[] = [];
 
     class MockWebSocket {
       static readonly CONNECTING = 0;
@@ -93,7 +97,7 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
       readyState = MockWebSocket.CONNECTING;
       binaryType = 'blob';
       onopen: (() => void) | null = null;
-      onmessage: ((ev: any) => void) | null = null;
+      onmessage: ((ev: { data: ArrayBuffer }) => void) | null = null;
       onerror: (() => void) | null = null;
       onclose: (() => void) | null = null;
 
@@ -109,8 +113,8 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
       });
     }
 
-    globalThis.WebSocket = MockWebSocket as any;
-    (globalThis as any).__RTX5_RUNTIME_CONFIG__ = {
+    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    (globalThis as RuntimeConfigGlobal).__RTX5_RUNTIME_CONFIG__ = {
       BINARY_ORDER_WS_URL: 'ws://127.0.0.1:18404/__rtx5_binary_order_ws',
     };
 
@@ -135,16 +139,16 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
       readyState = 3;
       binaryType = 'arraybuffer';
       onopen: (() => void) | null = null;
-      onmessage: ((ev: any) => void) | null = null;
+      onmessage: ((ev: { data: ArrayBuffer }) => void) | null = null;
       onerror: (() => void) | null = null;
       onclose: (() => void) | null = null;
       constructor(public url: string) {}
       send = vi.fn();
       close = vi.fn();
     }
-    globalThis.WebSocket = ClosedWebSocket as any;
+    globalThis.WebSocket = ClosedWebSocket as unknown as typeof WebSocket;
 
-    (globalThis as any).__RTX5_RUNTIME_CONFIG__ = {
+    (globalThis as RuntimeConfigGlobal).__RTX5_RUNTIME_CONFIG__ = {
       BINARY_ORDER_URL: 'http://127.0.0.1:18404/__rtx5_binary_order',
       BINARY_ORDER_WS_URL: 'ws://127.0.0.1:18404/__rtx5_binary_order_ws',
     };
@@ -160,7 +164,7 @@ describe('binaryTcpOrderClient fast-endpoint fallback & HTTP retry', () => {
         status: 200,
         headers: { 'Content-Type': 'application/octet-stream' },
       });
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const result = await sendBinaryTcpOrder({
       action: BINARY_ORDER_ACTION_PLACE_MARKET,
@@ -469,7 +473,7 @@ describe('binaryTcpOrderClient AUTH_TOKEN_REQUIRED retry settles and releases th
     readyState = 1;
     binaryType = 'blob';
     onopen: (() => void) | null = null;
-    onmessage: ((ev: any) => void) | null = null;
+    onmessage: ((ev: { data: ArrayBuffer }) => void) | null = null;
     onerror: (() => void) | null = null;
     onclose: (() => void) | null = null;
     send = vi.fn();
@@ -500,7 +504,7 @@ describe('binaryTcpOrderClient AUTH_TOKEN_REQUIRED retry settles and releases th
       side: 'BUY',
       volume: 0.1,
       ...extra,
-    }).then(() => null, (err: any) => err);
+    }).then(() => null, (err: unknown) => err as { code?: string } | null);
     expect(getActiveBinaryTcpOrderCount()).toBe(1);
     const firstFrame = socket.send.mock.calls[0][0] as Uint8Array;
     const firstReqId = new DataView(firstFrame.buffer, firstFrame.byteOffset).getUint32(0, true);
@@ -518,8 +522,8 @@ describe('binaryTcpOrderClient AUTH_TOKEN_REQUIRED retry settles and releases th
     __resetBinaryOrderWsForTests();
     RetryMockWebSocket.instances = [];
     vi.useFakeTimers();
-    globalThis.WebSocket = RetryMockWebSocket as any;
-    (globalThis as any).__RTX5_RUNTIME_CONFIG__ = {
+    globalThis.WebSocket = RetryMockWebSocket as unknown as typeof WebSocket;
+    (globalThis as RuntimeConfigGlobal).__RTX5_RUNTIME_CONFIG__ = {
       BINARY_ORDER_WS_URL: 'ws://127.0.0.1:18404/__rtx5_binary_order_ws',
     };
   });
@@ -528,7 +532,7 @@ describe('binaryTcpOrderClient AUTH_TOKEN_REQUIRED retry settles and releases th
     __resetBinaryOrderWsForTests();
     vi.useRealTimers();
     globalThis.WebSocket = originalWebSocket;
-    delete (globalThis as any).__RTX5_RUNTIME_CONFIG__;
+    delete (globalThis as RuntimeConfigGlobal).__RTX5_RUNTIME_CONFIG__;
   });
 
   it('times out by the CURRENT request id, rejects, and frees the slot when the retry reply is lost', async () => {

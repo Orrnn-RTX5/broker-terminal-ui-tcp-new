@@ -130,7 +130,7 @@ export const useMarketWatchPanelModel = ({
   const liveTickCount = useAppStore(selectTickCount);
   const sortsDailyValues = sortMode === 'gainers' || sortMode === 'losers' || sortMode === 'change-asc' || sortMode === 'change-desc';
   const liveDisplayMetadataRevision = useMarketWatchDisplayMetadataRevision(sortsDailyValues);
-  const selectProtectedTradeSymbols = useMemo(createProtectedTradeSymbolSelector, []);
+  const selectProtectedTradeSymbols = useMemo(() => createProtectedTradeSymbolSelector(), []);
   const protectedTradeSymbols = useAppStore(selectProtectedTradeSymbols);
   const dockLayout = useDockLayoutStore((state) => state.layout);
   const accountUniverseActive = isAccountSymbolUniverseActive(isAuthenticated, accountCatalogStatus);

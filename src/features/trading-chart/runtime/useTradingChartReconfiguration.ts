@@ -12,7 +12,6 @@ import { getAnnotationTool } from '../../../drawing-tools/annotationToolCatalog'
 import { usesDirectDrawingPointerInput } from '../../../drawing-tools/drawingInteractionPriority';
 import { projectDrawingTimeAtLogical } from '../../../drawing-tools/geometry/drawingTimeProjection';
 import {
-  candleAggregationService,
   getTimeframeSeconds,
   type Timeframe as AggTimeframe,
 } from '../../../services/candleAggregationService';
@@ -120,7 +119,7 @@ interface UseTradingChartReconfigurationOptions {
 export const useTradingChartReconfiguration = (options: UseTradingChartReconfigurationOptions): void => {
   const {
     activeChartSourceId, activeToolRef, applyChartTypeInPlace, askPriceLineRef,
-    bindDrawingManagerToChart, brokerTimeOffsetSecRef, cancelQueuedChartRender, candlesRef,
+    bindDrawingManagerToChart, cancelQueuedChartRender, candlesRef,
     chartInteractionOwnershipRef, chartRef, chartSettingsRef, chartThemeRef, chartType,
     clearLocalChartPointerStateRef, clearPeriodSeparators, containerRef, createPriceSeries,
     currentCandleRef, drawingCommandTargetRef, drawingRuntimeContextRef,

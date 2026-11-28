@@ -76,7 +76,7 @@ export function useCommandBus() {
    */
   const subscribe = useCallback(
     (handler: (cmd: Command) => void): Unsubscribe => {
-      return commandBus.subscribe('*' as CommandType, handler as any);
+      return commandBus.subscribe('*' as CommandType, handler as unknown as CommandHandler);
     },
     []
   );
@@ -152,7 +152,7 @@ export function useCommandHistory() {
       const toReplay = commands || getHistory();
       return commandBus.replay(toReplay);
     },
-    []
+    [getHistory]
   );
 
   return {

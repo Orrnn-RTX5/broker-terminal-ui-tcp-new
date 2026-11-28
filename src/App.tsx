@@ -10,7 +10,7 @@ import { getBackendTarget, getRuntimeBrokerConfiguration } from './config/backen
 import { ChartSymbolDropdown } from './components/ChartSymbolDropdown';
 import { translateUi } from './hooks/useUiTranslation';
 import { feedbackLabel, feedbackValue, feedbackSymbol, type UiMessage } from './utils/uiFeedback';
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { WelcomeTerminal } from './startup/WelcomeTerminalEntry';
 import {
@@ -60,7 +60,9 @@ import {
   shouldMountChartRuntime,
 } from './utils/chartSelectionReadiness';
 export {
+  // eslint-disable-next-line react-refresh/only-export-components -- keep existing App re-export intact for callers
   normalizeRealtimeTick,
+  // eslint-disable-next-line react-refresh/only-export-components -- keep existing App re-export intact for callers
   parseTickPayloads,
 } from './features/trading/runtime/marketTickNormalization';
 import {
@@ -293,7 +295,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [, setAccount] = useState<Account | null>(null);
   const [, setOrders] = useState<unknown[]>([]);
-  const [, setLedger] = useState<any[]>([]);
+  const [, setLedger] = useState<unknown[]>([]);
   const [volume, setVolume] = useState(0.01);
   const [chartType, setChartType] = useState<ChartType>(() => {
     const saved = localStorage.getItem('rtx5_chart_type');
@@ -345,6 +347,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
 
   useEffect(() => {
     didApplyLiveChartPreferenceRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets chart readiness latches when auth or accountId changes before downstream readiness effects settle
     setHasAppliedLiveChartPreference(false);
     setCommittedChartSelectionKey('');
   }, [accountId, isAuthenticated]);
@@ -667,6 +670,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     sharedTradeLinkAppliedRef.current = true;
     const validTimeframes: Timeframe[] = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', 'MN'];
     if ((validTimeframes as string[]).includes(sharedTrade.timeframe)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- applies one-time #share= deep-link timeframe once account symbols and layout restore settle
       commitSelectedTimeframe(sharedTrade.timeframe);
     }
     handleSymbolSelect(sharedTrade.symbol);
@@ -717,14 +721,15 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
 
   // Bridge command bus SET_CHART_TYPE / SET_TIMEFRAME to React state
   useEffect(() => {
-    const unsub1 = commandBus.subscribe('SET_CHART_TYPE' as any, (payload: any) => {
-      const ct = payload?.chartType;
+    const unsub1 = commandBus.subscribe('SET_CHART_TYPE', (payload) => {
+      const chartPayload = payload as (typeof payload & { symbol?: string }) | undefined;
+      const ct = chartPayload?.chartType;
       if (ct && ['candlestick', 'bar', 'line', 'area'].includes(ct)) {
         const runtimeChartType = ct as ChartType;
         const activeTarget = getActiveChartCommandTarget();
-        const targetContextId = payload?.targetContextId ?? activeTarget.targetContextId;
+        const targetContextId = chartPayload?.targetContextId ?? activeTarget.targetContextId;
         const targetPanelId = getPanelIdFromChartContextId(targetContextId);
-        const targetSymbol = payload?.symbol ?? activeTarget.symbol;
+        const targetSymbol = chartPayload?.symbol ?? activeTarget.symbol;
 
         console.log('[App] Command bus SET_CHART_TYPE ->', runtimeChartType, targetContextId ?? 'global');
         if (targetPanelId) {
@@ -743,7 +748,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         }
       }
     });
-    const unsub2 = commandBus.subscribe('SET_TIMEFRAME' as any, (payload: any) => {
+    const unsub2 = commandBus.subscribe('SET_TIMEFRAME', (payload) => {
       if (!applyChartTimeframeCommand(payload, commitSelectedTimeframe)) return;
       const nextTimeframe = normalizePersistedTimeframe(payload?.timeframe);
       if (!nextTimeframe) return;
@@ -827,6 +832,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const reconnectCallbackRef = useRef<(() => void) | null>(null);
 
   // Notifications
+  // eslint-disable-next-line react-hooks/refs -- passes legacy WebSocket ref snapshot to notifications hook without changing prop contract
   const { activeToasts } = useNotifications({ wsConnection: wsRef.current });
   // PERFORMANCE FIX: Removed global ticks subscription to prevent root re-renders
   // Access ticks via useAppStore.getState().ticks inside event handlers instead.
@@ -895,6 +901,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
           title: `${persistedSymbol},${restoredTimeframe}`,
           props: { symbol: persistedSymbol, timeframe: restoredTimeframe },
         });
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs React symbol/timeframe state with restored dock layout on auth/account boot
         setSelectedSymbol(persistedSymbol);
       } else {
         if (restoredTimeframe !== DEFAULT_CHART_TIMEFRAME) {
@@ -1060,7 +1067,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         refreshHistoryAfterFill(loginId);
       }
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to close position:', err);
       const sessionCurrent = isCurrentCloseSession();
       if (sessionCurrent) {
@@ -1183,17 +1190,19 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   };
 
   const chartPositionActionHandlerRef = useRef<(detail: ChartPositionActionDetail) => void>(() => { });
-  chartPositionActionHandlerRef.current = (detail) => {
-    const ticket = Number(detail?.ticket);
-    if (!Number.isFinite(ticket) || ticket <= 0) return;
-    if (detail.action === 'close') {
-      void handleClosePosition(ticket);
-    } else if (detail.action === 'reverse') {
-      void handleReversePosition(ticket);
-    } else if (detail.action === 'double') {
-      void handleDoublePosition(ticket);
-    }
-  };
+  useLayoutEffect(() => {
+    chartPositionActionHandlerRef.current = (detail) => {
+      const ticket = Number(detail?.ticket);
+      if (!Number.isFinite(ticket) || ticket <= 0) return;
+      if (detail.action === 'close') {
+        void handleClosePosition(ticket);
+      } else if (detail.action === 'reverse') {
+        void handleReversePosition(ticket);
+      } else if (detail.action === 'double') {
+        void handleDoublePosition(ticket);
+      }
+    };
+  });
 
   useEffect(() => {
     const handleChartPositionAction = (event: Event) => {
@@ -1219,11 +1228,14 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
 
     if (isBinaryTcpOrderEnabled()) {
       const numericTicket = Number.parseInt(String(orderId), 10);
-      setOrders((prev) => prev.filter((o: any) => Number(o?.ticket ?? o?.id) !== numericTicket && String(o?.id ?? '') !== String(orderId)));
+      type PendingOrderRecord = { id?: unknown; ticket?: unknown };
+      const isDifferentOrder = (o: unknown): boolean => {
+        const record = o as PendingOrderRecord | null | undefined;
+        return Number(record?.ticket ?? record?.id) !== numericTicket && String(record?.id ?? '') !== String(orderId);
+      };
+      setOrders((prev) => prev.filter(isDifferentOrder));
       const store = useAppStore.getState();
-      store.setOrders(
-        (store.orders || []).filter((o: any) => Number(o?.ticket ?? o?.id) !== numericTicket && String(o?.id ?? '') !== String(orderId)) as any,
-      );
+      store.setOrders((store.orders || []).filter(isDifferentOrder));
       scheduleIdlePostTradeSync(loginId, true);
       return;
     }
@@ -1234,6 +1246,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     if (!isAuthenticatedRef.current || getLiveTradingLogin() !== loginId || ordersPayload === null) return;
 
     setOrders(ordersPayload);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pinned verbatim by App.bulkCancelPending.contract.test.ts
     useAppStore.getState().setOrders(ordersPayload as any);
   };
 
@@ -1280,6 +1293,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     if (loginId) {
       const ordersPayload = await api.orders.getPendingOrders(loginId).catch(() => null);
       if (ordersPayload !== null && isAuthenticatedRef.current && getLiveTradingLogin() === loginId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pinned verbatim by App.bulkCancelPending.contract.test.ts
         useAppStore.getState().setOrders(ordersPayload as any);
       }
     }
@@ -1305,8 +1319,9 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
 
     try {
       const updated = await api.positions.modifyPosition(id, sl, tp, { intentAtMs });
-      const nextSl = Number.isFinite(Number((updated as any)?.sl)) ? Number((updated as any).sl) : sl;
-      const nextTp = Number.isFinite(Number((updated as any)?.tp)) ? Number((updated as any).tp) : tp;
+      const updatedProtection = updated as (typeof updated & { sl?: unknown; tp?: unknown }) | null | undefined;
+      const nextSl = Number.isFinite(Number(updatedProtection?.sl)) ? Number(updatedProtection?.sl) : sl;
+      const nextTp = Number.isFinite(Number(updatedProtection?.tp)) ? Number(updatedProtection?.tp) : tp;
       const store = useAppStore.getState();
       store.setPositions(
         store.positions.map((candidate) => (
@@ -1328,7 +1343,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         // Refresh positions so chart draws the new SL/TP lines
         postTradeRefresh.refreshPositions(loginId || undefined);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to modify position:', err);
       // Already closed on the broker (SL/TP/stop-out or a close elsewhere): one
       // refresh and a plain message, never the raw refusal code.
@@ -1487,7 +1502,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
         localCandidates,
         loadAuthoritativeCandidates: async () => selectMatchingCandidates(normalizePositions(await tradingV2Api
           .getPositions(accId, { limit: 500, offset: 0 })
-          .catch(() => api.positions.getPositions(accId) as any))),
+          .catch<unknown>(() => api.positions.getPositions(accId)))),
         closePosition: (ticketId) => api.positions.closePosition(String(ticketId), { account_login: accId }),
         tryClaimTicket: (ticketId) => {
           const ticketKey = createSessionScopedTicketKey(closeSessionScope, ticketId);
@@ -1754,6 +1769,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     }
     if (!marketInstrumentsSnapshot.authorizationSettled || allowedSymbolNames.length === 0) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles selectedSymbol to an authorized account symbol once account catalog settles
     setSelectedSymbol((previous) => {
       const savedRaw = readPersistedSelectedSymbol();
       const saved = resolveAuthorizedChartSymbol(savedRaw, chartEligibleSymbolNames)
@@ -1823,6 +1839,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
       || isChartCatalogAuthoritative
       || chartEligibleSymbolSet.has(normalizedCurrentSymbol);
     if (fallbackSymbol && fallbackSymbol !== normalizedCurrentSymbol && canApplyFallbackSelection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- aligns selectedSymbol to reconciled chart fallback symbol once catalog/feed settles
       setSelectedSymbol(fallbackSymbol);
     }
     if (!fallbackSymbol) return;
@@ -1914,6 +1931,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
     if (useDockLayoutStore.getState().layout !== dockLayout) return;
     const renderedChartSymbol = normalizeSymbolName(chartSelectionReadiness.renderedChartSymbol);
     if (!renderedChartSymbol || renderedChartSymbol === normalizeSymbolName(selectedSymbol)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps global selectedSymbol aligned with restored active dock chart tab
     setSelectedSymbol(renderedChartSymbol);
   }, [chartSelectionReadiness.renderedChartSymbol, dockLayout, selectedSymbol]);
   useEffect(() => subscribeActiveChartSource(() => {
@@ -2033,13 +2051,24 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
   const [showSaveWorkspaceDialog, setShowSaveWorkspaceDialog] = useState(false);
   const [chartSymbolPicker, setChartSymbolPicker] = useState<ChartSymbolPickerState | null>(null);
   useEffect(() => {
-    if (chartSymbolPicker && !hasArrangedChartWindows(dockLayout)) setChartSymbolPicker(null);
+    if (chartSymbolPicker && !hasArrangedChartWindows(dockLayout)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- closes chart symbol picker permanently when arranged chart windows disappear
+      setChartSymbolPicker(null);
+    }
   }, [chartSymbolPicker, dockLayout]);
   const chartPickerInstruments = useMemo(() => chartEligibleSymbolNames.map(symbol => (
-    allSymbols.find(instrument => normalizeSymbolName(typeof instrument === 'object' && instrument ? (instrument as any).symbol ?? (instrument as any).name : instrument) === symbol)
+    allSymbols.find((instrument) => {
+      const candidate = instrument as { symbol?: unknown; name?: unknown } | string | null | undefined;
+      return normalizeSymbolName(
+        typeof candidate === 'object' && candidate ? candidate.symbol ?? candidate.name : candidate,
+      ) === symbol;
+    })
       ?? { symbol }
   )), [allSymbols, chartEligibleSymbolNames]);
-  useEffect(() => { setChartSymbolPicker(null); }, [isAuthenticated, accountId]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closes chart symbol picker on auth or account changes
+    setChartSymbolPicker(null);
+  }, [isAuthenticated, accountId]);
   // Concurrent feedback toasts stack vertically at the bottom-left of the chart.
   // Each message gets a fresh id so it owns its own lifetime timer.
   const [feedbackToasts, setFeedbackToasts] = useState<Array<{
@@ -2402,6 +2431,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
                 <Suspense fallback={null}>
                   <LazyAccountPanel
                     onClose={() => setShowAccountPanel(false)}
+                    // eslint-disable-next-line react-hooks/refs -- passes legacy WebSocket ref snapshot to AccountPanel without changing prop contract
                     wsConnection={wsRef.current}
                   />
                 </Suspense>
@@ -2413,6 +2443,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
           {/* FIX: Status chrome must identify the chart the user can actually see. */}
           <StatusBar
             wsRef={wsRef}
+            // eslint-disable-next-line react-hooks/refs -- passes latest committed reconnect callback ref to StatusBar without extra renders
             reconnectCallback={reconnectCallbackRef.current || undefined}
             symbol={desktopToolbarSymbol}
             timeframe={timeframe}
@@ -2423,6 +2454,7 @@ function App({ initialSessionHandoff = null, onSessionEnded }: AppProps = {}) {
           <UpdateBanner />
 
           {/* Headless Components */}
+          {/* eslint-disable-next-line react-hooks/refs -- passes legacy WebSocket ref snapshot to AlertsContainer without changing prop contract */}
           <AlertsContainer wsConnection={wsRef.current} />
 
           {/* Order Panel Dialog (F9) */}

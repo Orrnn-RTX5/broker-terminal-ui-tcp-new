@@ -4,17 +4,18 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BottomDock } from './BottomDock';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type Account } from '../store/useAppStore';
+import type { ToolboxTradePosition } from '../hooks/useToolboxTradeData';
 
 const trade = vi.hoisted(() => ({
-  account: null as any,
-  positions: [] as any[],
+  account: null as unknown as Partial<Account>,
+  positions: [] as Array<Partial<ToolboxTradePosition>>,
   refresh: vi.fn(),
 }));
 
 vi.mock('../hooks/useToolboxTradeData', () => ({
   useToolboxTradeData: () => ({
-    account: trade.account, positions: trade.positions, pendingPositions: [],
+    account: trade.account as Account | null, positions: trade.positions, pendingPositions: [],
     loading: false, error: null, login: 1, restBaseUrl: '', wsUrl: '',
     wsState: 'connected', lastRestAt: null, lastWsAt: null, debug: [],
     refresh: trade.refresh, removePosition: vi.fn(), removePositionsByMode: vi.fn(),

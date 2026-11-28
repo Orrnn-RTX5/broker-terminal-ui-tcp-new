@@ -165,7 +165,7 @@ export const MenuBar = ({
     const menuPopupRef = useRef<HTMLDivElement>(null);
     const desktopMenuButtonRef = useRef<HTMLButtonElement>(null);
     const desktopMenuButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-    const [menuPosition, setMenuPosition] = useState({ top: 40, left: 4 });
+    const [menuPosition, setMenuPosition] = useState({ top: 40, left: 4, inRail: false });
     const [revealedSubmenuPath, setRevealedSubmenuPath] = useState<string[] | undefined>(undefined);
     const hoverCloseTimerRef = useRef<number | null>(null);
     const isClickPinnedRef = useRef(false);
@@ -193,6 +193,7 @@ export const MenuBar = ({
         }
     }, []);
 
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- setIsMenuOpen, setActiveMenu, and setRevealedSubmenuPath are stable React useState dispatchers
     const closeMenu = useCallback(() => {
         cancelHoverClose();
         isClickPinnedRef.current = false;
@@ -201,6 +202,34 @@ export const MenuBar = ({
         setActiveMenu(null);
         setRevealedSubmenuPath(undefined);
     }, [cancelHoverClose]);
+
+    const handleLauncherItemHover = (item: ApplicationLauncherItem, hasSubmenu: boolean) => {
+        cancelHoverClose();
+        if (item.disabled) return;
+        if (hasSubmenu) {
+            if (activeMenu !== item.id) hoverOpenedSubmenuRef.current = item.id;
+            setActiveMenu(item.id);
+        } else {
+            hoverOpenedSubmenuRef.current = null;
+            setActiveMenu(null);
+        }
+    };
+
+    const handleLauncherItemClick = (item: ApplicationLauncherItem, hasSubmenu: boolean) => {
+        if (item.disabled) return;
+        cancelHoverClose();
+        if (hasSubmenu) {
+            isClickPinnedRef.current = true;
+            if (activeMenu === item.id && hoverOpenedSubmenuRef.current !== item.id) {
+                setActiveMenu(null);
+            } else {
+                hoverOpenedSubmenuRef.current = null;
+                setActiveMenu(item.id);
+            }
+            return;
+        }
+        item.action?.();
+    };
 
     const scheduleHoverClose = useCallback(() => {
         if (isFileDialogOpen || isClickPinnedRef.current) return;
@@ -338,12 +367,14 @@ export const MenuBar = ({
                 setMenuPosition({
                     top: Math.max(4, Math.min(rect.top, maxTop)),
                     left: Math.max(4, Math.min(rect.right + 4, window.innerWidth - 264)),
+                    inRail: true,
                 });
                 return;
             }
             setMenuPosition({
                 top: Math.min(rect.bottom + 2, maxTop),
                 left: Math.max(4, Math.min(rect.left, window.innerWidth - 264)),
+                inRail: false,
             });
         };
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -519,78 +550,148 @@ export const MenuBar = ({
         },
     }));
 
+    const viewThemeMenuItem: MenuItem = {
+        label: 'Theme',
+        icon: <Icon name="palette" size="sm" />,
+        children: [
+            {
+                label: 'Dark Theme',
+                checked: !advancedViewEnabled,
+                checkRole: 'radio',
+                action: () => {
+                    useThemeAppearanceStore.getState().setDarkPreset('default-dark', true);
+                    onSetAdvancedViewEnabled?.(false);
+                },
+            },
+            {
+                label: 'Light Theme',
+                checked: advancedViewEnabled,
+                checkRole: 'radio',
+                action: () => {
+                    useThemeAppearanceStore.getState().setLightPreset('default-light', true);
+                    onSetAdvancedViewEnabled?.(true);
+                },
+            },
+            { divider: true, label: '' },
+            {
+                label: 'Light Theme Presets',
+                icon: <Icon name="palette" size="sm" />,
+                children: lightThemePresetMenuItems,
+            },
+            {
+                label: 'Dark Theme Presets',
+                icon: <Icon name="palette" size="sm" />,
+                children: darkThemePresetMenuItems,
+            },
+            { divider: true, label: '' },
+            {
+                label: 'Appearance & Themes...',
+                icon: <Icon name="settings" size="sm" />,
+                action: () => {
+                    closeMenu();
+                    setIsThemeSettingsOpen(true);
+                },
+            },
+        ],
+    };
+
+    const viewMiddleMenuItems: MenuItem[] = [
+        { divider: true, label: '' },
+        { label: t('menu.view.languages'), icon: <Icon name="globe" size="sm" />, children: languageList, scrollableChildren: true },
+
+        { divider: true, label: '' },
+        {
+            label: t('menu.view.toolbars'),
+            icon: <Icon name="sliders-horizontal" size="sm" />,
+            children: [
+                { label: 'Standard', icon: <Icon name="box" size="xs" /> },
+                { label: 'Line Studies', checked: drawingSidebarVisible, checkRole: 'checkbox', action: () => useDrawingSidebarStore.getState().toggle() },
+                { label: 'Timeframes', checked: timeframesVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleTimeframes() },
+            ],
+        },
+        { label: t('menu.view.statusBar'), icon: <Icon name="layout" size="sm" />, checked: statusBarVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleStatusBar() },
+        { label: t('menu.view.chartsBar'), icon: <Icon name="layers" size="sm" />, checked: chartsBarVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleChartsBar() },
+        { divider: true, label: '' },
+        { label: 'Search Symbols', shortcut: getTerminalShortcutHint('view.symbols'), icon: <Icon name="search" size="sm" />, action: () => { setIsSymbolsOpen(true); setActiveMenu(null); } },
+        { label: t('menu.view.depthOfMarket'), icon: <Icon name="box" size="sm" />, ...terminalShortcut('view.depth-of-market') },
+        { label: t('menu.view.marketWatch'), icon: <Icon name="monitor" size="sm" />, ...terminalShortcut('view.market-watch') },
+        { label: t('menu.view.dataWindow'), icon: <Icon name="data-window" size="sm" />, ...terminalShortcut('view.data-window') },
+        { label: t('menu.view.navigator'), icon: <Icon name="compass" size="sm" />, ...terminalShortcut('view.navigator') },
+        { label: t('menu.view.toolbox'), icon: <Icon name="terminal" size="sm" />, ...terminalShortcut('view.terminal') },
+        { label: t('menu.view.strategyTester'), icon: <Icon name="strategy-tester" size="sm" />, ...lockedTerminalTool('strategyTester') },
+    ];
+
+    const viewTrailingMenuItems: MenuItem[] = [
+        { divider: true, label: '' },
+        { label: t('menu.view.fullScreen'), icon: <Icon name="layout-template" size="sm" />, action: () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => { }); } else { document.exitFullscreen().catch(() => { }); } setActiveMenu(null); } },
+    ];
+
+    const toolsNewOrderItem: MenuItem = {
+        label: t('menu.tools.newOrder'),
+        icon: <Icon name="plus" size="sm" className="text-emerald-500" />,
+        ...terminalShortcut('tools.new-order'),
+    };
+
+    const toolsRemainingItems: MenuItem[] = [
+        { divider: true, label: '' },
+
+        // Development & Automation (RTX5 Rebranded)
+        {
+            label: t('menu.tools.strategyTester'),
+            icon: <Icon name="activity" size="sm" />,
+            ...lockedTerminalTool('strategyTester'),
+        },
+        {
+            label: t('menu.tools.scriptEditor'),
+            icon: <Icon name="credit-card" size="sm" />,
+            ...lockedTerminalTool('scriptEditor'),
+        },
+        {
+            label: t('menu.tools.agentsManager'),
+            icon: <Icon name="cpu" size="sm" />,
+            ...lockedTerminalTool('agentsManager'),
+        },
+        { divider: true, label: '' },
+
+        // System & Monitoring
+        {
+            label: t('menu.tools.taskManager'),
+            icon: <Icon name="server" size="sm" />,
+            ...lockedTerminalTool('taskManager'),
+        },
+        {
+            label: t('menu.tools.globalVariables'),
+            icon: <Icon name="globe" size="sm" />,
+            ...lockedTerminalTool('globalVariables'),
+        },
+        { divider: true, label: '' },
+
+        // RTX5 Services
+        { label: t('menu.tools.marketplace'), icon: <Icon name="box" size="sm" />, ...lockedTerminalTool('marketplace') },
+        { label: t('menu.tools.signalsHub'), icon: <Icon name="activity" size="sm" />, ...lockedTerminalTool('signalsHub') },
+        { label: t('menu.tools.cloudHosting'), icon: <Icon name="shield" size="sm" />, ...lockedTerminalTool('cloudHosting') },
+        { divider: true, label: '' },
+
+        // Settings
+        {
+            label: 'Access Server...',
+            translateLabel: false,
+            // Alt+Shift+T belongs to trading.toggle-one-click; do not advertise it here.
+            icon: <Icon name="server" size="sm" className="text-emerald-400" />,
+            action: () => {
+                closeMenu();
+                (window as unknown as { rtx5OpenTcpEndpointDialog?: () => void }).rtx5OpenTcpEndpointDialog?.();
+            },
+        },
+        { label: t('menu.tools.options'), icon: <Icon name="settings" size="sm" />, ...terminalShortcut('tools.options') },
+    ];
+
     const menuItems: { [key: string]: MenuItem[] } = {
         File: [], // FileMenu owns file actions in both terminal shells.
         View: [
-            {
-                label: 'Theme',
-                icon: <Icon name="palette" size="sm" />,
-                children: [
-                    {
-                        label: 'Dark Theme',
-                        checked: !advancedViewEnabled,
-                        checkRole: 'radio',
-                        action: () => {
-                            useThemeAppearanceStore.getState().setDarkPreset('default-dark', true);
-                            onSetAdvancedViewEnabled?.(false);
-                        },
-                    },
-                    {
-                        label: 'Light Theme',
-                        checked: advancedViewEnabled,
-                        checkRole: 'radio',
-                        action: () => {
-                            useThemeAppearanceStore.getState().setLightPreset('default-light', true);
-                            onSetAdvancedViewEnabled?.(true);
-                        },
-                    },
-                    { divider: true, label: '' },
-                    {
-                        label: 'Light Theme Presets',
-                        icon: <Icon name="palette" size="sm" />,
-                        children: lightThemePresetMenuItems,
-                    },
-                    {
-                        label: 'Dark Theme Presets',
-                        icon: <Icon name="palette" size="sm" />,
-                        children: darkThemePresetMenuItems,
-                    },
-                    { divider: true, label: '' },
-                    {
-                        label: 'Appearance & Themes...',
-                        icon: <Icon name="settings" size="sm" />,
-                        action: () => {
-                            closeMenu();
-                            setIsThemeSettingsOpen(true);
-                        },
-                    },
-                ],
-            },
-            { divider: true, label: '' },
-            { label: t('menu.view.languages'), icon: <Icon name="globe" size="sm" />, children: languageList, scrollableChildren: true },
-
-            { divider: true, label: '' },
-            {
-                label: t('menu.view.toolbars'),
-                icon: <Icon name="sliders-horizontal" size="sm" />,
-                children: [
-                    { label: 'Standard', icon: <Icon name="box" size="xs" /> },
-                    { label: 'Line Studies', checked: drawingSidebarVisible, checkRole: 'checkbox', action: () => useDrawingSidebarStore.getState().toggle() },
-                    { label: 'Timeframes', checked: timeframesVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleTimeframes() },
-                ],
-            },
-            { label: t('menu.view.statusBar'), icon: <Icon name="layout" size="sm" />, checked: statusBarVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleStatusBar() },
-            { label: t('menu.view.chartsBar'), icon: <Icon name="layers" size="sm" />, checked: chartsBarVisible, checkRole: 'checkbox', action: () => useTerminalBarsStore.getState().toggleChartsBar() },
-            { divider: true, label: '' },
-            { label: 'Search Symbols', shortcut: getTerminalShortcutHint('view.symbols'), icon: <Icon name="search" size="sm" />, action: () => { setIsSymbolsOpen(true); setActiveMenu(null); } },
-            { label: t('menu.view.depthOfMarket'), icon: <Icon name="box" size="sm" />, ...terminalShortcut('view.depth-of-market') },
-            { label: t('menu.view.marketWatch'), icon: <Icon name="monitor" size="sm" />, ...terminalShortcut('view.market-watch') },
-            { label: t('menu.view.dataWindow'), icon: <Icon name="data-window" size="sm" />, ...terminalShortcut('view.data-window') },
-            { label: t('menu.view.navigator'), icon: <Icon name="compass" size="sm" />, ...terminalShortcut('view.navigator') },
-            { label: t('menu.view.toolbox'), icon: <Icon name="terminal" size="sm" />, ...terminalShortcut('view.terminal') },
-            { label: t('menu.view.strategyTester'), icon: <Icon name="strategy-tester" size="sm" />, ...lockedTerminalTool('strategyTester') },
-            { divider: true, label: '' },
-            { label: t('menu.view.fullScreen'), icon: <Icon name="layout-template" size="sm" />, action: () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => { }); } else { document.exitFullscreen().catch(() => { }); } setActiveMenu(null); } }
+            viewThemeMenuItem,
+            ...viewMiddleMenuItems,
+            ...viewTrailingMenuItems,
         ],
         Insert: [
             {
@@ -712,63 +813,8 @@ export const MenuBar = ({
             { label: t('menu.charts.properties'), icon: <Icon name="settings" size="sm" />, action: () => { const target = resolveChartTarget(); window.dispatchEvent(new CustomEvent('openChartProperties', { detail: target })); setActiveMenu(null); } }
         ],
         Tools: [
-            // Primary Trading
-            {
-                label: t('menu.tools.newOrder'),
-                icon: <Icon name="plus" size="sm" className="text-emerald-500" />,
-                ...terminalShortcut('tools.new-order'),
-            },
-            { divider: true, label: '' },
-
-            // Development & Automation (RTX5 Rebranded)
-            {
-                label: t('menu.tools.strategyTester'),
-                icon: <Icon name="activity" size="sm" />,
-                ...lockedTerminalTool('strategyTester'),
-            },
-            {
-                label: t('menu.tools.scriptEditor'),
-                icon: <Icon name="credit-card" size="sm" />,
-                ...lockedTerminalTool('scriptEditor'),
-            },
-            {
-                label: t('menu.tools.agentsManager'),
-                icon: <Icon name="cpu" size="sm" />,
-                ...lockedTerminalTool('agentsManager'),
-            },
-            { divider: true, label: '' },
-
-            // System & Monitoring
-            {
-                label: t('menu.tools.taskManager'),
-                icon: <Icon name="server" size="sm" />,
-                ...lockedTerminalTool('taskManager'),
-            },
-            {
-                label: t('menu.tools.globalVariables'),
-                icon: <Icon name="globe" size="sm" />,
-                ...lockedTerminalTool('globalVariables'),
-            },
-            { divider: true, label: '' },
-
-            // RTX5 Services
-            { label: t('menu.tools.marketplace'), icon: <Icon name="box" size="sm" />, ...lockedTerminalTool('marketplace') },
-            { label: t('menu.tools.signalsHub'), icon: <Icon name="activity" size="sm" />, ...lockedTerminalTool('signalsHub') },
-            { label: t('menu.tools.cloudHosting'), icon: <Icon name="shield" size="sm" />, ...lockedTerminalTool('cloudHosting') },
-            { divider: true, label: '' },
-
-            // Settings
-            {
-                label: 'Access Server...',
-                translateLabel: false,
-                // Alt+Shift+T belongs to trading.toggle-one-click; do not advertise it here.
-                icon: <Icon name="server" size="sm" className="text-emerald-400" />,
-                action: () => {
-                    closeMenu();
-                    (window as unknown as { rtx5OpenTcpEndpointDialog?: () => void }).rtx5OpenTcpEndpointDialog?.();
-                },
-            },
-            { label: t('menu.tools.options'), icon: <Icon name="settings" size="sm" />, ...terminalShortcut('tools.options') }
+            toolsNewOrderItem,
+            ...toolsRemainingItems,
         ],
 
         Window: [
@@ -847,10 +893,11 @@ export const MenuBar = ({
     };
 
     const hamburgerViewItems: MenuItem[] = [
-        menuItems.View[0],
+        viewThemeMenuItem,
         fontSizeMenuItem,
         focusChartMenuItem,
-        ...menuItems.View.slice(1),
+        ...viewMiddleMenuItems,
+        ...viewTrailingMenuItems,
     ];
 
     const applyActiveColorTemplate = (scheme: ColorScheme) => {
@@ -896,17 +943,17 @@ export const MenuBar = ({
     const desktopMenuItems: Record<(typeof DESKTOP_MENU_KEYS)[number], MenuItem[]> = {
         File: menuItems.File,
         View: [
-            menuItems.View[0],
+            viewThemeMenuItem,
             fontSizeMenuItem,
             focusChartMenuItem,
-            ...menuItems.View.slice(1, -2),
+            ...viewMiddleMenuItems,
             {
                 label: 'Economic Calendar',
                 icon: <Icon name="calendar" size="sm" />,
                 disabled: true,
                 unavailableReason: unavailableDockSections.Calendar,
             },
-            ...menuItems.View.slice(-2),
+            ...viewTrailingMenuItems,
             { divider: true, label: '' },
             { label: `Version ${getAppVersion()}`, icon: <Icon name="info" size="sm" />, disabled: true },
             {
@@ -924,14 +971,14 @@ export const MenuBar = ({
             ...menuItems.Charts,
         ],
         Tools: [
-            menuItems.Tools[0],
+            toolsNewOrderItem,
             {
                 label: 'One Click Trading',
                 shortcut: getTerminalShortcutHint('trading.toggle-one-click'),
                 icon: <Icon name="cursor" size="sm" />,
                 action: toggleOneClickTrading,
             },
-            ...menuItems.Tools.slice(1),
+            ...toolsRemainingItems,
         ],
         Window: menuItems.Window,
         Help: [
@@ -1335,7 +1382,7 @@ export const MenuBar = ({
             {!isElectronDesktop && isMenuOpen && ReactDOM.createPortal(
                 <div
                     ref={menuPopupRef}
-                    data-placement={placement === 'rail' || Boolean(menuButtonRef.current?.closest('.web-drawing-tools-rail')) ? 'rail' : 'toolbar'}
+                    data-placement={placement === 'rail' || menuPosition.inRail ? 'rail' : 'toolbar'}
                     className="rtx-application-menu fixed z-[9999] w-[256px] text-[14px] font-normal"
                     style={{ top: menuPosition.top, left: menuPosition.left }}
                     role="menu"
@@ -1404,49 +1451,17 @@ export const MenuBar = ({
                         </span>
                     </div>
                     <div className="rtx-application-menu__items">
-                        {applicationLauncherItems.map((item) => {
-                            const hasSubmenu = Boolean(item.opensFileMenu || item.children);
-
-                            return (
-                                <ApplicationRootMenuItem
-                                    key={item.id}
-                                    item={item}
-                                    hasSubmenu={hasSubmenu}
-                                    isActive={activeMenu === item.id}
-                                    fileMenu={fileMenu}
-                                    revealedSubmenuPath={revealedSubmenuPath}
-                                    onHover={() => {
-                                        cancelHoverClose();
-                                        if (item.disabled) return;
-                                        if (hasSubmenu) {
-                                            if (activeMenu !== item.id) hoverOpenedSubmenuRef.current = item.id;
-                                            setActiveMenu(item.id);
-                                        } else {
-                                            hoverOpenedSubmenuRef.current = null;
-                                            setActiveMenu(null);
-                                        }
-                                    }}
-                                    onClick={() => {
-                                        if (item.disabled) return;
-                                        cancelHoverClose();
-                                        if (hasSubmenu) {
-                                            isClickPinnedRef.current = true;
-                                            if (activeMenu === item.id && hoverOpenedSubmenuRef.current !== item.id) {
-                                                setActiveMenu(null);
-                                            } else {
-                                                hoverOpenedSubmenuRef.current = null;
-                                                setActiveMenu(item.id);
-                                            }
-                                            return;
-                                        }
-                                        item.action?.();
-                                    }}
-                                    onSubmenuHover={cancelHoverClose}
-                                    onPinMenu={pinMenu}
-                                    onClose={closeMenu}
-                                />
-                            );
-                        })}
+                        <ApplicationLauncherMenuList
+                            items={applicationLauncherItems}
+                            activeMenu={activeMenu}
+                            fileMenu={fileMenu}
+                            revealedSubmenuPath={revealedSubmenuPath}
+                            onHoverItem={handleLauncherItemHover}
+                            onClickItem={handleLauncherItemClick}
+                            onSubmenuHover={cancelHoverClose}
+                            onPinMenu={pinMenu}
+                            onClose={closeMenu}
+                        />
                     </div>
                 </div>,
                 document.body,
@@ -1487,6 +1502,50 @@ export const MenuBar = ({
         </>
     );
 };
+
+const ApplicationLauncherMenuList = ({
+    items,
+    activeMenu,
+    fileMenu,
+    revealedSubmenuPath,
+    onHoverItem,
+    onClickItem,
+    onSubmenuHover,
+    onPinMenu,
+    onClose,
+}: {
+    items: ApplicationLauncherItem[];
+    activeMenu: string | null;
+    fileMenu: React.ReactElement;
+    revealedSubmenuPath?: string[];
+    onHoverItem: (item: ApplicationLauncherItem, hasSubmenu: boolean) => void;
+    onClickItem: (item: ApplicationLauncherItem, hasSubmenu: boolean) => void;
+    onSubmenuHover: () => void;
+    onPinMenu: () => void;
+    onClose: () => void;
+}) => (
+    <>
+        {items.map((item) => {
+            const hasSubmenu = Boolean(item.opensFileMenu || item.children);
+
+            return (
+                <ApplicationRootMenuItem
+                    key={item.id}
+                    item={item}
+                    hasSubmenu={hasSubmenu}
+                    isActive={activeMenu === item.id}
+                    fileMenu={fileMenu}
+                    revealedSubmenuPath={revealedSubmenuPath}
+                    onHover={() => onHoverItem(item, hasSubmenu)}
+                    onClick={() => onClickItem(item, hasSubmenu)}
+                    onSubmenuHover={onSubmenuHover}
+                    onPinMenu={onPinMenu}
+                    onClose={onClose}
+                />
+            );
+        })}
+    </>
+);
 
 const ApplicationRootMenuItem = ({
     item,
@@ -1599,6 +1658,7 @@ const MenuList = ({
         if (!pathTarget) {
             if (hasOpenPath) {
                 hoverOpenedIndexRef.current = null;
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizes openIndex with programmatic openPath search reveal target while preserving user hover/click state
                 setOpenIndex(null);
             }
             return;

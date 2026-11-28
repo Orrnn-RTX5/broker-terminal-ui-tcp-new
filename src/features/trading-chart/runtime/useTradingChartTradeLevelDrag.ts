@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from 'react';
 import type { Coordinate, IChartApi, ISeriesApi, SeriesType } from 'lightweight-charts';
 import { isTrendDrawingInputActive } from '../../../drawing-tools/drawingInteractionPriority';
 import api from '../../../services/api';
-import { useAppStore } from '../../../store/useAppStore';
+import { useAppStore, type Order } from '../../../store/useAppStore';
 import { getLivePositionPrice, getLivePositionProfit } from '../../../services/livePositionMetrics';
 import { rememberTradeHistoryPositionLevels } from '../../../utils/tradeHistoryLevelCache';
 import { describeProtectionRefusal, formatOrderError } from '../../../utils/orderError';
@@ -927,7 +927,7 @@ export const useTradingChartTradeLevelDrag = ({
                     const loginId = Number.parseInt(String(useAppStore.getState().accountId ?? ''), 10);
                     if (Number.isFinite(loginId) && loginId > 0) {
                       void api.orders.getPendingOrders(loginId)
-                        .then((orders) => useAppStore.getState().setOrders(orders as any))
+                        .then((orders) => useAppStore.getState().setOrders(orders as unknown as Order[]))
                         .catch(() => undefined);
                     }
                     window.dispatchEvent(new CustomEvent('rtx:order-feedback', {

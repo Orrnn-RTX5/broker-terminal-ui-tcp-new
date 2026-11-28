@@ -9,6 +9,7 @@ type WelcomeProps = ComponentProps<WelcomeModule['WelcomeTerminal']>;
 let welcomePromise: Promise<WelcomeModule> | null = null;
 let resolvedWelcome: WelcomeModule | null = null;
 
+// eslint-disable-next-line react-refresh/only-export-components -- keep preloadWelcomeTerminal co-located with DeferredWelcomeTerminal for existing importers
 export const preloadWelcomeTerminal = (): Promise<WelcomeModule> => {
   if (!welcomePromise) {
     welcomePromise = import('../components/WelcomeTerminal').then((module) => {

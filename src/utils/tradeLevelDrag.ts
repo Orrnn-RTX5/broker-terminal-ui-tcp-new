@@ -177,7 +177,7 @@ export const clampTradeLevelToCurrentPrice = (
   const slBoundaryForBuy = currentPrice - safeGap;
   const tpBoundaryForBuy = currentPrice + safeGap;
 
-  let clamped = price;
+  let clamped: number;
   if (role === 'SL') {
     clamped = side === 'BUY' ? Math.min(price, slBoundaryForBuy) : Math.max(price, tpBoundaryForBuy);
   } else {

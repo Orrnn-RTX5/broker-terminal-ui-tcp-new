@@ -7,6 +7,7 @@ import { useUiTranslation } from '../hooks/useUiTranslation';
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import type { ChartType, Timeframe } from '../types/chart';
+import type { PayloadFor } from '../types/commands';
 import type { IndicatorConfig } from '../services/indicatorManager';
 import { commandBus } from '../services/commandBus';
 import { resolveDefaultTradeVolume, useSettingsStore } from '../store/useSettingsStore';
@@ -125,7 +126,7 @@ interface ChartContextMenuProps {
     onAddIndicator: (indicator: {
         name: string;
         indicatorType: string;
-        params: Record<string, any>;
+        params: Record<string, unknown>;
     }) => void;
     onDeleteIndicators: () => void;
     onOpenNewOrder: (draft?: ChartPendingOrderDraft) => void;
@@ -134,7 +135,7 @@ interface ChartContextMenuProps {
     onClose: () => void;
     onLoadTemplate?: (template: ChartTemplate) => void;
     currentIndicators?: IndicatorConfig[];
-    currentDrawingTools?: any[];
+    currentDrawingTools?: unknown[];
 }
 
 // ─── CSS variables injected once ─────────────────────────────────────────────
@@ -599,7 +600,8 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
         { name: 'MACD', type: 'macd', params: { fast: 12, slow: 26, signal: 9 } },
     ];
 
-    const drawingTools = [
+    type DrawingToolOption = PayloadFor<'SELECT_TOOL'>['tool'];
+    const drawingTools: Array<{ name: string; tool: DrawingToolOption; icon: React.ReactNode }> = [
         { name: 'Trend Line', tool: 'trendline', icon: <MoveHorizontal size={12} /> },
         { name: 'Horizontal Line', tool: 'hline', icon: <MoveHorizontal size={12} /> },
         { name: 'Vertical Line', tool: 'vline', icon: <MoveVertical size={12} /> },
@@ -626,7 +628,7 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({
         }));
     };
 
-    const handleSelectDrawingTool = (tool: any) => {
+    const handleSelectDrawingTool = (tool: DrawingToolOption) => {
         closeThen(() => commandBus.dispatch({ type: 'SELECT_TOOL', payload: { tool, targetContextId } }));
     };
 

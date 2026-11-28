@@ -154,6 +154,7 @@ export function useSafeHoverTriangle(options: SafeHoverTriangleOptions) {
   return {
     isInSafeZone,
     shouldStayOpen,
+    // eslint-disable-next-line react-hooks/refs -- exposes latest tracked cursor position from mousePositionRef without triggering re-renders on global mousemove
     mousePosition: mousePositionRef.current,
   };
 }

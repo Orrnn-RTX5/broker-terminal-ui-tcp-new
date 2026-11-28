@@ -123,13 +123,8 @@ import { ApiError, apiClient, getAuthToken, type ApiRequestContext } from '../ap
 import * as endpoints from '../api/endpoints';
 import type { ClosePositionRequestOptions } from '../api/trade';
 import {
-  createTradeOrderUuid,
-  getTradeWebSocketClient,
   initializeTradeWebSocketClient,
-  isTerminalTradeOrderMessage,
   isTradeOrderUuidV4,
-  TradeSocketOrderRejectedError,
-  TradeSocketTransportError,
   type TradeSocketOrderFilled,
 } from '../api/tradeSocket';
 import {
@@ -147,7 +142,6 @@ import {
   OrderCommandTerminalError,
   pollOrderCommandUntilTerminal,
   type NormalizedOrderCommand,
-  type PollOrderCommandOptions,
 } from './orderCommandLifecycle';
 import { getStoredBrokerServer, resolveLoginBrokerTarget } from './brokerServers';
 import {
@@ -873,21 +867,6 @@ const normalizeSideForApi = (side: unknown): 'buy' | 'sell' => {
   return normalized;
 };
 
-const isRetryableTradeSocketFailure = (error: unknown): boolean => {
-  if (error instanceof TradeSocketOrderRejectedError) return false;
-  if (error instanceof TradeSocketTransportError) return error.retryable;
-  if (!error || typeof error !== 'object') return false;
-
-  const candidate = error as {
-    name?: unknown;
-    retryable?: unknown;
-    orderWasSent?: unknown;
-  };
-  return candidate.name !== 'TradeSocketOrderRejectedError'
-    && candidate.retryable === true
-    && candidate.orderWasSent === false;
-};
-
 const pickPositiveFiniteNumber = (...values: unknown[]): number => {
   for (const value of values) {
     const parsed = toFiniteNumber(value, 0);
@@ -956,22 +935,6 @@ const readOrderPositionTicket = (value: unknown): number => {
     record.position_ticket ?? record.position_id ?? record.ticket ?? record.order_ticket ?? record.id,
     0,
   );
-};
-
-const readLegacyRestPosition = (response: unknown): endpoints.Position | null => {
-  if (!response || typeof response !== 'object') return null;
-  const record = response as Record<string, unknown>;
-  const data = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-    ? record.data as Record<string, unknown>
-    : undefined;
-  const status = String(record.status ?? record.state ?? data?.status ?? data?.state ?? '').trim().toLowerCase();
-  if (['accepted', 'processing', 'queued', 'executing', 'rejected', 'expired'].includes(status)) return null;
-  const candidate = data?.position && typeof data.position === 'object'
-    ? data.position
-    : record.position && typeof record.position === 'object'
-      ? record.position
-      : response;
-  return readOrderPositionTicket(candidate) > 0 ? candidate as endpoints.Position : null;
 };
 
 const mapRestCommandToPosition = (

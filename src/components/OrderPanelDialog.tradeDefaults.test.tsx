@@ -24,7 +24,7 @@ vi.mock('../hooks/useSymbolMarketStatus', () => ({
   }),
 }));
 
-const renderTicket = (props?: { isOpen?: boolean; onSubmitOrder?: (order: any) => void | Promise<void> }) => {
+const renderTicket = (props?: { isOpen?: boolean; onSubmitOrder?: (order: unknown) => void | Promise<void> }) => {
   useAppStore.getState().reset();
   useAppStore.getState().setTicks({
     EURUSD: {

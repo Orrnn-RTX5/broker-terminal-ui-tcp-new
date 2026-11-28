@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNotificationStore } from '../store/useNotificationStore';
 import type { NotificationSeverity, NotificationType } from '../store/useNotificationStore';
+import type { ToastNotification } from '../components/notifications/Toast';
 
 interface UseNotificationsProps {
   wsConnection: WebSocket | null;
@@ -13,7 +14,7 @@ interface UseNotificationsProps {
 
 export const useNotifications = ({ wsConnection }: UseNotificationsProps) => {
   const { addNotification } = useNotificationStore();
-  const [activeToasts, setActiveToasts] = useState<any[]>([]);
+  const [activeToasts, setActiveToasts] = useState<ToastNotification[]>([]);
 
   // Play sound for critical notifications (optional)
   const playNotificationSound = useCallback(() => {
@@ -26,7 +27,7 @@ export const useNotifications = ({ wsConnection }: UseNotificationsProps) => {
   }, []);
 
   // Show toast notification
-  const showToast = useCallback((notification: any) => {
+  const showToast = useCallback((notification: Omit<ToastNotification, 'onDismiss'>) => {
     const toastId = notification.id;
 
     setActiveToasts(prev => [...prev, {

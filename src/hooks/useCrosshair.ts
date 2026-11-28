@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, SeriesType, Time } from 'lightweight-charts';
 import { formatTradingChartCrosshairLabel } from '../utils/chartTimeFormat';
 import { formatChartAxisPrice } from '../utils/chartPriceScale';
 
@@ -18,9 +18,9 @@ interface LabelMeasurement {
 
 export type CrosshairTimeOffset = number | ((time: Time) => number);
 
-export interface UseCrosshairOptions {
+export interface UseCrosshairOptions<TSeriesType extends SeriesType = SeriesType> {
   chartRef: RefObject<IChartApi | null>;
-  seriesRef: RefObject<ISeriesApi<any> | null>;
+  seriesRef: RefObject<ISeriesApi<TSeriesType> | null>;
   containerRef: RefObject<HTMLDivElement | null>;
   enabled: boolean;
   digits?: number | null;
@@ -37,7 +37,7 @@ export interface CrosshairRefs {
   priceLabelRef: RefObject<HTMLDivElement | null>;
 }
 
-export function useCrosshair({
+export function useCrosshair<TSeriesType extends SeriesType = SeriesType>({
   chartRef,
   seriesRef,
   containerRef,
@@ -46,7 +46,7 @@ export function useCrosshair({
   timeframe = 'M1',
   brokerOffsetSeconds = 0,
   marker = 'cross',
-}: UseCrosshairOptions): CrosshairRefs {
+}: UseCrosshairOptions<TSeriesType>): CrosshairRefs {
   const vertLineRef = useRef<HTMLDivElement>(null);
   const horizLineRef = useRef<HTMLDivElement>(null);
   const centerRef = useRef<HTMLDivElement>(null);
@@ -60,6 +60,7 @@ export function useCrosshair({
   const dirtyRef = useRef(false);
   const scheduleRenderRef = useRef<() => void>(() => undefined);
   const optionsRef = useRef({ digits, timeframe, brokerOffsetSeconds });
+  // eslint-disable-next-line react-hooks/refs -- pointer-move labels read digits/timeframe/offset from this ref; a render write keeps that path free of an extra effect
   optionsRef.current = { digits, timeframe, brokerOffsetSeconds };
 
   useEffect(() => {

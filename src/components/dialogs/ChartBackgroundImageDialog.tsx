@@ -55,23 +55,26 @@ function readSnapshot(props: ChartProperties): SnapshotState {
   };
 }
 
-export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProps> = ({
+const OpenChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProps> = ({
   isOpen,
   symbol,
   onClose,
 }) => {
   const tr = useUiTranslation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const initialSnapshotRef = useRef<SnapshotState | null>(null);
   const hasEditedRef = useRef<boolean>(false);
   const { dragStyle, dragHandleProps, setSheetElement } = useDraggableSheet({ isOpen });
 
-  const [mode, setMode] = useState<ChartBackgroundLogoMode>('none');
-  const [opacity, setOpacity] = useState<number>(36);
-  const [area, setArea] = useState<ChartBackgroundLogoArea>('chart');
-  const [imageUrl, setImageUrl] = useState<string>('');
-  const [fileName, setFileName] = useState<string>('');
-  const [fileDataUrl, setFileDataUrl] = useState<string>('');
+  const [initialSnapshot] = useState<SnapshotState>(() => {
+    const store = useChartSettingsStore.getState();
+    return readSnapshot(store.symbolProperties[symbol] || store.globalProperties);
+  });
+  const [mode, setMode] = useState<ChartBackgroundLogoMode>(initialSnapshot.backgroundLogoMode);
+  const [opacity, setOpacity] = useState<number>(initialSnapshot.backgroundLogoOpacity);
+  const [area, setArea] = useState<ChartBackgroundLogoArea>(initialSnapshot.backgroundLogoArea);
+  const [imageUrl, setImageUrl] = useState<string>(initialSnapshot.backgroundLogoUrl);
+  const [fileName, setFileName] = useState<string>(initialSnapshot.backgroundLogoFileName);
+  const [fileDataUrl, setFileDataUrl] = useState<string>(initialSnapshot.backgroundLogoFileDataUrl);
   const [applyToDefaultTemplate, setApplyToDefaultTemplate] = useState<boolean>(false);
   const [applyToAllOpenCharts, setApplyToAllOpenCharts] = useState<boolean>(false);
   const [brokerWatermarkTick, setBrokerWatermarkTick] = useState(0);
@@ -87,26 +90,6 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
       ? `${window.location.origin}${RTX5_DEFAULT_CHART_WATERMARK_SRC}`
       : RTX5_DEFAULT_CHART_WATERMARK_SRC
   );
-
-  useEffect(() => {
-    if (!isOpen) {
-      hasEditedRef.current = false;
-      return;
-    }
-    const store = useChartSettingsStore.getState();
-    const currentProps = store.symbolProperties[symbol] || store.globalProperties;
-    const snap = readSnapshot(currentProps);
-    initialSnapshotRef.current = snap;
-    hasEditedRef.current = false;
-    setMode(snap.backgroundLogoMode);
-    setOpacity(snap.backgroundLogoOpacity);
-    setArea(snap.backgroundLogoArea);
-    setImageUrl(snap.backgroundLogoUrl);
-    setFileName(snap.backgroundLogoFileName);
-    setFileDataUrl(snap.backgroundLogoFileDataUrl);
-    setApplyToDefaultTemplate(false);
-    setApplyToAllOpenCharts(false);
-  }, [isOpen, symbol]);
 
   const applyPatchToSymbol = (patch: Partial<ChartProperties>, applyAll: boolean, applyGlobal: boolean) => {
     const store = useChartSettingsStore.getState();
@@ -161,17 +144,16 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
   }, [isOpen, mode, opacity, area, imageUrl, fileName, fileDataUrl]);
 
   const handleCancel = () => {
-    const snap = initialSnapshotRef.current;
-    if (snap && hasEditedRef.current) {
+    if (hasEditedRef.current) {
       applyPatchToSymbol(
         {
-          showBackgroundLogo: snap.showBackgroundLogo,
-          backgroundLogoMode: snap.backgroundLogoMode,
-          backgroundLogoOpacity: snap.backgroundLogoOpacity,
-          backgroundLogoArea: snap.backgroundLogoArea,
-          backgroundLogoUrl: snap.backgroundLogoUrl,
-          backgroundLogoFileName: snap.backgroundLogoFileName,
-          backgroundLogoFileDataUrl: snap.backgroundLogoFileDataUrl,
+          showBackgroundLogo: initialSnapshot.showBackgroundLogo,
+          backgroundLogoMode: initialSnapshot.backgroundLogoMode,
+          backgroundLogoOpacity: initialSnapshot.backgroundLogoOpacity,
+          backgroundLogoArea: initialSnapshot.backgroundLogoArea,
+          backgroundLogoUrl: initialSnapshot.backgroundLogoUrl,
+          backgroundLogoFileName: initialSnapshot.backgroundLogoFileName,
+          backgroundLogoFileDataUrl: initialSnapshot.backgroundLogoFileDataUrl,
         },
         false,
         false,
@@ -714,4 +696,9 @@ export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProp
     </div>,
     document.body,
   );
+};
+
+export const ChartBackgroundImageDialog: React.FC<ChartBackgroundImageDialogProps> = (props) => {
+  if (!props.isOpen) return null;
+  return <OpenChartBackgroundImageDialog key={props.symbol} {...props} />;
 };

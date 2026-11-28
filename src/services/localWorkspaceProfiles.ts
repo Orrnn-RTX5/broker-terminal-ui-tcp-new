@@ -192,6 +192,7 @@ const normalizeSymbol = (value: unknown): string => {
   const symbol = typeof value === 'string' ? value.trim() : '';
   // Broker identifiers are opaque. Preserve their case, punctuation and suffix;
   // only reject control characters and unbounded input from corrupt storage.
+  // eslint-disable-next-line no-control-regex -- Intentional ASCII control-char (0x00-0x1F, 0x7F) guard for symbols; \p{Cc} would also match 0x80-0x9F.
   return symbol.length <= 160 && !/[\u0000-\u001f\u007f]/.test(symbol) ? symbol : '';
 };
 

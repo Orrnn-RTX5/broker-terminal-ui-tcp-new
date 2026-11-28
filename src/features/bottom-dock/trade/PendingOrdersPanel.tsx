@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../services/api';
-import { useAppStore } from '../../../store/useAppStore';
+import { useAppStore, type Order } from '../../../store/useAppStore';
 import { useConfirmStore } from '../../../store/useConfirmStore';
 import { useUiTranslation } from '../../../hooks/useUiTranslation';
 import { resolveSymbolPriceDigits } from '../../../components/market-watch/marketWatchPanelModel';
@@ -39,7 +39,8 @@ const formatPendingOrderType = (orderType: string): string => (
 // ticket, symbol, type, volume, price, price_sl/price_tp/sl_decimal,
 // time_expiry, time_setup, status) to the row view. Side is derived from the
 // order-type prefix (buy_*/sell_*); the list endpoint carries no side field.
-export const toPendingOrderView = (row: Record<string, any>): PendingOrderView | null => {
+// eslint-disable-next-line react-refresh/only-export-components -- shared mapper imported by PendingOrdersPanel.test.tsx
+export const toPendingOrderView = (row: Record<string, unknown>): PendingOrderView | null => {
   const ticket = toFiniteNumber(row.ticket ?? row.id);
   const symbol = String(row.symbol ?? '').trim();
   const orderType = String(row.type ?? '').trim();
@@ -86,7 +87,7 @@ const currentLoginId = (): number | null => {
 
 const refreshPendingOrders = async (loginId: number): Promise<void> => {
   const latest = await api.orders.getPendingOrders(loginId);
-  useAppStore.getState().setOrders(latest as any);
+  useAppStore.getState().setOrders(latest as unknown as Order[]);
 };
 
 type PendingOrdersPanelProps = {
@@ -120,7 +121,7 @@ export const PendingOrdersPanel = memo(function PendingOrdersPanel({
   const orders = useMemo(() => {
     const views: PendingOrderView[] = [];
     for (const row of storeOrders ?? []) {
-      const view = toPendingOrderView(row as unknown as Record<string, any>);
+      const view = toPendingOrderView(row as unknown as Record<string, unknown>);
       if (view) views.push(view);
     }
     return views.sort((a, b) => a.ticket - b.ticket);

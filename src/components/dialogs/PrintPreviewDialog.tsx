@@ -20,6 +20,7 @@ export const PrintPreviewDialog: React.FC<PrintPreviewDialogProps> = ({
 }) => {
     const tr = useUiTranslation();
   const [preferences, setPreferences] = useState(() => providedPreferences ?? chartPrinter.getPreferences());
+  const [prevProvidedPreferences, setPrevProvidedPreferences] = useState(providedPreferences);
   const [zoom, setZoom] = useState<number | null>(null);
   const [fitScale, setFitScale] = useState(1);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -30,7 +31,10 @@ export const PrintPreviewDialog: React.FC<PrintPreviewDialogProps> = ({
   const closeRef = useRef<HTMLButtonElement>(null);
   const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
   const printLock = useRef(false);
-  useEffect(() => { if (providedPreferences) setPreferences(providedPreferences); }, [providedPreferences]);
+  if (prevProvidedPreferences !== providedPreferences) {
+    setPrevProvidedPreferences(providedPreferences);
+    if (providedPreferences) setPreferences(providedPreferences);
+  }
   const dimensions = chartPrinter.getPageDimensions(preferences);
   const documentResult = useMemo(() => {
     if (!chartData?.chartCanvas) return { html: '', error: undefined };

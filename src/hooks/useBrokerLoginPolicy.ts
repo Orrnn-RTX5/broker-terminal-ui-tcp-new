@@ -32,6 +32,7 @@ export const useBrokerLoginPolicy = (active: boolean): BrokerLoginPolicy | null 
 
   useEffect(() => {
     if (!active) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears cached desktop verification immediately on close so reopening never reuses expired directory approval
       if (desktop) setVerified(null);
       return undefined;
     }
@@ -60,7 +61,7 @@ export const useBrokerLoginPolicy = (active: boolean): BrokerLoginPolicy | null 
         error: error instanceof Error ? error.message : 'Broker discovery is unavailable.',
       }));
     return () => { alive = false; };
-  }, [active, identity]);
+  }, [active, identity, desktop, configuration.valid, configuration.brokerId, configuration.brokerName, configuration.discoveryBaseUrl]);
 
   if (!active) return null;
   // Another broker dialog may have refreshed the shared directory since this

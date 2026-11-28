@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAppStore } from '../../../store/useAppStore';
+import { useAppStore, type Order } from '../../../store/useAppStore';
 import { setToken, removeToken } from '../../../api/client';
 import { PendingOrdersPanel, toPendingOrderView } from './PendingOrdersPanel';
 
@@ -41,6 +41,8 @@ const BACKEND_ROWS = [
 const jsonResponse = (body: unknown): Response =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
+type RuntimeConfigWindow = Window & { __RTX_RUNTIME_CONFIG__?: unknown };
+
 describe('PendingOrdersPanel (real store + backend shapes)', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])));
@@ -48,14 +50,14 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
     sessionStorage.clear();
     removeToken();
     setToken('test-access-token');
-    (window as any).__RTX_RUNTIME_CONFIG__ = {
+    (window as RuntimeConfigWindow).__RTX_RUNTIME_CONFIG__ = {
       BACKEND_TARGET: 'web', API_HOST: 'https://broker.example', WS_HOST: 'wss://broker.example',
       BROKER_ID: 'Fixture', DEFAULT_MT5_SERVER: 'Fixture-Live',
     };
     localStorage.setItem('server_url', 'https://broker.example');
     localStorage.setItem('broker_id', 'Fixture');
     act(() => {
-      useAppStore.getState().setOrders(BACKEND_ROWS as any);
+      useAppStore.getState().setOrders(BACKEND_ROWS as unknown as Order[]);
       useAppStore.setState({ accountId: '200313' });
     });
   });
@@ -64,21 +66,21 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
     cleanup();
     vi.unstubAllGlobals();
     removeToken();
-    delete (window as any).__RTX_RUNTIME_CONFIG__;
+    delete (window as RuntimeConfigWindow).__RTX_RUNTIME_CONFIG__;
     act(() => {
       useAppStore.getState().setOrders([]);
     });
   });
 
   it('maps backend rows to views without mirrored logic', () => {
-    const view = toPendingOrderView(BACKEND_ROWS[0] as unknown as Record<string, any>);
+    const view = toPendingOrderView(BACKEND_ROWS[0] as unknown as Record<string, unknown>);
     expect(view).toMatchObject({
       ticket: 34671, symbol: 'BTCUSD', orderType: 'buy_limit', side: 'BUY',
       volume: 0.01, price: 81754.9, sl: 0, tp: 0, status: 'pending',
     });
-    const sell = toPendingOrderView(BACKEND_ROWS[1] as unknown as Record<string, any>);
+    const sell = toPendingOrderView(BACKEND_ROWS[1] as unknown as Record<string, unknown>);
     expect(sell).toMatchObject({ ticket: 34672, side: 'SELL', sl: 1.09, tp: 1.08, expiry: 1792504500 });
-    expect(toPendingOrderView({} as any)).toBeNull();
+    expect(toPendingOrderView({})).toBeNull();
   });
 
   it('lists live pending orders with modify/cancel actions', () => {
@@ -138,7 +140,7 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
 
     // A failing cancel shows a user-visible error and keeps the row.
     act(() => {
-      useAppStore.getState().setOrders(BACKEND_ROWS as any);
+      useAppStore.getState().setOrders(BACKEND_ROWS as unknown as Order[]);
     });
     onCancel.mockRejectedValueOnce(new Error('broker refused cancel'));
     rerender(<PendingOrdersPanel onModifyOrder={onModify} onCancelOrder={onCancel} />);
@@ -204,7 +206,7 @@ describe('PendingOrdersPanel (real store + backend shapes)', () => {
 
   it('portals segmented bulk actions into headerActionsHost and disables side actions when empty', () => {
     act(() => {
-      useAppStore.getState().setOrders([BACKEND_ROWS[0]] as any);
+      useAppStore.getState().setOrders([BACKEND_ROWS[0]] as unknown as Order[]);
     });
     const host = document.createElement('div');
     document.body.appendChild(host);

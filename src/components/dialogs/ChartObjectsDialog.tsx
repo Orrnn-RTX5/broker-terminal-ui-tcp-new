@@ -77,6 +77,7 @@ const humanizeSubtype = (value: string): string => value
   .replace(/([a-z])([A-Z])/g, '$1 $2')
   .replace(/^./, character => character.toUpperCase());
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared object display-name helper exported alongside ChartObjectsDialog for component tests
 export const getChartObjectDisplayName = (
   drawing: Pick<Drawing, 'type' | 'subtype'>,
   translate: (label: string) => string = label => label,
@@ -103,6 +104,14 @@ const cloneDrawingForView = (drawing: Drawing): Drawing => ({
   points: drawing.points.map(point => ({ ...point })),
   pitchforkLevels: drawing.pitchforkLevels ? [...drawing.pitchforkLevels] : undefined,
 });
+
+const readDrawingsSnapshot = (
+  open: boolean,
+  contextId: string | null,
+  service: ChartObjectsDrawingService,
+): Drawing[] => (
+  open && contextId ? service.getDrawings(contextId).map(cloneDrawingForView) : []
+);
 
 const shortDrawingId = (id: string): string => {
   const normalized = id.replace(/^drawing-/, '').replace(/^d-/, '');
@@ -132,7 +141,22 @@ export const ChartObjectsDialog: React.FC<ChartObjectsDialogProps> = ({
   drawingService = drawingManager,
 }) => {
     const tr = useUiTranslation();
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawings, setDrawings] = useState<Drawing[]>(
+    () => readDrawingsSnapshot(isOpen, targetContextId, drawingService),
+  );
+  const [prevSnapshotInputs, setPrevSnapshotInputs] = useState({
+    isOpen,
+    targetContextId,
+    drawingService,
+  });
+  if (
+    prevSnapshotInputs.isOpen !== isOpen
+    || prevSnapshotInputs.targetContextId !== targetContextId
+    || prevSnapshotInputs.drawingService !== drawingService
+  ) {
+    setPrevSnapshotInputs({ isOpen, targetContextId, drawingService });
+    setDrawings(readDrawingsSnapshot(isOpen, targetContextId, drawingService));
+  }
   const dialogRef = useRef<HTMLDivElement>(null);
   const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -140,16 +164,8 @@ export const ChartObjectsDialog: React.FC<ChartObjectsDialogProps> = ({
   const descriptionId = useId();
 
   const refresh = useCallback(() => {
-    if (!isOpen || !targetContextId) {
-      setDrawings([]);
-      return;
-    }
-    setDrawings(drawingService.getDrawings(targetContextId).map(cloneDrawingForView));
+    setDrawings(readDrawingsSnapshot(isOpen, targetContextId, drawingService));
   }, [drawingService, isOpen, targetContextId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   useEffect(() => {
     if (!isOpen || !targetContextId) return;

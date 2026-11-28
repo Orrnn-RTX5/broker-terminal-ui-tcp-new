@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../services/api';
 import { commitBrokerAccountSessionScope } from '../services/brokerSession';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type Order, type Position } from '../store/useAppStore';
 import { useOneClickDisclaimerStore } from '../store/useOneClickDisclaimerStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { normalizeMarketStatus } from '../utils/marketStatus';
@@ -853,7 +853,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
         sl: 0,
         tp: 0,
         openTime: Date.now() - 60_000,
-      } as any,
+      } as unknown as Position,
       {
         id: 102,
         ticket: 102,
@@ -866,7 +866,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
         sl: 0,
         tp: 0,
         openTime: Date.now() - 30_000,
-      } as any,
+      } as unknown as Position,
     ]);
     useAppStore.getState().setOrders([
       {
@@ -877,7 +877,7 @@ describe('OrderPanelDialog MT5 Desktop layout and behavior', () => {
         volume: 0.01,
         price: 4173.50,
         status: 'PENDING',
-      } as any,
+      } as unknown as Order,
     ]);
 
     const getContextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(

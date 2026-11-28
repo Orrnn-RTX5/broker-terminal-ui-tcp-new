@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
@@ -73,11 +73,17 @@ const TONE_ICON: Record<ActionFeedbackTone, IconName> = {
 };
 
 /** Action feedback and close receipts share a strict one-second mount-to-dismiss lifetime. */
+// eslint-disable-next-line react-refresh/only-export-components -- shared feedback timing helper exported alongside ActionFeedbackToast for feedback callers
 export const resolveActionFeedbackDurationMs = (
   _type: ActionFeedbackType,
   _report?: PositionCloseReport,
-): number => CLOSE_RECEIPT_TOTAL_LIFETIME_MS;
+): number => {
+  void _type;
+  void _report;
+  return CLOSE_RECEIPT_TOTAL_LIFETIME_MS;
+};
 
+// eslint-disable-next-line react-refresh/only-export-components -- shared feedback tone helper exported alongside ActionFeedbackToast for feedback callers
 export const resolveActionFeedbackTone = (
   type: ActionFeedbackType,
   report?: PositionCloseReport,
@@ -118,7 +124,9 @@ function useToastLifetime(durationMs: number, onDismiss: () => void, autoDismiss
   const [exiting, setExiting] = useState(false);
   const [paused, setPaused] = useState(false);
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  useLayoutEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
   const timerRef = useRef<number | null>(null);
   const remainingRef = useRef(durationMs);
   const startedAtRef = useRef(0);

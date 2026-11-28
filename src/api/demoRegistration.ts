@@ -228,10 +228,10 @@ export const registerDesktopBrokerDemoAccount = async (
   } catch (error) {
     if (netting) {
       const code = apiErrorCode(error);
-      if (code === 'DEMO_NETTING_NOT_CONFIGURED') throw new Error(DEMO_NETTING_NOT_CONFIGURED_MESSAGE);
+      if (code === 'DEMO_NETTING_NOT_CONFIGURED') throw new Error(DEMO_NETTING_NOT_CONFIGURED_MESSAGE, { cause: error });
       // A Manager without the netting demo group step answers a group/mode mismatch; nothing was created.
       if (code === 'ACCOUNT_MODE_GROUP_MISMATCH' || code === 'ACCOUNT_MODE_UNSUPPORTED') {
-        throw new Error(DEMO_NETTING_UNAVAILABLE_MESSAGE);
+        throw new Error(DEMO_NETTING_UNAVAILABLE_MESSAGE, { cause: error });
       }
     }
     throw error;
@@ -248,7 +248,7 @@ export const registerDesktopBrokerDemoAccount = async (
     });
   } catch (error) {
     const reason = error instanceof Error && error.message ? ` (${error.message})` : '';
-    throw new Error(`Demo account ${login} was created, but logging in to it failed${reason}. Log in with account ${login} and the password you chose.`);
+    throw new Error(`Demo account ${login} was created, but logging in to it failed${reason}. Log in with account ${login} and the password you chose.`, { cause: error });
   }
   const token = session.access_token || session.token;
   if (!token) {
@@ -298,8 +298,8 @@ export const registerRuntimeBrokerDemoAccount = async (
     });
   } catch (error) {
     const code = apiErrorCode(error);
-    if (code === 'DEMO_NETTING_NOT_CONFIGURED') throw new Error(DEMO_NETTING_NOT_CONFIGURED_MESSAGE);
-    if (code === 'DEMO_NETTING_UNAVAILABLE') throw new Error(DEMO_NETTING_UNAVAILABLE_MESSAGE);
+    if (code === 'DEMO_NETTING_NOT_CONFIGURED') throw new Error(DEMO_NETTING_NOT_CONFIGURED_MESSAGE, { cause: error });
+    if (code === 'DEMO_NETTING_UNAVAILABLE') throw new Error(DEMO_NETTING_UNAVAILABLE_MESSAGE, { cause: error });
     throw error;
   }
 

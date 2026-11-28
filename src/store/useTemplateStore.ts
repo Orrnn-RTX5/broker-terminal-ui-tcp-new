@@ -27,13 +27,13 @@ export interface ChartTemplate {
     id: string;
     name: string;
     type: string;
-    parameters: Record<string, any>;
+    parameters: Record<string, unknown>;
     visible: boolean;
   }>;
   drawingTools: Array<{
     id: string;
     type: string;
-    data: any;
+    data: unknown;
   }>;
   colors: {
     background: string;

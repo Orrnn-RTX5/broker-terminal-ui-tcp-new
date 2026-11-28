@@ -21,7 +21,7 @@ const dialogHarness = vi.hoisted(() => ({
 }));
 
 vi.mock('./ModifyPositionDialog', () => ({
-  ModifyPositionDialog: ({ isOpen, onClose, position }: any) => {
+  ModifyPositionDialog: ({ isOpen, onClose, position }: { isOpen: boolean; onClose: (sl?: number, tp?: number, comment?: string) => void; position: (Position & { digits?: number }) | null }) => {
     dialogHarness.onClose = onClose;
     return isOpen && position ? (
       <div role="dialog" aria-label={`Modify Position #${position.id}`}>
@@ -86,8 +86,8 @@ describe('ChartModifyPositionDialogHost', () => {
 
   it('opens from the current scoped store snapshot and publishes saved levels', async () => {
     const user = userEvent.setup();
-    const modified: any[] = [];
-    const listener = (event: Event) => modified.push((event as CustomEvent).detail);
+    const modified: unknown[] = [];
+    const listener = (event: Event) => modified.push((event as CustomEvent<unknown>).detail);
     window.addEventListener('rtx:trade-modified', listener);
     render(<ChartModifyPositionDialogHost onClosePosition={() => undefined} resolveAllowedSymbol={symbol => String(symbol)} />);
 
@@ -123,8 +123,8 @@ describe('ChartModifyPositionDialogHost', () => {
   });
 
   it('closes on a committed scope change and ignores the stale dialog callback', async () => {
-    const modified: any[] = [];
-    const listener = (event: Event) => modified.push((event as CustomEvent).detail);
+    const modified: unknown[] = [];
+    const listener = (event: Event) => modified.push((event as CustomEvent<unknown>).detail);
     window.addEventListener('rtx:trade-modified', listener);
     render(<ChartModifyPositionDialogHost onClosePosition={() => undefined} resolveAllowedSymbol={symbol => String(symbol)} />);
 

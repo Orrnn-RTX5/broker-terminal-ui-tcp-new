@@ -451,4 +451,77 @@ describe('DockWorkspace chart diagnostic attributes', () => {
     });
     expect(activeMarketSnapshot.current).toBe(false);
   });
+
+  it('pins 1.2.18 panel timeframe passthrough and falsy fallback without strict canonical filtering', async () => {
+    const layoutWithTimeframe = (timeframe: string | undefined): DockLayout => ({
+      version: 'timeframe-parity-test',
+      floatingPanels: [],
+      root: {
+        id: 'root',
+        type: 'split',
+        ratio: 1,
+        children: [{
+          id: 'chart-tf',
+          type: 'panel',
+          component: 'Chart',
+          title: 'BTCUSD',
+          props: timeframe === undefined ? { symbol: 'BTCUSD' } : { symbol: 'BTCUSD', timeframe },
+          ratio: 1,
+        }],
+      },
+    });
+
+    const view = renderWorkspace(layoutWithTimeframe('1h'), 'BTCUSD');
+    await waitFor(() => expect(chartMocks.render).toHaveBeenCalled());
+    expect(chartMocks.render.mock.lastCall?.[0]).toMatchObject({ symbol: 'BTCUSD', timeframe: '1h' });
+
+    for (const rawTimeframe of ['m15', ' m5 ', 'MN1']) {
+      useDockLayoutStore.setState({ layout: layoutWithTimeframe(rawTimeframe) });
+      await waitFor(() => {
+        expect(chartMocks.render.mock.lastCall?.[0]).toMatchObject({ symbol: 'BTCUSD', timeframe: rawTimeframe });
+      });
+    }
+
+    useDockLayoutStore.setState({ layout: layoutWithTimeframe('') });
+    await waitFor(() => {
+      expect(chartMocks.render.mock.lastCall?.[0]).toMatchObject({ symbol: 'BTCUSD', timeframe: 'M5' });
+    });
+
+    // Also pin guest chart retention parity when panel.props.timeframe is an alias like '1h'.
+    useDockLayoutStore.setState({ layout: layoutWithTimeframe('1h') });
+    view.rerender(
+      <DockWorkspace
+        globalChartType="candlestick"
+        globalTimeframe="M5"
+        allSymbols={[]}
+        chartSymbols={[]}
+        tradeSymbols={[]}
+        activeMarketSnapshot={createActiveMarketSnapshot({ symbols: [] })}
+        marketInstrumentsSnapshot={createMarketInstrumentsSnapshot({
+          accountCatalogStatus: 'loading',
+          chartCatalogCurrent: false,
+          authorizationSettled: false,
+        })}
+        selectedSymbol="BTCUSD"
+        retainedGuestCharts={{
+          'chart-tf': {
+            symbol: 'XAUUSD.RAW',
+            timeframe: '1h' as unknown as import('../../types/chart').Timeframe,
+          },
+        }}
+        onSymbolSelect={vi.fn()}
+        onClosePosition={vi.fn()}
+        onModifyPosition={vi.fn()}
+        onCancelOrder={vi.fn()}
+        onCloseBulk={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(chartMocks.render.mock.lastCall?.[0]).toMatchObject({
+        symbol: 'XAUUSD.RAW',
+        timeframe: '1h',
+        tradeAllowed: false,
+      });
+    });
+  });
 });

@@ -47,10 +47,11 @@ export function useQuoteSubscription(
     return onSessionChange(() => setSessionRevision((revision) => revision + 1));
   }, [enabled]);
 
+  const symbolsKey = symbols.join('|');
   const normalizedSymbols = useMemo(
     () => Array.from(new Set(symbols.map(normalizeSymbol).filter(Boolean))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [symbols.join('|')],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on joined symbolsKey so fresh caller arrays with identical symbols preserve memoized identity
+    [symbolsKey],
   );
 
   const managerRef = useRef(getQuoteSocketManager());

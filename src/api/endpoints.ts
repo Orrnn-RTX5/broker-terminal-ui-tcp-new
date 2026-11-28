@@ -208,6 +208,8 @@ const normalizeModifyPendingOrderPayload = (data: ModifyPendingOrderRequest): Mo
   } = data;
   void _comment;
   void _stateVersion;
+  void _trailingStop;
+  void _trailingStep;
   const clientOrderId = String(supplied ?? '').trim();
   if (clientOrderId && !isTradeOrderUuidV4(clientOrderId)) throw new Error('client_order_id must be a UUID v4');
   // No fill_policy wire field exists on the gateway decoder: strip it even if

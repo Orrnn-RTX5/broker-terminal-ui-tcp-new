@@ -7,11 +7,12 @@ import { BottomDock } from './BottomDock';
 import { useLiveAccountMetrics } from '../hooks/useLiveAccountMetrics';
 import { formatPrice } from '../utils/symbolUtils';
 import { useAppStore, type Account } from '../store/useAppStore';
+import type { ToolboxTradePosition } from '../hooks/useToolboxTradeData';
 
 const trade = vi.hoisted(() => ({
   account: null as Account | null,
-  positions: [] as any[],
-  pendingPositions: [] as any[],
+  positions: [] as ToolboxTradePosition[],
+  pendingPositions: [] as ToolboxTradePosition[],
   loading: false,
   error: null,
   login: 1,
@@ -37,7 +38,7 @@ vi.mock('../utils/symbolUtils', async importOriginal => {
 });
 
 const makePosition = (id: number) => ({
-  id, symbol: 'BTCUSD', side: 'BUY', volume: 0.01, openPrice: 80000,
+  id, symbol: 'BTCUSD', side: 'BUY' as const, volume: 0.01, openPrice: 80000,
   currentPrice: 81000, hasBackendCurrentPrice: true,
   profit: 7, unrealizedPnL: 7, hasBackendProfit: true,
   openTime: '2026-09-21T10:00:00.000Z', sl: 0, tp: 0, swap: 0, commission: 0,

@@ -58,7 +58,7 @@ export const SaveWorkspaceDialog: React.FC<SaveWorkspaceDialogProps> = ({
             return;
         }
 
-        let workspaceExists = false;
+        let workspaceExists: boolean;
         try {
             workspaceExists = Boolean(getWorkspaceProfile({
                 accountId: workspaceAccountId,

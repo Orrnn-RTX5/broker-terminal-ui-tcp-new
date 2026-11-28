@@ -20,6 +20,23 @@ export interface ExitPreferences {
   autoSaveWorkspace: boolean;
 }
 
+interface ElectronQuitEvent {
+  preventDefault: () => void;
+}
+
+interface ExitElectronBridge {
+  on?: (event: string, listener: (event: ElectronQuitEvent) => void | Promise<void>) => void;
+  app?: {
+    quit?: () => void;
+  };
+}
+
+interface ExitWindowExtensions {
+  electron?: ExitElectronBridge;
+  tradingWebSocket?: WebSocket;
+  pendingRequests?: Iterable<AbortController>;
+}
+
 class ExitHandler {
   private isExiting = false;
   private cleanupTasks: Array<() => Promise<void> | void> = [];
@@ -76,8 +93,11 @@ class ExitHandler {
     }
 
     // Electron app 'before-quit' event (if available)
-    if (typeof window !== 'undefined' && (window as any).electron?.on) {
-      (window as any).electron.on('before-quit', this.handleElectronQuit.bind(this));
+    if (typeof window !== 'undefined') {
+      const electron = (window as unknown as ExitWindowExtensions).electron;
+      if (electron?.on) {
+        electron.on('before-quit', this.handleElectronQuit.bind(this));
+      }
     }
   }
 
@@ -101,7 +121,7 @@ class ExitHandler {
   /**
    * Handle Electron before-quit event
    */
-  private async handleElectronQuit(event: any): Promise<void> {
+  private async handleElectronQuit(event: ElectronQuitEvent): Promise<void> {
     if (this.isExiting) {
       return;
     }
@@ -118,8 +138,9 @@ class ExitHandler {
       if (shouldQuit) {
         await this.performCleanup();
         // Allow quit
-        if ((window as any).electron?.app?.quit) {
-          (window as any).electron.app.quit();
+        const electron = (window as unknown as ExitWindowExtensions).electron;
+        if (electron?.app?.quit) {
+          electron.app.quit();
         }
       }
     } else {
@@ -259,7 +280,7 @@ class ExitHandler {
   private async closeWebSocketConnections(): Promise<void> {
     try {
       // Access WebSocket instance from global scope or store
-      const ws = (window as any).tradingWebSocket;
+      const ws = (window as unknown as ExitWindowExtensions).tradingWebSocket;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.close(1000, 'Application closing');
       }
@@ -273,8 +294,9 @@ class ExitHandler {
    */
   private async cancelPendingRequests(): Promise<void> {
     // If using AbortController for fetch requests, abort them
-    if ((window as any).pendingRequests) {
-      for (const controller of (window as any).pendingRequests) {
+    const pendingRequests = (window as unknown as ExitWindowExtensions).pendingRequests;
+    if (pendingRequests) {
+      for (const controller of pendingRequests) {
         controller.abort();
       }
     }

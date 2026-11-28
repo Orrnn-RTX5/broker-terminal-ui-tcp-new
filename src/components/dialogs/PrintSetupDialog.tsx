@@ -16,7 +16,6 @@ import {
   type PageSize,
   type PageOrientation,
   type ColorMode,
-  DEFAULT_PRINT_PREFERENCES,
 } from '../../services/chartPrinter';
 
 export interface PrintSetupDialogProps {
@@ -34,9 +33,8 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
 }) => {
     const tr = useUiTranslation();
   const accountScope = accountId?.trim() || undefined;
-  const [preferences, setPreferences] = useState<PrintPreferences>(() => (
-    accountScope ? chartPrinter.getPreferences(accountScope) : DEFAULT_PRINT_PREFERENCES
-  ));
+  const [preferences, setPreferences] = useState<PrintPreferences>(() => chartPrinter.getPreferences(accountScope));
+  const [prevAccountScope, setPrevAccountScope] = useState(accountScope);
   const [isSaving, setIsSaving] = useState(false);
   const [savePreferences, setSavePreferences] = useState(false);
   const hasEditedPreferences = useRef(false);
@@ -46,22 +44,24 @@ export const PrintSetupDialog: React.FC<PrintSetupDialogProps> = ({
   useDialogFocusScope({ isOpen: true, dialogRef, onClose: onCancel, initialFocusRef: cancelRef, closeOnEscape: !isSaving });
   const { dragStyle, dragHandleProps } = useDraggableSheet({ elementRef: dialogRef });
 
+  if (prevAccountScope !== accountScope) {
+    setPrevAccountScope(accountScope);
+    setSavePreferences(false);
+    setPreferences(chartPrinter.getPreferences(accountScope));
+  }
+
   // Load preferences on mount
   useEffect(() => {
-    let isCurrentScope = true;
     hasEditedPreferences.current = false;
-    setSavePreferences(false);
 
     if (!accountScope) {
-      setPreferences(chartPrinter.getPreferences());
-      return () => {
-        isCurrentScope = false;
-      };
+      return;
     }
 
-    // Apply the account-scoped local value immediately. A remote value may
-    // refresh it in the background, but never overwrite edits made meanwhile.
-    setPreferences(chartPrinter.getPreferences(accountScope));
+    let isCurrentScope = true;
+
+    // A remote value may refresh the account-scoped local value in the
+    // background, but never overwrite edits made meanwhile.
     void chartPrinter.loadPreferences(accountScope).then((loadedPreferences) => {
       if (isCurrentScope && !hasEditedPreferences.current) {
         setPreferences(loadedPreferences);

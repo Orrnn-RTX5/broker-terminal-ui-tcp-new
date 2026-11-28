@@ -63,7 +63,7 @@ import {
   FAST_CHANNEL_UNAVAILABLE_MESSAGE,
   FAST_CHANNEL_UNCERTAIN_MESSAGE,
 } from '../api';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type Position } from '../../store/useAppStore';
 
 function buildSuccessResp(overrides?: Partial<DecodedBinaryOrderResp>): DecodedBinaryOrderResp {
   return {
@@ -104,7 +104,7 @@ describe('Terminal UI fast-channel-only order routing (LANE M2)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isBinaryTcpOrderEnabled.mockReturnValue(true);
-    useAppStore.setState({ accountId: '100001', positions: [] } as any);
+    useAppStore.setState({ accountId: '100001', positions: [] });
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Unexpected REST fetch on fast channel'))));
   });
 
@@ -370,8 +370,8 @@ describe('Terminal UI fast-channel-only order routing (LANE M2)', () => {
     it('sets BINARY_ORDER_FLAG_PARTIAL_CLOSE on partial closePosition', async () => {
       useAppStore.setState({
         accountId: '100001',
-        positions: [{ id: 70001, ticket: 70001, symbol: 'XAUUSD', side: 'BUY', volume: 1.0 }],
-      } as any);
+        positions: [{ id: 70001, ticket: 70001, symbol: 'XAUUSD', side: 'BUY', volume: 1.0 }] as unknown as Position[],
+      });
       mocks.sendBinaryTcpOrder.mockResolvedValueOnce(buildSuccessResp({
         action: BINARY_ORDER_ACTION_CLOSE_POSITION,
         volume: 0.4,

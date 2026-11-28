@@ -174,6 +174,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     const contractSize = readRegisteredSymbolContractSpec(lastSymbol).contractSize;
 
     // Calculate risk-based lot
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pipSize is an immutable number | null primitive; manual memoization is preserved on the order hot path
     const calculateRiskLot = useCallback(() => {
         if (!useRiskSizing || !account) return volume;
         // Without broker precision or contract size no pip value can be
@@ -190,6 +191,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
         if (!(pipValue > 0)) return volume;
         const lot = riskAmount / (slPips * pipValue);
         return Math.max(0.01, Math.round(lot * 100) / 100);
+        // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pipSize is an immutable number | null primitive; manual memoization is preserved on the order hot path
     }, [useRiskSizing, account, volume, riskPercent, slPips, pipSize, contractSize]);
 
     const effectiveLot = useRiskSizing ? calculateRiskLot() : volume;
@@ -208,6 +210,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
 
     // Place order via MT5 Sync API
     const placeOrder = useCallback(
+        // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pipSize is an immutable number | null primitive; manual memoization is preserved on the order hot path
         async (side: 'BUY' | 'SELL') => {
             if (!requireTradingAuth({
                 source: 'last-symbol-panel',
@@ -298,6 +301,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
                 flash(formatOrderError(err), 'error');
             }
         },
+        // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pipSize is an immutable number | null primitive; manual memoization is preserved on the order hot path
         [lastSymbol, exactLastSymbol, effectiveLot, autoSLTP, slPips, tpPips, pipSize, bid, ask, accountId, canPlaceTrade, tradeBlockedMessage, setLastSymbol, flash, tr]
     );
 
@@ -440,6 +444,7 @@ const accountCurrencyDigits = resolveAccountCurrencyDigits(account);
     // Time since last trade
     const timeSince = lastTradeTime
         ? (() => {
+            // eslint-disable-next-line react-hooks/purity -- computes relative elapsed seconds since lastTradeTime at render without extra timer state or re-renders
             const diff = Math.max(0, Math.floor((Date.now() - lastTradeTime) / 1000));
             const formatter = new Intl.RelativeTimeFormat(i18n.resolvedLanguage || i18n.language || 'en', { numeric: 'auto', style: 'short' });
             if (diff < 60) return formatter.format(-diff, 'second');

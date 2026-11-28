@@ -10,8 +10,18 @@ import { getBackendTarget, isDesktopBackendTarget, normalizeBrokerInfoForTarget 
 import { getAccessToken, getRefreshToken } from '../services/brokerSession';
 import { assertBrokerRequestAllowed } from './brokerRequestGuard';
 
+type DynamicBrokerTarget = {
+  backend_url?: string;
+  market_api_url?: string;
+  server_url?: string;
+  ws_url?: string;
+  feed_url?: string;
+};
+
+type BrokerQueryParams = object;
+
 export interface BrokerApiRequestOptions extends RequestInit {
-  params?: Record<string, any>;
+  params?: BrokerQueryParams;
   skipAuth?: boolean;
 }
 
@@ -133,7 +143,7 @@ export class BrokerAPI {
       server_url: localStorage.getItem('server_url') || localStorage.getItem('rtx_broker_server') || '',
       ws_url: localStorage.getItem('ws_url') || '',
       feed_url: localStorage.getItem('feed_url') || '',
-    }) as any;
+    }) as DynamicBrokerTarget;
     if (targetBroker.server_url) {
       const normalized = isDesktopBackendTarget()
         ? normalizeBrokerServerUrl(targetBroker.server_url)
@@ -148,7 +158,7 @@ export class BrokerAPI {
   }
 
   // Prepend base URL to relative endpoints, append query params
-  private buildUrl(endpoint: string, params?: Record<string, any>): string {
+  private buildUrl(endpoint: string, params?: BrokerQueryParams): string {
     const base = this.getBaseUrl();
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
@@ -298,12 +308,15 @@ export class BrokerAPI {
     if (!response.ok) {
       let errCode = 'HTTP_ERROR';
       let errMsg = `HTTP Error: ${response.status}`;
-      let errData: any = null;
+      let errData: unknown = null;
 
       try {
         errData = await response.json();
-        errCode = errData.error || errData.code || errCode;
-        errMsg = errData.message || errData.error || errMsg;
+        if (errData && typeof errData === 'object') {
+          const record = errData as { error?: unknown; code?: unknown; message?: unknown };
+          errCode = String(record.error || record.code || errCode);
+          errMsg = String(record.message || record.error || errMsg);
+        }
       } catch {
         // Fallback for non-JSON or blank responses
       }

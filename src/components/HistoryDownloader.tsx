@@ -55,7 +55,7 @@ const isActiveTask = (task: DownloadTask) => (
 export const HistoryDownloader: React.FC = () => {
     const tr = useUiTranslation();
   const [symbols, setSymbols] = useState<SymbolDataInfo[]>([]);
-  const [downloadTasks, setDownloadTasks] = useState<DownloadTask[]>([]);
+  const [downloadTasks, setDownloadTasks] = useState<DownloadTask[]>(() => historyDataManager.getDownloadTasks());
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState('');
   const [dateRange, setDateRange] = useState(createDefaultDateRange);
@@ -64,23 +64,27 @@ export const HistoryDownloader: React.FC = () => {
   const [clearingSymbol, setClearingSymbol] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
 
+  const applySymbols = useCallback((data: SymbolDataInfo[]) => {
+    setSymbols(data);
+    setSelectedSymbol((current) => (
+      current && data.some((item) => item.symbol === current)
+        ? current
+        : data[0]?.symbol ?? ''
+    ));
+  }, []);
+
   const loadSymbols = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await historyDataManager.getAvailableSymbols();
-      setSymbols(data);
-      setSelectedSymbol((current) => (
-        current && data.some((item) => item.symbol === current)
-          ? current
-          : data[0]?.symbol ?? ''
-      ));
+      applySymbols(data);
     } catch (error) {
       console.error('Failed to load symbols:', error);
       setOperationError('Historical instruments could not be loaded. Try refreshing the manager.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applySymbols]);
 
   const loadStorageStats = useCallback(async () => {
     try {
@@ -92,16 +96,42 @@ export const HistoryDownloader: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void loadSymbols();
-    void loadStorageStats();
-    setDownloadTasks(historyDataManager.getDownloadTasks());
+    let active = true;
+
+    void historyDataManager.getAvailableSymbols()
+      .then((data) => {
+        if (!active) return;
+        applySymbols(data);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        console.error('Failed to load symbols:', error);
+        setOperationError('Historical instruments could not be loaded. Try refreshing the manager.');
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsLoading(false);
+      });
+
+    void historyDataManager.getStorageStats()
+      .then((stats) => {
+        if (active) setStorageStats(stats);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        console.error('Failed to load storage stats:', error);
+        setOperationError('Local cache statistics are temporarily unavailable.');
+      });
 
     const interval = window.setInterval(() => {
       setDownloadTasks(historyDataManager.getDownloadTasks());
     }, 500);
 
-    return () => window.clearInterval(interval);
-  }, [loadStorageStats, loadSymbols]);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [applySymbols]);
 
   const selectedSymbolInfo = useMemo(
     () => symbols.find((item) => item.symbol === selectedSymbol),

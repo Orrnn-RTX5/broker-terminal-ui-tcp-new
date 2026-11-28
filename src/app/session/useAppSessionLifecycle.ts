@@ -69,7 +69,9 @@ export const useAppSessionLifecycle = ({
   const storeAccountId = useAppStore((state) => state.accountId);
   const storeIsAuthenticated = useAppStore((state) => state.isAuthenticated);
 
+  // eslint-disable-next-line react-hooks/refs -- mirrors latest auth/account props into caller-owned refs synchronously before child effects or async callbacks read them
   accountIdRef.current = accountId;
+  // eslint-disable-next-line react-hooks/refs -- mirrors latest auth/account props into caller-owned refs synchronously before child effects or async callbacks read them
   isAuthenticatedRef.current = isAuthenticated;
 
   const performSessionExpiredLogout = useCallback((reason = 'session_expired') => {

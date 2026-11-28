@@ -61,9 +61,10 @@ export const CountryCombobox = ({ value, onChange, id = 'country-combobox', clas
     };
   }, [open]);
 
+  const activeOptionCode = activeOption?.code;
   useEffect(() => {
-    if (open && activeOption) document.getElementById(`${id}-option-${activeOption.code}`)?.scrollIntoView?.({ block: 'nearest' });
-  }, [open, activeOption?.code, id]);
+    if (open && activeOptionCode) document.getElementById(`${id}-option-${activeOptionCode}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [open, activeOptionCode, id]);
 
   const emit = (code: string) => {
     lastEmittedValue.current = code;

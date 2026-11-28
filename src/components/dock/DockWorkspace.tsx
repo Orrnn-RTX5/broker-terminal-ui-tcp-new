@@ -32,6 +32,7 @@ import type { RetainedGuestChart } from '../../hooks/useGuestChartLoginContinuit
  * Warm the chart beside the authenticated shell without making the complete
  * chart graph part of the shell's critical rendering gate.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- preload helper is exported alongside DockWorkspace and required by loginRuntime contract
 export const preloadDockWorkspaceViewport = async (): Promise<void> => {
     await preloadTradingChartRuntime();
 };
@@ -295,7 +296,7 @@ export const DockWorkspace = React.memo(function DockWorkspace({
                                 <DeferredTradingChart
                                     key={`chart-${panel.id}`}
                                     symbol={chartSymbol}
-                                    timeframe={panel.props?.timeframe || globalTimeframe}
+                                    timeframe={(panel.props?.timeframe || globalTimeframe) as Timeframe}
                                     chartType={panel.props?.chartType || globalChartType}
                                     panelId={panel.id}
                                     tradeAllowed={tradeAllowed}
@@ -348,12 +349,12 @@ export const DockWorkspace = React.memo(function DockWorkspace({
                             height="100%"
                             onClose={isFloating || panel.closable === false ? undefined : () => useDockLayoutStore.getState().removePanel(panel.id)}
                             onFloat={isFloating || panel.floatable === false ? undefined : () => useDockLayoutStore.getState().floatPanel(panel.id)}
-                            onClosePosition={onClosePosition as any}
+                            onClosePosition={onClosePosition}
                             onModifyPosition={onModifyPosition}
-                            onCancelOrder={onCancelOrder as any}
-                            onCancelBulkOrders={onCancelBulkOrders as any}
-                            onCancelOrderWithoutConfirm={onCancelOrderWithoutConfirm as any}
-                            onCloseBulk={onCloseBulk as any}
+                            onCancelOrder={onCancelOrder}
+                            onCancelBulkOrders={onCancelBulkOrders}
+                            onCancelOrderWithoutConfirm={onCancelOrderWithoutConfirm}
+                            onCloseBulk={onCloseBulk}
                             historyInstrumentCatalog={historyInstrumentCatalog}
                         />
                     </ErrorBoundary>
@@ -380,9 +381,10 @@ export const DockWorkspace = React.memo(function DockWorkspace({
     }, [
         authorizedChartSymbols,
         globalChartType, globalTimeframe,
-        activeMarketSnapshot, marketInstrumentsSnapshot, allSymbols, selectedSymbol, chartRuntimeEnabled, onSymbolSelect, priceDigitsBySymbol, resolveChartSymbol, resolvePanelChartSymbol, tradeSymbolSet, volumeMetadataBySymbol,
-        onClosePosition, onModifyPosition, onCancelOrder, onCloseBulk
-    , tr]);
+        activeMarketSnapshot, marketInstrumentsSnapshot, allSymbols, selectedSymbol, chartRuntimeEnabled, onSymbolSelect, priceDigitsBySymbol, resolveChartSymbol, resolvePanelChartSymbol, retainedGuestCharts, tradeSymbolSet, volumeMetadataBySymbol,
+        historyInstrumentCatalog, onClosePosition, onModifyPosition, onCancelOrder, onCancelBulkOrders, onCancelOrderWithoutConfirm, onCloseBulk,
+        tr,
+    ]);
 
     return (
         <DockWorkspaceClean renderPanel={renderPanel} />

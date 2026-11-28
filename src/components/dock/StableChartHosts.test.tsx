@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DockContainer, FloatingPanelsLayer } from './DockContainer';
@@ -15,7 +15,10 @@ const mounted = vi.fn();
 const unmounted = vi.fn();
 function Chart({ panel, active }: { panel: DockPanelConfig; active: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const latest = useRef(panel); latest.current = panel;
+  const latest = useRef(panel);
+  useLayoutEffect(() => {
+    latest.current = panel;
+  });
   const [count, setCount] = useState(0);
   useEffect(() => {
     mounted(panel.id);

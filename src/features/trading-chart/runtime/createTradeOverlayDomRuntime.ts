@@ -1,7 +1,7 @@
 import type { RefObject } from 'react';
 import type { ISeriesApi, SeriesType } from 'lightweight-charts';
 import api from '../../../services/api';
-import { useAppStore } from '../../../store/useAppStore';
+import { useAppStore, type Order } from '../../../store/useAppStore';
 import { getLiveQuote } from '../../../services/liveQuotes';
 import { getLivePositionPrice, getLivePositionProfit } from '../../../services/livePositionMetrics';
 import { formatChartAxisPrice, getPricePointFromDigits } from '../../../utils/chartPriceScale';
@@ -687,7 +687,7 @@ export const createTradeOverlayDomRuntime = ({
             const loginId = Number.parseInt(String(useAppStore.getState().accountId ?? ''), 10);
             if (Number.isFinite(loginId) && loginId > 0) {
               void api.orders.getPendingOrders(loginId)
-                .then((orders) => useAppStore.getState().setOrders(orders as any))
+                .then((orders) => useAppStore.getState().setOrders(orders as unknown as Order[]))
                 .catch(() => undefined);
             }
           } else {
@@ -785,7 +785,7 @@ export const createTradeOverlayDomRuntime = ({
                 const loginId = Number.parseInt(String(useAppStore.getState().accountId ?? ''), 10);
                 if (Number.isFinite(loginId) && loginId > 0) {
                   return api.orders.getPendingOrders(loginId).then((orders) => {
-                    useAppStore.getState().setOrders(orders as any);
+                    useAppStore.getState().setOrders(orders as unknown as Order[]);
                   });
                 }
               })

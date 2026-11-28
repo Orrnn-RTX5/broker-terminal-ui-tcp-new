@@ -16,7 +16,7 @@ const fixture = () => {
     dataByIndex: () => ({ time: times.at(-1) }),
     coordinateToPrice: (y: number) => 100 - y / view.priceScale,
     priceToCoordinate: (p: number) => (100 - p) * view.priceScale,
-  } as unknown as ISeriesApi<any>;
+  } as unknown as ISeriesApi<'Candlestick'>;
   return { chart, series, times, view };
 };
 

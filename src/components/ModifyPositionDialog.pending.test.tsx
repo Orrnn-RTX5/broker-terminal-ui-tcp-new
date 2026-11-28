@@ -1,6 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { markQuoteFeedActivity, clearQuoteFeedActivity } from '../store/quoteFeedActivity';
+import type { Position } from '../store/useAppStore';
 
 import { ModifyPositionDialog } from './ModifyPositionDialog';
 import { commitBrokerAccountSessionScope } from '../services/brokerSession';
@@ -17,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   getPendingOrders: vi.fn(),
   setOrders: vi.fn(),
   setPositions: vi.fn(),
-  positions: [] as any[],
+  positions: [] as Position[],
   tick: {
     symbol: 'BTCUSD', bid: 81754.9, ask: 81755.1, spread: 2,
     timestamp: 1_797_341_377_000,
@@ -115,7 +116,7 @@ describe('ModifyPositionDialog pending-order', () => {
     await waitFor(() => {
       expect(mocks.modifyPendingOrder).toHaveBeenCalledTimes(1);
     });
-    const [ticket, payload] = mocks.modifyPendingOrder.mock.calls[0] as any;
+    const [ticket, payload] = mocks.modifyPendingOrder.mock.calls[0] as [number, Record<string, unknown>];
     expect(ticket).toBe(34671);
     expect(payload.price).toBe(81700.5);
     expect(payload.price_sl).toBe(81600);

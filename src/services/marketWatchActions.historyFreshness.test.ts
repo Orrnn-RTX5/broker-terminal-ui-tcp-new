@@ -29,7 +29,7 @@ describe('quick buy history refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     useAppStore.setState({ accountId: '200036' });
-    refresh = vi.fn((_login: number) => Promise.resolve());
+    refresh = vi.fn<(login: number) => Promise<void>>(() => Promise.resolve());
     unbind = bindDefaultHistoryFreshnessOwner(createHistoryFreshnessOwner(refresh, () => true));
   });
 

@@ -6,6 +6,7 @@ type StartupPart = 'chart' | 'marketWatch';
 const StartupReadyContext = createContext<((part: StartupPart) => void) | null>(null);
 
 /** Report the first usable result (including an explicit empty/error state). */
+// eslint-disable-next-line react-refresh/only-export-components -- keep useTerminalStartupReady co-located with TerminalStartupBoundary for existing importers
 export function useTerminalStartupReady(part: StartupPart, ready: boolean) {
   const reportReady = useContext(StartupReadyContext);
   useEffect(() => {
@@ -56,7 +57,10 @@ export function TerminalStartupBoundary({
   }, [splashComplete]);
 
   useEffect(() => {
-    if (canReveal) setRevealed(true);
+    if (canReveal) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- latches one-way reveal after readiness without changing render timing
+      setRevealed(true);
+    }
   }, [canReveal]);
 
   // A slow or unreachable backend must not trap the user on the loading

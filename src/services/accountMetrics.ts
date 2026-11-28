@@ -35,7 +35,7 @@ const validAnswerTimeMs = (value: number | null, now: number) => (
 
 // The server's calculation time of an answer in ms (calculated_at, else as_of).
 // Undefined when the answer carries no valid calculation time.
-function answerCalculatedAtMs(raw: Record<string, any>, now: number): number | undefined {
+function answerCalculatedAtMs(raw: Record<string, unknown>, now: number): number | undefined {
   if (raw.calculated_at === undefined && raw.as_of === undefined) return undefined;
   const calculatedAt = accountMetricNumber(raw.calculated_at ?? raw.as_of);
   const timestamp = calculatedAt === null ? null : calculatedAt < 100_000_000_000 ? calculatedAt * 1000 : calculatedAt;
@@ -44,7 +44,7 @@ function answerCalculatedAtMs(raw: Record<string, any>, now: number): number | u
 
 // The server's as-of time of an answer in ms: source_as_of, else calculated_at (as_of).
 // Undefined when the answer carries no valid time field.
-function answerAsOfMs(raw: Record<string, any>, now: number): number | undefined {
+function answerAsOfMs(raw: Record<string, unknown>, now: number): number | undefined {
   if (raw.source_as_of !== undefined) {
     const sourceAsOf = accountMetricNumber(raw.source_as_of);
     return validAnswerTimeMs(sourceAsOf, now) ? sourceAsOf! : undefined;
@@ -77,15 +77,15 @@ export function answerOrder(
 }
 
 // Keep metadata from every envelope while unwrapping account/metrics channel frames.
-export function extractAccountMetrics(payload: unknown): Record<string, any> {
+export function extractAccountMetrics(payload: unknown): Record<string, unknown> {
   let value = payload;
-  let result: Record<string, any> = {};
+  let result: Record<string, unknown> = {};
   for (let depth = 0; depth < 6; depth++) {
     if (typeof value === 'string') {
       try { value = JSON.parse(value); } catch { break; }
     }
     if (!value || typeof value !== 'object' || Array.isArray(value)) break;
-    const record = value as Record<string, any>;
+    const record = value as Record<string, unknown>;
     result = { ...result, ...record };
     value = record.account ?? record.data;
   }
@@ -117,7 +117,7 @@ export function normalizeAccountMetrics(
   // Unlocked: a token-less answer is ignored only when provably older or equal. An unorderable
   // answer, and the first value (no held value), are accepted as before.
   const stale = current?.publicationToken
-    ? (token === undefined ? order !== true : !validToken || token <= current.publicationToken)
+    ? (token === undefined ? order !== true : !validToken || (token as string) <= current.publicationToken)
     : Boolean(current) && token === undefined && order === false;
   if (stale && current) {
     // The profile endpoint may finish after a newer metrics event. It can
@@ -139,10 +139,10 @@ export function normalizeAccountMetrics(
     currencyDigits: readBackendCurrencyDigits(raw) ?? current?.currencyDigits,
     leverage: accountMetricNumber(raw.leverage) ?? current?.leverage ?? 100,
     metricsScope: scope,
-    publicationToken: validToken ? token : current?.publicationToken,
-    calculationVersion: raw.calculation_version ?? current?.calculationVersion,
-    marginCalculationVersion: raw.margin_calculation_version ?? current?.marginCalculationVersion,
-    configurationVersion: raw.configuration_version ?? current?.configurationVersion,
+    publicationToken: validToken ? (token as string) : current?.publicationToken,
+    calculationVersion: typeof raw.calculation_version === 'string' ? raw.calculation_version : current?.calculationVersion,
+    marginCalculationVersion: typeof raw.margin_calculation_version === 'string' ? raw.margin_calculation_version : current?.marginCalculationVersion,
+    configurationVersion: typeof raw.configuration_version === 'string' ? raw.configuration_version : current?.configurationVersion,
     metricsStatus: String(raw.status ?? (raw.valid === false ? 'unavailable' : raw.stale === true ? 'stale' : 'valid')),
     marketClosed: raw.market_closed === true || raw.market_status === 'closed',
     metricUpdatedAt: {},

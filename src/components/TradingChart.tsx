@@ -46,7 +46,6 @@ import {
 import { projectDrawingTimeAtLogical } from '../drawing-tools/geometry/drawingTimeProjection';
 import { candleAggregationService, getTimeframeSeconds, type OHLCV, type Timeframe as AggTimeframe } from '../services/candleAggregationService';
 import { useAppStore } from '../store/useAppStore';
-import { isDesktopBackendTarget } from '../config/backendTarget.js';
 import { commandBus } from '../services/commandBus';
 import {
   buildChartSeriesPriceFormat,

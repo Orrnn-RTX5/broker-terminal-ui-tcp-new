@@ -25,9 +25,9 @@ interface ChartTemplateDialogProps {
     gridType?: ChartTemplate['gridType'];
     gridLineStyle?: ChartTemplate['gridLineStyle'];
     showVolumes: boolean;
-    indicators: any[];
-    drawingTools: any[];
-    colors: any;
+    indicators: ChartTemplate['indicators'];
+    drawingTools: ChartTemplate['drawingTools'];
+    colors?: ChartTemplate['colors'];
   };
   onLoadTemplate?: (template: ChartTemplate) => void;
 }

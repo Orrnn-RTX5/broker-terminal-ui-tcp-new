@@ -3,10 +3,11 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
-import { useCrosshair } from './useCrosshair';
+import type { IChartApi, Time } from 'lightweight-charts';
+import { useCrosshair, type UseCrosshairOptions } from './useCrosshair';
 
 type Listener = () => void;
+type TestSeries = NonNullable<UseCrosshairOptions['seriesRef']['current']>;
 
 const createChart = () => {
   const crosshairListeners = new Set<Listener>();
@@ -33,7 +34,7 @@ const createChart = () => {
 
 interface HarnessProps {
   chartRef: { current: IChartApi | null };
-  seriesRef: { current: ISeriesApi<any> | null };
+  seriesRef: UseCrosshairOptions['seriesRef'];
   enabled: boolean;
   renderVersion?: number;
   initialCursor?: string;
@@ -42,7 +43,7 @@ interface HarnessProps {
 
 function Harness({ chartRef, seriesRef, enabled, initialCursor, brokerOffsetSeconds }: HarnessProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const refs = useCrosshair({
+  const { vertLineRef, horizLineRef, centerRef, timeLabelRef, priceLabelRef } = useCrosshair({
     chartRef,
     seriesRef,
     containerRef,
@@ -54,11 +55,11 @@ function Harness({ chartRef, seriesRef, enabled, initialCursor, brokerOffsetSeco
 
   return (
     <div ref={containerRef} data-testid="container" style={{ cursor: initialCursor }}>
-      <div ref={refs.vertLineRef} data-testid="vertical" />
-      <div ref={refs.horizLineRef} data-testid="horizontal" />
-      <div ref={refs.centerRef} data-testid="center" />
-      <div ref={refs.timeLabelRef} data-testid="time-label" style={{ fontSize: '10px' }} />
-      <div ref={refs.priceLabelRef} data-testid="price-label" />
+      <div ref={vertLineRef} data-testid="vertical" />
+      <div ref={horizLineRef} data-testid="horizontal" />
+      <div ref={centerRef} data-testid="center" />
+      <div ref={timeLabelRef} data-testid="time-label" style={{ fontSize: '10px' }} />
+      <div ref={priceLabelRef} data-testid="price-label" />
     </div>
   );
 }
@@ -153,7 +154,7 @@ describe('useCrosshair dirty rendering', () => {
     const chartRef = { current: first.chart as unknown as IChartApi };
     const coordinateToPrice = vi.fn((y: number) => 100 + y / 100);
     const seriesRef = {
-      current: { coordinateToPrice } as unknown as ISeriesApi<any>,
+      current: { coordinateToPrice } as unknown as TestSeries,
     };
     const view = render(<Harness chartRef={chartRef} seriesRef={seriesRef} enabled renderVersion={0} />);
 
@@ -238,7 +239,7 @@ describe('useCrosshair dirty rendering', () => {
     const fixture = createChart();
     const chartRef = { current: fixture.chart as unknown as IChartApi };
     const seriesRef = {
-      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any>,
+      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as TestSeries,
     };
     const view = render(<Harness chartRef={chartRef} seriesRef={seriesRef} enabled />);
     const timeLabel = view.getByTestId('time-label');
@@ -277,7 +278,7 @@ describe('useCrosshair dirty rendering', () => {
     const fixture = createChart();
     const view = render(<Harness
       chartRef={{ current: fixture.chart as unknown as IChartApi }}
-      seriesRef={{ current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any> }}
+      seriesRef={{ current: { coordinateToPrice: vi.fn(() => 101) } as unknown as TestSeries }}
       enabled
     />);
     const container = view.getByTestId('container');
@@ -305,7 +306,7 @@ describe('useCrosshair dirty rendering', () => {
     const replacementScale = createChart();
     const chartRef = { current: first.chart as unknown as IChartApi };
     const seriesRef = {
-      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any>,
+      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as TestSeries,
     };
     const view = render(
       <Harness chartRef={chartRef} seriesRef={seriesRef} enabled renderVersion={0} initialCursor="grab" />,
@@ -379,7 +380,7 @@ describe('useCrosshair dirty rendering', () => {
     const fixture = createChart();
     const chartRef = { current: fixture.chart as unknown as IChartApi };
     const seriesRef = {
-      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any>,
+      current: { coordinateToPrice: vi.fn(() => 101) } as unknown as TestSeries,
     };
     const view = render(
       <Harness chartRef={chartRef} seriesRef={seriesRef} enabled={false} initialCursor="crosshair" />,
@@ -409,7 +410,7 @@ describe('useCrosshair dirty rendering', () => {
     const view = render(
       <Harness
         chartRef={{ current: fixture.chart as unknown as IChartApi }}
-        seriesRef={{ current: { coordinateToPrice: vi.fn(() => 101) } as unknown as ISeriesApi<any> }}
+        seriesRef={{ current: { coordinateToPrice: vi.fn(() => 101) } as unknown as TestSeries }}
         enabled
         brokerOffsetSeconds={() => 19_800}
       />,

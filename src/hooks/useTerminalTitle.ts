@@ -517,6 +517,7 @@ export function useTerminalBrokerInfo(symbol = ''): TerminalBrokerInfo {
 
     useEffect(() => {
         const initialExplicit = getExplicitConfiguredBrokerName();
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- resets resolved broker title and logo snapshot to immediate fallback when infoKey or serverName changes before async details reload
         setResolvedKey(infoKey);
         setBrokerName(initialExplicit || brokerDisplayName(serverName));
         setHasExplicitBroker(Boolean(initialExplicit));

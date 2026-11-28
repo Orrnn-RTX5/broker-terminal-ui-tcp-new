@@ -89,7 +89,7 @@ export const fetchBugReportOptions = async (): Promise<{ enabled: boolean }> => 
 // keeps its session token in local storage, so anything that enumerated
 // storage would ship a live trading credential into a bug report.
 const collectEnvironment = () => {
-  let timezone = '';
+  let timezone: string;
   try {
     timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   } catch {
@@ -222,7 +222,7 @@ export const submitBugReport = async ({
   });
 
   const text = await response.text();
-  let data: Record<string, unknown> = {};
+  let data: Record<string, unknown>;
   try {
     data = text ? JSON.parse(text) : {};
   } catch {

@@ -143,7 +143,7 @@ export function useWebSocket<T = unknown>(
   return {
     // Connection state
     isConnected,
-    connectionState: connectionState as any,
+    connectionState,
     isStale,
 
     // Metrics

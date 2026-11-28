@@ -215,10 +215,13 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
   } = options;
 
   const updateLegendDOMRef = useRef(updateLegendDOM);
+  // eslint-disable-next-line react-hooks/refs -- keep latest legend DOM helper synced on live-candle hot path without extra effect churn
   updateLegendDOMRef.current = updateLegendDOM;
   const chartSelectionPresentationKeyRef = useRef(chartSelectionPresentationKey);
+  // eslint-disable-next-line react-hooks/refs -- keep latest presentation key synced on live-candle hot path without extra effect churn
   chartSelectionPresentationKeyRef.current = chartSelectionPresentationKey;
   const timeframeRef = useRef(timeframe);
+  // eslint-disable-next-line react-hooks/refs -- keep latest timeframe synced on live-candle hot path without extra effect churn
   timeframeRef.current = timeframe;
   const runtimeCallbacksRef = useRef({
     applyAreaTrendColors,
@@ -242,6 +245,7 @@ export const useTradingChartLiveCandleRuntime = (options: UseTradingChartLiveCan
     updateChartData,
     validateRenderedCandlesAgainstLivePrice,
   });
+  // eslint-disable-next-line react-hooks/refs -- keep latest VSync callbacks synced for stream subscriptions without changing effect timing
   runtimeCallbacksRef.current = {
     applyAreaTrendColors,
     cancelQueuedChartRender,

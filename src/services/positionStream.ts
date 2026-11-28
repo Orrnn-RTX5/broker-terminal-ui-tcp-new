@@ -25,34 +25,91 @@ const toFinite = (v: unknown, fallback = 0): number => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-const hasOwnValue = (record: any, keys: readonly string[]): boolean => (
-  !!record
-  && typeof record === 'object'
-  && keys.some((key) => (
-    Object.prototype.hasOwnProperty.call(record, key)
-    && record[key] !== undefined
-    && record[key] !== null
-    && record[key] !== ''
-  ))
+type StreamRecord = Record<string, unknown>;
+const asRecord = (value: unknown): StreamRecord | null => (
+  value !== null && typeof value === 'object' ? value as StreamRecord : null
 );
+export interface NormalizedPositionRecord {
+  state_version?: string;
+  state_version_text?: string;
+  id: number;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  volume: number;
+  volume_lots: number;
+  quantity: number;
+  openPrice: number;
+  open_price: number;
+  price_open: number;
+  currentPrice: number;
+  current_price: number;
+  price_current: number;
+  openTime: string;
+  time_create: string;
+  chartEntryTime: string;
+  chartEntryPrice?: number;
+  sl: number;
+  price_sl: number;
+  stopLoss: number;
+  stop_loss: number;
+  tp: number;
+  price_tp: number;
+  takeProfit: number;
+  take_profit: number;
+  swap: number;
+  commission: number;
+  unrealizedPnL: number;
+  unrealized_pl: number;
+  profit: number;
+  hasBackendProfit: boolean;
+  hasBackendCurrentPrice?: boolean;
+  pnl_available?: boolean;
+  margin?: number;
+  used_margin?: number;
+  margin_available?: boolean;
+  hasBackendMargin?: boolean;
+  price_time_msc?: number | string;
+  digits?: number;
+  comment?: string;
+  time_update?: string;
+  account_login?: number;
+  broker_id?: string;
+}
+
+const hasOwnValue = (record: unknown, keys: readonly string[]): boolean => {
+  const rec = asRecord(record);
+  return (
+    rec !== null
+    && keys.some((key) => (
+      Object.prototype.hasOwnProperty.call(rec, key)
+      && rec[key] !== undefined
+      && rec[key] !== null
+      && rec[key] !== ''
+    ))
+  );
+};
 
 const stopLossAliases = ['price_sl', 'sl', 'stopLoss', 'stop_loss'] as const;
 const takeProfitAliases = ['price_tp', 'tp', 'takeProfit', 'take_profit'] as const;
 
-const readProtectionLevel = (record: any, keys: readonly string[]): number | undefined => {
+const readProtectionLevel = (record: unknown, keys: readonly string[]): number | undefined => {
+  const rec = asRecord(record);
+  if (!rec) return undefined;
   for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(record, key)
-      && record[key] !== undefined && record[key] !== '') {
+    if (Object.prototype.hasOwnProperty.call(rec, key)
+      && rec[key] !== undefined && rec[key] !== '') {
       // Explicit null/zero removes a level; an omitted value leaves it intact.
-      return toFinite(record[key], 0);
+      return toFinite(rec[key], 0);
     }
   }
   return undefined;
 };
 
-const firstDefined = (record: any, keys: readonly string[]): unknown => {
+const firstDefined = (record: unknown, keys: readonly string[]): unknown => {
+  const rec = asRecord(record);
+  if (!rec) return undefined;
   for (const key of keys) {
-    const value = record?.[key];
+    const value = rec[key];
     if (value !== undefined && value !== null && value !== '') return value;
   }
   return undefined;
@@ -63,10 +120,11 @@ const timestampToIso = (v: unknown): string => {
   return timestamp === undefined ? '' : new Date(timestamp).toISOString();
 };
 
-export function normalizePosition(raw: any) {
+export function normalizePosition(raw: unknown): NormalizedPositionRecord {
+  const rec = asRecord(raw) ?? {};
   // FIX: Position event time accepts every broker precision/ISO alias without
   // multiplying a millisecond/microsecond/nanosecond epoch a second time.
-  const openTimestamp = readBrokerTimestampMs([raw], [
+  const openTimestamp = readBrokerTimestampMs([rec], [
     'time_create', 'time_create_ms', 'time_create_msc',
     'time_open', 'time_open_ms', 'time_open_msc',
     'opened_at', 'open_time', 'openTime',
@@ -74,29 +132,29 @@ export function normalizePosition(raw: any) {
   ]);
   const openTime = openTimestamp === undefined ? '' : timestampToIso(openTimestamp);
 
-  const id = getPositionId(raw);
-  const volume = toFinite(raw.volume_lots ?? raw.volume ?? raw.quantity, 0);
-  const openPrice = stripFloatPrecisionNoise(toFinite(raw.price_open ?? raw.open_price ?? raw.openPrice ?? raw.price, 0));
-  const currentPrice = stripFloatPrecisionNoise(toFinite(raw.price_current ?? raw.current_price ?? raw.currentPrice, 0));
-  const unrealizedPnL = toFinite(raw.profit ?? raw.unrealized_pl ?? raw.unrealizedPnL, 0);
-  const sl = stripFloatPrecisionNoise(readProtectionLevel(raw, stopLossAliases) ?? 0);
-  const tp = stripFloatPrecisionNoise(readProtectionLevel(raw, takeProfitAliases) ?? 0);
-  const digits = resolveSpecDigits(raw.digits);
+  const id = getPositionId(rec);
+  const volume = toFinite(rec.volume_lots ?? rec.volume ?? rec.quantity, 0);
+  const openPrice = stripFloatPrecisionNoise(toFinite(rec.price_open ?? rec.open_price ?? rec.openPrice ?? rec.price, 0));
+  const currentPrice = stripFloatPrecisionNoise(toFinite(rec.price_current ?? rec.current_price ?? rec.currentPrice, 0));
+  const unrealizedPnL = toFinite(rec.profit ?? rec.unrealized_pl ?? rec.unrealizedPnL, 0);
+  const sl = stripFloatPrecisionNoise(readProtectionLevel(rec, stopLossAliases) ?? 0);
+  const tp = stripFloatPrecisionNoise(readProtectionLevel(rec, takeProfitAliases) ?? 0);
+  const digits = resolveSpecDigits(rec.digits);
 
   return {
-    ...raw,
-    state_version: positionVersion(raw),
+    ...rec,
+    state_version: positionVersion(rec),
     id,
-    symbol: raw.symbol || '',
-    side: Number(raw.action) === 1 || ['sell', 'short'].includes(String(raw.side).toLowerCase()) ? 'SELL' as const : 'BUY' as const,
+    symbol: typeof rec.symbol === 'string' ? rec.symbol : '',
+    side: Number(rec.action) === 1 || ['sell', 'short'].includes(String(rec.side).toLowerCase()) ? 'SELL' as const : 'BUY' as const,
     volume,
     volume_lots: volume,
     openPrice,
     currentPrice,
     openTime,
     ...(digits !== null ? { digits } : {}),
-    chartEntryTime: (typeof raw?.chartEntryTime === 'string' && raw.chartEntryTime.trim())
-      ? raw.chartEntryTime.trim()
+    chartEntryTime: (typeof rec.chartEntryTime === 'string' && rec.chartEntryTime.trim())
+      ? rec.chartEntryTime.trim()
       : (openTime || new Date().toISOString()),
     sl,
     price_sl: sl,
@@ -106,11 +164,11 @@ export function normalizePosition(raw: any) {
     price_tp: tp,
     takeProfit: tp,
     take_profit: tp,
-    swap: toFinite(raw.storage ?? raw.swap, 0),
-    commission: toFinite(raw.commission, 0),
+    swap: toFinite(rec.storage ?? rec.swap, 0),
+    commission: toFinite(rec.commission, 0),
     unrealizedPnL,
-    hasBackendProfit: raw.pnl_available !== false && raw.hasBackendProfit !== false && hasOwnValue(raw, ['profit', 'unrealized_pl', 'unrealizedPnL']),
-    comment: raw.comment,
+    hasBackendProfit: rec.pnl_available !== false && rec.hasBackendProfit !== false && hasOwnValue(rec, ['profit', 'unrealized_pl', 'unrealizedPnL']),
+    comment: typeof rec.comment === 'string' ? rec.comment : undefined,
     // FIX: Keep wire aliases synchronized with the canonical fields. Several
     // trade-table consumers still read these defensive aliases first.
     open_price: openPrice,
@@ -121,28 +179,34 @@ export function normalizePosition(raw: any) {
     unrealized_pl: unrealizedPnL,
     profit: unrealizedPnL,
     time_create: openTime,
-  };
+  } as NormalizedPositionRecord;
 }
 
-export const getPositionId = (raw: any): number => (
-  toFinite(raw?.position_id ?? raw?.ticket ?? raw?.id ?? raw?.position_ticket ?? raw?.closed_ticket, 0)
-);
+export const getPositionId = (raw: unknown): number => {
+  const rec = asRecord(raw);
+  return rec
+    ? toFinite(rec.position_id ?? rec.ticket ?? rec.id ?? rec.position_ticket ?? rec.closed_ticket, 0)
+    : 0;
+};
 
-export const isDeletedPositionRecord = (raw: any): boolean => {
-  if (!raw || typeof raw !== 'object') return false;
-  if (raw.deleted === true) return true;
-  const closeReason = String(raw.close_reason ?? raw.closeReason ?? '').trim().toLowerCase();
+export const isDeletedPositionRecord = (raw: unknown): boolean => {
+  const rec = asRecord(raw);
+  if (!rec) return false;
+  if (rec.deleted === true) return true;
+  const closeReason = String(rec.close_reason ?? rec.closeReason ?? '').trim().toLowerCase();
   if (closeReason === 'deleted') return true;
-  const lifecycle = String(raw.event ?? raw.type ?? raw.status ?? raw.state ?? '').trim().toLowerCase();
+  const lifecycle = String(rec.event ?? rec.type ?? rec.status ?? rec.state ?? '').trim().toLowerCase();
   if (lifecycle === 'position_deleted' || lifecycle === 'deleted') return true;
-  const action = String(raw.action ?? '').trim().toLowerCase();
+  const action = String(rec.action ?? '').trim().toLowerCase();
   return action === 'position_deleted' || action === 'deleted';
 };
 
-export const isDeletedPositionStreamMessage = (message: any): boolean => {
-  const envelopes = [message, message?.data, message?.data?.data];
+export const isDeletedPositionStreamMessage = (message: unknown): boolean => {
+  const root = asRecord(message);
+  const data = asRecord(root?.data);
+  const envelopes = [root, data, asRecord(data?.data)];
   for (const env of envelopes) {
-    if (!env || typeof env !== 'object') continue;
+    if (!env) continue;
     if (isDeletedPositionRecord(env)) return true;
     if (
       isDeletedPositionRecord(env.position)
@@ -157,13 +221,14 @@ export const isDeletedPositionStreamMessage = (message: any): boolean => {
   return false;
 };
 
-export const isClosedPositionRecord = (raw: any): boolean => {
+export const isClosedPositionRecord = (raw: unknown): boolean => {
   if (isDeletedPositionRecord(raw)) return true;
-  const lifecycle = String(raw?.event ?? raw?.status ?? raw?.state ?? '').trim().toLowerCase();
-  if (raw?.closed === true || ['close', 'closed', 'deleted', 'position_deleted', 'sl_hit', 'tp_hit', 'stop_out'].includes(lifecycle)) {
+  const rec = asRecord(raw);
+  const lifecycle = String(rec?.event ?? rec?.status ?? rec?.state ?? '').trim().toLowerCase();
+  if (rec?.closed === true || ['close', 'closed', 'deleted', 'position_deleted', 'sl_hit', 'tp_hit', 'stop_out'].includes(lifecycle)) {
     return true;
   }
-  const closedAt = readBrokerTimestampMs([raw], [
+  const closedAt = readBrokerTimestampMs([rec], [
     'time_close', 'time_close_ms', 'time_close_msc',
     'closed_at', 'close_time', 'closeTime',
   ]);
@@ -172,74 +237,81 @@ export const isClosedPositionRecord = (raw: any): boolean => {
     && closedAt > 0
   ) return true;
   const volumeKeys = ['volume_lots', 'volume', 'quantity'] as const;
-  return hasOwnValue(raw, volumeKeys) && toFinite(firstDefined(raw, volumeKeys), 0) <= 0;
+  return hasOwnValue(rec, volumeKeys) && toFinite(firstDefined(rec, volumeKeys), 0) <= 0;
 };
 
-export const mergePositionRecord = (raw: any, existing?: any): any => {
-  if (existing && isOlderPositionVersion(raw, existing)) return existing;
-  if (existing && raw?.update_kind === 'pnl') {
-    const incomingTime = Number(raw.price_time_msc);
-    const previousTime = Number(existing.price_time_msc);
-    if (Number.isFinite(incomingTime) && Number.isFinite(previousTime) && incomingTime < previousTime) return existing;
+export const mergePositionRecord = <T extends object = NormalizedPositionRecord>(
+  raw: unknown,
+  existing?: T,
+): NormalizedPositionRecord => {
+  const rec = asRecord(raw) ?? {};
+  if (existing && isOlderPositionVersion(rec, existing)) return existing as unknown as NormalizedPositionRecord;
+  const prev = existing as unknown as NormalizedPositionRecord | undefined;
+  if (prev && rec.update_kind === 'pnl') {
+    const incomingTime = Number(rec.price_time_msc);
+    const previousTime = Number(prev.price_time_msc);
+    if (Number.isFinite(incomingTime) && Number.isFinite(previousTime) && incomingTime < previousTime) {
+      return existing as unknown as NormalizedPositionRecord;
+    }
     // Display messages are never allowed to modify volume, side or protection,
     // even if a legacy publisher accidentally includes those fields.
-    const profit = firstDefined(raw, ['profit', 'unrealized_pl', 'unrealizedPnL']);
-    const price = firstDefined(raw, ['price_current', 'current_price', 'currentPrice']);
+    const profit = firstDefined(rec, ['profit', 'unrealized_pl', 'unrealizedPnL']);
+    const price = firstDefined(rec, ['price_current', 'current_price', 'currentPrice']);
     const cleanPrice = price !== undefined ? stripFloatPrecisionNoise(toFinite(price)) : undefined;
     return {
-      ...existing,
+      ...prev,
       pnl_available: true,
       ...(cleanPrice !== undefined ? { currentPrice: cleanPrice, current_price: cleanPrice, price_current: cleanPrice, hasBackendCurrentPrice: true } : {}),
       ...(profit !== undefined ? { profit: toFinite(profit), unrealizedPnL: toFinite(profit), unrealized_pl: toFinite(profit), hasBackendProfit: true } : {}),
-      ...(raw.margin !== undefined ? {
-        margin: toFinite(raw.margin),
-        used_margin: toFinite(raw.margin),
-        margin_available: raw.margin_available ?? true,
-        hasBackendMargin: raw.hasBackendMargin ?? (raw.margin_available !== false),
+      ...(rec.margin !== undefined ? {
+        margin: toFinite(rec.margin),
+        used_margin: toFinite(rec.margin),
+        margin_available: (rec.margin_available as boolean | undefined) ?? true,
+        hasBackendMargin: (rec.hasBackendMargin as boolean | undefined) ?? (rec.margin_available !== false),
       } : {}),
       ...(Number.isFinite(incomingTime) ? { price_time_msc: incomingTime } : {}),
-    };
+    } as NormalizedPositionRecord;
   }
-  const normalized = normalizePosition(raw) as any;
-  if (!existing) return normalized;
-  const duplicatePricedSnapshot = raw.pnl_available === false
-    && positionVersion(raw) !== undefined && positionVersion(raw) === positionVersion(existing)
-    && existing.pnl_available !== false && existing.hasBackendProfit !== false;
-  if (positionVersion(existing) !== undefined && positionVersion(raw) === positionVersion(existing)
-    && Number(existing.price_time_msc) > (Number(raw.price_time_msc) || 0)) {
-    normalized.currentPrice = existing.currentPrice;
-    normalized.unrealizedPnL = existing.unrealizedPnL;
-    normalized.price_time_msc = existing.price_time_msc;
+  const normalized = normalizePosition(rec);
+  if (!prev) return normalized;
+  const duplicatePricedSnapshot = rec.pnl_available === false
+    && positionVersion(rec) !== undefined && positionVersion(rec) === positionVersion(prev)
+    && prev.pnl_available !== false && prev.hasBackendProfit !== false;
+  if (positionVersion(prev) !== undefined && positionVersion(rec) === positionVersion(prev)
+    && Number(prev.price_time_msc) > (Number(rec.price_time_msc) || 0)) {
+    normalized.currentPrice = prev.currentPrice;
+    normalized.unrealizedPnL = prev.unrealizedPnL;
+    normalized.price_time_msc = prev.price_time_msc;
   }
 
-  const volume = hasOwnValue(raw, ['volume_lots', 'volume', 'quantity']) ? normalized.volume : existing.volume;
-  const openPrice = hasOwnValue(raw, ['price_open', 'open_price', 'openPrice', 'price'])
+  const volume = hasOwnValue(rec, ['volume_lots', 'volume', 'quantity']) ? normalized.volume : prev.volume;
+  const openPrice = hasOwnValue(rec, ['price_open', 'open_price', 'openPrice', 'price'])
     ? normalized.openPrice
-    : existing.openPrice;
-  const hasCurrentPrice = hasOwnValue(raw, ['price_current', 'current_price', 'currentPrice']);
-  const currentPrice = hasCurrentPrice ? normalized.currentPrice : existing.currentPrice;
-  const openTime = hasOwnValue(raw, [
+    : prev.openPrice;
+  const hasCurrentPrice = hasOwnValue(rec, ['price_current', 'current_price', 'currentPrice']);
+  const currentPrice = hasCurrentPrice ? normalized.currentPrice : prev.currentPrice;
+  const openTime = hasOwnValue(rec, [
     'time_create', 'time_create_ms', 'time_create_msc',
     'time_ms', 'time_msc', 'time', 'timestamp', 'timestamp_ms',
     'time_open', 'time_open_ms', 'time_open_msc', 'opened_at', 'open_time', 'openTime',
   ])
     ? normalized.openTime
-    : existing.openTime;
-  const hasProfit = hasOwnValue(raw, ['profit', 'unrealized_pl', 'unrealizedPnL']);
-  const unrealizedPnL = hasProfit ? normalized.unrealizedPnL : existing.unrealizedPnL;
-  const sl = stripFloatPrecisionNoise(readProtectionLevel(raw, stopLossAliases) ?? existing.sl);
-  const tp = stripFloatPrecisionNoise(readProtectionLevel(raw, takeProfitAliases) ?? existing.tp);
-  const mergedDigits = resolveSpecDigits(normalized.digits, existing.digits);
+    : prev.openTime;
+  const hasProfit = hasOwnValue(rec, ['profit', 'unrealized_pl', 'unrealizedPnL']);
+  const unrealizedPnL = hasProfit ? normalized.unrealizedPnL : prev.unrealizedPnL;
+  const sl = stripFloatPrecisionNoise(readProtectionLevel(rec, stopLossAliases) ?? prev.sl);
+  const tp = stripFloatPrecisionNoise(readProtectionLevel(rec, takeProfitAliases) ?? prev.tp);
+  const mergedDigits = resolveSpecDigits(normalized.digits, prev.digits);
 
   return {
-    ...existing,
+    ...prev,
     ...normalized,
     ...(mergedDigits !== null ? { digits: mergedDigits } : {}),
-    pnl_available: duplicatePricedSnapshot ? true : (raw.pnl_available ?? existing.pnl_available),
-    state_version: positionVersion(raw) ?? positionVersion(existing),
-    state_version_text: positionVersion(raw) ?? positionVersion(existing),
-    symbol: hasOwnValue(raw, ['symbol']) ? normalized.symbol : existing.symbol,
-    side: hasOwnValue(raw, ['action', 'side']) ? normalized.side : existing.side,
+    pnl_available: duplicatePricedSnapshot ? true : ((rec.pnl_available as boolean | undefined) ?? prev.pnl_available),
+    state_version: positionVersion(rec) ?? positionVersion(prev),
+    state_version_text: positionVersion(rec) ?? positionVersion(prev),
+    symbol: hasOwnValue(rec, ['symbol']) ? normalized.symbol : prev.symbol,
+    side: hasOwnValue(rec, ['action', 'side']) ? normalized.side : prev.side,
     volume,
     volume_lots: volume,
     quantity: volume,
@@ -251,9 +323,9 @@ export const mergePositionRecord = (raw: any, existing?: any): any => {
     price_current: currentPrice,
     openTime,
     time_create: openTime,
-    chartEntryTime: hasOwnValue(raw, ['chartEntryTime'])
+    chartEntryTime: hasOwnValue(rec, ['chartEntryTime'])
       ? normalized.chartEntryTime
-      : (existing.chartEntryTime || openTime || normalized.chartEntryTime),
+      : (prev.chartEntryTime || openTime || normalized.chartEntryTime),
     sl,
     tp,
     price_sl: sl,
@@ -262,8 +334,8 @@ export const mergePositionRecord = (raw: any, existing?: any): any => {
     price_tp: tp,
     takeProfit: tp,
     take_profit: tp,
-    swap: hasOwnValue(raw, ['storage', 'swap']) ? normalized.swap : existing.swap,
-    commission: hasOwnValue(raw, ['commission']) ? normalized.commission : existing.commission,
+    swap: hasOwnValue(rec, ['storage', 'swap']) ? normalized.swap : prev.swap,
+    commission: hasOwnValue(rec, ['commission']) ? normalized.commission : prev.commission,
     unrealizedPnL,
     unrealized_pl: unrealizedPnL,
     profit: unrealizedPnL,
@@ -272,21 +344,22 @@ export const mergePositionRecord = (raw: any, existing?: any): any => {
     // or the Trade tab keeps showing dashes until a REST reload. A duplicate
     // snapshot of an already priced version keeps its flags.
     ...(hasCurrentPrice && !duplicatePricedSnapshot
-      ? { hasBackendCurrentPrice: raw.hasBackendCurrentPrice !== false && raw.pnl_available !== false }
+      ? { hasBackendCurrentPrice: rec.hasBackendCurrentPrice !== false && rec.pnl_available !== false }
       : {}),
-    hasBackendProfit: duplicatePricedSnapshot ? existing.hasBackendProfit : raw.pnl_available === false ? false
-      : hasProfit ? normalized.hasBackendProfit : existing.hasBackendProfit,
-    comment: hasOwnValue(raw, ['comment']) ? normalized.comment : existing.comment,
-  };
+    hasBackendProfit: duplicatePricedSnapshot ? prev.hasBackendProfit : rec.pnl_available === false ? false
+      : hasProfit ? normalized.hasBackendProfit : prev.hasBackendProfit,
+    comment: hasOwnValue(rec, ['comment']) ? normalized.comment : prev.comment,
+  } as NormalizedPositionRecord;
 };
 
-const positionVersion = (raw: any): string | undefined => (
-  readPositionStateVersion(raw?.state_version_text ?? raw?.state_version) ?? undefined
-);
+const positionVersion = (raw: unknown): string | undefined => {
+  const rec = asRecord(raw);
+  return readPositionStateVersion(rec?.state_version_text ?? rec?.state_version) ?? undefined;
+};
 
 // Do not coerce version strings to Number: PostgreSQL bigint exceeds JS's
 // exact integer range. Unversioned legacy messages remain compatible.
-export const isOlderPositionVersion = (incoming: any, existing: any): boolean => {
+export const isOlderPositionVersion = (incoming: unknown, existing: unknown): boolean => {
   const next = positionVersion(incoming);
   const current = positionVersion(existing);
   return next !== undefined && current !== undefined
@@ -294,7 +367,7 @@ export const isOlderPositionVersion = (incoming: any, existing: any): boolean =>
 };
 
 export type PositionStreamBatch = {
-  positions: any[];
+  positions: StreamRecord[];
   mode: 'delta' | 'snapshot';
   closedTickets?: number[];
 };
@@ -338,8 +411,10 @@ const normalizeBulkFilterType = (raw: unknown): PositionBulkFilterType => {
   return 'ALL';
 };
 
-export const readPositionBulkCloseEvent = (message: any): PositionBulkCloseEvent | null => {
-  const envelopes = [message?.data?.data, message?.data, message];
+export const readPositionBulkCloseEvent = (message: unknown): PositionBulkCloseEvent | null => {
+  const root = asRecord(message);
+  const data = asRecord(root?.data);
+  const envelopes = [asRecord(data?.data), data, root];
   const event = envelopes
     .flatMap((value) => [value?.event, value?.type, value?.action])
     .map((value) => String(value ?? '').trim().toLowerCase())
@@ -348,7 +423,7 @@ export const readPositionBulkCloseEvent = (message: any): PositionBulkCloseEvent
 
   const rawTickets = envelopes
     .flatMap((value) => [value?.closed_tickets, value?.closedTickets, value?.tickets])
-    .find((value) => Array.isArray(value)) as unknown[] | undefined;
+    .find((value): value is unknown[] => Array.isArray(value));
   const closedTickets = Array.isArray(rawTickets)
     ? rawTickets
         .map((t) => toFinite(t, 0))
@@ -399,7 +474,7 @@ export const reconcilePositionBulkClose = <T extends { id: number }>(
   const closedTickets: number[] = [];
 
   for (let i = 0; i < current.length; i++) {
-    const pos = current[i] as any;
+    const pos = current[i] as unknown as StreamRecord;
     const ticket = Number(pos?.id ?? pos?.ticket ?? 0);
     if (explicitSet) {
       if (explicitSet.has(ticket)) {
@@ -455,8 +530,10 @@ export const reconcilePositionBulkClose = <T extends { id: number }>(
 
 const SIDE_ONLY_ACTIONS = new Set(['buy', 'sell', 'long', 'short']);
 
-export const readPositionStreamEvent = (message: any): { event: string; position: any } => {
-  const envelopes = [message?.data?.data, message?.data, message];
+export const readPositionStreamEvent = (message: unknown): { event: string; position: StreamRecord | undefined } => {
+  const root = asRecord(message);
+  const data = asRecord(root?.data);
+  const envelopes = [asRecord(data?.data), data, root];
   const event = envelopes.flatMap((value) => [
     value?.event,
     value?.type,
@@ -470,15 +547,17 @@ export const readPositionStreamEvent = (message: any): { event: string; position
     value?.closed_position,
     ...(allowResult ? [value?.result] : []),
     value,
-  ]).find((value) => getPositionId(value) > 0);
+  ]).find((value): value is StreamRecord => getPositionId(value) > 0);
   return { event, position };
 };
 
-const extractBatchFromRecord = (value: any): any[] | undefined => {
-  if (Array.isArray(value)) return value;
-  if (!value || typeof value !== 'object') return undefined;
+const extractBatchFromRecord = (value: unknown): StreamRecord[] | undefined => {
+  if (Array.isArray(value)) return value as StreamRecord[];
+  const rec = asRecord(value);
+  if (!rec) return undefined;
   for (const key of ['positions', 'open_positions', 'items', 'data'] as const) {
-    if (Array.isArray(value[key])) return value[key];
+    const candidate = rec[key];
+    if (Array.isArray(candidate)) return candidate as StreamRecord[];
   }
   return undefined;
 };
@@ -487,14 +566,16 @@ const extractBatchFromRecord = (value: any): any[] | undefined => {
  * Inspect the broker event inside either /ws/v2 or channel_message envelopes.
  * An array alone does not establish that omitted tickets have been closed.
  */
-export const readPositionStreamBatch = (message: any): PositionStreamBatch | null => {
-  const envelopes = [message, message?.data, message?.data?.data];
+export const readPositionStreamBatch = (message: unknown): PositionStreamBatch | null => {
+  const root = asRecord(message);
+  const data = asRecord(root?.data);
+  const envelopes = [root, data, asRecord(data?.data)];
   const positions = envelopes
     .map(extractBatchFromRecord)
-    .find((candidate): candidate is any[] => Array.isArray(candidate));
+    .find((candidate): candidate is StreamRecord[] => Array.isArray(candidate));
   const rawClosedTickets = envelopes
     .flatMap((value) => [value?.closed_tickets, value?.closedTickets, value?.tickets])
-    .find((value) => Array.isArray(value)) as unknown[] | undefined;
+    .find((value): value is unknown[] => Array.isArray(value));
   const closedTickets = Array.isArray(rawClosedTickets)
     ? rawClosedTickets
         .map((t) => toFinite(t, 0))
@@ -566,7 +647,7 @@ export const reconcilePositionStreamBatch = <T extends { id: number }>(
       needsRevalidation = true;
       continue;
     }
-    nextById.set(ticket, merged);
+    nextById.set(ticket, merged as unknown as T);
   }
 
   const positions = Array.from(nextById.values());

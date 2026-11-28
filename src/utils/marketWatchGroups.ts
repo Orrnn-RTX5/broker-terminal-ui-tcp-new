@@ -157,8 +157,6 @@ const resolveExplicitGroup = (category: string): ResolvedGroup | null => {
 
 const getSymbolRoot = (symbol: string): string => symbol.replace(/[^A-Z0-9_].*$/, '');
 
-const isExcludedDefaultMarketWatchSymbol = (_symbol: string): boolean => false;
-
 const resolveFallbackGroup = (symbol: string): ResolvedGroup => {
   const root = getSymbolRoot(symbol);
 
@@ -263,10 +261,7 @@ export const selectDefaultMarketWatchSymbols = (
   const symbolUniverse = Array.from(new Set(sources.map(readSymbol).filter(Boolean)));
   if (symbolUniverse.length === 0) return [];
 
-  const defaultSymbolUniverse = symbolUniverse.filter(
-    (symbol) => !isExcludedDefaultMarketWatchSymbol(symbol),
-  );
-  if (defaultSymbolUniverse.length === 0) return [];
+  const defaultSymbolUniverse = symbolUniverse;
 
   const combinedMetadata = [...metadataSources, ...sources];
   const groups = buildMarketWatchSymbolGroups(defaultSymbolUniverse, combinedMetadata);

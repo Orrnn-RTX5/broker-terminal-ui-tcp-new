@@ -84,6 +84,7 @@ export function useTradingChartContextMenuState(
   const [backgroundImageDialogOpen, setBackgroundImageDialogOpen] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs optimistic menu/template chartType state with external chartType prop updates (e.g. toolbar or shortcut) without keeping stale overrides
     setLocalChartType(chartType);
   }, [chartType]);
 

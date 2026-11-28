@@ -356,7 +356,7 @@ describe('validated quote price-line painting', () => {
       options.repaintLivePriceOverlayFromCurrentPrice = vi.fn(() => {
         if (!canPaint()) return;
       });
-      options.syncSupplementalPriceLines = vi.fn((_ask: number, _bid: number) => {
+      options.syncSupplementalPriceLines = vi.fn<(askPrice: number, lastPrice: number) => void>(() => {
         if (!canPaint()) return;
       });
     };

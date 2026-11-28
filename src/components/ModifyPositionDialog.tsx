@@ -615,6 +615,7 @@ function ModifyPositionDialogContent({ isOpen, onClose, position, kind = 'positi
         : previousMiniChartSample ?? {
             bid: position.openPrice,
             ask: position.openPrice,
+            // eslint-disable-next-line react-hooks/purity -- fallback timestamp for initial synthetic mini-chart point before first tick arrives
             timestamp: Date.now(),
         };
     const miniChartSamples = miniChartKey

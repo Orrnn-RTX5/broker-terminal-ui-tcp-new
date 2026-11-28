@@ -63,7 +63,7 @@ describe('stream-driven history refetch', () => {
     handler = undefined;
     liveLogin = LOGIN;
     subscribe.mockClear();
-    refreshOrdersAndHistory = vi.fn((_login?: number) => Promise.resolve());
+    refreshOrdersAndHistory = vi.fn<(login?: number) => Promise<void>>(() => Promise.resolve());
     const mounted = renderHook(() => useTradeStreamRuntime({
       isAuthenticated: true,
       subscribe,

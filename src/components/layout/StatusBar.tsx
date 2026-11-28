@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { ConnectionStatus } from '../ConnectionStatus';
 import { BrokerLogoImage } from '../BrokerLogoImage';
@@ -13,12 +12,6 @@ import {
 } from '../../hooks/useTerminalTitle';
 import type { NormalizedMarketStatus } from '../../utils/marketStatus';
 import './StatusBar.css';
-
-interface TcpRuntimeStatus {
-    connected?: boolean;
-    target_tcp?: string;
-    broker_name?: string;
-}
 
 interface StatusBarProps {
     wsRef?: React.RefObject<WebSocket | null>;
@@ -37,28 +30,6 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
     const resolvedBrokerLogoUrl = activeBrand.logoUrl;
     const activeBrokerId = activeBrand.brokerId;
 
-    const [tcpInfo, setTcpInfo] = useState<TcpRuntimeStatus>(() => {
-        if (typeof window === 'undefined') return {};
-        const win = window as unknown as {
-            __RTX5_TCP_STATUS__?: TcpRuntimeStatus;
-            __RTX_RUNTIME_CONFIG__?: Record<string, string>;
-        };
-        return win.__RTX5_TCP_STATUS__ || {
-            connected: true,
-            target_tcp: win.__RTX_RUNTIME_CONFIG__?.TCP_SERVER_ADDR || ':4443',
-            broker_name: win.__RTX_RUNTIME_CONFIG__?.BROKER_NAME || '',
-        };
-    });
-
-    useEffect(() => {
-        const onStatus = (event: Event) => {
-            const detail = (event as CustomEvent<TcpRuntimeStatus>).detail;
-            if (detail) setTcpInfo(detail);
-        };
-        window.addEventListener('rtx5-tcp-status', onStatus);
-        return () => window.removeEventListener('rtx5-tcp-status', onStatus);
-    }, []);
-
     const terminalTitle = symbol && timeframe
         ? formatTerminalTitle(brokerInfo, symbol, timeframe, marketStatus)
         : (brokerInfo.accountId && brokerInfo.accountId !== '---'
@@ -69,12 +40,6 @@ export function StatusBar({ wsRef, reconnectCallback, symbol, timeframe, marketS
 
     const hasUpdater = Boolean(window.electron?.updater?.isSupported);
     const { updatePhase, updateLabel, updateButtonDisabled, handleUpdateClick } = useDesktopUpdater();
-    const tcpAddr = tcpInfo.target_tcp || ':4443';
-    const tcpConnected = tcpInfo.connected !== false;
-
-    const openTcpDialog = () => {
-        (window as unknown as { rtx5OpenTcpEndpointDialog?: () => void }).rtx5OpenTcpEndpointDialog?.();
-    };
 
     return (
         // Keep ConnectionStatus mounted: it also handles login requests outside the bar.

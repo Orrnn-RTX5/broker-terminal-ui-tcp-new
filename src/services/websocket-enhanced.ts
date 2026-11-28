@@ -1159,13 +1159,13 @@ export class EnhancedWebSocketService {
 
     if (type === 'channel_message' || typeof data.channel === 'string') {
       try {
-        const payload = data.data as any;
+        const payload = asUnknownRecord(data.data);
         if (isEnhancedStoreHandledTickFrame(data) && data.channel?.startsWith('ticks.') && payload) {
           const channelSymbol = data.channel.slice('ticks.'.length).trim().toUpperCase();
           const sourceTimestamp = resolveTickSourceTimestampMs(payload, data);
           this.handleFixTick({
             ...payload,
-            symbol: channelSymbol || payload.symbol,
+            symbol: channelSymbol || (typeof payload.symbol === 'string' ? payload.symbol : undefined),
             sourceTimestamp,
           }, data);
         }
@@ -1197,13 +1197,13 @@ export class EnhancedWebSocketService {
     const lp = readFirstNonEmptyString(data, [
       'lp', 'provider', 'liquidity_provider', 'liquidityProvider', 'lp_name', 'lpName',
     ]);
-    const session = ((data as any).session ?? {}) as Record<string, unknown>;
+    const session = asUnknownRecord(data.session);
     const high = readFirstFiniteNumber(data, ['high']);
     const low = readFirstFiniteNumber(data, ['low']);
-    const sessionHigh = Math.max(Number(session.high_bid) || 0, Number(session.high_ask) || 0, high || 0);
+    const sessionHigh = Math.max(Number(session?.high_bid) || 0, Number(session?.high_ask) || 0, high || 0);
     const sessionLowValues = [
-      Number(session.low_bid) || 0,
-      Number(session.low_ask) || 0,
+      Number(session?.low_bid) || 0,
+      Number(session?.low_ask) || 0,
       low || 0,
     ].filter((value) => value > 0);
     const sessionLow = sessionLowValues.length > 0 ? Math.min(...sessionLowValues) : undefined;

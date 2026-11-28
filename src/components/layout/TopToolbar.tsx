@@ -1,6 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useSyncExternalStore } from 'react';
 import ReactDOM from 'react-dom';
-import { Icon } from '../ui/Icon';
 import { ChartCommandIcon, type ChartCommandIconName } from './ChartCommandIcon';
 import type { ChartType, Timeframe } from '../../types/chart';
 import {
@@ -21,11 +20,13 @@ import {
     type ChartProperties,
 } from '../../store/useChartSettingsStore';
 import { useDrawingToolPreferencesStore } from '../../store/useDrawingToolPreferencesStore';
+import type { ChartTemplate } from '../../store/useTemplateStore';
+import type { ToolbarState, ToolbarAction } from '../../store/toolbarState';
 import type { NormalizedMarketStatus } from '../../utils/marketStatus';
 import { RTX5_API_URL, normalizeBrokerServerUrl, normalizeServerUrl, toLocalDevProxyUrl } from '../../config/api';
 import { useDraggableSheet } from '../../hooks/useDraggableSheet';
 import { getAccessToken } from '../../services/brokerSession';
-import { isConfiguredBrokerEndpoint, isDesktopBackendTarget } from '../../config/backendTarget.js';
+import { isConfiguredBrokerEndpoint } from '../../config/backendTarget.js';
 import { getActiveChartCommandTarget, getPanelIdFromChartContextId } from '../../services/chartCommandTarget';
 import { getActiveChartSourceId, subscribeActiveChartSource } from '../../services/activeChartSource';
 import { getDockPanelChartType, findChartPanel } from '../../services/chartTypeCommand';
@@ -44,7 +45,7 @@ interface TopToolbarProps {
     marketStatus?: NormalizedMarketStatus & { loading?: boolean };
     feedStatus: DesktopFeedSnapshot;
     onRefreshConnection?: () => void;
-    onLoadTemplate?: (template: any) => void;
+    onLoadTemplate?: (template: ChartTemplate) => void;
     desktopDrawingTools?: React.ReactNode;
     accountBrokerName?: string;
     profileSymbols?: readonly string[];
@@ -282,17 +283,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 type ElectronWindowApi = NonNullable<Window['electron']>['window'];
 
 const WindowControls = () => {
-    const [electronWindow, setElectronWindow] = useState<ElectronWindowApi | null>(null);
+    const [electronWindow] = useState<ElectronWindowApi | null>(() => (
+        typeof window !== 'undefined' ? window.electron?.window ?? null : null
+    ));
     const [isMaximized, setIsMaximized] = useState(false);
 
     useEffect(() => {
-        const windowApi = window.electron?.window;
-        if (!windowApi) return;
-
-        setElectronWindow(windowApi);
+        if (!electronWindow) return;
 
         let isActive = true;
-        windowApi.isMaximized()
+        electronWindow.isMaximized()
             .then((maximized) => {
                 if (isActive) setIsMaximized(maximized);
             })
@@ -300,7 +300,7 @@ const WindowControls = () => {
                 if (isActive) setIsMaximized(false);
             });
 
-        const unsubscribe = windowApi.onMaximizeChange((maximized) => {
+        const unsubscribe = electronWindow.onMaximizeChange((maximized) => {
             setIsMaximized(maximized);
         });
 
@@ -308,7 +308,7 @@ const WindowControls = () => {
             isActive = false;
             unsubscribe();
         };
-    }, []);
+    }, [electronWindow]);
 
     if (!electronWindow) return null;
 
@@ -356,11 +356,11 @@ const WindowControls = () => {
 
 
 interface MainToolbarProps extends TopToolbarProps {
-    toolbarState: any;
+    toolbarState: ToolbarState;
     dispatchCommand: (cmd: Command) => void;
-    dispatchToolbar: (action: any) => void;
+    dispatchToolbar: (action: ToolbarAction) => void;
     symbol: string;
-    onLoadTemplate?: (template: any) => void;
+    onLoadTemplate?: (template: ChartTemplate) => void;
 }
 
 type AdvancedFontSize = AdvancedViewFontSize;
@@ -658,7 +658,12 @@ const MainToolbar = ({
         try {
             localStorage.setItem('rtx5-advanced-view-enabled', String(advancedViewEnabled));
             localStorage.setItem('rtx5-theme', advancedViewEnabled ? 'light' : 'dark');
-            const { focusChart: _focusChart, ...appearanceOptions } = advancedOptions;
+            const appearanceOptions = {
+                fontSize: advancedOptions.fontSize,
+                density: advancedOptions.density,
+                accent: advancedOptions.accent,
+                chartSurface: advancedOptions.chartSurface,
+            };
             localStorage.setItem(ADVANCED_OPTIONS_STORAGE_KEY, JSON.stringify(appearanceOptions));
         } catch {
             // Ignore storage failures; the visual toggle should still work for this session.
@@ -981,6 +986,7 @@ const MainToolbar = ({
                                         id={TRADE_HISTORY_OVERLAY_DIALOG_ID}
                                         ref={historyOverlayDropdownRef}
                                         className="rtx-menu-surface rtx-history-overlay-menu fixed z-[9999]"
+                                        // eslint-disable-next-line react-hooks/refs -- anchor ref is mounted before the overlay toggle opens; reading it during render computes initial portal placement without a pre-layout flash
                                         style={{ ...getTradeHistoryOverlayPosition(historyOverlayRef.current), ...historyOverlayDrag.dragStyle }}
                                         role="dialog"
                                         aria-labelledby={TRADE_HISTORY_OVERLAY_TITLE_ID}
@@ -1033,7 +1039,7 @@ const MainToolbar = ({
                             <>
                                 <MT5Divider />
                                 <TimeframePicker
-                                    timeframe={toolbarState.timeframe || timeframe}
+                                    timeframe={(toolbarState.timeframe || timeframe) as Timeframe}
                                     advancedViewEnabled={advancedViewEnabled}
                                     onSelect={(nextTimeframe) => {
                                         onTimeframeChange(nextTimeframe);

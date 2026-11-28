@@ -92,13 +92,13 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({ onClose }) => {
           return;
         }
         const data = await tradeGatewayApi.getBalanceHistory(login, 10);
-        setTransactions((data || []).slice(0, 10).map((item: any) => ({
+        setTransactions((data || []).slice(0, 10).map((item: Record<string, unknown>) => ({
           id: String(item.id ?? item.time ?? Math.random()),
-          date: item.time ? new Date(item.time * 1000).toISOString() : new Date().toISOString(),
+          date: item.time ? new Date((item.time as number) * 1000).toISOString() : new Date().toISOString(),
           type: item.type === 'withdrawal' ? 'withdrawal' : 'deposit',
           amount: Number(item.amount ?? 0),
           status: 'completed',
-          method: item.comment,
+          method: item.comment as string | undefined,
         })));
       } catch (error) {
         console.error('Failed to fetch transactions:', error);

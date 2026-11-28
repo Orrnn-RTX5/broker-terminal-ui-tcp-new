@@ -319,6 +319,7 @@ export function useActiveMarketSymbols() {
     };
 
     window.addEventListener(MARKET_SYMBOLS_STALE_EVENT, handleStaleSymbols);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial mount/session refresh calls reload() which sets loading=true synchronously before async feed-status fetch
     void reload();
     const interval = window.setInterval(() => {
       if (!cancelled && document.visibilityState !== 'hidden') void reload();

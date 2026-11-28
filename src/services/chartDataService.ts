@@ -256,12 +256,18 @@ const CANDLE_WRAPPER_KEYS = [
   'data', 'payload', 'result', 'response', 'body', 'history',
 ] as const;
 
-const findCandleArray = (payload: any, depth = 0): { candles: any[]; matched: boolean } => {
+type UnknownRecord = Record<string, unknown>;
+const isRecord = (value: unknown): value is UnknownRecord => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+);
+
+const findCandleArray = (payload: unknown, depth = 0): { candles: unknown[]; matched: boolean } => {
   if (Array.isArray(payload)) return { candles: payload, matched: true };
-  if (!payload || typeof payload !== 'object' || depth > 4) return { candles: [], matched: false };
+  if (!isRecord(payload) || depth > 4) return { candles: [], matched: false };
 
   for (const key of CANDLE_ARRAY_KEYS) {
-    if (Array.isArray(payload[key])) return { candles: payload[key], matched: true };
+    const candidate = payload[key];
+    if (Array.isArray(candidate)) return { candles: candidate, matched: true };
   }
   for (const key of CANDLE_WRAPPER_KEYS) {
     const nested = findCandleArray(payload[key], depth + 1);
@@ -270,15 +276,13 @@ const findCandleArray = (payload: any, depth = 0): { candles: any[]; matched: bo
   return { candles: [], matched: false };
 };
 
-const extractCandles = (payload: any): any[] => findCandleArray(payload).candles;
-const extractCandle = (payload: any): any | null => (
-  payload?.candle ?? payload?.data?.candle ?? payload?.payload?.candle ?? payload?.data ?? null
-);
-
-type UnknownRecord = Record<string, unknown>;
-const isRecord = (value: unknown): value is UnknownRecord => (
-  !!value && typeof value === 'object' && !Array.isArray(value)
-);
+const extractCandles = (payload: unknown): unknown[] => findCandleArray(payload).candles;
+const extractCandle = (payload: unknown): unknown => {
+  if (!isRecord(payload)) return null;
+  const data = isRecord(payload.data) ? payload.data : null;
+  const wrapped = isRecord(payload.payload) ? payload.payload : null;
+  return payload.candle ?? data?.candle ?? wrapped?.candle ?? payload.data ?? null;
+};
 
 const metadataText = (value: unknown): string | null => {
   if (typeof value === 'string') return value.trim() || null;
@@ -366,19 +370,26 @@ export class ChartDataService {
     return runtimeApiV2BaseUrl() || 'default';
   }
 
-  normalizeCandle(input: any, timeframe?: string): OHLCData | null {
+  normalizeCandle(input: unknown, timeframe?: string): OHLCData | null {
     if (!input) return null;
     const tf = timeframe ? this.normalizeTimeframe(timeframe) : undefined;
-    const row = Array.isArray(input) ? {
-      time: input[0],
-      open: input[1],
-      high: input[2],
-      low: input[3],
-      close: input[4],
-      volume: input[5],
-      tick_volume: input[5],
-      real_volume: input[7],
-    } : input;
+    let row: UnknownRecord;
+    if (Array.isArray(input)) {
+      row = {
+        time: input[0],
+        open: input[1],
+        high: input[2],
+        low: input[3],
+        close: input[4],
+        volume: input[5],
+        tick_volume: input[5],
+        real_volume: input[7],
+      };
+    } else if (isRecord(input)) {
+      row = input;
+    } else {
+      return null;
+    }
     const rawTime = toSeconds(
       row.time ?? row.Time ?? row.TIME ?? row.timestamp ?? row.Timestamp
       ?? row.t ?? row.date ?? row.datetime ?? row.open_time ?? row.openTime,
@@ -416,11 +427,11 @@ export class ChartDataService {
     };
   }
 
-  normalizeCandles(input: any, timeframe?: string): OHLCData[] {
+  normalizeCandles(input: unknown, timeframe?: string): OHLCData[] {
     return this.normalizeCandleItems(extractCandles(input), timeframe);
   }
 
-  private normalizeCandleItems(items: any[], timeframe?: string): OHLCData[] {
+  private normalizeCandleItems(items: unknown[], timeframe?: string): OHLCData[] {
     const byTime = new Map<number, OHLCData>();
     for (const item of items) {
       const candle = this.normalizeCandle(item, timeframe);
@@ -429,7 +440,7 @@ export class ChartDataService {
     return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
   }
 
-  private normalizeCandleResponse(input: any, timeframe?: string, expectedSymbol?: string): OHLCData[] {
+  private normalizeCandleResponse(input: unknown, timeframe?: string, expectedSymbol?: string): OHLCData[] {
     const responseSymbol = findMetadataText(input, SYMBOL_METADATA_KEYS);
     const responseTimeframe = findMetadataText(input, TIMEFRAME_METADATA_KEYS);
     if (expectedSymbol && responseSymbol && normalizeSymbol(responseSymbol) !== normalizeSymbol(expectedSymbol)) {

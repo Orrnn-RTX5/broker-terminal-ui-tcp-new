@@ -39,6 +39,22 @@ const createChartHarness = () => {
   return { chart, series, container };
 };
 
+interface DrawingManagerDragInternals {
+  beginDrag: (
+    event: {
+      stopPropagation: () => void;
+      preventDefault: () => void;
+      target: Element | null;
+      pointerId: number;
+      clientX: number;
+      clientY: number;
+    },
+    id: string,
+    nodeIndex: number | null,
+  ) => void;
+  onGlobalPointerUp: () => void;
+}
+
 describe('drawing session context isolation', () => {
   beforeEach(() => {
     document.body.replaceChildren();
@@ -174,7 +190,7 @@ describe('drawing session context isolation', () => {
     const firstHitTarget = first.container.querySelector('svg line[stroke="transparent"]');
     expect(firstHitTarget).not.toBeNull();
 
-    (manager as any).beginDrag({
+    (manager as unknown as DrawingManagerDragInternals).beginDrag({
       stopPropagation: vi.fn(),
       preventDefault: vi.fn(),
       target: firstHitTarget,
@@ -185,7 +201,7 @@ describe('drawing session context isolation', () => {
     expect(firstLock).toHaveBeenCalledTimes(1);
     expect(secondLock).not.toHaveBeenCalled();
 
-    (manager as any).onGlobalPointerUp();
+    (manager as unknown as DrawingManagerDragInternals).onGlobalPointerUp();
     expect(firstUnlock).toHaveBeenCalledTimes(1);
     expect(secondUnlock).not.toHaveBeenCalled();
 

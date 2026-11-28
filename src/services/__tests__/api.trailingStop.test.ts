@@ -15,7 +15,19 @@ import {
   RESP_HEADER_SIZE,
 } from '../binaryTcpOrderClient';
 import { api } from '../api';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type Account, type Order, type Position } from '../../store/useAppStore';
+
+type TrailingTestWindow = Window & {
+  rtx5Electron?: Record<string, unknown>;
+  __RTX5_RUNTIME_CONFIG__?: Record<string, unknown>;
+  __RTX_RUNTIME_CONFIG__?: Record<string, unknown>;
+};
+
+type TrailingFields = {
+  trailing_stop?: number;
+  trailing_step?: number;
+  expiration?: number;
+};
 
 function buildBinaryRespBuffer(overrides?: {
   action?: number;
@@ -64,7 +76,7 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
         marginLevel: 0,
         leverage: 100,
         currency: 'USD',
-      } as any,
+      } as unknown as Account,
       positions: [
         {
           id: 7001,
@@ -78,7 +90,7 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
           tp: 1.11,
           trailing_stop: 50,
           trailing_step: 10,
-        } as any,
+        } as unknown as Position,
       ],
       orders: [
         {
@@ -91,7 +103,7 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
           price: 1.095,
           sl: 1.09,
           tp: 1.105,
-        } as any,
+        } as unknown as Order,
       ],
     });
   });
@@ -100,16 +112,16 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
     __resetBinaryOrderWsForTests();
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = originalWebSocket;
-    delete (window as any).rtx5Electron;
-    delete (window as any).__RTX5_RUNTIME_CONFIG__;
-    delete (window as any).__RTX_RUNTIME_CONFIG__;
+    delete (window as TrailingTestWindow).rtx5Electron;
+    delete (window as TrailingTestWindow).__RTX5_RUNTIME_CONFIG__;
+    delete (window as TrailingTestWindow).__RTX_RUNTIME_CONFIG__;
   });
 
   it('rejects all trailing stop trade actions when fast binary channel is disabled and never calls REST', async () => {
-    delete (window as any).rtx5Electron;
-    delete (window as any).__RTX5_RUNTIME_CONFIG__;
+    delete (window as TrailingTestWindow).rtx5Electron;
+    delete (window as TrailingTestWindow).__RTX5_RUNTIME_CONFIG__;
     const spyFetch = vi.fn();
-    globalThis.fetch = spyFetch as any;
+    globalThis.fetch = spyFetch as unknown as typeof fetch;
 
     await expect(
       api.orders.placeMarketOrder({
@@ -155,21 +167,21 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
   });
 
   it('sends placeMarketOrder, modifyPosition, placePendingOrder, and modifyPendingOrder with trailing_stop/trailing_step over the fast binary channel', async () => {
-    (window as any).__RTX_RUNTIME_CONFIG__ = { BACKEND_TARGET: 'desktop' };
-    (window as any).rtx5Electron = {};
+    (window as TrailingTestWindow).__RTX_RUNTIME_CONFIG__ = { BACKEND_TARGET: 'desktop' };
+    (window as TrailingTestWindow).rtx5Electron = {};
 
     class ClosedWebSocket {
       readyState = 3;
       binaryType = 'arraybuffer';
       onopen: (() => void) | null = null;
-      onmessage: ((ev: any) => void) | null = null;
+      onmessage: ((ev: { data: ArrayBuffer }) => void) | null = null;
       onerror: (() => void) | null = null;
       onclose: (() => void) | null = null;
       constructor(public url: string) {}
       send = vi.fn();
       close = vi.fn();
     }
-    globalThis.WebSocket = ClosedWebSocket as any;
+    globalThis.WebSocket = ClosedWebSocket as unknown as typeof WebSocket;
 
     const capturedFrames: { url: string; bytes: Uint8Array }[] = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -189,7 +201,7 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
         }),
         { status: 200, headers: { 'Content-Type': 'application/octet-stream' } },
       );
-    }) as any;
+    }) as unknown as typeof fetch;
 
     // 1. placeMarketOrder with trailing_stop=55, trailing_step=10
     const mktPos = await api.orders.placeMarketOrder({
@@ -201,23 +213,23 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
       trailing_stop: 55,
       trailing_step: 10,
     });
-    expect((mktPos as any).trailing_stop).toBe(55);
-    expect((mktPos as any).trailing_step).toBe(10);
+    expect((mktPos as typeof mktPos & TrailingFields).trailing_stop).toBe(55);
+    expect((mktPos as typeof mktPos & TrailingFields).trailing_step).toBe(10);
 
     // 2. modifyPosition with trailing_stop=75, trailing_step=15
     const modPos = await api.positions.modifyPosition(7001, {
       trailing_stop: 75,
       trailing_step: 15,
     });
-    expect((modPos as any).trailing_stop).toBe(75);
-    expect((modPos as any).trailing_step).toBe(15);
+    expect((modPos as typeof modPos & TrailingFields).trailing_stop).toBe(75);
+    expect((modPos as typeof modPos & TrailingFields).trailing_step).toBe(15);
 
     // 3. modifyPosition clearing trailing_stop=0
     const clearedPos = await api.positions.modifyPosition(7001, {
       trailing_stop: 0,
       trailing_step: 0,
     });
-    expect((clearedPos as any).trailing_stop).toBe(0);
+    expect((clearedPos as typeof clearedPos & TrailingFields).trailing_stop).toBe(0);
 
     // 4. placePendingOrder with expiration + trailing_stop=40, trailing_step=5
     const pendOrd = await api.orders.placePendingOrder({
@@ -231,9 +243,9 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
       trailing_stop: 40,
       trailing_step: 5,
     });
-    expect((pendOrd as any).trailing_stop).toBe(40);
-    expect((pendOrd as any).trailing_step).toBe(5);
-    expect((pendOrd as any).expiration).toBe(1770000000);
+    expect((pendOrd as typeof pendOrd & TrailingFields).trailing_stop).toBe(40);
+    expect((pendOrd as typeof pendOrd & TrailingFields).trailing_step).toBe(5);
+    expect((pendOrd as typeof pendOrd & TrailingFields).expiration).toBe(1770000000);
 
     // 5. modifyPendingOrder with trailing_stop=60, trailing_step=10
     const modPend = await api.orders.modifyPendingOrder(5001, {
@@ -241,8 +253,8 @@ describe('api trailing stop over fast binary channel (TRAILING_STOP_REST_EXCEPTI
       trailing_stop: 60,
       trailing_step: 10,
     });
-    expect((modPend as any).trailing_stop).toBe(60);
-    expect((modPend as any).trailing_step).toBe(10);
+    expect((modPend as typeof modPend & TrailingFields).trailing_stop).toBe(60);
+    expect((modPend as typeof modPend & TrailingFields).trailing_step).toBe(10);
 
     expect(capturedFrames.length).toBe(5);
     for (const frame of capturedFrames) {

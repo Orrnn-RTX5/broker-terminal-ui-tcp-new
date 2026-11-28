@@ -169,9 +169,9 @@ describe('MarketDataStore authoritative candle updates', () => {
     workerMocks.aggregateSymbols.mockImplementation((
       _ticks: unknown,
       _timeframes: unknown,
-      callback: (results: Record<string, OHLCV[]>) => void,
+      callback: (results: Array<{ symbol: string; results: Record<string, OHLCV[]> }>) => void,
     ) => {
-      workerCallback = (results) => (callback as any)([{ symbol: 'XAUUSD.RAW', results }]);
+      workerCallback = (results) => callback([{ symbol: 'XAUUSD.RAW', results }]);
     });
 
     useMarketDataStore.getState().updateTick('XAUUSD.RAW', {

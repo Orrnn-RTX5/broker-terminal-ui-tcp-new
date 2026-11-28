@@ -30,6 +30,14 @@ export function ShortcutHelpDialog({ isOpen, onClose }: ShortcutHelpDialogProps)
   const { shortcuts } = useKeyboardShortcutContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (prevIsOpen !== isOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      setSearchQuery('');
+      setSelectedCategory(null);
+    }
+  }
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
@@ -63,8 +71,6 @@ export function ShortcutHelpDialog({ isOpen, onClose }: ShortcutHelpDialogProps)
   useEffect(() => {
     if (!isOpen) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSearchQuery('');
-    setSelectedCategory(null);
     searchRef.current?.focus();
     return () => { if (previous?.isConnected) previous.focus(); };
   }, [isOpen]);

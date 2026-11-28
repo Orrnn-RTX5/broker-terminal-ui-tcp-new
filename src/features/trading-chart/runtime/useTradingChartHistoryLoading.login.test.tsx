@@ -83,8 +83,8 @@ afterEach(() => {
 });
 
 describe('retained public canvas during account history replacement', () => {
-  it.each(['empty REST history', 'history rejected by the live-quote guard'])
-    ('restores the full loader before clearing the canvas for %s', async reason => {
+  it.each(['empty REST history', 'history rejected by the live-quote guard'])(
+    'restores the full loader before clearing the canvas for %s', async reason => {
       const harness = createHarness();
       if (reason === 'history rejected by the live-quote guard') {
         transport.derive.mockResolvedValue(derivedResponse(candles));
@@ -211,8 +211,8 @@ describe('current-session live candle while loading initial history', () => {
     expect(harness.options.setLoadingPhase).not.toHaveBeenCalled();
     expect(harness.options.requestChartDataRender).not.toHaveBeenCalled();
   });
-  it.each(['BTCUSD', 'XAUUSD.raw'].flatMap(symbol => CANDLE_TIMEFRAMES.map(timeframe => ({ symbol, timeframe }))))
-    ('keeps a proven live $symbol $timeframe bucket received before the history request', async ({ symbol, timeframe }) => {
+  it.each(['BTCUSD', 'XAUUSD.raw'].flatMap(symbol => CANDLE_TIMEFRAMES.map(timeframe => ({ symbol, timeframe }))))(
+    'keeps a proven live $symbol $timeframe bucket received before the history request', async ({ symbol, timeframe }) => {
     const harness = createHarness();
     harness.options.symbol = symbol;
     harness.options.timeframe = timeframe;
@@ -296,8 +296,8 @@ describe('current-session live candle while loading initial history', () => {
     expect(harness.options.candlesRef.current).toEqual(candles);
   });
 
-  it.each(['forming', 'final', 'receipt-only timestamp', 'another period', 'another exact symbol'] as const)
-    ('reconciles same-period initial history with the raw live Bid for %s quote ownership', async scenario => {
+  it.each(['forming', 'final', 'receipt-only timestamp', 'another period', 'another exact symbol'] as const)(
+    'reconciles same-period initial history with the raw live Bid for %s quote ownership', async scenario => {
     const harness = createHarness();
     const boundary = getTimeframePeriodSeconds(candles[1].time, 'H1')!.startTime;
     const history = [{ ...candles[0], time: boundary - 3600 }, {

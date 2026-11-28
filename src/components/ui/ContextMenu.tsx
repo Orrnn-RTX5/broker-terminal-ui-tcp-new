@@ -1,6 +1,6 @@
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { Icon } from './/Icon';
-import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useHoverIntent } from '../../hooks/useHoverIntent';
 import { useSafeHoverTriangle } from '../../hooks/useSafeHoverTriangle';
@@ -234,11 +234,8 @@ const MenuItem: React.FC<MenuItemProps> = ({
   const hoverIntent = useHoverIntent({ delay: 300, sensitivity: 7 });
 
   // Safe hover triangle: prevents submenu closing when moving diagonally toward it
-  const safeTriangle = useSafeHoverTriangle({
-    parentElement: itemRef.current,
-    submenuElement: submenuRef.current,
-    tolerance: 100,
-  });
+  // eslint-disable-next-line react-hooks/refs -- safeTriangle reads mounted DOM nodes for hover geometry; keeping existing ref reads avoids extra per-item mount state renders
+  const safeTriangle = useSafeHoverTriangle({ parentElement: itemRef.current, submenuElement: submenuRef.current, tolerance: 100 });
 
   // Open submenu when hover intent is triggered
   useEffect(() => {
@@ -596,6 +593,7 @@ const Menu: React.FC<MenuProps> = ({ items, position, onClose, zIndex, variant, 
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps open submenu items synchronized when parent items array updates without changing render timing
     setActiveSubmenu(prev => {
       if (!prev) return prev;
       const nextItems = items[prev.parentIndex]?.submenu;
@@ -879,7 +877,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   const isControlled = externalPosition !== undefined && externalOnClose !== undefined;
   const visible = isControlled ? true : internalVisible;
   const position = isControlled ? externalPosition : internalPosition;
-  const onClose = isControlled ? externalOnClose : () => setInternalVisible(false);
+  const onClose = useMemo(
+    () => (isControlled && externalOnClose ? externalOnClose : () => setInternalVisible(false)),
+    [isControlled, externalOnClose],
+  );
 
   // Keep track of the latest onClose to avoid re-running the effect on every render
   const onCloseRef = useRef(onClose);

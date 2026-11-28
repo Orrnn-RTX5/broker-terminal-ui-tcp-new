@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { onCommittedBrokerAccountSessionScopeChange } from '../../services/brokerSession';
 import {
   hydrateClosedMarketDailyChanges,
@@ -73,7 +73,9 @@ export const useMarketWatchExport = ({
 }: UseMarketWatchExportOptions): (() => Promise<void>) => {
   const exportAbortControllerRef = useRef<AbortController | null>(null);
   const latestBrokerAccountScopeKeyRef = useRef(brokerAccountScopeKey);
-  latestBrokerAccountScopeKeyRef.current = brokerAccountScopeKey;
+  useLayoutEffect(() => {
+    latestBrokerAccountScopeKeyRef.current = brokerAccountScopeKey;
+  }, [brokerAccountScopeKey]);
 
   const cancelActiveExport = useCallback(() => {
     const controller = exportAbortControllerRef.current;

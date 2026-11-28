@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { useUiTranslation } from '../../hooks/useUiTranslation';
 import { commandBus } from '../../services/commandBus';
@@ -223,7 +223,7 @@ const matchCompleteWordToken = (
   return null;
 };
 
-const ensurePanelVisible = (_selector: string, _shortcutId?: string) => {
+const ensurePanelVisible = () => {
   // Read-only locator: never toggle workspace panels or mutate layout state during search
 };
 
@@ -722,7 +722,6 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
   const [isHighlighting, setIsHighlighting] = useState(false);
 
   const queryRef = useRef(query);
-  queryRef.current = query;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -743,18 +742,28 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
     onTileWindows,
     onResetWindows,
   });
-  latestPropsRef.current = {
-    selectedSymbol,
-    timeframe,
-    onSymbolChange,
-    onTimeframeChange,
-    onChartTypeChange,
-    onNewOrder,
-    onOpenChart,
-    onOpenHistoryDownloader,
-    onTileWindows,
-    onResetWindows,
-  };
+
+  useLayoutEffect(() => {
+    queryRef.current = query;
+    latestPropsRef.current = {
+      selectedSymbol,
+      timeframe,
+      onSymbolChange,
+      onTimeframeChange,
+      onChartTypeChange,
+      onNewOrder,
+      onOpenChart,
+      onOpenHistoryDownloader,
+      onTileWindows,
+      onResetWindows,
+    };
+  });
+
+  const updateQuery = useCallback((nextQuery: string) => {
+    queryRef.current = nextQuery;
+    setQuery(nextQuery);
+    setActiveFlatIndex(0);
+  }, []);
 
   const storeSymbols = useAppStore((state) => (state as { symbols?: Array<{ symbol?: string; description?: string; category?: string }> }).symbols);
   const tickSymbolsKey = useAppStore(selectTickSymbolsKey);
@@ -884,7 +893,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           },
           {
             path: 'Navigator Panel → Accounts',
-            prepare: () => ensurePanelVisible('.navigator-panel, [data-dock-panel="navigator"]', 'view.toggle-navigator'),
+            prepare: () => ensurePanelVisible(),
             findElements: () => queryVisibleElements(['.navigator-panel', '[data-dock-panel="navigator"]']),
           },
         ],
@@ -1156,7 +1165,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
       },
       {
         path: 'Navigator Panel → Indicators',
-        prepare: () => ensurePanelVisible('.navigator-panel, [data-dock-panel="navigator"]', 'view.toggle-navigator'),
+        prepare: () => ensurePanelVisible(),
         findElements: () => {
           const rows = Array.from(document.querySelectorAll<HTMLElement>('.navigator-tree-item__row'));
           const indRow = rows.find((r) => r.textContent?.toLowerCase().includes('indicators'));
@@ -1616,8 +1625,8 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           },
         ],
         execute: () => {
-          if (onNewOrder) {
-            onNewOrder();
+          if (latestPropsRef.current.onNewOrder) {
+            latestPropsRef.current.onNewOrder();
           } else {
             document.querySelector<HTMLButtonElement>('.rtx-toolbar-action--primary, [aria-label*="Pending Order"], [aria-label*="New Order"]')?.click();
           }
@@ -1642,7 +1651,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           if (btn) {
             btn.click();
           } else {
-            onSymbolChange(selectedSymbol);
+            latestPropsRef.current.onSymbolChange(selectedSymbol);
           }
         },
       },
@@ -1661,7 +1670,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
             findElements: () => queryVisibleElements(['[aria-label="Candlesticks"]']),
           },
         ],
-        execute: () => onChartTypeChange('candlestick'),
+        execute: () => latestPropsRef.current.onChartTypeChange('candlestick'),
       },
       {
         id: 'toolbar-chart-bars',
@@ -1678,7 +1687,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
             findElements: () => queryVisibleElements(['[aria-label="Bar Chart"]']),
           },
         ],
-        execute: () => onChartTypeChange('bar'),
+        execute: () => latestPropsRef.current.onChartTypeChange('bar'),
       },
       {
         id: 'toolbar-chart-line',
@@ -1695,7 +1704,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
             findElements: () => queryVisibleElements(['[aria-label="Line Chart"]']),
           },
         ],
-        execute: () => onChartTypeChange('line'),
+        execute: () => latestPropsRef.current.onChartTypeChange('line'),
       },
       {
         id: 'toolbar-chart-area',
@@ -1712,7 +1721,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
             findElements: () => queryVisibleElements(['[aria-label="Area Chart"]']),
           },
         ],
-        execute: () => onChartTypeChange('area'),
+        execute: () => latestPropsRef.current.onChartTypeChange('area'),
       },
       {
         id: 'toolbar-trade-history-dropdown',
@@ -1939,8 +1948,8 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           },
         ],
         execute: () => {
-          if (onTileWindows) {
-            onTileWindows();
+          if (latestPropsRef.current.onTileWindows) {
+            latestPropsRef.current.onTileWindows();
           } else {
             document.querySelector<HTMLButtonElement>('[aria-label="Arrange Windows"]')?.click();
           }
@@ -1961,8 +1970,8 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           },
         ],
         execute: () => {
-          if (onResetWindows) {
-            onResetWindows();
+          if (latestPropsRef.current.onResetWindows) {
+            latestPropsRef.current.onResetWindows();
           } else {
             document.querySelector<HTMLButtonElement>('[aria-label="Reset Layout"]')?.click();
           }
@@ -2030,7 +2039,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
             },
           },
         ],
-        execute: () => onTimeframeChange(tf),
+        execute: () => latestPropsRef.current.onTimeframeChange(tf),
       });
     }
 
@@ -2701,10 +2710,6 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
     return flattened;
   }, [catalogItems, query]);
 
-  useEffect(() => {
-    setActiveFlatIndex(0);
-  }, [query]);
-
   // Scroll an item only inside an explicitly scrollable menu/panel container,
   // never invoking native scrollIntoView() which can scroll body / overflow:hidden ancestors.
   const scrollItemWithinScrollableContainer = useCallback((el: HTMLElement | null | undefined) => {
@@ -2784,6 +2789,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs DOM highlight state and active highlighting flag with search query and matched location changes
       clearAllSearchEffects(true);
       return;
     }
@@ -2804,14 +2810,13 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && (isHighlighting || query)) {
-        queryRef.current = '';
-        setQuery('');
+        updateQuery('');
         clearAllSearchEffects(true);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [clearAllSearchEffects, isHighlighting, query]);
+  }, [clearAllSearchEffects, isHighlighting, query, updateQuery]);
 
   // Dismiss in-place highlight classes after outside click completes (so clicking the highlighted menu item works seamlessly)
   useEffect(() => {
@@ -2874,8 +2879,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
           }}
           onChange={(event) => {
             const nextVal = event.target.value;
-            queryRef.current = nextVal;
-            setQuery(nextVal);
+            updateQuery(nextVal);
             if (!nextVal.trim()) {
               clearAllSearchEffects(true);
             }
@@ -3098,8 +3102,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
               }
             } else if (event.key === 'Escape') {
               event.preventDefault();
-              queryRef.current = '';
-              setQuery('');
+              updateQuery('');
               clearAllSearchEffects(true);
               inputRef.current?.blur();
             }
@@ -3160,8 +3163,7 @@ export const TopToolbarSearch: React.FC<TopToolbarSearchProps> = ({
               title={tr('Clear search (Esc)')}
               onClick={(event) => {
                 event.stopPropagation();
-                queryRef.current = '';
-                setQuery('');
+                updateQuery('');
                 clearAllSearchEffects(true);
                 inputRef.current?.focus();
               }}

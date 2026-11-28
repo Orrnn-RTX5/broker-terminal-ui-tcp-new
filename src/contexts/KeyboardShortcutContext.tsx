@@ -134,6 +134,7 @@ export function KeyboardShortcutProvider({
  * @example
  * const { setGlobalEnabled, getShortcutHints } = useKeyboardShortcutContext();
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep shortcut hooks and context export co-located with KeyboardShortcutProvider for existing importers
 export function useKeyboardShortcutContext(): KeyboardShortcutContextValue {
   const context = useContext(KeyboardShortcutContext);
 
@@ -156,6 +157,7 @@ export function useKeyboardShortcutContext(): KeyboardShortcutContextValue {
  *   return <div>...</div>;
  * }
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep shortcut hooks and context export co-located with KeyboardShortcutProvider for existing importers
 export function useDisableShortcuts(): void {
   const { setGlobalEnabled } = useKeyboardShortcutContext();
 
@@ -175,6 +177,7 @@ export function useDisableShortcuts(): void {
  *   return <button title={hint}>Save {hint && `(${hint})`}</button>;
  * }
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep shortcut hooks and context export co-located with KeyboardShortcutProvider for existing importers
 export function useShortcutHint(id: string): string | null {
   const { findShortcut, formatShortcut } = useKeyboardShortcutContext();
 
@@ -196,11 +199,13 @@ export function useShortcutHint(id: string): string | null {
  *   }
  * }
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep shortcut hooks and context export co-located with KeyboardShortcutProvider for existing importers
 export function useShortcutConflicts() {
   const { getConflicts } = useKeyboardShortcutContext();
   const [conflicts, setConflicts] = useState<Array<{ key: string; shortcuts: ShortcutDefinition[] }>>([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads shortcut conflicts post-mount after sibling shortcut registrations settle
     setConflicts(getConflicts());
   }, [getConflicts]);
 
@@ -210,4 +215,5 @@ export function useShortcutConflicts() {
 /**
  * Export the context for advanced use cases
  */
+// eslint-disable-next-line react-refresh/only-export-components -- keep shortcut hooks and context export co-located with KeyboardShortcutProvider for existing importers
 export { KeyboardShortcutContext };

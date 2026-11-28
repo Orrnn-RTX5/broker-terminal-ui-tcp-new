@@ -80,6 +80,7 @@ export const getPublicWsTarget = () => {
 };
 export const getRuntimeConfiguredBrokerId = () => getRuntimeBrokerConfiguration().brokerId;
 export const getRuntimeDiscoveryBaseUrl = (_fallback = '') => {
+  void _fallback;
   const config = getRuntimeBrokerConfiguration();
   return config.valid || isDesktopBackendTarget() ? config.discoveryBaseUrl : '';
 };

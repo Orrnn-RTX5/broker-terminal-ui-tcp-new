@@ -12,7 +12,7 @@ export const useActiveChartRuntimeEffect = (
   dependencies: DependencyList,
 ): void => {
   const setupRef = useRef(setup);
-  setupRef.current = setup;
+  useEffect(() => { setupRef.current = setup; });
 
   useEffect(() => {
     if (!enabled) return undefined;

@@ -22,7 +22,9 @@ interface ChartHostsContext {
 
 const ChartHosts = createContext<ChartHostsContext | null>(null);
 const MultipleVisibleChartWindows = createContext(false);
+// eslint-disable-next-line react-refresh/only-export-components -- hook export is co-located with StableChartHosts context provider
 export const useHasStableChartHosts = (): boolean => useContext(ChartHosts) !== null;
+// eslint-disable-next-line react-refresh/only-export-components -- hook export is co-located with StableChartHosts context provider
 export const useHasMultipleVisibleChartWindows = (): boolean => useContext(MultipleVisibleChartWindows);
 
 /**
@@ -39,9 +41,9 @@ export const StableChartHosts: React.FC<{
   const hosts = useRef(new Map<string, ChartHost>());
   const parking = useRef<HTMLDivElement>(null);
   const [, refresh] = useReducer(value => value + 1, 0);
-  const panels = new Map(getChartPanels(rootContainer
+  const panels = useMemo(() => new Map(getChartPanels(rootContainer
     ? { ...layout, root: rootContainer, floatingPanels: [] }
-    : layout).map(panel => [panel.id, panel]));
+    : layout).map(panel => [panel.id, panel])), [layout, rootContainer]);
 
   const context = useMemo<ChartHostsContext>(() => ({
     attach(id, slot, active, floating) {
@@ -115,8 +117,9 @@ export const StableChartHosts: React.FC<{
       }
     }
     if (parkedChanged) refresh();
-  }, [layout, rootContainer]);
+  }, [panels]);
 
+  // eslint-disable-next-line react-hooks/refs -- hosts ref is updated synchronously in attach/detach layout effects paired with refresh() and must be read on render to keep chart portals stable
   const multipleVisibleCharts = [...hosts.current.values()]
     .filter(host => panels.has(host.id) && host.active && host.slot !== null).length > 1;
 
@@ -125,6 +128,7 @@ export const StableChartHosts: React.FC<{
     {children}
     {/* Parked tabs stay connected but cannot own chart commands. */}
     <div ref={parking} hidden aria-hidden="true" data-stable-chart-parking="true" data-dock-minimized="true" />
+    {/* eslint-disable-next-line react-hooks/refs -- hosts ref is updated synchronously in attach/detach layout effects paired with refresh() and must be read on render to keep chart portals stable */}
     {[...hosts.current.values()].map(host => {
       const panel = panels.get(host.id);
       return panel ? createPortal(renderPanel?.(panel, host.active && !panel.minimized, host.floating), host.element, host.id) : null;

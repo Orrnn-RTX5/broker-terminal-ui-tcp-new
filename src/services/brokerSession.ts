@@ -869,8 +869,8 @@ export function persistBrokerSessionDiscovery(
 
   const rawBrokerName = String(
     normalizedInput.broker_name
-    || (normalizedInput as any).brokerName
-    || (normalizedInput as any).name
+    || normalizedInput.brokerName
+    || normalizedInput.name
     || ''
   ).trim();
   const resolvedBrokerName = isBrokerName(rawBrokerName)

@@ -264,8 +264,8 @@ describe('chart price guards', () => {
       throw new Error('live quote reference check must not sort candle arrays');
     });
 
-    let compatible = false;
-    let incompatible = true;
+    let compatible: boolean;
+    let incompatible: boolean;
     try {
       compatible = isPriceCompatibleWithReference(4688, reference);
       incompatible = isPriceCompatibleWithReference(64000, reference);

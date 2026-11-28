@@ -208,21 +208,22 @@ export const DrawingContextMenu: React.FC<DrawingContextMenuProps> = ({ onClose,
 
     // ── Apply colour / style changes ──────────────────────────────────────────
     const applyChanges = (opts: { color?: string; lineStyle?: LineStyleOption; lineWidth?: number }) => {
-        if (!currentDrawing) return;
+        const targetDrawing = drawingManager.getDrawings(menuState.contextId).find(d => d.id === menuState.drawingId);
+        if (!targetDrawing) return;
         if (opts.color !== undefined) {
-            currentDrawing.color = opts.color;
+            targetDrawing.color = opts.color;
             setLocalColor(opts.color);
         }
         if (opts.lineStyle !== undefined) {
-            currentDrawing.lineStyle = opts.lineStyle;
+            targetDrawing.lineStyle = opts.lineStyle;
             setLocalStyle(opts.lineStyle);
         }
         if (opts.lineWidth !== undefined) {
-            currentDrawing.lineWidth = opts.lineWidth;
+            targetDrawing.lineWidth = opts.lineWidth;
             setLocalWidth(opts.lineWidth);
         }
         drawingManager.persistCurrentContext(menuState.contextId);
-        drawingManager.saveToBackend(currentDrawing);
+        drawingManager.saveToBackend(targetDrawing);
         drawingManager.renderAllDrawings();
     };
 
@@ -275,9 +276,10 @@ export const DrawingContextMenu: React.FC<DrawingContextMenuProps> = ({ onClose,
     const menuY = Math.round(Math.max(8, Math.min(menuState.y, viewport.height - menuHeight - 8)) * pixelScale) / pixelScale;
 
     const previewColor = (color: string) => {
-        if (!currentDrawing) return;
-        pendingColor.current ??= { drawing: currentDrawing, originalColor: currentDrawing.color, contextId: menuState.contextId };
-        currentDrawing.color = color;
+        const targetDrawing = drawingManager.getDrawings(menuState.contextId).find(d => d.id === menuState.drawingId);
+        if (!targetDrawing) return;
+        pendingColor.current ??= { drawing: targetDrawing, originalColor: targetDrawing.color, contextId: menuState.contextId };
+        targetDrawing.color = color;
         setLocalColor(color);
         drawingManager.renderAllDrawings();
     };

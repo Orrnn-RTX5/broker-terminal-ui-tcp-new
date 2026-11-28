@@ -21,12 +21,15 @@ import type {
  */
 const HISTORY_MAX_SIZE = 100;
 
+type StoredCommandHandler = (payload: never) => void | Promise<void>;
+type WildcardCommandHandler = (command: Command) => void | Promise<void>;
+
 /**
  * CommandBusImpl - Singleton instance of the command bus
  * Uses Map-based subscription system for efficient handler management
  */
 class CommandBusImpl implements CommandBus {
-  private handlers: Map<CommandType, Set<CommandHandler>> = new Map();
+  private handlers: Map<CommandType, Set<StoredCommandHandler>> = new Map();
   private history: Command[] = [];
   private isReplaying = false;
 
@@ -58,7 +61,7 @@ class CommandBusImpl implements CommandBus {
     if (typeHandlers) {
       for (const handler of typeHandlers) {
         try {
-          handler(command.payload);
+          (handler as unknown as CommandHandler)(command.payload);
         } catch (error) {
           console.error(
             `[CommandBus] Error in handler for ${command.type}:`,
@@ -72,7 +75,7 @@ class CommandBusImpl implements CommandBus {
     if (wildcardHandlers) {
       for (const handler of wildcardHandlers) {
         try {
-          (handler as any)(command);
+          (handler as unknown as WildcardCommandHandler)(command);
         } catch (error) {
           console.error(
             `[CommandBus] Error in wildcard handler:`,
@@ -97,7 +100,7 @@ class CommandBusImpl implements CommandBus {
     }
 
     const typeHandlers = this.handlers.get(type)!;
-    typeHandlers.add(handler as any);
+    typeHandlers.add(handler);
 
     if (import.meta.env.DEV) {
       console.log(
@@ -109,7 +112,7 @@ class CommandBusImpl implements CommandBus {
     return () => {
       const handlers = this.handlers.get(type);
       if (handlers) {
-        handlers.delete(handler as any);
+        handlers.delete(handler);
 
         if (import.meta.env.DEV) {
           console.log(

@@ -65,6 +65,7 @@ import { captureTradeOrderIntent } from '../services/orderLatencyTelemetry';
 import { accountMetricProvided } from '../services/accountMetrics';
 import { formatOrderError } from '../utils/orderError';
 import { OneClickDisclaimerDialog } from './ui/OneClickDisclaimerDialog';
+import type { OrderPanelSubmission } from '../app/trading/useOrderExecution';
 import '../styles/order-panel-dialog.css';
 
 // Symbol display names
@@ -119,12 +120,14 @@ const alignOrderTypeToSide = (type: OrderType, submitSide: 'buy' | 'sell'): Orde
 export type FillPolicy = 'Fill or Kill' | 'Immediate or Cancel' | 'Return';
 export type ExpirationType = 'GTC' | 'Today' | 'Specified' | 'Specified day';
 
+type OrderPanelOrderPayload = OrderPanelSubmission & { deviation?: number };
+
 interface OrderPanelProps {
   isOpen: boolean;
   onClose: () => void;
   symbol: string;
   currentPrice: { bid: number; ask: number };
-  onSubmitOrder: (order: any) => Promise<void> | void;
+  onSubmitOrder: (order: OrderPanelOrderPayload) => Promise<void> | void;
   // Chart prefill (SUI-T10): when provided, the dialog opens with this order
   // type and price instead of blank defaults. Side still follows Buy/Sell.
   initialOrderType?: OrderType;
@@ -177,6 +180,7 @@ const readNonNegativeInt = (value: unknown): number | null => {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export function resolveInstrumentStopsLevel(
   sym: string,
   instrument?: Partial<OrderPanelInstrumentRow> | null,
@@ -194,6 +198,7 @@ export function resolveInstrumentStopsLevel(
  * then the live tick/quote payload digits. Unknown values stay null; the
  * symbol is used only as a lookup key into broker data.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export function getInstrumentConfig(
   sym: string,
   liveDigits?: unknown,
@@ -303,6 +308,7 @@ const parseDialogExpirationDate = (value: string): Date | null => {
   return date;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export const formatDateTimeLocalValue = (ms: number): string => {
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return '';
@@ -310,6 +316,7 @@ export const formatDateTimeLocalValue = (ms: number): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export const parseDateTimeLocalToDisplay = (isoLocal: string): string => {
   const parsed = parseDialogExpirationDate(isoLocal);
   if (!parsed) return isoLocal;
@@ -321,6 +328,7 @@ export const parseDateTimeLocalToDisplay = (isoLocal: string): string => {
   return `${dd}.${mm}.${yy} ${hh}:${min}`;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export const formatDisplayToDateTimeLocal = (value: string, dateOnly = false): string => {
   const parsed = parseDialogExpirationDate(value);
   if (!parsed) return '';
@@ -335,6 +343,7 @@ export const formatDisplayToDateTimeLocal = (value: string, dateOnly = false): s
  * selected local date; Specified → the exact selected local datetime. Past or
  * unparseable dated values THROW so submit blocks fail-closed (never 0/NaN).
  */
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export const resolveDialogExpirationTimestamp = (
   expiration: ExpirationType,
   expirationDateStr: string,
@@ -402,6 +411,7 @@ const formatMiniChartAxisTime = (timeMs: number, mode: MiniChartAxisTimeMode): s
   return `${hh}:${mm}`;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export const formatPendingOrderBadgeLabel = (
   side: string | undefined,
   type: string | undefined,
@@ -541,7 +551,7 @@ const computeNicePriceTicks = (
   const rawStep = span / Math.max(2, targetCount);
   const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
   const normalized = rawStep / magnitude;
-  let niceFactor = 1;
+  let niceFactor: number;
   if (normalized <= 1.2) niceFactor = 1;
   else if (normalized <= 2.2) niceFactor = 2;
   else if (normalized <= 3.2) niceFactor = 2.5;
@@ -1124,7 +1134,7 @@ function MiniTickChart({
           const loginId = Number.parseInt(String(useAppStore.getState().accountId ?? ''), 10);
           if (Number.isFinite(loginId) && loginId > 0) {
             return api.orders.getPendingOrders(loginId).then((orders) => {
-              useAppStore.getState().setOrders(orders as any);
+              useAppStore.getState().setOrders(orders as unknown as Parameters<ReturnType<typeof useAppStore.getState>['setOrders']>[0]);
             });
           }
         })
@@ -2526,10 +2536,12 @@ function OrderDialogDomPane({
 
   // Ladder spacing comes from broker data only (tick size, else 10^-digits).
   const stepUnit = priceStep !== null && Number.isFinite(priceStep) && priceStep > 0 ? priceStep : null;
+  const rawAsks = rawOrderBook?.asks;
+  const rawBids = rawOrderBook?.bids;
 
   const { asks, bids, maxVolume } = useMemo(() => {
-    const liveAsks = Array.isArray(rawOrderBook?.asks) ? rawOrderBook.asks.slice(0, DOM_LADDER_LEVELS) : [];
-    const liveBids = Array.isArray(rawOrderBook?.bids) ? rawOrderBook.bids.slice(0, DOM_LADDER_LEVELS) : [];
+    const liveAsks = Array.isArray(rawAsks) ? rawAsks.slice(0, DOM_LADDER_LEVELS) : [];
+    const liveBids = Array.isArray(rawBids) ? rawBids.slice(0, DOM_LADDER_LEVELS) : [];
     const roundLevel = (price: number) => (digits === null ? price : Number(price.toFixed(digits)));
     const canSynthesize = stepUnit !== null && (ask > 0 || bid > 0);
     const step = stepUnit ?? 0;
@@ -2628,7 +2640,7 @@ function OrderDialogDomPane({
       bids: resolvedBids,
       maxVolume: Math.max(...allVols, 1),
     };
-  }, [ask, askVolume, bid, bidVolume, digits, rawOrderBook?.asks, rawOrderBook?.bids, stepUnit]);
+  }, [ask, askVolume, bid, bidVolume, digits, rawAsks, rawBids, stepUnit]);
 
   return (
     <div className="rtx-order-dialog__dom" data-testid="order-dom-pane">
@@ -2810,6 +2822,7 @@ function normalizeInitialDialogSide(value: unknown): DialogSubmitSide | null {
  * Fail-closed: only exact BUY/SELL (any case, trimmed) produce a preselected
  * side; everything else yields undefined (dialog default flow).
  */
+// eslint-disable-next-line react-refresh/only-export-components -- helper exported alongside OrderPanelDialog for callers and tests; kept here to preserve external imports
 export function resolveOrderPanelSide(value: unknown): 'BUY' | 'SELL' | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toUpperCase();
@@ -2913,11 +2926,6 @@ export function OrderPanelDialog({
   }, [oneClickActive, showOneClickDisclaimer]);
   const [showTickChart, setShowTickChart] = useState(true);
   const [showDom, setShowDom] = useState(true);
-  const [marketRangeEnabled, setMarketRangeEnabled] = useState(true);
-  const [slEnabled, setSlEnabled] = useState(false);
-  const [tpEnabled, setTpEnabled] = useState(false);
-  const [trailingStopEnabled, setTrailingStopEnabled] = useState(false);
-  const [breakEvenEnabled, setBreakEvenEnabled] = useState(false);
 
   const liveMarketStatus = useSymbolMarketStatus(symbol, {
     enabled: isOpen && Boolean(symbol),
@@ -3019,6 +3027,7 @@ export function OrderPanelDialog({
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets one-click section and re-seeds symbol, error, and trade defaults when dialog reopens via isOpen prop without unmounting
       setIsOneClickSectionOpen(false);
       setSymbol(initialSymbol);
       setError(null);
@@ -3036,12 +3045,14 @@ export function OrderPanelDialog({
   // made while open are left untouched until the next open/prop change.
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seeds default submit side when dialog reopens or chart entry props change while mounted
       setSelectedSide(normalizeInitialDialogSide(initialSide) ?? resolveSideForOrderType(initialOrderType));
     }
   }, [isOpen, initialSide, initialOrderType]);
 
   useEffect(() => {
     if (isOpen && initialOrderType) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs orderType to initialOrderType when dialog reopens via isOpen without unmounting
       setOrderType(initialOrderType);
     }
   }, [isOpen, initialOrderType]);
@@ -3049,6 +3060,7 @@ export function OrderPanelDialog({
   useEffect(() => {
     if (!isOpen) return;
     if (initialPrice !== undefined && Number.isFinite(initialPrice) && initialPrice > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets price edit flags and seeds initialPrice when dialog opens or prefill props change
       setIsPriceEdited(true);
       setPriceStr(specDigits === null ? String(initialPrice) : initialPrice.toFixed(specDigits));
     } else {
@@ -3067,6 +3079,7 @@ export function OrderPanelDialog({
     if (!(refPrice > 0)) return;
     const formattedRef = formatDialogPrice(refPrice, specDigits);
     if (!isPriceEdited && !isPriceFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps unedited pending order price inputs synced to live quotes while open
       setPriceStr((prev) => (prev === formattedRef ? prev : formattedRef));
     }
     if (isStopLimitOrderType(orderType) && !isStopLimitPriceEdited && !isStopLimitPriceFocused) {
@@ -3142,6 +3155,7 @@ export function OrderPanelDialog({
   useEffect(() => {
     if (!isOpen) {
       lastImmediateMarginTargetRef.current = '';
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears cached requiredMargin immediately when dialog closes via isOpen without unmounting
       setRequiredMargin(null);
       return;
     }
@@ -3219,7 +3233,6 @@ export function OrderPanelDialog({
   const parsedStopLoss = Number.parseFloat(stopLossStr);
   const parsedTakeProfit = Number.parseFloat(takeProfitStr);
   const parsedDeviation = Number.parseInt(deviationStr, 10);
-  const unitStep = specDigits !== null ? (priceStep ?? Math.pow(10, -specDigits)) : null;
   const parsedVol = Number.parseFloat(volumeStr);
 
   const isPendingSideValid = useCallback((side: 'buy' | 'sell'): boolean => {
@@ -3429,8 +3442,9 @@ export function OrderPanelDialog({
 
       useLastSymbolStore.getState().setLastSymbol(symbol, side.toUpperCase() as 'BUY' | 'SELL');
       onClose();
-    } catch (err: any) {
-      const rawMsg = typeof err?.message === 'string' ? err.message.trim() : '';
+    } catch (err: unknown) {
+      const maybeMessage = (err as { message?: unknown } | null | undefined)?.message;
+      const rawMsg = typeof maybeMessage === 'string' ? maybeMessage.trim() : '';
       const formattedMsg = /^(?:Order (?:failed|status unknown):|Account busy|[A-Z][A-Z0-9_]{2,}:\s)/.test(rawMsg)
         ? rawMsg
         : formatOrderError(err);
@@ -3527,47 +3541,6 @@ export function OrderPanelDialog({
         ? tr("New stop order")
         : tr("New stop-limit order");
 
-  const refEntryPrice = orderType === 'Market Execution'
-    ? (selectedSide === 'sell' ? (bid || ask) : (ask || bid))
-    : (Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : (ask || bid));
-
-  const computeProtectionStats = (targetPrice: number) => {
-    if (!Number.isFinite(targetPrice) || targetPrice <= 0 || !(refEntryPrice > 0) || unitStep === null || unitStep <= 0) {
-      return { pips: '—', estBalance: '—', estProfit: '—', isPositive: false };
-    }
-    const rawDiff = Math.abs(targetPrice - refEntryPrice);
-    const pipsCount = Math.round((rawDiff / unitStep) * 10) / 10;
-    if (contractSize === null || contractSize <= 0 || !Number.isFinite(parsedVol) || parsedVol <= 0) {
-      return { pips: String(pipsCount), estBalance: '—', estProfit: '—', isPositive: false };
-    }
-    const signedDiff = selectedSide === 'sell'
-      ? (refEntryPrice - targetPrice)
-      : (targetPrice - refEntryPrice);
-    const pnl = signedDiff * parsedVol * contractSize;
-    const pnlPrefix = pnl > 0 ? '+' : '';
-    const estProfit = baseCurrency
-      ? `${pnlPrefix}${pnl.toFixed(2)} ${baseCurrency}`
-      : `${pnlPrefix}${pnl.toFixed(2)}`;
-    const balance = Number(account?.balance);
-    const estBalance = Number.isFinite(balance) && balance > 0
-      ? `${pnlPrefix}${((pnl / balance) * 100).toFixed(2)} %`
-      : '—';
-    return {
-      pips: String(pipsCount),
-      estBalance,
-      estProfit,
-      isPositive: pnl >= 0,
-    };
-  };
-
-  const slStats = computeProtectionStats(parsedStopLoss);
-  const tpStats = computeProtectionStats(parsedTakeProfit);
-  const pipValueDisplay = (
-    unitStep !== null && unitStep > 0 && contractSize !== null && contractSize > 0 && Number.isFinite(parsedVol) && parsedVol > 0
-  )
-    ? `${(unitStep * parsedVol * contractSize).toFixed(2)}${baseCurrency ? ` ${baseCurrency}` : ''}`
-    : '—';
-
   const tickHighRaw = Number((tick as { high?: unknown } | undefined)?.high);
   const tickLowRaw = Number((tick as { low?: unknown } | undefined)?.low);
   const sessionHighDisplay = Number.isFinite(tickHighRaw) && tickHighRaw > 0
@@ -3623,6 +3596,7 @@ export function OrderPanelDialog({
         data-show-dom={showDom ? 'true' : 'false'}
         style={{
           transform: `translate(${pos.x}px, ${pos.y}px)`,
+          // eslint-disable-next-line react-hooks/refs -- reads dragRef.current during render only to disable CSS transition mid-drag without extra renders
           transition: dragRef.current ? 'none' : 'transform 0.1s ease-out',
         }}
         onMouseDown={(e) => e.stopPropagation()}

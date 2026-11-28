@@ -238,20 +238,52 @@ export const useWatchlistStore = create<WatchlistState>()(
       }),
       {
         name: 'rtx5-watchlists',
-        merge: (persistedState: any, currentState: WatchlistState) => {
-          if (!persistedState) return currentState;
-          
-          const isValidSymbol = (s: any) => typeof s === 'string' && s.length <= 20 && /^[A-Za-z0-9._-]+$/.test(s);
-          
-          const watchlists = (persistedState.watchlists || []).map((w: any) => ({
-            ...w,
-            symbols: (w.symbols || []).filter(isValidSymbol)
-          }));
-          
+        merge: (persisted: unknown, currentState: WatchlistState) => {
+          const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+            const proto = Object.getPrototypeOf(value);
+            return proto === Object.prototype || proto === null;
+          };
+
+          if (!isPlainObject(persisted)) return currentState;
+
+          const isValidSymbol = (s: unknown): s is string => typeof s === 'string' && s.length <= 20 && /^[A-Za-z0-9._-]+$/.test(s);
+          const isValidWatchlistItem = (
+            item: unknown
+          ): item is Record<string, unknown> & { id: string; name: string } =>
+            isPlainObject(item) &&
+            typeof item.id === 'string' &&
+            item.id.trim().length > 0 &&
+            typeof item.name === 'string' &&
+            item.name.trim().length > 0;
+
+          const parsedWatchlists: Watchlist[] = Array.isArray(persisted.watchlists)
+            ? persisted.watchlists
+                .filter(isValidWatchlistItem)
+                .map((w) => ({
+                  id: w.id,
+                  name: w.name,
+                  symbols: (Array.isArray(w.symbols) ? w.symbols : []).filter(isValidSymbol),
+                  isDefault: typeof w.isDefault === 'boolean' ? w.isDefault : false,
+                  createdAt: typeof w.createdAt === 'number' && Number.isFinite(w.createdAt) ? w.createdAt : 0,
+                  updatedAt: typeof w.updatedAt === 'number' && Number.isFinite(w.updatedAt) ? w.updatedAt : 0,
+                }))
+            : [];
+
+          const watchlists = parsedWatchlists.length > 0 ? parsedWatchlists : currentState.watchlists;
+
+          const candidateActiveId = typeof persisted.activeWatchlistId === 'string'
+            ? persisted.activeWatchlistId
+            : currentState.activeWatchlistId;
+          const activeWatchlistId =
+            candidateActiveId.trim().length > 0 && watchlists.some((w) => w.id === candidateActiveId)
+              ? candidateActiveId
+              : watchlists[0]?.id ?? currentState.activeWatchlistId;
+
           return {
             ...currentState,
-            ...persistedState,
-            watchlists
+            watchlists,
+            activeWatchlistId,
           };
         }
       }

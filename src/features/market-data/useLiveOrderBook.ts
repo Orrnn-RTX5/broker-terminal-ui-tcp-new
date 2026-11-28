@@ -242,6 +242,7 @@ export function useLiveOrderBook(symbol: string, depth: number) {
       setError(null);
       setLoading(Boolean(normalizedSymbol) && isAuthenticated);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reload() synchronously clears/hydrates book and sets loading=true on symbol/session transition
     void reload();
     return () => {
       generationRef.current += 1;
@@ -259,6 +260,7 @@ export function useLiveOrderBook(symbol: string, depth: number) {
       if (cached) {
         const warm = decodedBinaryDepthToLiveOrderBook(cached, normalizedSymbol, depth);
         if (warm) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- immediately hydrates cached binary TCP depth before async stream frames arrive
           setOrderBook(warm);
           setError(null);
           setLoading(false);

@@ -14,11 +14,16 @@ const fixture = (api = 'https://service.achiever.orrnn.com') => ({
   BROKER_ID: 'Achiever', DEFAULT_MT5_SERVER: 'Achiever Trading Server',
   DISCOVERY_BASE_URL: 'https://directory.independent.example',
 })
-const runtimeWindow = window as Window & { __RTX_RUNTIME_CONFIG__?: Record<string, unknown>; __RUNTIME_CONFIG__?: Record<string, unknown> }
+const runtimeWindow = window as Omit<Window, 'electronAPI'> & {
+  __RTX_RUNTIME_CONFIG__?: Record<string, unknown>
+  __RUNTIME_CONFIG__?: Record<string, unknown>
+  RUNTIME_CONFIG?: Record<string, unknown>
+  electronAPI?: Record<string, unknown>
+}
 afterEach(() => {
   delete runtimeWindow.__RTX_RUNTIME_CONFIG__
   delete runtimeWindow.__RUNTIME_CONFIG__
-  delete (window as any).RUNTIME_CONFIG
+  delete runtimeWindow.RUNTIME_CONFIG
   vi.unstubAllEnvs()
 })
 
@@ -57,11 +62,11 @@ describe('broker-neutral complete runtime configuration', () => {
 
   it('prefers a deployment global over a compiled legacy global without merging fields', () => {
     runtimeWindow.__RTX_RUNTIME_CONFIG__ = { ...fixture('https://service.orrnn.com'), CONFIG_SOURCE: 'build', BROKER_ID: 'Orrnn' }
-    ;(window as any).RUNTIME_CONFIG = fixture()
+    runtimeWindow.RUNTIME_CONFIG = fixture()
     expect(getBackendTarget()).toBe('https://service.achiever.orrnn.com')
     expect(getRuntimeConfiguredBrokerId()).toBe('Achiever')
-    expect(selectBrokerRuntimeConfig([runtimeWindow.__RTX_RUNTIME_CONFIG__, (window as any).RUNTIME_CONFIG])).toBe((window as any).RUNTIME_CONFIG)
-    ;(window as any).RUNTIME_CONFIG = { ...fixture(), API_HOST: '' }
+    expect(selectBrokerRuntimeConfig([runtimeWindow.__RTX_RUNTIME_CONFIG__, runtimeWindow.RUNTIME_CONFIG])).toBe(runtimeWindow.RUNTIME_CONFIG)
+    runtimeWindow.RUNTIME_CONFIG = { ...fixture(), API_HOST: '' }
     expect(getBackendTarget()).toBe('')
     expect(getBrokerConfigurationError()).toContain('API_HOST')
   })
@@ -85,7 +90,7 @@ describe('broker-neutral complete runtime configuration', () => {
     { PUBLIC_MARKET_API: 'mt5-bridge-v1' },
   ])('blocks conflicting deployment globals including secondary routing and aliases: %j', changed => {
     runtimeWindow.__RTX_RUNTIME_CONFIG__ = fixture()
-    ;(window as any).RUNTIME_CONFIG = { ...fixture(), ...changed }
+    runtimeWindow.RUNTIME_CONFIG = { ...fixture(), ...changed }
     expect(getBrokerConfigurationError()).toContain('Conflicting deployment runtime configuration sources')
     expect(getBackendTarget()).toBe('')
     expect(getPublicWsTarget()).toBe('')
@@ -154,11 +159,17 @@ describe('broker-neutral complete runtime configuration', () => {
   })
 
   it('runs the exact self-contained validator before HTML requests without app modules', () => {
-    const context = { window: {} as Record<string, any>, URL }
+    const context: {
+      window: {
+        __RTX_SELECT_BROKER_CONFIG__?: (candidates: unknown[]) => Record<string, unknown>
+        __RTX_VALIDATE_BROKER_CONFIG__?: (cfg: Record<string, unknown>) => { valid: boolean }
+      }
+      URL: typeof URL
+    } = { window: {}, URL }
     runInNewContext(renderBrokerRuntimeValidator(), context)
-    expect(context.window.__RTX_SELECT_BROKER_CONFIG__([{ ...fixture('https://service.orrnn.com'), CONFIG_SOURCE: 'build' }, fixture()]).API_HOST).toBe('https://service.achiever.orrnn.com')
-    expect(context.window.__RTX_VALIDATE_BROKER_CONFIG__(fixture()).valid).toBe(true)
-    expect(context.window.__RTX_VALIDATE_BROKER_CONFIG__({ API_HOST: 'https://service.orrnn.com' }).valid).toBe(false)
+    expect(context.window.__RTX_SELECT_BROKER_CONFIG__!([{ ...fixture('https://service.orrnn.com'), CONFIG_SOURCE: 'build' }, fixture()]).API_HOST).toBe('https://service.achiever.orrnn.com')
+    expect(context.window.__RTX_VALIDATE_BROKER_CONFIG__!(fixture()).valid).toBe(true)
+    expect(context.window.__RTX_VALIDATE_BROKER_CONFIG__!({ API_HOST: 'https://service.orrnn.com' }).valid).toBe(false)
   })
 
   it('limits cleartext exceptions to explicit local development', () => {
@@ -171,11 +182,11 @@ describe('broker-neutral complete runtime configuration', () => {
 
   it('does not revive a compiled desktop broker for an explicit incomplete desktop configuration', () => {
     vi.stubEnv('VITE_API_URL', 'https://service.orrnn.com')
-    ;(window as any).electronAPI = {}
+    runtimeWindow.electronAPI = {}
     runtimeWindow.__RTX_RUNTIME_CONFIG__ = { BACKEND_TARGET: 'desktop' }
     expect(getBackendTarget()).toBe('')
     expect(resolveBrokerBackendUrl({ broker_id: 'selected', server_url: 'http://127.0.0.1:8090' })).toBe('http://127.0.0.1:8090')
-    delete (window as any).electronAPI
+    delete runtimeWindow.electronAPI
   })
 
   it('keeps the desktop release source and chart default optional, validated, and conflict-aware', () => {

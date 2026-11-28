@@ -28,7 +28,6 @@ import {
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { useWorkspaceProfileSelectionStore } from '../../store/useWorkspaceProfileSelectionStore';
 import { getTerminalShortcutHint } from '../../services/shortcutCatalog';
-import { isDesktopBackendTarget } from '../../config/backendTarget.js';
 import {
     BUILTIN_WORKSPACE_PROFILE_NAMES,
     deleteWorkspaceProfile,
@@ -286,6 +285,7 @@ export const FileMenu: React.FC<FileMenuProps> = ({
         if (shortcutsOnly || selection.accountId !== effectiveAccount) {
             selection.selectProfile(effectiveAccount, 'Default');
         }
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- resets transient FileMenu submenus and save dialog when account or shortcutsOnly scope changes
         setShowSaveDialog(false);
         hoverOpenedDeletedRef.current = false;
         hoverOpenedProfilesRef.current = false;

@@ -303,6 +303,7 @@ export function decodeBinaryTradeEvent(payload: Uint8Array): DecodedBinaryTradeE
   const rawText = textDecoder.decode(
     payload.subarray(22 + channelLen, 22 + channelLen + dataLen),
   );
+  // eslint-disable-next-line no-useless-assignment -- kept byte-identical to the shipped hot path (0x3A decode); value is overwritten in both branches
   let parsedPayload: unknown = rawText;
   try {
     parsedPayload = JSON.parse(rawText);

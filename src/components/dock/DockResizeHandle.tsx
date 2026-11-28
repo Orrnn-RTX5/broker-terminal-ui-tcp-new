@@ -5,7 +5,7 @@
  * resize atomically on mouse release so charts and tables never jank mid-drag.
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -63,9 +63,11 @@ export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({
   const onResizeCommitRef = useRef(onResizeCommit);
   const getDragBoundsRef = useRef(getDragBounds);
 
-  onResizeRef.current = onResize;
-  onResizeCommitRef.current = onResizeCommit;
-  getDragBoundsRef.current = getDragBounds;
+  useLayoutEffect(() => {
+    onResizeRef.current = onResize;
+    onResizeCommitRef.current = onResizeCommit;
+    getDragBoundsRef.current = getDragBounds;
+  });
 
   const usePreviewCommit = typeof onResizeCommit === 'function';
 

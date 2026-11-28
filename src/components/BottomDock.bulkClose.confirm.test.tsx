@@ -4,6 +4,8 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BottomDock } from './BottomDock';
+import type { Account } from '../store/useAppStore';
+import type { ToolboxTradePosition } from '../hooks/useToolboxTradeData';
 
 // Dock shell entries must reach the gated App.handleCloseBulk WITHOUT
 // issuing any trade call themselves. The shared BulkCloseConfirmDialog gate
@@ -14,8 +16,8 @@ const toolboxMocks = vi.hoisted(() => ({
 }));
 
 const trade = vi.hoisted(() => ({
-  account: null as any,
-  positions: [] as any[],
+  account: null as Partial<Account> | null,
+  positions: [] as Array<Partial<ToolboxTradePosition>>,
 }));
 
 vi.mock('../hooks/useToolboxTradeData', () => ({

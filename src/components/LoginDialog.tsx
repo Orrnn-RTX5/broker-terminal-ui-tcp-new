@@ -6,7 +6,7 @@ import { resolveTradingAccountType } from '../services/tradingAccountType';
  * Account login dialog shared by the web and desktop terminals.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useId } from 'react';
 import ReactDOM from 'react-dom';
 import { useAppStore } from '../store/useAppStore';
 import { authV2Api } from '../api/trade';
@@ -155,8 +155,6 @@ export function LoginDialog({
     const dialogRef = useRef<HTMLDivElement>(null);
     const { dragStyle, dragHandleProps } = useDraggableSheet({ isOpen, elementRef: dialogRef });
 
-    healthStatusRef.current = healthStatus;
-
     useEffect(() => {
         if (!isOpen) return;
         const previousFocus = document.activeElement as HTMLElement | null;
@@ -191,8 +189,11 @@ export function LoginDialog({
     const lockedBrokerDisplayNameRef = useRef(lockedBrokerDisplayName);
     const lockedBrokerKey = normalizeBrokerId(lockedBrokerId);
 
-    isOpenRef.current = isOpen;
-    lockedBrokerDisplayNameRef.current = lockedBrokerDisplayName;
+    useLayoutEffect(() => {
+        healthStatusRef.current = healthStatus;
+        isOpenRef.current = isOpen;
+        lockedBrokerDisplayNameRef.current = lockedBrokerDisplayName;
+    });
 
     const invalidatePendingLogin = useCallback(() => {
         loginRequestGenerationRef.current += 1;
@@ -214,6 +215,7 @@ export function LoginDialog({
             healthCheckUrlRef.current = null;
             healthStatusRef.current = null;
             userSelectedBrokerRef.current = null;
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- resets retained health status when the mounted dialog closes
             setHealthStatus(null);
             resetPasswordCopy();
             invalidatePendingLogin();
@@ -368,6 +370,7 @@ export function LoginDialog({
 
     useEffect(() => {
         if (!isOpen || !lockedBrokerKey || !lockedBrokerDisplayName) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs locked broker display name into retained dialog state when props change
         setBrokerList(current => current.map(item => (
             normalizeBrokerId(item.broker_id) === lockedBrokerKey
                 ? { ...item, broker_name: lockedBrokerDisplayName }
@@ -385,6 +388,7 @@ export function LoginDialog({
     useEffect(() => {
         if (!isOpen) return;
         if (deploymentError) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- surfaces deployment configuration error and clears retained broker state on open
             setError(deploymentError);
             setBrokerList([]);
             setSelectedBroker(null);

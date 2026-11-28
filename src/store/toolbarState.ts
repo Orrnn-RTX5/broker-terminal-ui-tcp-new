@@ -10,8 +10,8 @@ export interface ToolbarState {
   chartShiftEnabled: boolean;
   magnetEnabled: boolean;
   candleWidth: number; // for zoom
-  indicators: Array<{ name: string; params: any }>;
-  drawings: Array<{ id: string; type: string; points: any[] }>;
+  indicators: Array<{ name: string; params: Record<string, unknown> }>;
+  drawings: Array<{ id: string; type: string; points: unknown[] }>;
 }
 
 export type ToolbarAction =
@@ -27,9 +27,9 @@ export type ToolbarAction =
   | { type: 'TOGGLE_MAGNET' }
   | { type: 'EXPORT_CHART' }
   | { type: 'ZOOM'; delta: number }
-  | { type: 'ADD_INDICATOR'; indicator: { name: string; params: any } }
+  | { type: 'ADD_INDICATOR'; indicator: { name: string; params: Record<string, unknown> } }
   | { type: 'REMOVE_INDICATOR'; name: string }
-  | { type: 'ADD_DRAWING'; drawing: { id: string; type: string; points: any[] } }
+  | { type: 'ADD_DRAWING'; drawing: { id: string; type: string; points: unknown[] } }
   | { type: 'DELETE_DRAWING'; id: string }
   | { type: 'CLEAR_DRAWINGS' };
 

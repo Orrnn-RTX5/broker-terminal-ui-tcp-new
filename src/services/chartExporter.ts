@@ -7,6 +7,14 @@
 
 import { getActiveChartSource } from './activeChartSource';
 
+type Html2CanvasFn = (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+
+interface ChartExporterWindow extends Window {
+  html2canvas?: Html2CanvasFn;
+  __activeChartCanvas?: HTMLCanvasElement | null;
+  __activeChartContainer?: HTMLElement | null;
+}
+
 export interface ChartExportOptions {
   format: 'png' | 'jpg';
   quality: number; // 0.1 to 1.0 (for JPG)
@@ -122,7 +130,8 @@ export class ChartExporter {
     options: Partial<ChartExportOptions> = {}
   ): Promise<Blob> {
     // Check if html2canvas is available
-    if (typeof window === 'undefined' || !(window as any).html2canvas) {
+    const html2canvas = typeof window !== 'undefined' ? (window as ChartExporterWindow).html2canvas : undefined;
+    if (!html2canvas) {
       // Fallback to basic canvas export if available
       const canvas = element.querySelector('canvas');
       if (canvas) {
@@ -132,7 +141,6 @@ export class ChartExporter {
     }
 
     const opts = { ...DEFAULT_OPTIONS, ...options };
-    const html2canvas = (window as any).html2canvas;
 
     // Capture the element
     const canvas = await html2canvas(element, {
@@ -167,8 +175,9 @@ export class ChartExporter {
     }
 
     // Strategy 1: Check legacy global window object for active chart
-    const globalCanvas = (window as any).__activeChartCanvas as HTMLCanvasElement | null;
-    const globalContainer = (window as any).__activeChartContainer as HTMLElement | null;
+    const exporterWindow = window as ChartExporterWindow;
+    const globalCanvas = exporterWindow.__activeChartCanvas ?? null;
+    const globalContainer = exporterWindow.__activeChartContainer ?? null;
 
     if (globalCanvas?.isConnected) {
       console.log('[ChartExporter] Using global chart canvas');

@@ -1,6 +1,6 @@
 import { readPositionStateVersion } from './positionStateVersion';
 
-type PositionRecord = Record<string, any>;
+type PositionRecord = Record<string, unknown>;
 
 export interface DecodedPositionStreamMessage {
   /** A snapshot replaces the open set; a structural row snapshot is a patch. */
@@ -261,7 +261,7 @@ function mergePosition<T extends { id: number }>(
 
   // An unknown display patch cannot manufacture a zero-volume position.
   if (!old && (!canonical.symbol || !canonical.side
-    || !(canonical.volume_lots > 0) || !(canonical.price_open > 0))) return undefined;
+    || !(typeof canonical.volume_lots === 'number' && canonical.volume_lots > 0) || !(typeof canonical.price_open === 'number' && canonical.price_open > 0))) return undefined;
   const normalized = normalize(canonical);
   if (!normalized) return previous;
   const next: PositionRecord = old ? { ...old } : { ...normalized };

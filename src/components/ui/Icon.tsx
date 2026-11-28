@@ -117,6 +117,7 @@ export const Icon: React.FC<IconProps> = ({
 /**
  * Re-export icon names for convenience
  */
+// eslint-disable-next-line react-refresh/only-export-components -- re-exports icon registry metadata for existing importers across the codebase
 export { iconNames, type IconName } from './iconRegistry';
 
 export default Icon;

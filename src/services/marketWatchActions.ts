@@ -321,13 +321,25 @@ export function loadColumnConfig(): ColumnId[] {
 
 export type SortField = 'symbol' | 'bid' | 'ask' | 'change' | 'volume' | null;
 
+export interface MarketWatchTickLike {
+  bid?: number;
+  ask?: number;
+  spread?: number;
+  digits?: number;
+  dailyChange?: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  timestamp?: number | string;
+}
+
 /**
  * Sort symbols by field
  */
 export function sortSymbols(
   symbols: string[],
   field: SortField,
-  ticks: Record<string, any>
+  ticks: Record<string, MarketWatchTickLike>
 ): string[] {
   if (!field) return symbols;
 
@@ -361,7 +373,7 @@ export function sortSymbols(
 /**
  * Export market watch data as CSV
  */
-export function exportMarketWatchCSV(ticks: Record<string, any>): void {
+export function exportMarketWatchCSV(ticks: Record<string, MarketWatchTickLike>): void {
   const headers = ['Symbol', 'Bid', 'Ask', 'Spread', 'Daily Change %', 'High', 'Low', 'Volume', 'Time'];
 
   const rows = Object.keys(ticks).map(symbol => {
@@ -521,7 +533,7 @@ export function showNotification(
 /**
  * Handle action errors gracefully
  */
-export function handleActionError(action: string, error: any): void {
+export function handleActionError(action: string, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Unknown error';
   console.error(`[${action}] Error:`, error);
   showNotification(`${action} failed: ${message}`, 'error');

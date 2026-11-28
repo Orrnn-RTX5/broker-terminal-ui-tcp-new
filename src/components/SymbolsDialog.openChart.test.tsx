@@ -5,6 +5,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SymbolsDialog } from './SymbolsDialog';
 import { updateDynamicUrls } from '../config/api';
+import { useAppStore } from '../store/useAppStore';
+
+interface DeferredResponse {
+  promise: Promise<Response>;
+  resolve: (value: Response) => void;
+}
+
+const createDeferredResponse = (): DeferredResponse => {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
+const createJsonResponse = (body: unknown): Response => ({
+  ok: true,
+  status: 200,
+  json: async () => body,
+} as Response);
 
 const brokerSymbol = 'XAUUSD.rtx';
 
@@ -293,5 +313,138 @@ describe('SymbolsDialog chart opening', () => {
     const dialog = screen.getByRole('dialog'); dialog.focus();
     fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the previous symbol list visible while reloading on reopen when instruments are omitted', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(createJsonResponse({
+        instruments: [
+          { id: 'gold-rtx', symbol: brokerSymbol, description: 'Gold against US Dollar', category: 'Commodities.Metals', digits: 2 },
+          { id: 'eurusd', symbol: 'EURUSD', description: 'Euro vs US Dollar', category: 'Forex', digits: 5 },
+        ],
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onClose = vi.fn();
+    const onOpenChart = vi.fn();
+    const view = render(<SymbolsDialog isOpen onClose={onClose} onOpenChart={onOpenChart} />);
+
+    const catalog = within(screen.getByRole('table', { name: 'Available symbols' }));
+    expect(await catalog.findByText('EURUSD')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 instruments')).toHaveTextContent('2');
+
+    view.rerender(<SymbolsDialog isOpen={false} onClose={onClose} onOpenChart={onOpenChart} />);
+
+    const reloadDeferred = createDeferredResponse();
+    fetchMock.mockReturnValueOnce(reloadDeferred.promise);
+    view.rerender(<SymbolsDialog isOpen onClose={onClose} onOpenChart={onOpenChart} />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 instruments')).toHaveTextContent('2');
+    const reloadingCatalog = within(screen.getByRole('table', { name: 'Available symbols' }));
+    expect(reloadingCatalog.getByText(brokerSymbol)).toBeInTheDocument();
+    expect(reloadingCatalog.getByText('EURUSD')).toBeInTheDocument();
+
+    await act(async () => {
+      reloadDeferred.resolve(createJsonResponse({
+        instruments: [
+          { id: 'gbpusd', symbol: 'GBPUSD', description: 'Pound vs US Dollar', category: 'Forex', digits: 5 },
+        ],
+      }));
+    });
+
+    expect(await reloadingCatalog.findByText('GBPUSD')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 instruments')).toHaveTextContent('1');
+  });
+
+  it('keeps the previous symbol list visible while reloading on auth change when instruments are omitted', async () => {
+    const previousAuthenticated = useAppStore.getState().isAuthenticated;
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(createJsonResponse({
+        instruments: [
+          { id: 'gold-rtx', symbol: brokerSymbol, description: 'Gold against US Dollar', category: 'Commodities.Metals', digits: 2 },
+        ],
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      act(() => {
+        useAppStore.setState({ isAuthenticated: false });
+      });
+
+      render(<SymbolsDialog isOpen onClose={vi.fn()} onOpenChart={vi.fn()} />);
+
+      const catalog = within(screen.getByRole('table', { name: 'Available symbols' }));
+      expect(await catalog.findByText(brokerSymbol)).toBeInTheDocument();
+      expect(screen.getByLabelText('1 instruments')).toHaveTextContent('1');
+
+      const authReloadDeferred = createDeferredResponse();
+      fetchMock.mockReturnValueOnce(authReloadDeferred.promise);
+
+      act(() => {
+        useAppStore.setState({ isAuthenticated: true });
+      });
+
+      expect(screen.getByText('Loading...')).toBeInTheDocument();
+      expect(screen.getByLabelText('1 instruments')).toHaveTextContent('1');
+      expect(catalog.getByText(brokerSymbol)).toBeInTheDocument();
+
+      await act(async () => {
+        authReloadDeferred.resolve(createJsonResponse({
+          instruments: [
+            { id: 'eurusd', symbol: 'EURUSD', description: 'Euro vs US Dollar', category: 'Forex', digits: 5 },
+            { id: 'usdjpy', symbol: 'USDJPY', description: 'US Dollar vs Yen', category: 'Forex', digits: 3 },
+          ],
+        }));
+      });
+
+      expect(await catalog.findByText('EURUSD')).toBeInTheDocument();
+      expect(screen.getByLabelText('2 instruments')).toHaveTextContent('2');
+    } finally {
+      cleanup();
+      act(() => {
+        useAppStore.setState({ isAuthenticated: previousAuthenticated });
+      });
+    }
+  });
+
+  it('keeps the focused tree folder across reopen while reloading when instruments are omitted', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(createJsonResponse({
+        instruments: [
+          { id: 'gold-rtx', symbol: brokerSymbol, description: 'Gold against US Dollar', category: 'Commodities.Metals', digits: 2 },
+        ],
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onClose = vi.fn();
+    const onOpenChart = vi.fn();
+    const view = render(<SymbolsDialog isOpen onClose={onClose} onOpenChart={onOpenChart} />);
+
+    const tree = screen.getByRole('group', { name: 'Instrument categories' });
+    const commoditiesFolder = await within(tree).findByRole('button', { name: 'Commodities' });
+    fireEvent.click(commoditiesFolder);
+    expect(commoditiesFolder).toHaveAttribute('tabindex', '0');
+
+    view.rerender(<SymbolsDialog isOpen={false} onClose={onClose} onOpenChart={onOpenChart} />);
+
+    const reloadDeferred = createDeferredResponse();
+    fetchMock.mockReturnValueOnce(reloadDeferred.promise);
+    view.rerender(<SymbolsDialog isOpen onClose={onClose} onOpenChart={onOpenChart} />);
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+    await act(async () => {
+      reloadDeferred.resolve(createJsonResponse({
+        instruments: [
+          { id: 'gold-rtx', symbol: brokerSymbol, description: 'Gold against US Dollar', category: 'Commodities.Metals', digits: 2 },
+        ],
+      }));
+    });
+
+    const reloadedTree = screen.getByRole('group', { name: 'Instrument categories' });
+    const reloadedFolder = await within(reloadedTree).findByRole('button', { name: 'Commodities' });
+    expect(reloadedFolder).toHaveAttribute('tabindex', '0');
+    expect(within(reloadedTree).getAllByRole('button').filter(button => button.tabIndex === 0)).toEqual([reloadedFolder]);
   });
 });

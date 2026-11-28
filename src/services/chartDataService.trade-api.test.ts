@@ -184,7 +184,7 @@ describe('trade candle normalization and websocket cleanup', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     FakeWebSocket.instances = [];
-    vi.stubGlobal('WebSocket', FakeWebSocket as any);
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
     localStorage.clear();
     sessionStorage.clear();
     setDesktopRuntime();

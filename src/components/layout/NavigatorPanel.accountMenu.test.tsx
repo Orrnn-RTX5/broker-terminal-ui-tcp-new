@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n, { i18nReady } from '../../i18n';
 import { NavigatorPanel } from './NavigatorPanel';
 import type { SavedAccount } from '../../store/useAppStore';
 
@@ -52,7 +53,9 @@ const rightClickAccount = (label = '200003: demo acc1') => {
 };
 
 describe('Navigator account context menu', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        await i18nReady;
+        await i18n.changeLanguage('en');
         vi.clearAllMocks();
         mocks.accountId = '200003';
         mocks.isAuthenticated = true;

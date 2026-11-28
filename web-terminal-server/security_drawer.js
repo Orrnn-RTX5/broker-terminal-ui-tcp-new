@@ -129,7 +129,7 @@
           a.href = URL.createObjectURL(blob);
           a.download = bid + '-broker.lic';
           a.click();
-        } catch (_) {}
+        } catch { /* Blob download is best-effort; server-side save-file already persisted the license */ }
         if (saveRes && saveRes.saved_paths && saveRes.saved_paths.length) {
           alert('Signed broker.lic saved to:\n' + saveRes.saved_paths.join('\n'));
         }
@@ -160,7 +160,7 @@
       }
       state = await r.json();
       render();
-    } catch (_) {
+    } catch {
       var pill2 = document.getElementById('rtx5-sec-pill');
       if (pill2) {
         pill2.className = 'rtx5-sbadge err';

@@ -21,7 +21,7 @@ describe('refreshHistoryAfterFill', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    refresh = vi.fn((_login: number) => Promise.resolve());
+    refresh = vi.fn<(login: number) => Promise<void>>(() => Promise.resolve());
     current = true;
     owner = createHistoryFreshnessOwner(refresh, () => current);
   });
@@ -156,7 +156,7 @@ describe('createStreamHistoryCoalescer', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    refresh = vi.fn((_login: number) => Promise.resolve());
+    refresh = vi.fn<(login: number) => Promise<void>>(() => Promise.resolve());
     current = true;
     coalescer = createStreamHistoryCoalescer({ refresh, isCurrent: (login) => current && login === LOGIN });
   });

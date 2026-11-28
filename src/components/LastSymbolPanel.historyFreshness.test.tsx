@@ -70,7 +70,7 @@ describe('LastSymbolPanel close path history refresh', () => {
     mocks.placeMarketOrder.mockReset();
     mocks.closePosition.mockReset();
     mocks.closePosition.mockResolvedValue(undefined);
-    refresh = vi.fn((_login: number) => Promise.resolve());
+    refresh = vi.fn<(login: number) => Promise<void>>(() => Promise.resolve());
     unbind = bindDefaultHistoryFreshnessOwner(createHistoryFreshnessOwner(refresh, () => true));
   });
 

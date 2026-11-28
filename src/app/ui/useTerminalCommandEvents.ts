@@ -142,6 +142,7 @@ export const useTerminalCommandEvents = ({
     setSelectedSymbol,
     volume,
   });
+  // eslint-disable-next-line react-hooks/refs -- async quickPendingOrder disclaimer continuation reads latest submit/symbol/volume deps from this ref; syncing on render avoids stale closures across re-renders without adding a per-render effect
   latestQuickPendingDepsRef.current = {
     handleOrderPanelSubmit,
     setSelectedSymbol,

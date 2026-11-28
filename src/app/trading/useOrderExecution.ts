@@ -155,8 +155,10 @@ export const useOrderExecution = ({
 }: UseOrderExecutionOptions): OrderExecutionController => {
   const positionsRefreshTimerRef = useRef<number | null>(null);
   const refreshPositionsRef = useRef(refreshPositions);
+  // eslint-disable-next-line react-hooks/refs -- sync latest callback/getter into ref for post-order async timer without adding effect closures or changing order-path timing
   refreshPositionsRef.current = refreshPositions;
   const getLiveTradingLoginRef = useRef(getLiveTradingLogin);
+  // eslint-disable-next-line react-hooks/refs -- sync latest callback/getter into ref for post-order async timer without adding effect closures or changing order-path timing
   getLiveTradingLoginRef.current = getLiveTradingLogin;
 
   useEffect(() => () => {

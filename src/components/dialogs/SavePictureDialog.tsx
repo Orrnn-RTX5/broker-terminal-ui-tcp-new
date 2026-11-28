@@ -1,5 +1,5 @@
 import { useUiTranslation } from '../../hooks/useUiTranslation';
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../ui/Icon';
 import { ChartExporter, type ChartExportOptions } from '../../services/chartExporter';
@@ -37,19 +37,24 @@ export const SavePictureDialog: React.FC<SavePictureDialogProps> = ({
   const [includeTimestamp, setIncludeTimestamp] = useState(true);
   const [includeWatermark, setIncludeWatermark] = useState(false);
   const [watermarkText, setWatermarkText] = useState('Trading Engine');
-  const [preview, setPreview] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [prevPreviewInputs, setPrevPreviewInputs] = useState({ isOpen, chartCanvas });
 
-  useEffect(() => {
-    if (!isOpen) return;
+  if (prevPreviewInputs.isOpen !== isOpen || prevPreviewInputs.chartCanvas !== chartCanvas) {
+    setPrevPreviewInputs({ isOpen, chartCanvas });
+    if (isOpen) {
+      setError(null);
+      setIsExporting(false);
+    }
+  }
 
-    setError(null);
-    setIsExporting(false);
+  const preview = useMemo(() => {
+    if (!isOpen || !chartCanvas) return '';
     try {
-      setPreview(chartCanvas ? ChartExporter.getPreview(chartCanvas, 300, 200) : '');
+      return ChartExporter.getPreview(chartCanvas, 300, 200);
     } catch {
-      setPreview('');
+      return '';
     }
   }, [chartCanvas, isOpen]);
 

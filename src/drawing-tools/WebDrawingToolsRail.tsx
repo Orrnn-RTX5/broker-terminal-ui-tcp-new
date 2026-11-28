@@ -294,6 +294,7 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', 
 
   const tooltipProps = (ownerId: string, label: string) => ({
     onMouseEnter: (event: React.MouseEvent<HTMLButtonElement>) => {
+      // eslint-disable-next-line react-hooks/refs -- event handler accesses tooltipControllerRef outside render to avoid hover re-renders
       tooltipControllerRef.current?.enter({ ownerId, label, trigger: event.currentTarget });
     },
     onMouseLeave: () => {
@@ -586,6 +587,7 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', 
     ] as const).map(([key, tool, description]) => ({
       id: `drawing.rail.${tool}`, key, alt: true, description,
       category: 'Drawing tools', enabled: isWebDrawingToolsRuntime(),
+      // eslint-disable-next-line react-hooks/refs -- shortcut handler calls dispatchTrendTool outside render
       handler: () => dispatchTrendTool(tool),
     })),
     { id: 'drawing.rail.fibonacci', key: 'f', alt: true, description: 'Fib Retracement', category: 'Drawing tools', enabled: isWebDrawingToolsRuntime(), handler: () => dispatchDrawingTool('fibonacci', 'fib_retracement') },
@@ -852,6 +854,7 @@ export function WebDrawingToolsRail({ selectedSymbol, orientation = 'vertical', 
           {BRUSH_SHAPE_TOOLS.filter(tool => tool.group === group).map(tool => (
             <button className="web-drawing-tools-menu__item" role="menuitemradio" type="button" key={tool.id}
               aria-checked={visibleActiveTool?.tool === 'shapes' && visibleActiveTool.subtype === tool.id}
+              // eslint-disable-next-line react-hooks/refs -- click handler calls dispatchDrawingTool outside render
               onClick={() => dispatchDrawingTool('shapes', tool.id)}>
               <BrushShapeToolIcon id={tool.id} /><span className="web-drawing-tools-menu__label">{tr(tool.label)}</span>
             </button>

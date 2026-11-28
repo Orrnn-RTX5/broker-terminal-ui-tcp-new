@@ -46,6 +46,7 @@ export const useTradingChartVisibleRuntime = ({
   onRelease,
 }: TradingChartVisibleRuntimeOptions): TradingChartVisibleRuntime => {
   const callbacksRef = useRef({ onAcquire, onRelease });
+  // eslint-disable-next-line react-hooks/refs -- acquire/release run from the visibility effect and must see this commit's callbacks; a layout effect would run on every chart render
   callbacksRef.current = { onAcquire, onRelease };
   const enabled = active && hasSymbol;
 

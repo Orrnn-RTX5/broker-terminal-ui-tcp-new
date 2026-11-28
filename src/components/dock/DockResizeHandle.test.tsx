@@ -3,7 +3,7 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import type { DockLayout } from '../../services/dockManager';
+import type { DockContainer as DockContainerType, DockLayout } from '../../services/dockManager';
 import { useDockLayoutStore } from '../../store/useDockLayoutStore';
 import { DockContainer } from './DockContainer';
 
@@ -101,7 +101,7 @@ describe('MT5-style DockResizeHandle drag preview and atomic resize commit', () 
     expect(movedPreview?.style.height).toBe('1px');
 
     // Layout has NOT churned mid-drag (MT5 commit-on-release behavior)
-    const midCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as any);
+    const midCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as DockContainerType);
     expect(midCenterMain.children[0].ratio).toBeCloseTo(0.5, 4);
     expect(midCenterMain.children[1].ratio).toBeCloseTo(0.5, 4);
 
@@ -113,7 +113,7 @@ describe('MT5-style DockResizeHandle drag preview and atomic resize commit', () 
     expect(document.body.querySelector('[data-dock-resize-preview]')).toBeNull();
     expect(document.body.style.cursor).toBe('');
 
-    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as any);
+    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as DockContainerType);
     expect(finalCenterMain.children[0].ratio).toBeCloseTo(0.75, 4);
     expect(finalCenterMain.children[1].ratio).toBeCloseTo(0.25, 4);
   });
@@ -145,7 +145,7 @@ describe('MT5-style DockResizeHandle drag preview and atomic resize commit', () 
       fireEvent.mouseUp(window);
     });
 
-    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as any);
+    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as DockContainerType);
     expect(finalCenterMain.children[0].ratio).toBeCloseTo(0.875, 4);
     expect(finalCenterMain.children[1].ratio).toBeCloseTo(0.125, 4);
   });
@@ -174,7 +174,7 @@ describe('MT5-style DockResizeHandle drag preview and atomic resize commit', () 
     });
 
     expect(document.body.querySelector('[data-dock-resize-preview]')).toBeNull();
-    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as any);
+    const finalCenterMain = (useDockLayoutStore.getState().layout.root.children[1] as DockContainerType);
     expect(finalCenterMain.children[0].ratio).toBeCloseTo(0.5, 4);
     expect(finalCenterMain.children[1].ratio).toBeCloseTo(0.5, 4);
   });
